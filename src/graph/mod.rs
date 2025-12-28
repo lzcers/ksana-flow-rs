@@ -1,8 +1,8 @@
-trait Context {
-    fn get(&self, key: &str) -> Option<&dyn std::any::Any>;
-    fn set(&mut self, key: &str, value: Box<dyn std::any::Any>);
+trait Context<T> {
+    fn get(&self, key: &str) -> Option<T>;
+    fn set(&mut self, key: &str, value: T);
 }
 
 trait Node {
-    fn execute<T: Context>(&self, ctx: &mut T);
+    fn execute<V, T: Context<V>>(&self, ctx: &mut T);
 }
