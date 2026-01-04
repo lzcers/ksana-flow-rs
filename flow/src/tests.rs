@@ -1,16 +1,19 @@
 use crate::flow::builder::GraphBuilder;
 use crate::flow::runner::Runner;
 use crate::flow::{Context, Node};
+use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[test]
 fn test_complex_graph_connections() {
     struct InputNode;
+    #[async_trait]
+
     impl Node for InputNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }
@@ -25,28 +28,34 @@ fn test_complex_graph_connections() {
             }
         }
     }
+    #[async_trait]
+
     impl Node for BranchNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("{}[{}]", input, self.branch_id)
         }
     }
 
     struct MergeNode;
+    #[async_trait]
+
     impl Node for MergeNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("Merged: {}", input)
         }
     }
 
     struct OutputNode;
+    #[async_trait]
+
     impl Node for OutputNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }
@@ -79,37 +88,45 @@ fn test_complex_graph_connections() {
 #[test]
 fn test_conditional_branching() {
     struct InputNode;
+    #[async_trait]
+
     impl Node for InputNode {
         type In = i32;
         type Out = i32;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }
 
     struct CheckNode;
+    #[async_trait]
+
     impl Node for CheckNode {
         type In = i32;
         type Out = (i32, bool);
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             (input, input > 0)
         }
     }
 
     struct PositiveNode;
+    #[async_trait]
+
     impl Node for PositiveNode {
         type In = (i32, bool);
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("Positive: {}", input.0)
         }
     }
 
     struct NegativeNode;
+    #[async_trait]
+
     impl Node for NegativeNode {
         type In = (i32, bool);
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("Negative: {}", input.0)
         }
     }
@@ -144,10 +161,12 @@ fn test_multi_level_graph() {
             Self { level }
         }
     }
+    #[async_trait]
+
     impl Node for LevelNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("L{}: {}", self.level, input)
         }
     }
@@ -193,19 +212,23 @@ fn test_large_concurrent_nodes() {
             Self { id }
         }
     }
+    #[async_trait]
+
     impl Node for CounterNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("{}[Node{}]", input, self.id)
         }
     }
 
     struct AggregatorNode;
+    #[async_trait]
+
     impl Node for AggregatorNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("Aggregated: {}", input)
         }
     }
@@ -248,10 +271,12 @@ fn test_concurrent_execution_tracking() {
             }
         }
     }
+    #[async_trait]
+
     impl Node for TrackingNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             let mut log = self.execution_log.lock().unwrap();
             log.push(self.id);
             std::thread::sleep(Duration::from_millis(10));
@@ -260,10 +285,12 @@ fn test_concurrent_execution_tracking() {
     }
 
     struct CollectorNode;
+    #[async_trait]
+
     impl Node for CollectorNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }
@@ -301,10 +328,12 @@ fn test_concurrent_execution_tracking() {
 #[test]
 fn test_Context_write_and_read() {
     struct WriterNode;
+    #[async_trait]
+
     impl Node for WriterNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("key1", "value1");
             ctx.set("key2", 42);
             ctx.set("key3", vec![1, 2, 3]);
@@ -313,10 +342,12 @@ fn test_Context_write_and_read() {
     }
 
     struct ReaderNode;
+    #[async_trait]
+
     impl Node for ReaderNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             let value1: Option<String> = ctx.get("key1");
             let value2: Option<i32> = ctx.get("key2");
             let value3: Option<Vec<i32>> = ctx.get("key3");
@@ -345,10 +376,12 @@ fn test_Context_write_and_read() {
 #[test]
 fn test_Context_across_multiple_nodes() {
     struct Node1;
+    #[async_trait]
+
     impl Node for Node1 {
         type In = String;
         type Out = String;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("node1_data", "from_node1");
             ctx.set("counter", 1);
             input
@@ -356,10 +389,12 @@ fn test_Context_across_multiple_nodes() {
     }
 
     struct Node2;
+    #[async_trait]
+
     impl Node for Node2 {
         type In = String;
         type Out = String;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             let counter: Option<i32> = ctx.get("counter");
             if let Some(c) = counter {
                 ctx.set("counter", c + 1);
@@ -370,10 +405,12 @@ fn test_Context_across_multiple_nodes() {
     }
 
     struct Node3;
+    #[async_trait]
+
     impl Node for Node3 {
         type In = String;
         type Out = String;
-        fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             let node1_data: Option<String> = ctx.get("node1_data");
             let node2_data: Option<String> = ctx.get("node2_data");
             let counter: Option<i32> = ctx.get("counter");
@@ -404,20 +441,24 @@ fn test_Context_across_multiple_nodes() {
 #[test]
 fn test_Context_with_conditional_edges() {
     struct InputNode;
+    #[async_trait]
+
     impl Node for InputNode {
         type In = i32;
         type Out = i32;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("input_value", input);
             input
         }
     }
 
     struct CheckNode;
+    #[async_trait]
+
     impl Node for CheckNode {
         type In = i32;
         type Out = (i32, bool);
-        fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             let stored: Option<i32> = ctx.get("input_value");
             assert_eq!(stored, Some(input));
             (input, input % 2 == 0)
@@ -425,20 +466,24 @@ fn test_Context_with_conditional_edges() {
     }
 
     struct EvenNode;
+    #[async_trait]
+
     impl Node for EvenNode {
         type In = (i32, bool);
         type Out = String;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("result", "even");
             format!("Even: {}", input.0)
         }
     }
 
     struct OddNode;
+    #[async_trait]
+
     impl Node for OddNode {
         type In = (i32, bool);
         type Out = String;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("result", "odd");
             format!("Odd: {}", input.0)
         }
@@ -470,10 +515,12 @@ fn test_Context_with_conditional_edges() {
 #[test]
 fn test_Context_serialization() {
     struct SerializeNode;
+    #[async_trait]
+
     impl Node for SerializeNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("string", "hello");
             ctx.set("number", 123);
             ctx.set("float", 45.67);
@@ -484,10 +531,12 @@ fn test_Context_serialization() {
     }
 
     struct DeserializeNode;
+    #[async_trait]
+
     impl Node for DeserializeNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             let s: Option<String> = ctx.get("string");
             let n: Option<i32> = ctx.get("number");
             let f: Option<f64> = ctx.get("float");
@@ -520,37 +569,45 @@ fn test_Context_serialization() {
 #[test]
 fn test_diamond_graph_pattern() {
     struct StartNode;
+    #[async_trait]
+
     impl Node for StartNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }
 
     struct LeftNode;
+    #[async_trait]
+
     impl Node for LeftNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("L: {}", input)
         }
     }
 
     struct RightNode;
+    #[async_trait]
+
     impl Node for RightNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("R: {}", input)
         }
     }
 
     struct EndNode;
+    #[async_trait]
+
     impl Node for EndNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             format!("E: {}", input)
         }
     }
@@ -579,19 +636,23 @@ fn test_diamond_graph_pattern() {
 #[test]
 fn test_type_mismatch() {
     struct StringNode;
+    #[async_trait]
+
     impl Node for StringNode {
         type In = String;
         type Out = String;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }
 
     struct IntNode;
+    #[async_trait]
+
     impl Node for IntNode {
         type In = i32;
         type Out = i32;
-        fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
             input
         }
     }

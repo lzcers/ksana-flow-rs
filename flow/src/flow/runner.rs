@@ -28,9 +28,8 @@ impl Runner {
     }
 
     pub fn run(&mut self) -> Result<(), String> {
-        let rt = Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
-
         info!("Available nodes: {:?}", self.graph.get_node_ids());
+        let rt = Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
         let (tx, mut rx) = mpsc::channel::<TaskResult>(100);
         rt.block_on(async {
             let mut pending_tasks = 0;
@@ -75,6 +74,7 @@ impl Runner {
             let mut node = node.write().await;
             let output = node
                 .run(&ctx, input)
+                .await
                 .map_err(|e| format!("Node '{}' run error: {}", &node_id, e));
             info!(
                 "Running node: {} in task: {:?}",

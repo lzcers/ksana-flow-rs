@@ -10,3 +10,4 @@ tokio = { workspace = true }
 rig-core = "0.27.0"
 flow = { workspace = true }
 dotenv = "0.15"
+async-trait = "0.1"

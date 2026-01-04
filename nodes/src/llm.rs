@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use flow::Node;
 use rig::{
     agent::Agent,
@@ -5,7 +6,6 @@ use rig::{
     completion::Prompt,
     providers::deepseek::{self, CompletionModel},
 };
-use tokio::{runtime::Handle, task};
 struct LLMNode {
     llm: Agent<CompletionModel>,
 }
@@ -18,16 +18,14 @@ impl LLMNode {
         Self { llm }
     }
 }
+#[async_trait]
 impl Node for LLMNode {
     type In = String;
 
     type Out = String;
 
-    fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
-        let handle = Handle::current();
-        task::block_in_place(|| {
-            handle.block_on(async { self.llm.prompt(&input).await.expect("LLM prompt failed") })
-        })
+    async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
+        self.llm.prompt(&input).await.expect("LLM prompt failed")
     }
 }
 
@@ -46,7 +44,7 @@ mod tests {
             let mut node = LLMNode::new();
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let output = node.run(&ctx, input);
+            let output = node.run(&ctx, input).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });

@@ -1,5 +1,5 @@
+use async_trait::async_trait;
 use std::collections::HashMap;
-use std::process::Output;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -36,10 +36,11 @@ impl Context {
     }
 }
 
+#[async_trait]
 pub trait Node: Send + Sync {
-    type In;
+    type In: Send;
     type Out: Clone + Send;
-    fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
+    async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
 }
 
 pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool>;
@@ -52,11 +53,23 @@ pub struct Edge<Out = ()> {
 
 pub trait CloneAny: Any + Send {
     fn clone_box(&self) -> Box<dyn CloneAny>;
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
 impl<T: Any + Clone + Send> CloneAny for T {
     fn clone_box(&self) -> Box<dyn CloneAny> {
         Box::new(self.clone())
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
     }
 }
 
@@ -66,10 +79,15 @@ impl Clone for Box<dyn CloneAny> {
     }
 }
 
+#[async_trait]
 pub trait AnyNode: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn run(&mut self, ctx: &Context, input: Box<dyn Any>) -> Result<Box<dyn CloneAny>, String>;
+    async fn run(
+        &mut self,
+        ctx: &Context,
+        input: Box<dyn CloneAny>,
+    ) -> Result<Box<dyn CloneAny>, String>;
 }
 
 pub trait AnyEdge: Any {
@@ -79,6 +97,7 @@ pub trait AnyEdge: Any {
     fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool;
 }
 
+#[async_trait]
 impl<N: Node + Send + Sync + 'static> AnyNode for N {
     fn as_any(&self) -> &dyn Any {
         self
@@ -88,11 +107,16 @@ impl<N: Node + Send + Sync + 'static> AnyNode for N {
         self
     }
 
-    fn run(&mut self, ctx: &Context, input: Box<dyn Any>) -> Result<Box<dyn CloneAny>, String> {
-        let input = input.downcast::<N::In>().map_err(|_| {
+    async fn run(
+        &mut self,
+        ctx: &Context,
+        input: Box<dyn CloneAny>,
+    ) -> Result<Box<dyn CloneAny>, String> {
+        let input = input.into_any().downcast::<N::In>().map_err(|_| {
             "Type mismatch: input type does not match node's expected type".to_string()
         })?;
-        Ok(Box::new(self.run(ctx, *input)))
+        let result = self.run(ctx, *input).await;
+        Ok(Box::new(result))
     }
 }
 
