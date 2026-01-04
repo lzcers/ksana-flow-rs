@@ -6,4 +6,7 @@ edition = "2024"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-dashmap = { workspace = true }
+tokio = { workspace = true }
+rig-core = "0.27.0"
+flow = { workspace = true }
+dotenv = "0.15"
