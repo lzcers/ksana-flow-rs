@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[test]
-fn test_complex_graph_connections() {
+#[tokio::test]
+async fn test_complex_graph_connections() {
     struct InputNode;
     #[async_trait]
 
@@ -80,13 +80,13 @@ fn test_complex_graph_connections() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("input", &"Test".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(result.is_ok(), "Complex graph execution should succeed");
 }
 
-#[test]
-fn test_conditional_branching() {
+#[tokio::test]
+async fn test_conditional_branching() {
     struct InputNode;
     #[async_trait]
 
@@ -146,13 +146,13 @@ fn test_conditional_branching() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("input", &42);
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(result.is_ok(), "Conditional branching should succeed");
 }
 
-#[test]
-fn test_multi_level_graph() {
+#[tokio::test]
+async fn test_multi_level_graph() {
     struct LevelNode {
         level: u32,
     }
@@ -194,7 +194,7 @@ fn test_multi_level_graph() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("l1_1", &"Start".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(
         result.is_ok(),
@@ -202,8 +202,8 @@ fn test_multi_level_graph() {
     );
 }
 
-#[test]
-fn test_large_concurrent_nodes() {
+#[tokio::test]
+async fn test_large_concurrent_nodes() {
     struct CounterNode {
         id: usize,
     }
@@ -249,7 +249,7 @@ fn test_large_concurrent_nodes() {
     let graph = builder.build();
     let mut runner = Runner::new(graph);
     runner.set_start_node("input", &"Data".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(
         result.is_ok(),
@@ -257,8 +257,8 @@ fn test_large_concurrent_nodes() {
     );
 }
 
-#[test]
-fn test_concurrent_execution_tracking() {
+#[tokio::test]
+async fn test_concurrent_execution_tracking() {
     struct TrackingNode {
         id: usize,
         execution_log: Arc<Mutex<Vec<usize>>>,
@@ -317,7 +317,7 @@ fn test_concurrent_execution_tracking() {
     let graph = builder.build();
     let mut runner = Runner::new(graph);
     runner.set_start_node("input", &"Concurrent".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(result.is_ok(), "Concurrent execution should succeed");
 
@@ -325,8 +325,8 @@ fn test_concurrent_execution_tracking() {
     assert_eq!(log.len(), 21, "All nodes should have executed");
 }
 
-#[test]
-fn test_Context_write_and_read() {
+#[tokio::test]
+async fn test_Context_write_and_read() {
     struct WriterNode;
     #[async_trait]
 
@@ -368,13 +368,13 @@ fn test_Context_write_and_read() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("writer", &"Test".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(result.is_ok(), "&Context read/write should succeed");
 }
 
-#[test]
-fn test_Context_across_multiple_nodes() {
+#[tokio::test]
+async fn test_Context_across_multiple_nodes() {
     struct Node1;
     #[async_trait]
 
@@ -433,13 +433,13 @@ fn test_Context_across_multiple_nodes() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("node1", &"Start".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(result.is_ok(), "&Context across multiple nodes should work");
 }
 
-#[test]
-fn test_Context_with_conditional_edges() {
+#[tokio::test]
+async fn test_Context_with_conditional_edges() {
     struct InputNode;
     #[async_trait]
 
@@ -504,7 +504,7 @@ fn test_Context_with_conditional_edges() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("input", &4);
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(
         result.is_ok(),
@@ -512,8 +512,8 @@ fn test_Context_with_conditional_edges() {
     );
 }
 
-#[test]
-fn test_Context_serialization() {
+#[tokio::test]
+async fn test_Context_serialization() {
     struct SerializeNode;
     #[async_trait]
 
@@ -561,13 +561,13 @@ fn test_Context_serialization() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("serialize", &"Test".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(result.is_ok(), "&Context serialization should work");
 }
 
-#[test]
-fn test_diamond_graph_pattern() {
+#[tokio::test]
+async fn test_diamond_graph_pattern() {
     struct StartNode;
     #[async_trait]
 
@@ -625,7 +625,7 @@ fn test_diamond_graph_pattern() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("start", &"Diamond".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
 
     assert!(
         result.is_ok(),
@@ -633,8 +633,8 @@ fn test_diamond_graph_pattern() {
     );
 }
 
-#[test]
-fn test_type_mismatch() {
+#[tokio::test]
+async fn test_type_mismatch() {
     struct StringNode;
     #[async_trait]
 
@@ -665,7 +665,7 @@ fn test_type_mismatch() {
 
     let mut runner = Runner::new(graph);
     runner.set_start_node("string_node", &"Test".to_string());
-    let result = runner.run();
+    let result = runner.run().await;
     eprintln!("{:?}", result);
     assert!(result.is_err(), "Type mismatch should cause error");
 }

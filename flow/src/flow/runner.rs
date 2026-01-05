@@ -27,41 +27,38 @@ impl Runner {
             .push_back((vec![node_id.to_owned()], input.clone_box()));
     }
 
-    pub fn run(&mut self) -> Result<(), String> {
+    pub async fn run(&mut self) -> Result<(), String> {
         info!("Available nodes: {:?}", self.graph.get_node_ids());
-        let rt = Runtime::new().map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
         let (tx, mut rx) = mpsc::channel::<TaskResult>(100);
-        rt.block_on(async {
-            let mut pending_tasks = 0;
-            loop {
-                if let Some((node_ids, input)) = self.task_queue.pop_front() {
-                    for node_id in node_ids {
-                        let node_arc = self
-                            .graph
-                            .nodes
-                            .get(&node_id)
-                            .ok_or_else(|| format!("Runner run: Node '{}' not found", &node_id))?
-                            .clone();
-                        let ctx_arc = self.ctx.clone();
-                        let input_clone = input.clone();
-                        let tx_clone = tx.clone();
-                        Self::worker(node_id, node_arc, ctx_arc, input_clone, tx_clone);
-                        pending_tasks += 1;
-                    }
-                } else if pending_tasks == 0 {
-                    break;
+        let mut pending_tasks = 0;
+        loop {
+            if let Some((node_ids, input)) = self.task_queue.pop_front() {
+                for node_id in node_ids {
+                    let node_arc = self
+                        .graph
+                        .nodes
+                        .get(&node_id)
+                        .ok_or_else(|| format!("Runner run: Node '{}' not found", &node_id))?
+                        .clone();
+                    let ctx_arc = self.ctx.clone();
+                    let input_clone = input.clone();
+                    let tx_clone = tx.clone();
+                    Self::worker(node_id, node_arc, ctx_arc, input_clone, tx_clone);
+                    pending_tasks += 1;
                 }
-                if let Some(task_result) = rx.recv().await {
-                    pending_tasks -= 1;
-                    let (node_id, output) = task_result?;
-                    let next_nodes = self.find_next_nodes(&node_id, &output)?;
-                    if !next_nodes.is_empty() {
-                        self.task_queue.push_back((next_nodes, output));
-                    }
+            } else if pending_tasks == 0 {
+                break;
+            }
+            if let Some(task_result) = rx.recv().await {
+                pending_tasks -= 1;
+                let (node_id, output) = task_result?;
+                let next_nodes = self.find_next_nodes(&node_id, &output)?;
+                if !next_nodes.is_empty() {
+                    self.task_queue.push_back((next_nodes, output));
                 }
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
     fn worker(
         node_id: String,
