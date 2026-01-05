@@ -1,9 +1,7 @@
 use super::{AnyNode, CloneAny, Context, Graph, NodeId};
 use std::collections::VecDeque;
 use std::sync::Arc;
-use tokio::runtime::Runtime;
-use tokio::sync::mpsc::Sender;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, mpsc, mpsc::Sender};
 use tracing::{error, info};
 
 type TaskPayload = (Vec<NodeId>, Box<dyn CloneAny>);
