@@ -6,12 +6,12 @@ use rig::{
     completion::Prompt,
     providers::deepseek::{self, CompletionModel},
 };
-struct LLMNode {
+pub struct LLMNode {
     llm: Agent<CompletionModel>,
 }
 
 impl LLMNode {
-    fn new() -> Self {
+    pub fn new() -> Self {
         dotenv::dotenv().ok();
         let client = deepseek::Client::from_env();
         let llm = client.agent("deepseek-chat").build();

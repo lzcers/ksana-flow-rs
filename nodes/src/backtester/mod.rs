@@ -1,0 +1,46 @@
+pub mod engine;
+mod index_calc;
+pub mod k;
+pub mod trading;
+
+use async_trait::async_trait;
+use flow::Node;
+use serde::{Deserialize, Serialize};
+
+use self::{
+    engine::{Backtester, Record},
+    k::K,
+    trading::{Order, Position, Trading},
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacktesterInput {
+    pub k: K,
+    pub order: Option<Order>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BacktesterOutput {
+    pub balance: f64,
+    pub positions: Vec<Position>,
+    pub trading_record: Vec<Record>,
+}
+
+#[async_trait]
+impl Node for Backtester {
+    type In = BacktesterInput;
+    type Out = BacktesterOutput;
+
+    async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
+        if let Some(order) = input.order {
+            let _ = self.order(order);
+        }
+        self.update(&input.k);
+
+        BacktesterOutput {
+            balance: self.get_balance(),
+            positions: self.get_positions().clone(),
+            trading_record: self.get_trading_record().clone(),
+        }
+    }
+}
