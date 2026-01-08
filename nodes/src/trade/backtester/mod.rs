@@ -1,15 +1,15 @@
 pub mod engine;
 mod index_calc;
-pub mod k;
 pub mod trading;
 
 use async_trait::async_trait;
 use flow::Node;
 use serde::{Deserialize, Serialize};
 
+use crate::trade::k::K;
+
 use self::{
     engine::{Backtester, Record},
-    k::K,
     trading::{Order, Position, Trading},
 };
 

@@ -1,2 +1,2 @@
-pub mod backtester;
 pub mod llm;
+pub mod trade;

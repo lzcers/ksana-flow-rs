@@ -1,17 +1,13 @@
 use super::index_calc::{
     calc_max_drawdown, calc_positions_value, calc_profit_rate_year, calc_sharpe_rate, calc_win_rate,
 };
-use super::k::K;
 use super::trading::{Order, OrderInfo, OrderState, Position, Trading};
+use crate::trade::k::K;
+use crate::trade::utils::timestamp_to_str;
 use anyhow::Result;
-use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-pub fn timestamp_to_str(timestamp: u64) -> String {
-    let datetime = DateTime::from_timestamp_millis(timestamp as i64).unwrap();
-    datetime.date_naive().to_string()
-}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Record {
     order: OrderInfo,

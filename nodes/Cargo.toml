@@ -7,11 +7,17 @@ edition = "2024"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-rig-core = "0.27.0"
+tracing = { workspace = true }
 flow = { workspace = true }
+rig-core = "0.27.0"
 dotenv = "0.15"
 async-trait = "0.1"
 ndarray = "0.16.1"
 anyhow = "1.0.97"
+thiserror = "2.0.11"
 chrono = "0.4.40"
-tracing = { workspace = true }
+ta = "0.5.0"
+rusqlite = { version = "0.34.0", features = ["bundled"] }
+reqwest = { version = "0.12.15", features = ["json", "blocking", "gzip"] }
+csv = "1.3.1"
+toml = "0.8.20"
