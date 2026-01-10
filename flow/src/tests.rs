@@ -78,11 +78,51 @@ async fn test_complex_graph_connections() {
         .add_edge("merge2", "output")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("input", &"Test".to_string());
+    let mut runner = Runner::new(graph).set_start_node("input", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Complex graph execution should succeed");
+}
+
+#[tokio::test]
+async fn test_build_flow_macro() {
+    struct TestNode;
+    #[async_trait]
+    impl Node for TestNode {
+        type In = String;
+        type Out = String;
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+            input
+        }
+    }
+
+    let graph = crate::build_flow!(
+        nodes: [
+            ("node2", TestNode),
+            ("node3", TestNode),
+        ],
+        edges: [
+            ("node1", "node2"),
+            ("node2", "node3"),
+        ]
+    );
+
+    let mut runner = Runner::new(graph).set_start_node("node1", &"Start".to_string());
+    let result = runner.run().await;
+    assert!(result.is_ok());
+
+    let is_true = |_ctx: &Context, _out: &String| true;
+    let graph_cond = crate::build_flow!(
+        nodes: [
+            ("node2", TestNode),
+        ],
+        edges: [
+            ("node1", "node2", is_true),
+        ]
+    );
+    let mut runner_cond = Runner::new(graph_cond).set_start_node("node1", &"Start".to_string());
+    let result_cond = runner_cond.run().await;
+    assert!(result_cond.is_ok());
 }
 
 #[tokio::test]
@@ -144,8 +184,7 @@ async fn test_conditional_branching() {
         .add_condition_edge("check", "negative", is_negative)
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("input", &42);
+    let mut runner = Runner::new(graph).set_start_node("input", &42);
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Conditional branching should succeed");
@@ -192,8 +231,7 @@ async fn test_multi_level_graph() {
         .add_edge("l3_2", "l4_1")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("l1_1", &"Start".to_string());
+    let mut runner = Runner::new(graph).set_start_node("l1_1", &"Start".to_string());
     let result = runner.run().await;
 
     assert!(
@@ -247,8 +285,7 @@ async fn test_large_concurrent_nodes() {
     }
 
     let graph = builder.build();
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("input", &"Data".to_string());
+    let mut runner = Runner::new(graph).set_start_node("input", &"Data".to_string());
     let result = runner.run().await;
 
     assert!(
@@ -315,8 +352,7 @@ async fn test_concurrent_execution_tracking() {
     }
 
     let graph = builder.build();
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("input", &"Concurrent".to_string());
+    let mut runner = Runner::new(graph).set_start_node("input", &"Concurrent".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Concurrent execution should succeed");
@@ -366,8 +402,7 @@ async fn test_Context_write_and_read() {
         .add_edge("writer", "reader")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("writer", &"Test".to_string());
+    let mut runner = Runner::new(graph).set_start_node("writer", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "&Context read/write should succeed");
@@ -431,8 +466,7 @@ async fn test_Context_across_multiple_nodes() {
         .add_edge("node2", "node3")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("node1", &"Start".to_string());
+    let mut runner = Runner::new(graph).set_start_node("node1", &"Start".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "&Context across multiple nodes should work");
@@ -502,8 +536,7 @@ async fn test_Context_with_conditional_edges() {
         .add_condition_edge("check", "odd", is_odd)
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("input", &4);
+    let mut runner = Runner::new(graph).set_start_node("input", &4);
     let result = runner.run().await;
 
     assert!(
@@ -559,8 +592,7 @@ async fn test_Context_serialization() {
         .add_edge("serialize", "deserialize")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("serialize", &"Test".to_string());
+    let mut runner = Runner::new(graph).set_start_node("serialize", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "&Context serialization should work");
@@ -623,8 +655,7 @@ async fn test_diamond_graph_pattern() {
         .add_edge("right", "end")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("start", &"Diamond".to_string());
+    let mut runner = Runner::new(graph).set_start_node("start", &"Diamond".to_string());
     let result = runner.run().await;
 
     assert!(
@@ -663,9 +694,46 @@ async fn test_type_mismatch() {
         .add_edge("string_node", "int_node")
         .build();
 
-    let mut runner = Runner::new(graph);
-    runner.set_start_node("string_node", &"Test".to_string());
+    let mut runner = Runner::new(graph).set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;
     eprintln!("{:?}", result);
     assert!(result.is_err(), "Type mismatch should cause error");
+}
+
+#[tokio::test]
+async fn test_unit_input_allows_any() {
+    struct StringNode;
+    #[async_trait]
+    impl Node for StringNode {
+        type In = String;
+        type Out = String;
+        async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
+            input
+        }
+    }
+
+    struct UnitNode;
+    #[async_trait]
+    impl Node for UnitNode {
+        type In = ();
+        type Out = String;
+        async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
+            "UnitNode called".to_string()
+        }
+    }
+
+    let graph = GraphBuilder::new()
+        .add_node("string_node", StringNode)
+        .add_node("unit_node", UnitNode)
+        .add_edge("string_node", "unit_node")
+        .build();
+
+    let mut runner = Runner::new(graph).set_start_node("string_node", &"Test".to_string());
+    let result = runner.run().await;
+
+    assert!(
+        result.is_ok(),
+        "Unit input node should allow any input type, got error: {:?}",
+        result.err()
+    );
 }

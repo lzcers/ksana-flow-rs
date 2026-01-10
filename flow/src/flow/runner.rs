@@ -20,9 +20,10 @@ impl Runner {
             task_queue: VecDeque::new(),
         }
     }
-    pub fn set_start_node(&mut self, node_id: &str, input: &dyn CloneAny) {
+    pub fn set_start_node(mut self, node_id: &str, input: &dyn CloneAny) -> Self {
         self.task_queue
             .push_back((vec![node_id.to_owned()], input.clone_box()));
+        self
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
@@ -72,11 +73,11 @@ impl Runner {
                 .await
                 .map_err(|e| format!("Node '{}' run error: {}", &node_id, e));
             info!(
-                "Running node: {} in task: {:?}",
+                "Running node: <{}> in task: {:?}",
                 &node_id,
                 tokio::task::id(),
             );
-            let result = output.map(|out| (node_id.to_owned(), out));
+            let result = output.map(|out| (node_id.clone(), out));
             if let Err(e) = tx.send(result).await {
                 error!("Error sending result for node {}: {:?}", &node_id, e);
             }
@@ -92,7 +93,7 @@ impl Runner {
             for edge in edges.iter() {
                 let passes = edge.check_condition(&self.ctx, output.as_ref());
                 info!(
-                    "  Edge {} -> {} condition: {}",
+                    "Edge <{}> -> <{}> condition: [{}]",
                     edge.from(),
                     edge.to(),
                     passes

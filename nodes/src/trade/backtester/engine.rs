@@ -75,7 +75,7 @@ impl Backtester {
 
     // 胜率 = 盈利交易次数 / 总交易次数;
     // 最大回撤 = 现金+股票最大价值时 - 现金+股票最小价值 / 现金+股票最大价值时
-    pub fn get_backtest_result(&self) {
+    pub fn print_backtest_result(&self) {
         println!("");
         println!("");
         println!("--------------- Backtest result: ---------------");
@@ -262,6 +262,7 @@ impl Backtester {
                         }
                     }
                 }
+                Order::HOLD => {}
             }
             return false;
         });

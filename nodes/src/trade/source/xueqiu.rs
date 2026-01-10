@@ -1,5 +1,5 @@
 use anyhow::Result;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use reqwest::header::{ACCEPT_ENCODING, HeaderMap};
 use serde::Deserialize;
 
@@ -42,7 +42,7 @@ impl XueqiuSource {
         let mut default_headers = HeaderMap::new();
         default_headers.insert(ACCEPT_ENCODING, "gzip".parse().unwrap());
 
-        let client = reqwest::blocking::Client::builder()
+        let client = reqwest::Client::builder()
             .default_headers(default_headers)
             .build()?;
 
@@ -52,22 +52,24 @@ impl XueqiuSource {
         });
     }
 
-    pub fn get_realtime_bar(&self, code: &str) -> Result<XuequiRealtimeApiResponse> {
+    pub async fn get_realtime_bar(&self, code: &str) -> Result<XuequiRealtimeApiResponse> {
         let query_url = format!("{}{code}", &self.realtime_api_url);
         let result = self
             .client
             .get(&query_url)
-            .send()?
-            .json::<XuequiRealtimeApiResponse>()?;
+            .send()
+            .await?
+            .json::<XuequiRealtimeApiResponse>()
+            .await?;
 
         return Ok(result);
     }
 }
 
-#[test]
-fn test_get_realtime_bar() -> Result<()> {
+#[tokio::test]
+async fn test_get_realtime_bar() -> Result<()> {
     let req = XueqiuSource::new()?;
-    let result = req.get_realtime_bar("SH510300");
+    let result = req.get_realtime_bar("SH510300").await;
     println!("{:?}", result);
     Ok(())
 }

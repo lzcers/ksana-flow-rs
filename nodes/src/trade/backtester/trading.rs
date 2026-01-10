@@ -6,6 +6,7 @@ use tracing::warn;
 pub enum Order {
     BUY,  // 买单
     SELL, //卖单
+    HOLD, // 持仓
 }
 
 pub struct OrderState {}

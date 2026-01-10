@@ -4,9 +4,11 @@ pub mod runner;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde_json::Value;
-use std::any::Any;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+};
 use tokio::sync::RwLock;
 
 type NodeId = String;
@@ -111,7 +113,13 @@ impl<N: Node + Send + Sync + 'static> AnyNode for N {
         ctx: &Context,
         input: Box<dyn CloneAny>,
     ) -> Result<Box<dyn CloneAny>, String> {
-        let input = input.into_any().downcast::<N::In>().map_err(|_| {
+        let input = if TypeId::of::<N::In>() == TypeId::of::<()>() {
+            Box::new(()) as Box<dyn Any>
+        } else {
+            input
+        };
+
+        let input = input.downcast::<N::In>().map_err(|_| {
             "Type mismatch: input type does not match node's expected type".to_string()
         })?;
         let result = self.run(ctx, *input).await;

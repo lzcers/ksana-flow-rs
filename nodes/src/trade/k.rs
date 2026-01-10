@@ -1,6 +1,6 @@
 use super::utils::timestamp_to_str;
 use serde::{Deserialize, Serialize};
-
+pub use ta::{Close, High, Low, Open, Volume};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct K {
     pub code: String,
@@ -43,26 +43,6 @@ impl std::fmt::Display for K {
             self.amount,
         )
     }
-}
-
-pub trait Open {
-    fn open(&self) -> f64;
-}
-
-pub trait Close {
-    fn close(&self) -> f64;
-}
-
-pub trait Low {
-    fn low(&self) -> f64;
-}
-
-pub trait High {
-    fn high(&self) -> f64;
-}
-
-pub trait Volume {
-    fn volume(&self) -> f64;
 }
 
 impl Open for K {

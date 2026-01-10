@@ -1,7 +1,6 @@
 use crate::trade::{k::K, utils::date_str_to_timestamp};
 use anyhow::Result;
-use reqwest;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -39,14 +38,15 @@ impl TushareSource {
         QueryBuilder::new(self, api_name)
     }
 
-    pub fn query_range_trade_date(&self, start: &str, end: &str) -> Result<Vec<String>> {
+    pub async fn query_range_trade_date(&self, start: &str, end: &str) -> Result<Vec<String>> {
         let date_lsit = self
             .querybuilder("trade_cal")
             .addparam("start_date", start)
             .addparam("end_date", end)
             .addparam("is_open", "1")
             .fields("cal_date,is_open,pretrade_date") //optional step
-            .query()?;
+            .query()
+            .await?;
         Ok(date_lsit
             .iter()
             .map(|item| {
@@ -58,7 +58,7 @@ impl TushareSource {
             .collect::<Vec<String>>())
     }
 
-    pub fn query_daily_base_data(
+    pub async fn query_daily_base_data(
         &self,
         code: &str,
         product: Option<Product>,
@@ -81,7 +81,8 @@ impl TushareSource {
             .addparam("start_date", start) //opiontal step
             .addparam("end_date", end) //opiontal step
             .fields("ts_code,trade_date,open,high,low,close,vol,amount")
-            .query()?
+            .query()
+            .await?
             .iter()
             .rev()
             .map(|v| K {
@@ -266,7 +267,7 @@ impl<'a> QueryBuilder<'a> {
 
     /// Query API predefined request type & parameters and return a Data Frame as output
     /// Fundamental entry for every tushare data access.
-    pub fn query(self: &Self) -> Result<Vec<Value>, TushareError> {
+    pub async fn query(self: &Self) -> Result<Vec<Value>, TushareError> {
         let tushare_request = self.build();
         info!(
             "Request text:\n {}\n",
@@ -277,9 +278,11 @@ impl<'a> QueryBuilder<'a> {
         let resp_text = client
             .post(self.tushare.api_endpoint.clone())
             .body(tushare_request.to_string())
-            .send()? // sending network error
+            .send()
+            .await? // sending network error
             .error_for_status()? // 400 or other http error
-            .text()?;
+            .text()
+            .await?;
         let resp_json: Value = serde_json::from_str(&resp_text)?;
         if let Some(ret_code) = resp_json["code"].as_i64() {
             info!("resp code: {:?}", ret_code);
@@ -303,7 +306,7 @@ impl<'a> QueryBuilder<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::trade::config::get_config;
+    use crate::config::get_config;
 
     use super::*;
 
@@ -312,10 +315,12 @@ mod tests {
         Ok(TushareSource::new(&config.source.tushare_token))
     }
 
-    #[test]
-    fn query_daily_stock_base_bar() -> Result<()> {
+    #[tokio::test]
+    async fn query_daily_stock_base_bar() -> Result<()> {
         let source = init()?;
-        let list = source.query_daily_base_data("399300.SZ", None, "20240901", "20241001")?;
+        let list = source
+            .query_daily_base_data("399300.SZ", None, "20240901", "20241001")
+            .await?;
         for bar in list {
             println!("{:?}", bar);
         }
@@ -323,10 +328,12 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn get_range_trade_date() -> Result<()> {
+    #[tokio::test]
+    async fn get_range_trade_date() -> Result<()> {
         let source = init()?;
-        let list = source.query_range_trade_date("20240901", "20241001")?;
+        let list = source
+            .query_range_trade_date("20240901", "20241001")
+            .await?;
         println!("{list:?}");
         Ok(())
     }

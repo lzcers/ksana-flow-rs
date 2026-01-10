@@ -16,7 +16,7 @@ use self::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BacktesterInput {
     pub k: K,
-    pub order: Option<Order>,
+    pub order: Order,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,15 +28,14 @@ pub struct BacktesterOutput {
 
 #[async_trait]
 impl Node for Backtester {
-    type In = BacktesterInput;
+    type In = Option<BacktesterInput>;
     type Out = BacktesterOutput;
 
     async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
-        if let Some(order) = input.order {
-            let _ = self.order(order);
+        if let Some(input) = input {
+            self.order(input.order);
+            self.update(&input.k);
         }
-        self.update(&input.k);
-
         BacktesterOutput {
             balance: self.get_balance(),
             positions: self.get_positions().clone(),

@@ -1,0 +1,17 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background-color: #f8fafc;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
