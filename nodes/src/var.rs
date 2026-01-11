@@ -21,7 +21,7 @@ impl<T, I> VarNode<T, I> {
 #[async_trait]
 impl<T, I> Node for VarNode<T, I>
 where
-    T: Clone + Send + Sync,
+    T: Clone + Send + Sync + 'static,
     I: Send + Sync,
 {
     type In = I;

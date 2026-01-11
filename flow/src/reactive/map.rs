@@ -10,16 +10,18 @@ pub struct MapObserver<D, F> {
 impl<T, U, E, D, F> Observer<T, E> for MapObserver<D, F>
 where
     D: Observer<U, E>,
-    F: FnMut(T) -> U,
+    F: FnMut(T) -> U + Send + 'static,
+    U: Send + 'static,
+    T: Send + 'static,
 {
     fn on_next(&mut self, value: T) {
         let mapped = (self.map_fn)(value);
         self.downstream.on_next(mapped)
     }
-    fn on_error(self, error: E) {
+    fn on_error(&mut self, error: E) {
         self.downstream.on_error(error);
     }
-    fn on_completed(self) {
+    fn on_completed(&mut self) {
         self.downstream.on_completed();
     }
 }
@@ -33,7 +35,9 @@ pub struct MapOperator<Source, MapFn, Item> {
 impl<Source, MapFn, Item, Err, U> Observable<U, Err> for MapOperator<Source, MapFn, Item>
 where
     Source: Observable<Item, Err>,
-    MapFn: FnMut(Item) -> U,
+    MapFn: FnMut(Item) -> U + Send + 'static,
+    U: Send + 'static,
+    Item: Send + 'static,
 {
     type Sub = OperatorSubscription<Source::Sub>;
 

@@ -29,13 +29,11 @@ impl VOLMFINode {
 
 #[async_trait]
 impl Node for VOLMFINode {
-    type In = Option<K>;
-    type Out = Option<BacktesterInput>;
+    type In = K;
+    type Out = BacktesterInput;
 
     async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
-        let Some(k) = input else {
-            return None;
-        };
+        let k = input;
         let mfi = self.mfi_index.next(&k);
         let vol_ema = self.vol_ema_index.next(k.volume);
 
@@ -50,10 +48,10 @@ impl Node for VOLMFINode {
 
         let signal = gen_trading_signal(&k, d_vol_ema, d_rov, d_mfi);
 
-        Some(BacktesterInput {
+        BacktesterInput {
             k,
             order: signal.signal_type,
-        })
+        }
     }
 }
 

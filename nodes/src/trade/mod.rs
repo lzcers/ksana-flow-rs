@@ -6,5 +6,5 @@ mod utils;
 
 pub use backtester::engine::{Backtester, Record};
 pub use k::*;
-pub use source::SourceNode;
+pub use source::{ReactiveSourceNode, SourceNode};
 pub use strategy::VOLMFINode;

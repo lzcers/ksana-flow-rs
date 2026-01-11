@@ -28,14 +28,13 @@ pub struct BacktesterOutput {
 
 #[async_trait]
 impl Node for Backtester {
-    type In = Option<BacktesterInput>;
+    type In = BacktesterInput;
     type Out = BacktesterOutput;
 
     async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
-        if let Some(input) = input {
-            self.order(input.order);
-            self.update(&input.k);
-        }
+        self.order(input.order);
+        self.update(&input.k);
+        self.print_backtest_result();
         BacktesterOutput {
             balance: self.get_balance(),
             positions: self.get_positions().clone(),

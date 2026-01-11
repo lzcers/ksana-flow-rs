@@ -1,11 +1,11 @@
-use super::{AnyNode, CloneAny, Context, Graph, NodeId};
+use super::{AnyNode, CloneAny, Context, Graph, NodeId, ReactiveStream, TaskResult};
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, mpsc::Sender};
 use tracing::{error, info};
 
 type TaskPayload = (Vec<NodeId>, Box<dyn CloneAny>);
-type TaskResult = Result<(NodeId, Box<dyn CloneAny>), String>;
+
 pub struct Runner {
     graph: Graph,
     ctx: Arc<Context>,
@@ -29,9 +29,9 @@ impl Runner {
     pub async fn run(&mut self) -> Result<(), String> {
         info!("Available nodes: {:?}", self.graph.get_node_ids());
         let (tx, mut rx) = mpsc::channel::<TaskResult>(100);
-        let mut pending_tasks = 0;
+
         loop {
-            if let Some((node_ids, input)) = self.task_queue.pop_front() {
+            while let Some((node_ids, input)) = self.task_queue.pop_front() {
                 for node_id in node_ids {
                     let node_arc = self
                         .graph
@@ -43,18 +43,38 @@ impl Runner {
                     let input_clone = input.clone();
                     let tx_clone = tx.clone();
                     Self::worker(node_id, node_arc, ctx_arc, input_clone, tx_clone);
-                    pending_tasks += 1;
                 }
-            } else if pending_tasks == 0 {
-                break;
             }
             if let Some(task_result) = rx.recv().await {
-                pending_tasks -= 1;
-                let (node_id, output) = task_result?;
-                let next_nodes = self.find_next_nodes(&node_id, &output)?;
-                if !next_nodes.is_empty() {
-                    self.task_queue.push_back((next_nodes, output));
+                match task_result {
+                    Ok((node_id, output)) => {
+                        let t_name = output.as_ref().type_name();
+                        // 如果节点返回的是一个 ReactiveStream，
+                        // 则在一个新的 tokio 任务中订阅它
+                        if t_name.contains("ReactiveStream") {
+                            let stream_box: Box<ReactiveStream> = output
+                                .into_any()
+                                .downcast::<ReactiveStream>()
+                                .map_err(|_| "Failed to downcast to ReactiveStream".to_string())?;
+
+                            let _sub =
+                                (stream_box.subscribe)(tx.clone(), node_id, self.ctx.clone());
+                            continue;
+                        }
+
+                        // Normal output handling
+                        let next_nodes = self.find_next_nodes(&node_id, &output)?;
+                        if !next_nodes.is_empty() {
+                            self.task_queue.push_back((next_nodes, output));
+                        }
+                    }
+                    Err(e) => {
+                        error!("Task error: {}", e);
+                        return Err(e);
+                    }
                 }
+            } else {
+                break;
             }
         }
         Ok(())

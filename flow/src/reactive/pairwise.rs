@@ -8,7 +8,7 @@ pub struct PairwiseOperator<Upstream, Item> {
 impl<Item, Err, Upstream> Observable<(Option<Item>, Item), Err> for PairwiseOperator<Upstream, Item>
 where
     Upstream: Observable<Item, Err>,
-    Item: Clone,
+    Item: Clone + Send + 'static,
 {
     type Sub = OperatorSubscription<Upstream::Sub>;
 
@@ -29,7 +29,7 @@ pub struct PairwiseObserver<Item, Downstream> {
 impl<Item, Err, Downstream> Observer<Item, Err> for PairwiseObserver<Item, Downstream>
 where
     Downstream: Observer<(Option<Item>, Item), Err>,
-    Item: Clone,
+    Item: Clone + Send + 'static,
 {
     fn on_next(&mut self, value: Item) {
         let prev_value = self.prev_item.take();
@@ -37,11 +37,11 @@ where
         self.downstream.on_next((prev_value, value));
     }
 
-    fn on_error(self, error: Err) {
+    fn on_error(&mut self, error: Err) {
         self.downstream.on_error(error);
     }
 
-    fn on_completed(self) {
+    fn on_completed(&mut self) {
         self.downstream.on_completed();
     }
 }

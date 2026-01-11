@@ -11,8 +11,8 @@ pub struct ScanOperator<Source, F, Item, U> {
 impl<Item, Err, Source, F, U> Observable<U, Err> for ScanOperator<Source, F, Item, U>
 where
     Source: Observable<Item, Err>,
-    F: FnMut(U, Item) -> U,
-    U: Clone,
+    F: FnMut(U, Item) -> U + Send + 'static,
+    U: Clone + Send + 'static,
 {
     type Sub = OperatorSubscription<Source::Sub>;
 
@@ -35,8 +35,8 @@ struct ScanObserver<D, F, U> {
 impl<Item, Err, D, F, U> Observer<Item, Err> for ScanObserver<D, F, U>
 where
     D: Observer<U, Err>,
-    F: FnMut(U, Item) -> U,
-    U: Clone,
+    F: FnMut(U, Item) -> U + Send + 'static,
+    U: Clone + Send + 'static,
 {
     fn on_next(&mut self, value: Item) {
         let new_value = (self.scan_fn)(self.acc_value.clone(), value);
@@ -44,11 +44,11 @@ where
         self.acc_value = new_value;
     }
 
-    fn on_error(self, error: Err) {
+    fn on_error(&mut self, error: Err) {
         self.downstream.on_error(error);
     }
 
-    fn on_completed(self) {
+    fn on_completed(&mut self) {
         self.downstream.on_completed();
     }
 }

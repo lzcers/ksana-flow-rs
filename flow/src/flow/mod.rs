@@ -37,10 +37,93 @@ impl Context {
     }
 }
 
+use std::fmt;
+use tokio::sync::mpsc;
+
+use crate::reactive::observable::{Observable, Observer, Subscription};
+
+pub type TaskResult = Result<(NodeId, Box<dyn CloneAny>), String>;
+
+pub struct ReactiveStream {
+    pub subscribe: Box<
+        dyn FnOnce(mpsc::Sender<TaskResult>, NodeId, Arc<Context>) -> Box<dyn Subscription>
+            + Send
+            + Sync,
+    >,
+}
+
+struct RunnerObserver {
+    tx: mpsc::Sender<TaskResult>,
+    node_id: String,
+}
+impl<T: CloneAny, E> Observer<T, E> for RunnerObserver {
+    fn on_next(&mut self, value: T) {
+        let _ = self
+            .tx
+            .try_send(Ok((self.node_id.clone(), Box::new(value))));
+    }
+    fn on_error(&mut self, _error: E) {
+        // Handle error
+    }
+    fn on_completed(&mut self) {
+        // Handle completion
+    }
+}
+
+struct EmptySubscription;
+impl Subscription for EmptySubscription {
+    fn unsubscribe(self) {}
+}
+
+// 把一个 Observable 转换为 ReactiveStream
+// 然后在一个新的 tokio
+impl ReactiveStream {
+    pub fn from_observable<T, E, O>(observable: O) -> Self
+    where
+        T: CloneAny + 'static,
+        E: Send + 'static,
+        O: Observable<T, E> + Send + Sync + 'static,
+    {
+        Self {
+            subscribe: Box::new(move |tx, node_id, _ctx| {
+                let observer = RunnerObserver { tx, node_id };
+                tokio::spawn(async move {
+                    let _sub = observable.subscribe(observer);
+                });
+                Box::new(EmptySubscription)
+            }),
+        }
+    }
+}
+
+impl fmt::Debug for ReactiveStream {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReactiveStream").finish()
+    }
+}
+
+impl CloneAny for ReactiveStream {
+    fn clone_box(&self) -> Box<dyn CloneAny> {
+        panic!("ReactiveStream cannot be cloned. It should only be used once in the flow.");
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+    fn type_name(&self) -> &'static str {
+        "ReactiveStream"
+    }
+}
+
 #[async_trait]
 pub trait Node: Send + Sync {
     type In: Send;
-    type Out: Clone + Send;
+    type Out: CloneAny + Send;
     async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
 }
 
@@ -57,6 +140,7 @@ pub trait CloneAny: Any + Send {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
+    fn type_name(&self) -> &'static str;
 }
 
 impl<T: Any + Clone + Send> CloneAny for T {
@@ -71,6 +155,9 @@ impl<T: Any + Clone + Send> CloneAny for T {
     }
     fn into_any(self: Box<Self>) -> Box<dyn Any> {
         self
+    }
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<T>()
     }
 }
 
