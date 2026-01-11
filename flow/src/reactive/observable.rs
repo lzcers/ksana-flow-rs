@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::marker::PhantomData;
 
 use super::filter::FilterOperator;
@@ -11,30 +12,33 @@ pub trait Subscription: Send + Sync {
     fn unsubscribe(self);
 }
 
+#[async_trait]
 pub trait Observable<Item, Err> {
     type Sub: Subscription;
-    fn subscribe(self, observer: impl Observer<Item, Err> + 'static) -> Self::Sub;
+    async fn subscribe(self, observer: impl Observer<Item, Err> + 'static) -> Self::Sub;
 }
 
+#[async_trait]
 pub trait Observer<Item, Err>: Send + 'static {
-    fn on_next(&mut self, value: Item);
-    fn on_error(&mut self, error: Err);
-    fn on_completed(&mut self);
+    async fn on_next(&mut self, value: Item);
+    async fn on_error(&mut self, error: Err);
+    async fn on_completed(&mut self);
 }
 
+#[async_trait]
 impl<Item, Err, F> Observer<Item, Err> for F
 where
-    Item: 'static,
-    Err: 'static,
+    Item: Send + 'static,
+    Err: Send + 'static,
     F: FnMut(Item) + Send + 'static,
 {
-    fn on_next(&mut self, value: Item) {
+    async fn on_next(&mut self, value: Item) {
         (self)(value);
     }
-    fn on_error(&mut self, _err: Err) {
+    async fn on_error(&mut self, _err: Err) {
         eprintln!("Encounter error in FnMut Observer");
     }
-    fn on_completed(&mut self) {}
+    async fn on_completed(&mut self) {}
 }
 
 pub struct OperatorSubscription<S> {
@@ -53,14 +57,15 @@ impl Subscription for VecSubscription {
     fn unsubscribe(self) {}
 }
 
-impl<Item> Observable<Item, ()> for Vec<Item> {
+#[async_trait]
+impl<Item: Send + 'static> Observable<Item, ()> for Vec<Item> {
     type Sub = VecSubscription;
 
-    fn subscribe(self, mut observer: impl Observer<Item, ()>) -> Self::Sub {
+    async fn subscribe(self, mut observer: impl Observer<Item, ()>) -> Self::Sub {
         for item in self {
-            observer.on_next(item);
+            observer.on_next(item).await;
         }
-        observer.on_completed();
+        observer.on_completed().await;
         VecSubscription
     }
 }

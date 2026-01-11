@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::marker::PhantomData;
 
 use super::observable::{Observable, Observer, OperatorSubscription};
@@ -7,22 +8,24 @@ pub struct MapObserver<D, F> {
     map_fn: F,
 }
 
+#[async_trait]
 impl<T, U, E, D, F> Observer<T, E> for MapObserver<D, F>
 where
     D: Observer<U, E>,
     F: FnMut(T) -> U + Send + 'static,
     U: Send + 'static,
     T: Send + 'static,
+    E: Send + 'static,
 {
-    fn on_next(&mut self, value: T) {
+    async fn on_next(&mut self, value: T) {
         let mapped = (self.map_fn)(value);
-        self.downstream.on_next(mapped)
+        self.downstream.on_next(mapped).await
     }
-    fn on_error(&mut self, error: E) {
-        self.downstream.on_error(error);
+    async fn on_error(&mut self, error: E) {
+        self.downstream.on_error(error).await;
     }
-    fn on_completed(&mut self) {
-        self.downstream.on_completed();
+    async fn on_completed(&mut self) {
+        self.downstream.on_completed().await;
     }
 }
 
@@ -32,21 +35,23 @@ pub struct MapOperator<Source, MapFn, Item> {
     pub _phantom: PhantomData<Item>,
 }
 
+#[async_trait]
 impl<Source, MapFn, Item, Err, U> Observable<U, Err> for MapOperator<Source, MapFn, Item>
 where
-    Source: Observable<Item, Err>,
+    Source: Observable<Item, Err> + Send + Sync + 'static,
     MapFn: FnMut(Item) -> U + Send + 'static,
     U: Send + 'static,
     Item: Send + 'static,
+    Err: Send + 'static,
 {
     type Sub = OperatorSubscription<Source::Sub>;
 
-    fn subscribe(self, observer: impl Observer<U, Err>) -> Self::Sub {
+    async fn subscribe(self, observer: impl Observer<U, Err>) -> Self::Sub {
         let map_observer = MapObserver {
             downstream: observer,
             map_fn: self.map_fn,
         };
-        let source_sub = self.upstream.subscribe(map_observer);
+        let source_sub = self.upstream.subscribe(map_observer).await;
         OperatorSubscription { source_sub }
     }
 }
@@ -54,6 +59,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::super::observable::*;
+    use async_trait::async_trait;
 
     struct NumObservable {}
     struct NumObservableSub {}
@@ -62,30 +68,32 @@ mod tests {
         fn unsubscribe(self) {}
     }
 
+    #[async_trait]
     impl Observable<i32, ()> for NumObservable {
         type Sub = NumObservableSub;
-        fn subscribe(self, mut observer: impl Observer<i32, ()>) -> Self::Sub {
-            observer.on_next(1);
-            observer.on_next(2);
-            observer.on_next(3);
-            observer.on_next(4);
+        async fn subscribe(self, mut observer: impl Observer<i32, ()>) -> Self::Sub {
+            observer.on_next(1).await;
+            observer.on_next(2).await;
+            observer.on_next(3).await;
+            observer.on_next(4).await;
             NumObservableSub {}
         }
     }
-    #[test]
-    fn test_observable_subscribe() {
+    #[tokio::test]
+    async fn test_observable_subscribe() {
         let observable = NumObservable {};
-        let sub = observable.subscribe(|v| println!("{v}"));
+        let sub = observable.subscribe(|v| println!("{v}")).await;
         sub.unsubscribe();
     }
 
-    #[test]
-    fn test_observable_map() {
+    #[tokio::test]
+    async fn test_observable_map() {
         let observable = NumObservable {};
         let sub = observable
             .map(|v| v * 2)
             .map(|v| v * 2)
-            .subscribe(|v| println!("{v}"));
+            .subscribe(|v| println!("{v}"))
+            .await;
         sub.unsubscribe();
     }
 }

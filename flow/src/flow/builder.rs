@@ -1,5 +1,4 @@
-use super::{Context, Edge, Node};
-use crate::flow::Graph;
+use super::graph::{Context, Edge, Graph, Node};
 
 pub struct GraphBuilder {
     graph: Graph,

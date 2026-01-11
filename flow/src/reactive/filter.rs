@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use super::observable::{Observable, Observer, OperatorSubscription};
 
 pub struct FilterObserver<D, F> {
@@ -5,22 +7,24 @@ pub struct FilterObserver<D, F> {
     filter_fn: F,
 }
 
+#[async_trait]
 impl<T, E, D, F> Observer<T, E> for FilterObserver<D, F>
 where
     D: Observer<T, E>,
     F: FnMut(&T) -> bool + Send + 'static,
     T: Send + 'static,
+    E: Send + 'static,
 {
-    fn on_next(&mut self, value: T) {
+    async fn on_next(&mut self, value: T) {
         if (self.filter_fn)(&value) {
-            self.downstream.on_next(value)
+            self.downstream.on_next(value).await
         }
     }
-    fn on_error(&mut self, error: E) {
-        self.downstream.on_error(error);
+    async fn on_error(&mut self, error: E) {
+        self.downstream.on_error(error).await;
     }
-    fn on_completed(&mut self) {
-        self.downstream.on_completed();
+    async fn on_completed(&mut self) {
+        self.downstream.on_completed().await;
     }
 }
 
@@ -29,20 +33,22 @@ pub struct FilterOperator<Source, FilterFn> {
     pub filter_fn: FilterFn,
 }
 
+#[async_trait]
 impl<Source, FilterFn, Item, Err> Observable<Item, Err> for FilterOperator<Source, FilterFn>
 where
-    Source: Observable<Item, Err>,
+    Source: Observable<Item, Err> + Send + Sync + 'static,
     FilterFn: FnMut(&Item) -> bool + Send + 'static,
     Item: Send + 'static,
+    Err: Send + 'static,
 {
     type Sub = OperatorSubscription<Source::Sub>;
 
-    fn subscribe(self, observer: impl Observer<Item, Err>) -> Self::Sub {
+    async fn subscribe(self, observer: impl Observer<Item, Err>) -> Self::Sub {
         let filter_observer = FilterObserver {
             downstream: observer,
             filter_fn: self.filter_fn,
         };
-        let source_sub = self.upstream.subscribe(filter_observer);
+        let source_sub = self.upstream.subscribe(filter_observer).await;
         OperatorSubscription { source_sub }
     }
 }
@@ -52,11 +58,12 @@ mod tests {
     use super::super::observable::*;
     use super::super::tests::NumStream;
 
-    #[test]
-    fn test_filter_operator() {
+    #[tokio::test]
+    async fn test_filter_operator() {
         let sub = NumStream::new(10)
             .filter(|v| v % 2 == 0)
-            .subscribe(|v| println!("{v}"));
+            .subscribe(|v| println!("{v}"))
+            .await;
         sub.unsubscribe();
     }
 }

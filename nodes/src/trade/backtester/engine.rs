@@ -188,7 +188,7 @@ impl Backtester {
         // 假设每次都是全仓买入，能买多少手
         let cur_price = (k.high + k.low) / 2.0;
         // 头寸大小
-        let available_balance = self.balance * 0.25;
+        let available_balance = self.balance * 0.1;
 
         // 更新所有仓位的收益信息
         self.update_positions_profit(cur_price);
