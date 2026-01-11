@@ -10,6 +10,8 @@ pub struct Runner {
     graph: Graph,
     ctx: Arc<Context>,
     task_queue: VecDeque<TaskPayload>,
+    active_tasks: HashMap<NodeId, usize>,
+    total_active_tasks: usize,
 }
 
 impl Runner {
@@ -18,8 +20,11 @@ impl Runner {
             graph,
             ctx: Arc::new(Context::new()),
             task_queue: VecDeque::new(),
+            active_tasks: HashMap::new(),
+            total_active_tasks: 0,
         }
     }
+
     pub fn set_start_node(mut self, node_id: &str, input: &dyn CloneAny) -> Self {
         self.task_queue
             .push_back((vec![node_id.to_owned()], input.clone_box()));
@@ -30,145 +35,102 @@ impl Runner {
         info!("Available nodes: {:?}", self.graph.get_node_ids());
         let (tx, mut rx) = mpsc::channel::<TaskEvent>(1000);
         // 使用计数器跟踪每个节点的活跃任务数
-        let mut active_tasks: HashMap<NodeId, usize> = HashMap::new();
-        let mut total_active_tasks: usize = 0;
+        self.active_tasks.clear();
+        self.total_active_tasks = 0;
 
         // 初始启动：将 task_queue 中的初始任务直接启动
-        // 接下来就靠节点的消息驱动，每个节点的输出会触发下一个节点的运行
         while let Some((node_ids, input)) = self.task_queue.pop_front() {
             for node_id in node_ids {
-                let node_arc = self
-                    .graph
-                    .nodes
-                    .get(&node_id)
-                    .ok_or_else(|| format!("Runner run: Node '{}' not found", &node_id))?
-                    .clone();
-                let ctx_arc = self.ctx.clone();
-                let input_clone = input.clone();
-                let tx_clone = tx.clone();
-                // 对应节点的活跃任务计数器 +1
-                *active_tasks.entry(node_id.clone()).or_insert(0) += 1;
-                total_active_tasks += 1;
-                info!(
-                    "Task started: {}. Active tasks count: {}",
-                    &node_id, total_active_tasks
-                );
-
-                Self::worker(node_id, node_arc, ctx_arc, input_clone, tx_clone);
+                self.start_node(node_id, input.clone_box(), tx.clone())?;
             }
         }
 
         while let Some(task_event) = rx.recv().await {
-            // 接收节点运行的结果
             match task_event {
+                TaskEvent::Stream(node_id, subscribe_fn) => {
+                    info!("Detected reactive stream from node: {}", &node_id);
+                    // 响应式流作为一个长运行任务，已经在 active_tasks 中计数
+                    // 它会由 subscribe_fn 发送 Completed 或 Error 来结束
+                    let _sub = subscribe_fn(tx.clone(), node_id, self.ctx.clone());
+                }
                 TaskEvent::Next(node_id, output) => {
                     info!(
                         "Received Next event from node: {}. Output type: {}",
                         &node_id,
                         output.as_ref().type_name()
                     );
-                    // 尝试将输出转换为流订阅器
-                    match output.into_stream_subscriber() {
-                        Ok(subscribe_fn) => {
-                            info!("Detected reactive stream from node: {}", &node_id);
-                            // 响应式流作为一个长运行任务，已经在 active_tasks 中计数
-                            // 它会由 subscribe_fn 发送 Completed 或 Error 来结束
-                            let _sub = subscribe_fn(tx.clone(), node_id, self.ctx.clone());
-                        }
-                        Err(original_output) => {
-                            // 寻找并启动下游节点
-                            let next_nodes = self.find_next_nodes(&node_id, &original_output)?;
-                            info!(
-                                "Found {} next nodes for {}: {:?}",
-                                next_nodes.len(),
-                                &node_id,
-                                next_nodes
-                            );
-                            for next_node_id in next_nodes {
-                                let node_arc = self
-                                    .graph
-                                    .nodes
-                                    .get(&next_node_id)
-                                    .ok_or_else(|| {
-                                        format!("Runner run: Node '{}' not found", &next_node_id)
-                                    })?
-                                    .clone();
-                                let ctx_arc = self.ctx.clone();
-                                let input_clone = original_output.clone();
-                                let tx_clone = tx.clone();
-
-                                *active_tasks.entry(next_node_id.clone()).or_insert(0) += 1;
-                                total_active_tasks += 1;
-                                info!(
-                                    "Task started: {}. Total active tasks: {}",
-                                    &next_node_id, total_active_tasks
-                                );
-
-                                Self::worker(
-                                    next_node_id,
-                                    node_arc,
-                                    ctx_arc,
-                                    input_clone,
-                                    tx_clone,
-                                );
-                            }
-                        }
-                    }
+                    // 寻找并启动下游节点
+                    self.trigger_downstream(&node_id, output, tx.clone())?;
                 }
-                TaskEvent::Completed(node_id) => {
-                    let mut is_empty = false;
-                    let mut current_count = 0;
-                    if let Some(count) = active_tasks.get_mut(&node_id) {
-                        *count -= 1;
-                        current_count = *count;
-                        if *count == 0 {
-                            is_empty = true;
-                        }
-                        total_active_tasks -= 1;
+                TaskEvent::Completed(node_id, output) => {
+                    // 1. 处理节点产出的数据（如果是普通节点）
+                    if let Some(out) = output {
+                        info!(
+                            "Received Completed with data from node: {}. Output type: {}",
+                            &node_id,
+                            out.as_ref().type_name()
+                        );
+                        self.trigger_downstream(&node_id, out, tx.clone())?;
                     }
-
-                    if is_empty {
-                        active_tasks.remove(&node_id);
-                    }
-
-                    info!(
-                        "Task completed: {}. Remaining active tasks for this node: {}. Total active: {}",
-                        node_id, current_count, total_active_tasks
-                    );
+                    // 2. 更新任务计数器
+                    self.update_active_tasks(&node_id);
                 }
                 TaskEvent::Error(node_id, e) => {
                     error!("Node '{}' error: {}", node_id, e);
-                    let mut is_empty = false;
-                    if let Some(count) = active_tasks.get_mut(&node_id) {
-                        *count -= 1;
-                        if *count == 0 {
-                            is_empty = true;
-                        }
-                        total_active_tasks -= 1;
-                    }
-
-                    if is_empty {
-                        active_tasks.remove(&node_id);
-                    }
-
-                    info!(
-                        "Task error exit: {}. Total active tasks: {}",
-                        node_id, total_active_tasks
-                    );
+                    self.update_active_tasks(&node_id);
                 }
             }
 
-            if total_active_tasks == 0 {
+            if self.total_active_tasks == 0 {
                 info!("All tasks finished, exiting runner loop.");
                 break;
             }
         }
 
-        // 如果没有初始任务，直接退出
-        if total_active_tasks == 0 {
-            return Ok(());
-        }
+        Ok(())
+    }
 
+    fn trigger_downstream(
+        &mut self,
+        from_node_id: &str,
+        output: Box<dyn CloneAny>,
+        tx: Sender<TaskEvent>,
+    ) -> Result<(), String> {
+        let next_nodes = self.find_next_nodes(from_node_id, &output)?;
+        info!(
+            "Found {} next nodes for {}: {:?}",
+            &next_nodes.len(),
+            from_node_id,
+            &next_nodes
+        );
+        for next_node_id in next_nodes {
+            self.start_node(next_node_id, output.clone(), tx.clone())?;
+        }
+        Ok(())
+    }
+
+    fn start_node(
+        &mut self,
+        node_id: NodeId,
+        input: Box<dyn CloneAny>,
+        tx: Sender<TaskEvent>,
+    ) -> Result<(), String> {
+        let node_arc = self
+            .graph
+            .nodes
+            .get(&node_id)
+            .ok_or_else(|| format!("Runner start_node: Node '{}' not found", &node_id))?
+            .clone();
+
+        *self.active_tasks.entry(node_id.clone()).or_insert(0) += 1;
+        self.total_active_tasks += 1;
+
+        info!(
+            "Task started: {}. Total active tasks: {}",
+            &node_id, self.total_active_tasks
+        );
+
+        Self::worker(node_id, node_arc, self.ctx.clone(), input, tx);
         Ok(())
     }
 
@@ -192,11 +154,26 @@ impl Runner {
 
             match output {
                 Ok(out) => {
-                    // 如果输出是流，需要继续等待下一个输出
-                    let is_stream = out.as_ref().is_stream();
-                    let _ = tx.send(TaskEvent::Next(node_id.clone(), out)).await;
-                    if !is_stream {
-                        let _ = tx.send(TaskEvent::Completed(node_id)).await;
+                    if out.as_ref().is_stream() {
+                        match out.into_stream_subscriber() {
+                            Ok(subscribe_fn) => {
+                                let _ = tx.send(TaskEvent::Stream(node_id, subscribe_fn)).await;
+                            }
+                            Err(e) => {
+                                let _ = tx
+                                    .send(TaskEvent::Error(
+                                        node_id,
+                                        format!(
+                                            "Failed to get stream subscriber: {}",
+                                            e.type_name()
+                                        ),
+                                    ))
+                                    .await;
+                            }
+                        }
+                    } else {
+                        // 非流式节点，发送带数据的 Completed 事件
+                        let _ = tx.send(TaskEvent::Completed(node_id, Some(out))).await;
                     }
                 }
                 Err(e) => {
@@ -204,6 +181,24 @@ impl Runner {
                 }
             }
         });
+    }
+
+    fn update_active_tasks(&mut self, node_id: &str) {
+        if let Some(count) = self.active_tasks.get_mut(node_id) {
+            *count -= 1;
+            self.total_active_tasks -= 1;
+            info!(
+                "Task {} active count: {}. Total active: {}",
+                &node_id, *count, self.total_active_tasks
+            );
+            if *count == 0 {
+                info!(
+                    "Task completed: {}. Total active: {}",
+                    &node_id, self.total_active_tasks
+                );
+                self.active_tasks.remove(node_id);
+            }
+        }
     }
     fn find_next_nodes(
         &self,

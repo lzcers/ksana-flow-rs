@@ -39,8 +39,9 @@ impl Context {
 
 pub enum TaskEvent {
     Next(NodeId, Box<dyn CloneAny>),
-    Completed(NodeId),
+    Completed(NodeId, Option<Box<dyn CloneAny>>),
     Error(NodeId, String),
+    Stream(NodeId, StreamSubscriptionFn),
 }
 
 #[async_trait]

@@ -34,7 +34,7 @@ impl Node for Backtester {
     async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
         self.order(input.order);
         self.update(&input.k);
-        self.print_backtest_result();
+        // self.print_backtest_result();
         BacktesterOutput {
             balance: self.get_balance(),
             positions: self.get_positions().clone(),

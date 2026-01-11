@@ -46,7 +46,7 @@ impl<T: CloneAny, E: Send + 'static> Observer<T, E> for RunnerObserver {
     async fn on_completed(&mut self) {
         let _ = self
             .tx
-            .send(TaskEvent::Completed(self.node_id.clone()))
+            .send(TaskEvent::Completed(self.node_id.clone(), None))
             .await;
     }
 }
