@@ -32,7 +32,7 @@ impl GraphBuilder {
         condition: F,
     ) -> Self
     where
-        F: Fn(&Context, &Out) -> bool + 'static,
+        F: Fn(&Context, &Out) -> bool + Send + Sync + 'static,
     {
         let edge = Edge {
             from: from.into(),

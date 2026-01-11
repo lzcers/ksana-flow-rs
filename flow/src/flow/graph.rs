@@ -8,7 +8,6 @@ use std::{
 };
 use tokio::sync::RwLock;
 
-use crate::ReactiveStream;
 use crate::flow::reactive_stream::StreamSubscriptionFn;
 
 pub type NodeId = String;
@@ -51,7 +50,7 @@ pub trait Node: Send + Sync {
     async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
 }
 
-pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool>;
+pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send + Sync>;
 
 pub struct Edge<Out = ()> {
     pub from: String,
@@ -109,7 +108,7 @@ pub trait AnyNode: Any + Send + Sync {
     ) -> Result<Box<dyn CloneAny>, String>;
 }
 
-pub trait AnyEdge: Any {
+pub trait AnyEdge: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn from(&self) -> &str;
     fn to(&self) -> &str;
@@ -197,5 +196,24 @@ impl Graph {
             .entry(edge.from.clone())
             .or_insert_with(Vec::new)
             .push(Box::new(edge));
+    }
+
+    pub fn add_arc_node(&mut self, id: &str, node: Arc<RwLock<dyn AnyNode>>) {
+        self.nodes.insert(id.to_owned(), node);
+    }
+
+    pub fn remove_node(&mut self, id: &str) {
+        self.nodes.remove(id);
+        self.edges.remove(id); // remove outgoing edges
+        // remove incoming edges
+        for edges in self.edges.values_mut() {
+            edges.retain(|e| e.to() != id);
+        }
+    }
+
+    pub fn remove_edge(&mut self, from: &str, to: &str) {
+        if let Some(edges) = self.edges.get_mut(from) {
+            edges.retain(|e| e.to() != to);
+        }
     }
 }

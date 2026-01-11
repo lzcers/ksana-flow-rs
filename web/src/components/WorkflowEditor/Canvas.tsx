@@ -4,7 +4,9 @@ import {
   Background,
   Controls,
   type NodeTypes,
-  Panel
+  Panel,
+  useReactFlow,
+  useViewport
 } from '@xyflow/react';
 import { WorkflowNode } from './WorkflowNode';
 import type { WorkflowNode as WorkflowNodeType, WorkflowEdge } from '../../types/workflow';
@@ -14,11 +16,22 @@ interface CanvasProps {
   edges: WorkflowEdge[];
   onNodesChange: (changes: any) => void;
   onEdgesChange: (changes: any) => void;
+  onNodeDragStop: (event: any, node: any) => void;
   onConnect: (connection: any) => void;
+  onAddNode: (type: string, position: { x: number; y: number }) => void;
 }
 
 const nodeTypes: NodeTypes = {
   workflow: WorkflowNode,
+};
+
+const ZoomDisplay = () => {
+  const { zoom } = useViewport();
+  return (
+    <div className="bg-white/80 backdrop-blur px-2 py-1 rounded border border-slate-100 text-[10px] font-bold text-slate-500 min-w-[40px] text-center">
+      {Math.round(zoom * 100)}%
+    </div>
+  );
 };
 
 export const Canvas: React.FC<CanvasProps> = ({
@@ -26,8 +39,44 @@ export const Canvas: React.FC<CanvasProps> = ({
   edges,
   onNodesChange,
   onEdgesChange,
-  onConnect
+  onNodeDragStop,
+  onConnect,
+  onAddNode
 }) => {
+  const { screenToFlowPosition } = useReactFlow();
+
+  const onDragOver = React.useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = React.useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData('application/reactflow');
+
+      // check if the dropped element is valid
+      if (typeof type === 'undefined' || !type) {
+        return;
+      }
+
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      // Offset the position to center the node (approximate dimensions: 120x80)
+      const centeredPosition = {
+        x: position.x - 60,
+        y: position.y - 40,
+      };
+
+      onAddNode(type, centeredPosition);
+    },
+    [screenToFlowPosition, onAddNode],
+  );
+
   return (
     <main className="flex-1 relative bg-white">
       <ReactFlow
@@ -35,18 +84,31 @@ export const Canvas: React.FC<CanvasProps> = ({
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={{ maxZoom: 1 }}
+        deleteKeyCode={['Backspace', 'Delete']}
         // Style overrides for clean look
         colorMode="light"
         defaultEdgeOptions={{
-          style: { stroke: '#e2e8f0', strokeWidth: 1.5 },
+          style: { strokeWidth: 2 },
           type: 'smoothstep',
+        }}
+        connectionLineStyle={{
+          stroke: '#3b82f6',
+          strokeWidth: 2,
         }}
       >
         <Background color="#f1f5f9" gap={24} size={1.5} />
         <Controls showInteractive={false} className="!bg-white !border-slate-100 !shadow-sm" />
+
+        <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
+          <ZoomDisplay />
+        </Panel>
 
         <Panel position="top-right" className="bg-white/80 backdrop-blur px-3 py-1.5 rounded-full border border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
           React Flow Powered

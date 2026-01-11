@@ -4,9 +4,11 @@ export type NodeType = 'start' | 'task' | 'condition' | 'end';
 
 export interface WorkflowNodeData extends Record<string, unknown> {
   label: string;
-  type: NodeType;
+  type: string;
   description?: string;
   config?: Record<string, any>;
+  status?: 'idle' | 'running' | 'completed' | 'error';
+  errorMessage?: string;
 }
 
 export type WorkflowNode = Node<WorkflowNodeData>;
