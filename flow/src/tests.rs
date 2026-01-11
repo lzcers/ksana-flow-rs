@@ -8,7 +8,6 @@ use std::time::Duration;
 async fn test_complex_graph_connections() {
     struct InputNode;
     #[async_trait]
-
     impl Node for InputNode {
         type In = String;
         type Out = String;
@@ -28,7 +27,6 @@ async fn test_complex_graph_connections() {
         }
     }
     #[async_trait]
-
     impl Node for BranchNode {
         type In = String;
         type Out = String;
@@ -39,7 +37,6 @@ async fn test_complex_graph_connections() {
 
     struct MergeNode;
     #[async_trait]
-
     impl Node for MergeNode {
         type In = String;
         type Out = String;
@@ -50,7 +47,6 @@ async fn test_complex_graph_connections() {
 
     struct OutputNode;
     #[async_trait]
-
     impl Node for OutputNode {
         type In = String;
         type Out = String;
@@ -59,23 +55,27 @@ async fn test_complex_graph_connections() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("input", InputNode)
-        .add_node("branch1", BranchNode::new("A"))
-        .add_node("branch2", BranchNode::new("B"))
-        .add_node("branch3", BranchNode::new("C"))
-        .add_node("merge1", MergeNode)
-        .add_node("merge2", MergeNode)
-        .add_node("output", OutputNode)
-        .add_edge("input", "branch1")
-        .add_edge("input", "branch2")
-        .add_edge("input", "branch3")
-        .add_edge("branch1", "merge1")
-        .add_edge("branch2", "merge1")
-        .add_edge("merge1", "merge2")
-        .add_edge("branch3", "merge2")
-        .add_edge("merge2", "output")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("input", InputNode),
+            ("branch1", BranchNode::new("A")),
+            ("branch2", BranchNode::new("B")),
+            ("branch3", BranchNode::new("C")),
+            ("merge1", MergeNode),
+            ("merge2", MergeNode),
+            ("output", OutputNode),
+        ],
+        edges: [
+            ("input", "branch1"),
+            ("input", "branch2"),
+            ("input", "branch3"),
+            ("branch1", "merge1"),
+            ("branch2", "merge1"),
+            ("merge1", "merge2"),
+            ("branch3", "merge2"),
+            ("merge2", "output"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("input", &"Test".to_string());
     let result = runner.run().await;
@@ -97,6 +97,7 @@ async fn test_build_flow_macro() {
 
     let graph = crate::build_flow!(
         nodes: [
+            ("node1", TestNode),
             ("node2", TestNode),
             ("node3", TestNode),
         ],
@@ -113,6 +114,7 @@ async fn test_build_flow_macro() {
     let is_true = |_ctx: &Context, _out: &String| true;
     let graph_cond = crate::build_flow!(
         nodes: [
+            ("node1", TestNode),
             ("node2", TestNode),
         ],
         edges: [
@@ -128,7 +130,6 @@ async fn test_build_flow_macro() {
 async fn test_conditional_branching() {
     struct InputNode;
     #[async_trait]
-
     impl Node for InputNode {
         type In = i32;
         type Out = i32;
@@ -139,7 +140,6 @@ async fn test_conditional_branching() {
 
     struct CheckNode;
     #[async_trait]
-
     impl Node for CheckNode {
         type In = i32;
         type Out = (i32, bool);
@@ -150,7 +150,6 @@ async fn test_conditional_branching() {
 
     struct PositiveNode;
     #[async_trait]
-
     impl Node for PositiveNode {
         type In = (i32, bool);
         type Out = String;
@@ -161,7 +160,6 @@ async fn test_conditional_branching() {
 
     struct NegativeNode;
     #[async_trait]
-
     impl Node for NegativeNode {
         type In = (i32, bool);
         type Out = String;
@@ -173,15 +171,19 @@ async fn test_conditional_branching() {
     let is_positive = |_ctx: &Context, output: &(i32, bool)| output.1;
     let is_negative = |_ctx: &Context, output: &(i32, bool)| !output.1;
 
-    let graph = GraphBuilder::new()
-        .add_node("input", InputNode)
-        .add_node("check", CheckNode)
-        .add_node("positive", PositiveNode)
-        .add_node("negative", NegativeNode)
-        .add_edge("input", "check")
-        .add_condition_edge("check", "positive", is_positive)
-        .add_condition_edge("check", "negative", is_negative)
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("input", InputNode),
+            ("check", CheckNode),
+            ("positive", PositiveNode),
+            ("negative", NegativeNode),
+        ],
+        edges: [
+            ("input", "check"),
+            ("check", "positive", is_positive),
+            ("check", "negative", is_negative),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("input", &42);
     let result = runner.run().await;
@@ -200,7 +202,6 @@ async fn test_multi_level_graph() {
         }
     }
     #[async_trait]
-
     impl Node for LevelNode {
         type In = String;
         type Out = String;
@@ -209,26 +210,30 @@ async fn test_multi_level_graph() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("l1_1", LevelNode::new(1))
-        .add_node("l1_2", LevelNode::new(1))
-        .add_node("l2_1", LevelNode::new(2))
-        .add_node("l2_2", LevelNode::new(2))
-        .add_node("l2_3", LevelNode::new(2))
-        .add_node("l3_1", LevelNode::new(3))
-        .add_node("l3_2", LevelNode::new(3))
-        .add_node("l4_1", LevelNode::new(4))
-        .add_edge("l1_1", "l2_1")
-        .add_edge("l1_1", "l2_2")
-        .add_edge("l1_2", "l2_2")
-        .add_edge("l1_2", "l2_3")
-        .add_edge("l2_1", "l3_1")
-        .add_edge("l2_2", "l3_1")
-        .add_edge("l2_2", "l3_2")
-        .add_edge("l2_3", "l3_2")
-        .add_edge("l3_1", "l4_1")
-        .add_edge("l3_2", "l4_1")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("l1_1", LevelNode::new(1)),
+            ("l1_2", LevelNode::new(1)),
+            ("l2_1", LevelNode::new(2)),
+            ("l2_2", LevelNode::new(2)),
+            ("l2_3", LevelNode::new(2)),
+            ("l3_1", LevelNode::new(3)),
+            ("l3_2", LevelNode::new(3)),
+            ("l4_1", LevelNode::new(4)),
+        ],
+        edges: [
+            ("l1_1", "l2_1"),
+            ("l1_1", "l2_2"),
+            ("l1_2", "l2_2"),
+            ("l1_2", "l2_3"),
+            ("l2_1", "l3_1"),
+            ("l2_2", "l3_1"),
+            ("l2_2", "l3_2"),
+            ("l2_3", "l3_2"),
+            ("l3_1", "l4_1"),
+            ("l3_2", "l4_1"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("l1_1", &"Start".to_string());
     let result = runner.run().await;
@@ -250,7 +255,6 @@ async fn test_large_concurrent_nodes() {
         }
     }
     #[async_trait]
-
     impl Node for CounterNode {
         type In = String;
         type Out = String;
@@ -261,7 +265,6 @@ async fn test_large_concurrent_nodes() {
 
     struct AggregatorNode;
     #[async_trait]
-
     impl Node for AggregatorNode {
         type In = String;
         type Out = String;
@@ -308,21 +311,21 @@ async fn test_concurrent_execution_tracking() {
         }
     }
     #[async_trait]
-
     impl Node for TrackingNode {
         type In = String;
         type Out = String;
         async fn run(&mut self, _ctx: &Context, input: Self::In) -> Self::Out {
-            let mut log = self.execution_log.lock().unwrap();
-            log.push(self.id);
-            std::thread::sleep(Duration::from_millis(10));
+            {
+                let mut log = self.execution_log.lock().unwrap();
+                log.push(self.id);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
             format!("{}[{}]", input, self.id)
         }
     }
 
     struct CollectorNode;
     #[async_trait]
-
     impl Node for CollectorNode {
         type In = String;
         type Out = String;
@@ -361,14 +364,13 @@ async fn test_concurrent_execution_tracking() {
 }
 
 #[tokio::test]
-async fn test_Context_write_and_read() {
+async fn test_context_write_and_read() {
     struct WriterNode;
     #[async_trait]
-
     impl Node for WriterNode {
         type In = String;
         type Out = String;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("key1", "value1");
             ctx.set("key2", 42);
             ctx.set("key3", vec![1, 2, 3]);
@@ -378,7 +380,6 @@ async fn test_Context_write_and_read() {
 
     struct ReaderNode;
     #[async_trait]
-
     impl Node for ReaderNode {
         type In = String;
         type Out = String;
@@ -395,27 +396,30 @@ async fn test_Context_write_and_read() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("writer", WriterNode)
-        .add_node("reader", ReaderNode)
-        .add_edge("writer", "reader")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("writer", WriterNode),
+            ("reader", ReaderNode),
+        ],
+        edges: [
+            ("writer", "reader"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("writer", &"Test".to_string());
     let result = runner.run().await;
 
-    assert!(result.is_ok(), "&Context read/write should succeed");
+    assert!(result.is_ok(), "Context read/write should succeed");
 }
 
 #[tokio::test]
-async fn test_Context_across_multiple_nodes() {
+async fn test_context_across_multiple_nodes() {
     struct Node1;
     #[async_trait]
-
     impl Node for Node1 {
         type In = String;
         type Out = String;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("node1_data", "from_node1");
             ctx.set("counter", 1);
             input
@@ -424,11 +428,10 @@ async fn test_Context_across_multiple_nodes() {
 
     struct Node2;
     #[async_trait]
-
     impl Node for Node2 {
         type In = String;
         type Out = String;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             let counter: Option<i32> = ctx.get("counter");
             if let Some(c) = counter {
                 ctx.set("counter", c + 1);
@@ -440,7 +443,6 @@ async fn test_Context_across_multiple_nodes() {
 
     struct Node3;
     #[async_trait]
-
     impl Node for Node3 {
         type In = String;
         type Out = String;
@@ -457,29 +459,32 @@ async fn test_Context_across_multiple_nodes() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("node1", Node1)
-        .add_node("node2", Node2)
-        .add_node("node3", Node3)
-        .add_edge("node1", "node2")
-        .add_edge("node2", "node3")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("node1", Node1),
+            ("node2", Node2),
+            ("node3", Node3),
+        ],
+        edges: [
+            ("node1", "node2"),
+            ("node2", "node3"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("node1", &"Start".to_string());
     let result = runner.run().await;
 
-    assert!(result.is_ok(), "&Context across multiple nodes should work");
+    assert!(result.is_ok(), "Context across multiple nodes should work");
 }
 
 #[tokio::test]
-async fn test_Context_with_conditional_edges() {
+async fn test_context_with_conditional_edges() {
     struct InputNode;
     #[async_trait]
-
     impl Node for InputNode {
         type In = i32;
         type Out = i32;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("input_value", input);
             input
         }
@@ -487,7 +492,6 @@ async fn test_Context_with_conditional_edges() {
 
     struct CheckNode;
     #[async_trait]
-
     impl Node for CheckNode {
         type In = i32;
         type Out = (i32, bool);
@@ -500,11 +504,10 @@ async fn test_Context_with_conditional_edges() {
 
     struct EvenNode;
     #[async_trait]
-
     impl Node for EvenNode {
         type In = (i32, bool);
         type Out = String;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("result", "even");
             format!("Even: {}", input.0)
         }
@@ -512,11 +515,10 @@ async fn test_Context_with_conditional_edges() {
 
     struct OddNode;
     #[async_trait]
-
     impl Node for OddNode {
         type In = (i32, bool);
         type Out = String;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("result", "odd");
             format!("Odd: {}", input.0)
         }
@@ -525,34 +527,34 @@ async fn test_Context_with_conditional_edges() {
     let is_even = |_ctx: &Context, output: &(i32, bool)| output.1;
     let is_odd = |_ctx: &Context, output: &(i32, bool)| !output.1;
 
-    let graph = GraphBuilder::new()
-        .add_node("input", InputNode)
-        .add_node("check", CheckNode)
-        .add_node("even", EvenNode)
-        .add_node("odd", OddNode)
-        .add_edge("input", "check")
-        .add_condition_edge("check", "even", is_even)
-        .add_condition_edge("check", "odd", is_odd)
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("input", InputNode),
+            ("check", CheckNode),
+            ("even", EvenNode),
+            ("odd", OddNode),
+        ],
+        edges: [
+            ("input", "check"),
+            ("check", "even", is_even),
+            ("check", "odd", is_odd),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("input", &4);
     let result = runner.run().await;
 
-    assert!(
-        result.is_ok(),
-        "&Context with conditional edges should work"
-    );
+    assert!(result.is_ok(), "Context with conditional edges should work");
 }
 
 #[tokio::test]
-async fn test_Context_serialization() {
+async fn test_context_serialization() {
     struct SerializeNode;
     #[async_trait]
-
     impl Node for SerializeNode {
         type In = String;
         type Out = String;
-        async fn run(&mut self, mut ctx: &Context, input: Self::In) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
             ctx.set("string", "hello");
             ctx.set("number", 123);
             ctx.set("float", 45.67);
@@ -564,7 +566,6 @@ async fn test_Context_serialization() {
 
     struct DeserializeNode;
     #[async_trait]
-
     impl Node for DeserializeNode {
         type In = String;
         type Out = String;
@@ -585,23 +586,26 @@ async fn test_Context_serialization() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("serialize", SerializeNode)
-        .add_node("deserialize", DeserializeNode)
-        .add_edge("serialize", "deserialize")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("serialize", SerializeNode),
+            ("deserialize", DeserializeNode),
+        ],
+        edges: [
+            ("serialize", "deserialize"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("serialize", &"Test".to_string());
     let result = runner.run().await;
 
-    assert!(result.is_ok(), "&Context serialization should work");
+    assert!(result.is_ok(), "Context serialization should work");
 }
 
 #[tokio::test]
 async fn test_diamond_graph_pattern() {
     struct StartNode;
     #[async_trait]
-
     impl Node for StartNode {
         type In = String;
         type Out = String;
@@ -612,7 +616,6 @@ async fn test_diamond_graph_pattern() {
 
     struct LeftNode;
     #[async_trait]
-
     impl Node for LeftNode {
         type In = String;
         type Out = String;
@@ -623,7 +626,6 @@ async fn test_diamond_graph_pattern() {
 
     struct RightNode;
     #[async_trait]
-
     impl Node for RightNode {
         type In = String;
         type Out = String;
@@ -634,7 +636,6 @@ async fn test_diamond_graph_pattern() {
 
     struct EndNode;
     #[async_trait]
-
     impl Node for EndNode {
         type In = String;
         type Out = String;
@@ -643,16 +644,20 @@ async fn test_diamond_graph_pattern() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("start", StartNode)
-        .add_node("left", LeftNode)
-        .add_node("right", RightNode)
-        .add_node("end", EndNode)
-        .add_edge("start", "left")
-        .add_edge("start", "right")
-        .add_edge("left", "end")
-        .add_edge("right", "end")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("start", StartNode),
+            ("left", LeftNode),
+            ("right", RightNode),
+            ("end", EndNode),
+        ],
+        edges: [
+            ("start", "left"),
+            ("start", "right"),
+            ("left", "end"),
+            ("right", "end"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("start", &"Diamond".to_string());
     let result = runner.run().await;
@@ -667,7 +672,6 @@ async fn test_diamond_graph_pattern() {
 async fn test_type_mismatch() {
     struct StringNode;
     #[async_trait]
-
     impl Node for StringNode {
         type In = String;
         type Out = String;
@@ -678,7 +682,6 @@ async fn test_type_mismatch() {
 
     struct IntNode;
     #[async_trait]
-
     impl Node for IntNode {
         type In = i32;
         type Out = i32;
@@ -687,16 +690,21 @@ async fn test_type_mismatch() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("string_node", StringNode)
-        .add_node("int_node", IntNode)
-        .add_edge("string_node", "int_node")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("string_node", StringNode),
+            ("int_node", IntNode),
+        ],
+        edges: [
+            ("string_node", "int_node"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;
-    eprintln!("{:?}", result);
+
     assert!(result.is_err(), "Type mismatch should cause error");
+    assert!(result.unwrap_err().contains("Type mismatch"));
 }
 
 #[tokio::test]
@@ -721,11 +729,15 @@ async fn test_unit_input_allows_any() {
         }
     }
 
-    let graph = GraphBuilder::new()
-        .add_node("string_node", StringNode)
-        .add_node("unit_node", UnitNode)
-        .add_edge("string_node", "unit_node")
-        .build();
+    let graph = crate::build_flow!(
+        nodes: [
+            ("string_node", StringNode),
+            ("unit_node", UnitNode),
+        ],
+        edges: [
+            ("string_node", "unit_node"),
+        ]
+    );
 
     let mut runner = Runner::new(graph).set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;

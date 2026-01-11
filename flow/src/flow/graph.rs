@@ -130,14 +130,29 @@ impl<N: Node + Send + Sync + 'static> AnyNode for N {
         ctx: &Context,
         input: Box<dyn CloneAny>,
     ) -> Result<Box<dyn CloneAny>, String> {
-        let input = if TypeId::of::<N::In>() == TypeId::of::<()>() {
+        println!(
+            "Node Input: {}, Expected: {}",
+            input.type_name(),
+            std::any::type_name::<N::In>()
+        );
+        let input_any = if TypeId::of::<N::In>() == TypeId::of::<()>() {
             Box::new(()) as Box<dyn Any>
+        } else if TypeId::of::<N::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream()
+        {
+            match input.into_stream_subscriber() {
+                Ok(sub) => Box::new(sub) as Box<dyn Any>,
+                Err(i) => i.into_any(),
+            }
         } else {
-            input
+            input.into_any()
         };
 
-        let input = input.downcast::<N::In>().map_err(|_| {
-            "Type mismatch: input type does not match node's expected type".to_string()
+        let input = input_any.downcast::<N::In>().map_err(|any| {
+            format!(
+                "Type mismatch: expected {}, got {:?}",
+                std::any::type_name::<N::In>(),
+                any.as_ref().type_id()
+            )
         })?;
         let result = self.run(ctx, *input).await;
         Ok(Box::new(result))

@@ -57,10 +57,11 @@ impl Runner {
         // 初始启动：将 task_queue 中的初始任务直接启动
         while let Some((node_ids, input)) = self.task_queue.pop_front() {
             for node_id in node_ids {
-                self.start_node(node_id, input.clone_box(), task_sender.clone())?;
+                self.start_node(node_id, input.clone(), task_sender.clone())?;
             }
         }
 
+        let mut first_error = None;
         while let Some(first_event) = rx.recv().await {
             // 批量获取当前队列中的所有事件，以便进行优先级排序
             let mut events = vec![first_event];
@@ -109,6 +110,9 @@ impl Runner {
                     }
                     TaskEvent::Error(node_id, e) => {
                         error!("Node '{}' error: {}", node_id, e);
+                        if first_error.is_none() {
+                            first_error = Some(e);
+                        }
                         self.update_active_tasks(&node_id);
                     }
                 }
@@ -122,6 +126,9 @@ impl Runner {
 
         Self::send_flow_event(&self.event_sender, FlowEvent::Finished).await;
 
+        if let Some(e) = first_error {
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -281,7 +288,7 @@ impl Runner {
         let mut next_nodes = vec![];
         if let Some(edges) = self.graph.edges.get(from_node_id) {
             for edge in edges.iter() {
-                let passes = edge.check_condition(&self.ctx, output.as_ref());
+                let passes = edge.check_condition(&self.ctx, output.as_any());
                 info!(
                     "Edge <{}> -> <{}> condition: [{}]",
                     edge.from(),
