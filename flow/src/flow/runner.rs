@@ -1,4 +1,6 @@
-use super::graph::{AnyNode, CloneAny, Context, Graph, NodeId, TaskEvent};
+use crate::flow::sendable_any::SendableAny;
+
+use super::graph::{AnyNode, Context, Graph, NodeId, TaskEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -13,7 +15,7 @@ pub enum FlowEvent {
     Finished,
 }
 
-type TaskPayload = (Vec<NodeId>, Box<dyn CloneAny>);
+type TaskPayload = (Vec<NodeId>, Box<dyn SendableAny>);
 
 pub struct Runner {
     graph: Graph,
@@ -41,7 +43,7 @@ impl Runner {
         self
     }
 
-    pub fn set_start_node(mut self, node_id: &str, input: &dyn CloneAny) -> Self {
+    pub fn set_start_node(mut self, node_id: &str, input: &dyn SendableAny) -> Self {
         self.task_queue
             .push_back((vec![node_id.to_owned()], input.clone_box()));
         self
@@ -135,7 +137,7 @@ impl Runner {
     fn trigger_downstream(
         &mut self,
         from_node_id: &str,
-        output: Box<dyn CloneAny>,
+        output: Box<dyn SendableAny>,
         tx: Sender<TaskEvent>,
     ) -> Result<(), String> {
         let next_nodes = self.find_next_nodes(from_node_id, &output)?;
@@ -154,7 +156,7 @@ impl Runner {
     fn start_node(
         &mut self,
         node_id: NodeId,
-        input: Box<dyn CloneAny>,
+        input: Box<dyn SendableAny>,
         task_sender: Sender<TaskEvent>,
     ) -> Result<(), String> {
         let node_arc = self
@@ -198,7 +200,7 @@ impl Runner {
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
         ctx: Arc<Context>,
-        input: Box<dyn CloneAny>,
+        input: Box<dyn SendableAny>,
         task_sender: Sender<TaskEvent>,
         event_sender: Option<Sender<FlowEvent>>,
     ) {
@@ -283,7 +285,7 @@ impl Runner {
     fn find_next_nodes(
         &self,
         from_node_id: &str,
-        output: &Box<dyn CloneAny>,
+        output: &Box<dyn SendableAny>,
     ) -> Result<Vec<String>, String> {
         let mut next_nodes = vec![];
         if let Some(edges) = self.graph.edges.get(from_node_id) {

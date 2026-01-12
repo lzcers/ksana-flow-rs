@@ -1,6 +1,7 @@
 use super::utils::timestamp_to_str;
 use serde::{Deserialize, Serialize};
 pub use ta::{Close, High, Low, Open, Volume};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct K {
     pub code: String,

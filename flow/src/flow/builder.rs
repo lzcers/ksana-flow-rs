@@ -1,4 +1,8 @@
-use super::graph::{Context, Edge, Graph, Node};
+use std::any::Any;
+
+use crate::AnyNode;
+
+use super::graph::{Context, Edge, Graph};
 
 pub struct GraphBuilder {
     graph: Graph,
@@ -11,7 +15,7 @@ impl GraphBuilder {
         }
     }
 
-    pub fn add_node<N: Node + Send + Sync + 'static>(mut self, id: &str, node: N) -> Self {
+    pub fn add_node<N: AnyNode>(mut self, id: &str, node: N) -> Self {
         self.graph.add_node(id, node);
         self
     }
@@ -25,15 +29,12 @@ impl GraphBuilder {
         self
     }
 
-    pub fn add_condition_edge<Out: 'static, F>(
+    pub fn add_condition_edge<Out: Any>(
         mut self,
         from: impl Into<String>,
         to: impl Into<String>,
-        condition: F,
-    ) -> Self
-    where
-        F: Fn(&Context, &Out) -> bool + Send + Sync + 'static,
-    {
+        condition: impl Fn(&Context, &Out) -> bool + Send + 'static,
+    ) -> Self {
         let edge = Edge {
             from: from.into(),
             to: to.into(),

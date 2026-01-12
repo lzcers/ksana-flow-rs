@@ -5,7 +5,10 @@ use std::{any::Any, sync::Arc};
 use tokio::sync::mpsc;
 
 use crate::{
-    flow::graph::{CloneAny, Context, NodeId, TaskEvent},
+    flow::{
+        graph::{Context, NodeId, TaskEvent},
+        sendable_any::SendableAny,
+    },
     reactive::observable::{Observable, Observer, Subscription},
 };
 
@@ -25,7 +28,7 @@ struct RunnerObserver {
 }
 
 #[async_trait]
-impl<T: CloneAny, E: Send + 'static> Observer<T, E> for RunnerObserver {
+impl<T: SendableAny, E: Send + 'static> Observer<T, E> for RunnerObserver {
     async fn on_next(&mut self, value: T) {
         // 直接使用异步 send，Tokio 会在通道满时自动挂起当前协程
         // 这实现了完美的异步背压
@@ -59,7 +62,7 @@ impl Subscription for EmptySubscription {
 impl<T> ReactiveStream<T> {
     pub fn from_observable<E, O>(observable: O) -> Self
     where
-        T: CloneAny + 'static,
+        T: SendableAny + 'static,
         E: Send + 'static,
         O: Observable<T, E> + Send + Sync + 'static,
     {
@@ -84,8 +87,8 @@ impl<T> fmt::Debug for ReactiveStream<T> {
     }
 }
 
-impl<T: 'static + Send> CloneAny for ReactiveStream<T> {
-    fn clone_box(&self) -> Box<dyn CloneAny> {
+impl<T: 'static + Send + Clone> SendableAny for ReactiveStream<T> {
+    fn clone_box(&self) -> Box<dyn SendableAny> {
         panic!("ReactiveStream cannot be cloned. It should only be used once in the flow.");
     }
     fn as_any(&self) -> &dyn Any {
@@ -103,7 +106,9 @@ impl<T: 'static + Send> CloneAny for ReactiveStream<T> {
     fn is_stream(&self) -> bool {
         true
     }
-    fn into_stream_subscriber(self: Box<Self>) -> Result<StreamSubscriptionFn, Box<dyn CloneAny>> {
+    fn into_stream_subscriber(
+        self: Box<Self>,
+    ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>> {
         Ok(self.subscribe)
     }
 }

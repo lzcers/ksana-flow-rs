@@ -1,17 +1,41 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::{
     any::{Any, TypeId},
+    collections::HashMap,
     sync::Arc,
 };
 use tokio::sync::RwLock;
 
-use crate::flow::reactive_stream::StreamSubscriptionFn;
+use crate::flow::{reactive_stream::StreamSubscriptionFn, sendable_any::SendableAny};
 
 pub type NodeId = String;
 
+pub enum TaskEvent {
+    Next(NodeId, Box<dyn SendableAny>),
+    Completed(NodeId, Option<Box<dyn SendableAny>>),
+    Error(NodeId, String),
+    Stream(NodeId, StreamSubscriptionFn),
+}
+
+#[async_trait]
+pub trait Node {
+    type In;
+    type Out: SendableAny; // 因为 Out 的值会被 Clone 分发到下游节点中
+    async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
+}
+
+pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send>;
+
+// 条件边接收一个节点传出的输出引用，根据条件判断是否继续执行下一个节点
+pub struct Edge<Out = ()> {
+    pub from: String,
+    pub to: String,
+    pub condition: Option<EdgeCondition<Out>>,
+}
+
+// Context 内部是一个并发安全的结构，因此 Context 只要能 Clone 就行
 #[derive(Clone, Debug)]
 pub struct Context {
     data: DashMap<String, Value>,
@@ -36,67 +60,7 @@ impl Context {
     }
 }
 
-pub enum TaskEvent {
-    Next(NodeId, Box<dyn CloneAny>),
-    Completed(NodeId, Option<Box<dyn CloneAny>>),
-    Error(NodeId, String),
-    Stream(NodeId, StreamSubscriptionFn),
-}
-
-#[async_trait]
-pub trait Node: Send + Sync {
-    type In: Send;
-    type Out: CloneAny + Send;
-    async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
-}
-
-pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send + Sync>;
-
-pub struct Edge<Out = ()> {
-    pub from: String,
-    pub to: String,
-    pub condition: Option<EdgeCondition<Out>>,
-}
-
-pub trait CloneAny: Any + Send {
-    fn clone_box(&self) -> Box<dyn CloneAny>;
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn into_any(self: Box<Self>) -> Box<dyn Any>;
-    fn type_name(&self) -> &'static str;
-    fn is_stream(&self) -> bool {
-        false
-    }
-    fn into_stream_subscriber(self: Box<Self>) -> Result<StreamSubscriptionFn, Box<dyn CloneAny>>;
-}
-
-impl<T: Any + Clone + Send> CloneAny for T {
-    fn clone_box(&self) -> Box<dyn CloneAny> {
-        Box::new(self.clone())
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<T>()
-    }
-    fn into_stream_subscriber(self: Box<Self>) -> Result<StreamSubscriptionFn, Box<dyn CloneAny>> {
-        Err(self)
-    }
-}
-
-impl Clone for Box<dyn CloneAny> {
-    fn clone(&self) -> Self {
-        self.as_ref().clone_box()
-    }
-}
-
+// AnyNode 会被Arc 容器包裹发送到不同的线程中执行，因此需要实现 Send + Sync
 #[async_trait]
 pub trait AnyNode: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
@@ -104,19 +68,15 @@ pub trait AnyNode: Any + Send + Sync {
     async fn run(
         &mut self,
         ctx: &Context,
-        input: Box<dyn CloneAny>,
-    ) -> Result<Box<dyn CloneAny>, String>;
-}
-
-pub trait AnyEdge: Any + Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-    fn from(&self) -> &str;
-    fn to(&self) -> &str;
-    fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool;
+        input: Box<dyn SendableAny>,
+    ) -> Result<Box<dyn SendableAny>, String>;
 }
 
 #[async_trait]
-impl<N: Node + Send + Sync + 'static> AnyNode for N {
+impl<N: Node + Any + Send + Sync> AnyNode for N
+where
+    N::In: Send,
+{
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -128,8 +88,8 @@ impl<N: Node + Send + Sync + 'static> AnyNode for N {
     async fn run(
         &mut self,
         ctx: &Context,
-        input: Box<dyn CloneAny>,
-    ) -> Result<Box<dyn CloneAny>, String> {
+        input: Box<dyn SendableAny>,
+    ) -> Result<Box<dyn SendableAny>, String> {
         println!(
             "Node Input: {}, Expected: {}",
             input.type_name(),
@@ -159,7 +119,14 @@ impl<N: Node + Send + Sync + 'static> AnyNode for N {
     }
 }
 
-impl<Out: 'static> AnyEdge for Edge<Out> {
+pub trait AnyEdge: Any + Send {
+    fn as_any(&self) -> &dyn Any;
+    fn from(&self) -> &str;
+    fn to(&self) -> &str;
+    fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool;
+}
+
+impl<Out: Any> AnyEdge for Edge<Out> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -199,14 +166,14 @@ impl Graph {
         self.nodes.keys().cloned().collect()
     }
 
-    pub fn add_node<N: Node + Send + Sync + 'static>(&mut self, id: &str, node: N) {
+    pub fn add_node<N: AnyNode>(&mut self, id: &str, node: N) {
         self.nodes.insert(
             id.to_owned(),
             Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>,
         );
     }
 
-    pub fn add_edge<Out: 'static>(&mut self, edge: Edge<Out>) {
+    pub fn add_edge<Out: Any>(&mut self, edge: Edge<Out>) {
         self.edges
             .entry(edge.from.clone())
             .or_insert_with(Vec::new)
