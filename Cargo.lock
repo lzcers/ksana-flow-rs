@@ -1896,6 +1896,7 @@ dependencies = [
  "flow",
  "futures",
  "nodes",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",

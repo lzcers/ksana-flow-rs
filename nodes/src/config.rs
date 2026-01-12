@@ -28,6 +28,15 @@ pub fn get_config() -> Result<Config> {
     let config_path = std::path::Path::new(base_path).join("config.toml");
 
     let config_content = fs::read_to_string(config_path)?;
-    let config: Config = toml::from_str(&config_content)?;
+    let mut config: Config = toml::from_str(&config_content)?;
+
+    // resolve db_uri to absolute path
+    let db_path = std::path::Path::new(&config.source.db_uri);
+    if db_path.is_relative() {
+        let project_root = std::path::Path::new(base_path).parent().unwrap();
+        let abs_path = project_root.join(&config.source.db_uri);
+        config.source.db_uri = abs_path.to_string_lossy().to_string();
+    }
+
     Ok(config)
 }

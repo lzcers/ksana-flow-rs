@@ -748,3 +748,30 @@ async fn test_unit_input_allows_any() {
         result.err()
     );
 }
+
+#[tokio::test]
+async fn test_no_start_nodes_hang_fix() {
+    struct TestNode;
+    #[async_trait]
+    impl Node for TestNode {
+        type In = ();
+        type Out = ();
+        async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
+            ()
+        }
+    }
+
+    let graph = crate::build_flow!(
+        nodes: [("node1", TestNode)],
+        edges: []
+    );
+
+    // Create runner but do NOT set start node
+    let mut runner = Runner::new(graph);
+    
+    // Use timeout to ensure it doesn't hang
+    let result = tokio::time::timeout(std::time::Duration::from_secs(1), runner.run()).await;
+    
+    assert!(result.is_ok(), "Runner should finish immediately and not hang");
+    assert!(result.unwrap().is_ok(), "Runner execution should be successful");
+}

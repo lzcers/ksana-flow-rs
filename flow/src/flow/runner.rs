@@ -64,6 +64,7 @@ impl Runner {
         }
 
         let mut first_error = None;
+
         while let Some(first_event) = rx.recv().await {
             // 批量获取当前队列中的所有事件，以便进行优先级排序
             let mut events = vec![first_event];

@@ -4,11 +4,23 @@ import { Sidebar } from './components/WorkflowEditor/Sidebar';
 import { Canvas } from './components/WorkflowEditor/Canvas';
 import { PropertyPanel } from './components/WorkflowEditor/PropertyPanel';
 import { ReactFlowProvider } from '@xyflow/react';
+import { ToastProvider } from './contexts/ToastContext';
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
+  );
+}
+
+function AppContent() {
   const {
     state,
     nodeTypes,
+    workflows,
+    currentWorkflowId,
+    isRunning,
     onNodesChange,
     onEdgesChange,
     onNodeDragStop,
@@ -16,14 +28,31 @@ export default function App() {
     addNode,
     deleteNode,
     updateNodeData,
-    runWorkflow
+    runWorkflow,
+    saveWorkflow,
+    loadWorkflow,
+    deleteWorkflow,
+    renameWorkflow,
+    createNewWorkflow
   } = useWorkflow();
 
   const selectedNode = state.nodes.find(n => n.id === state.selectedNodeId);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white font-sans text-slate-800">
-      <Sidebar nodeTypes={nodeTypes} onAddNode={addNode} onRun={runWorkflow} />
+      <Sidebar
+        nodeTypes={nodeTypes}
+        workflows={workflows}
+        currentWorkflowId={currentWorkflowId}
+        isRunning={isRunning}
+        onAddNode={addNode}
+        onRun={runWorkflow}
+        onLoadWorkflow={loadWorkflow}
+        onSaveWorkflow={saveWorkflow}
+        onDeleteWorkflow={deleteWorkflow}
+        onRenameWorkflow={renameWorkflow}
+        onCreateNew={createNewWorkflow}
+      />
 
       <ReactFlowProvider>
         <Canvas

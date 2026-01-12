@@ -1,18 +1,22 @@
+use crate::db::Db;
 use crate::registry::NodeRegistry;
-use flow::{FlowEvent, Graph};
+use flow::{AnyEdge, Edge as FlowEdge, FlowEvent, Graph};
+use nodes::trade::K;
+use nodes::trade::backtester::BacktesterInput;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use tracing::error;
 
 #[derive(Clone)]
 pub struct AppState {
     pub registry: Arc<RwLock<NodeRegistry>>,
-    pub blueprint: Arc<RwLock<GraphBlueprint>>,
-    pub tx: broadcast::Sender<FlowEvent>,
     pub running: Arc<AtomicBool>,
+    pub tx: broadcast::Sender<FlowEvent>,
+    pub db: Arc<Mutex<Db>>,
 }
 
 impl AppState {
@@ -27,16 +31,76 @@ impl AppState {
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
 pub struct GraphBlueprint {
-    pub nodes: Vec<NodeConfig>,
-    pub edges: Vec<EdgeConfig>,
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+}
+
+impl GraphBlueprint {
+    pub fn instantiate(&self, registry: &NodeRegistry) -> Result<(Graph, Vec<String>), String> {
+        let mut new_graph = Graph::new();
+        let mut start_nodes = Vec::new();
+
+        for node in &self.nodes {
+            match registry.create_node(&node.type_name, node.data.clone()) {
+                Ok(n) => {
+                    new_graph.add_arc_node(&node.id, n);
+                    if node.type_name == "ReactiveSourceNode" {
+                        start_nodes.push(node.id.clone());
+                    }
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "Failed to create node {}({}): {}",
+                        node.id, node.type_name, e
+                    );
+                    error!("{}", msg);
+                    return Err(msg);
+                }
+            }
+        }
+
+        for edge in &self.edges {
+            let source_node = self.nodes.iter().find(|n| n.id == edge.source);
+            if let Some(source_node) = source_node {
+                let type_name = &source_node.type_name;
+                let edge_instance: Option<Box<dyn AnyEdge>> = match type_name.as_str() {
+                    "ReactiveSourceNode" => Some(Box::new(FlowEdge::<K> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    })),
+                    "VOLMFINode" => Some(Box::new(FlowEdge::<BacktesterInput> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    })),
+                    "Backtester" => Some(Box::new(FlowEdge::<()> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    })),
+                    _ => None,
+                };
+                if let Some(e) = edge_instance {
+                    new_graph
+                        .edges
+                        .entry(edge.source.clone())
+                        .or_insert_with(Vec::new)
+                        .push(e);
+                }
+            }
+        }
+        Ok((new_graph, start_nodes))
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct NodeConfig {
+pub struct Node {
     pub id: String,
+    #[serde(rename = "type")]
     pub type_name: String,
-    pub config: Value,
-    pub position: Option<Position>,
+    pub data: Value,
+    pub position: Position,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -46,8 +110,12 @@ pub struct Position {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EdgeConfig {
+pub struct Edge {
     pub id: String,
     pub source: String,
     pub target: String,
+    #[serde(rename = "sourceHandle")]
+    pub source_handle: Option<String>,
+    #[serde(rename = "targetHandle")]
+    pub target_handle: Option<String>,
 }

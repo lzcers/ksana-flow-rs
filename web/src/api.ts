@@ -9,58 +9,60 @@ export interface NodeMetadata {
     config: any;
 }
 
+export interface Workflow {
+    id: number;
+    name: string;
+    blueprint: {
+        nodes: any[];
+        edges: any[];
+    };
+}
+
 export const fetchNodes = async (): Promise<NodeMetadata[]> => {
     const res = await fetch(`${API_BASE}/nodes`);
     return res.json();
 };
 
-export const fetchGraph = async () => {
-    const res = await fetch(`${API_BASE}/graph`);
+export const fetchWorkflows = async (): Promise<{ id: number; name: string }[]> => {
+    const res = await fetch(`${API_BASE}/workflows`);
     return res.json();
 };
 
-export const addNode = async (node: any) => {
-    const res = await fetch(`${API_BASE}/graph/node`, {
+export const fetchWorkflow = async (id: number): Promise<Workflow> => {
+    const res = await fetch(`${API_BASE}/workflows/${id}`);
+    return res.json();
+};
+
+export const createWorkflow = async (name: string, blueprint: any) => {
+    const res = await fetch(`${API_BASE}/workflows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(node),
+        body: JSON.stringify({ name, blueprint }),
     });
     return res.json();
 };
 
-export const removeNode = async (id: string) => {
-    const res = await fetch(`${API_BASE}/graph/node/${id}`, {
+export const updateWorkflow = async (id: number, name: string | undefined, blueprint: any) => {
+    const res = await fetch(`${API_BASE}/workflows/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, blueprint }),
+    });
+    return res.json();
+};
+
+export const deleteWorkflow = async (id: number) => {
+    const res = await fetch(`${API_BASE}/workflows/${id}`, {
         method: 'DELETE',
     });
     return res.json();
 };
 
-export const updateNodePosition = async (id: string, position: { x: number; y: number }) => {
-    const res = await fetch(`${API_BASE}/graph/node/${id}/position`, {
+export const runWorkflow = async (blueprint: any) => {
+    const res = await fetch(`${API_BASE}/workflow/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(position),
+        body: JSON.stringify(blueprint),
     });
-    return res.json();
-};
-
-export const addEdge = async (edge: any) => {
-    const res = await fetch(`${API_BASE}/graph/edge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(edge),
-    });
-    return res.json();
-};
-
-export const removeEdge = async (id: string) => {
-    const res = await fetch(`${API_BASE}/graph/edge/${id}`, {
-        method: 'DELETE',
-    });
-    return res.json();
-};
-
-export const runFlow = async () => {
-    const res = await fetch(`${API_BASE}/run`, { method: 'POST' });
     return res.json();
 };

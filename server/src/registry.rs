@@ -14,9 +14,6 @@ pub struct NodeMetadata {
     pub name: String,
     pub description: String,
     pub category: String,
-    // Simple schema description: fields and their types
-    pub inputs: Vec<String>,
-    pub outputs: Vec<String>,
     pub config: Value, // Example config or schema
 }
 
@@ -66,21 +63,18 @@ impl Default for NodeRegistry {
 
 pub fn create_registry() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
-
     registry.register(
         NodeMetadata {
             name: "ReactiveSourceNode".to_string(),
             description: "Source node providing K-line data".to_string(),
             category: "Source".to_string(),
-            inputs: vec![],
-            outputs: vec!["ReactiveStream<K>".to_string()],
             config: json!({
                 "code": "510300.SH",
                 "start_time": "2023-01-01T00:00:00",
                 "end_time": null
             }),
         },
-        Box::new(|config: Value| {
+        |config: Value| {
             let code = config["code"].as_str().unwrap_or("510300.SH");
             let start_str = config["start_time"]
                 .as_str()
@@ -106,7 +100,7 @@ pub fn create_registry() -> NodeRegistry {
             let node =
                 ReactiveSourceNode::new(code, start_time, end_time).map_err(|e| e.to_string())?;
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-        }),
+        },
     );
 
     registry.register(
@@ -114,19 +108,17 @@ pub fn create_registry() -> NodeRegistry {
             name: "VOLMFINode".to_string(),
             description: "Volume Money Flow Index Strategy".to_string(),
             category: "Strategy".to_string(),
-            inputs: vec!["K".to_string()],
-            outputs: vec!["BacktesterInput".to_string()],
             config: json!({
                 "ema_period": 8,
                 "mfi_period": 8
             }),
         },
-        Box::new(|config: Value| {
+        |config: Value| {
             let ema = config["ema_period"].as_u64().unwrap_or(8) as usize;
             let mfi = config["mfi_period"].as_u64().unwrap_or(8) as usize;
             let node = VOLMFINode::new(ema, mfi);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-        }),
+        },
     );
 
     registry.register(
@@ -134,19 +126,17 @@ pub fn create_registry() -> NodeRegistry {
             name: "Backtester".to_string(),
             description: "Backtesting Engine".to_string(),
             category: "Sink".to_string(),
-            inputs: vec!["BacktesterInput".to_string()],
-            outputs: vec![],
             config: json!({
                 "initial_capital": 500000.0,
                 "transaction_cost": 0.0002354
             }),
         },
-        Box::new(|config: Value| {
+        |config: Value| {
             let capital = config["initial_capital"].as_f64().unwrap_or(500000.0);
             let cost = config["transaction_cost"].as_f64().unwrap_or(0.0002354);
             let node = Backtester::new(capital, cost);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-        }),
+        },
     );
 
     registry

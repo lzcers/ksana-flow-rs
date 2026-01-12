@@ -1,3 +1,4 @@
+mod db;
 mod handlers;
 mod registry;
 mod state;
@@ -5,21 +6,22 @@ mod state;
 use anyhow::Context;
 use axum::{
     Router,
-    routing::{delete, get, post},
+    routing::{get, post},
 };
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
+use crate::db::Db;
 use crate::handlers::{
-    add_edge, add_node, get_graph, get_nodes, remove_edge, remove_node, run_flow,
-    update_node_position, ws_handler,
+    create_workflow, delete_workflow, get_nodes, get_workflow, list_workflows, run_workflow,
+    update_workflow, ws_handler,
 };
 use crate::registry::create_registry;
-use crate::state::{AppState, GraphBlueprint};
+use crate::state::AppState;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -35,23 +37,25 @@ async fn main() -> anyhow::Result<()> {
 
     let registry = create_registry();
     let (tx, _rx) = broadcast::channel(100);
+    let db = Db::new("ksana.db").context("Failed to initialize database")?;
 
     let app_state = AppState {
         registry: Arc::new(RwLock::new(registry)),
-        blueprint: Arc::new(RwLock::new(GraphBlueprint::default())),
-        tx,
         running: Arc::new(AtomicBool::new(false)),
+        tx,
+        db: Arc::new(Mutex::new(db)),
     };
 
     let app = Router::new()
+        .route("/api/workflows", get(list_workflows).post(create_workflow))
+        .route(
+            "/api/workflows/:id",
+            get(get_workflow)
+                .put(update_workflow)
+                .delete(delete_workflow),
+        )
+        .route("/api/workflow/run", post(run_workflow))
         .route("/api/nodes", get(get_nodes))
-        .route("/api/graph", get(get_graph))
-        .route("/api/graph/node", post(add_node))
-        .route("/api/graph/node/:id/position", post(update_node_position))
-        .route("/api/graph/node/:id", delete(remove_node))
-        .route("/api/graph/edge", post(add_edge))
-        .route("/api/graph/edge/:id", delete(remove_edge))
-        .route("/api/run", post(run_flow))
         .route("/ws", get(ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);

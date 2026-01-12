@@ -1,7 +1,5 @@
-pub mod flow;
-pub mod graph;
 pub mod nodes;
+pub mod workflow;
 
-pub use flow::*;
-pub use graph::*;
 pub use nodes::*;
+pub use workflow::*;
