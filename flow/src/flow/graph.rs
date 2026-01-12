@@ -90,11 +90,6 @@ where
         ctx: &Context,
         input: Box<dyn SendableAny>,
     ) -> Result<Box<dyn SendableAny>, String> {
-        println!(
-            "Node Input: {}, Expected: {}",
-            input.type_name(),
-            std::any::type_name::<N::In>()
-        );
         let input_any = if TypeId::of::<N::In>() == TypeId::of::<()>() {
             Box::new(()) as Box<dyn Any>
         } else if TypeId::of::<N::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream()

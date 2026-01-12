@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, mpsc::Sender};
-use tracing::{error, info};
+use tracing::{debug, error, info, trace};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FlowEvent {
@@ -50,7 +50,7 @@ impl Runner {
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
-        info!("Available nodes: {:?}", self.graph.get_node_ids());
+        info!(nodes = ?self.graph.get_node_ids(), "Runner started");
         let (task_sender, mut rx) = mpsc::channel::<TaskEvent>(128);
         // 使用计数器跟踪每个节点的活跃任务数
         self.active_tasks.clear();
@@ -84,16 +84,16 @@ impl Runner {
             for task_event in events {
                 match task_event {
                     TaskEvent::Stream(node_id, subscribe_fn) => {
-                        info!("Detected reactive stream from node: {}", &node_id);
+                        info!(node_id = %node_id, "Received Stream");
                         // 响应式流作为一个长运行任务，已经在 active_tasks 中计数
                         // 它会由 subscribe_fn 发送 Completed 或 Error 来结束
                         let _sub = subscribe_fn(task_sender.clone(), node_id, self.ctx.clone());
                     }
                     TaskEvent::Next(node_id, output) => {
                         info!(
-                            "Received Next event from node: {}. Output type: {}",
-                            &node_id,
-                            output.as_ref().type_name()
+                            node_id = %node_id,
+                            output_type = %output.as_ref().type_name(),
+                            "Received Next event"
                         );
                         // 寻找并启动下游节点
                         self.trigger_downstream(&node_id, output, task_sender.clone())?;
@@ -101,18 +101,13 @@ impl Runner {
                     TaskEvent::Completed(node_id, output) => {
                         // 1. 处理节点产出的数据（如果是普通节点）
                         if let Some(out) = output {
-                            info!(
-                                "Received Completed with data from node: {}. Output type: {}",
-                                &node_id,
-                                out.as_ref().type_name()
-                            );
                             self.trigger_downstream(&node_id, out, task_sender.clone())?;
                         }
                         // 2. 更新任务计数器
                         self.update_active_tasks(&node_id);
                     }
                     TaskEvent::Error(node_id, e) => {
-                        error!("Node '{}' error: {}", node_id, e);
+                        error!(node_id = %node_id, error = %e, "Node execution failed");
                         if first_error.is_none() {
                             first_error = Some(e);
                         }
@@ -122,7 +117,7 @@ impl Runner {
             }
 
             if self.total_active_tasks == 0 {
-                info!("All tasks finished, exiting runner loop.");
+                info!("Runner finished: All tasks completed");
                 break;
             }
         }
@@ -142,12 +137,13 @@ impl Runner {
         tx: Sender<TaskEvent>,
     ) -> Result<(), String> {
         let next_nodes = self.find_next_nodes(from_node_id, &output)?;
-        info!(
-            "Found {} next nodes for {}: {:?}",
-            &next_nodes.len(),
-            from_node_id,
-            &next_nodes
-        );
+        if !next_nodes.is_empty() {
+            debug!(
+                from = %from_node_id,
+                targets = ?next_nodes,
+                "Triggering downstream nodes"
+            );
+        }
         for next_node_id in next_nodes {
             self.start_node(next_node_id, output.clone(), tx.clone())?;
         }
@@ -170,9 +166,10 @@ impl Runner {
         *self.active_tasks.entry(node_id.clone()).or_insert(0) += 1;
         self.total_active_tasks += 1;
 
-        info!(
-            "Task started: {}. Total active tasks: {}",
-            &node_id, self.total_active_tasks
+        debug!(
+            node_id = %node_id,
+            total_active = self.total_active_tasks,
+            "Starting node task"
         );
 
         let event_sender = self.event_sender.clone();
@@ -211,11 +208,7 @@ impl Runner {
             let mut node = node.write().await;
             let output = node.run(&ctx, input).await;
 
-            info!(
-                "Finished running node: <{}> in task: {:?}",
-                &node_id,
-                tokio::task::id(),
-            );
+            debug!(node_id = %node_id, "Node logic executed");
 
             Self::send_flow_event(&event_sender, FlowEvent::NodeCompleted(node_id.clone())).await;
 
@@ -269,15 +262,14 @@ impl Runner {
         if let Some(count) = self.active_tasks.get_mut(node_id) {
             *count -= 1;
             self.total_active_tasks -= 1;
-            info!(
-                "Task {} active count: {}. Total active: {}",
-                &node_id, *count, self.total_active_tasks
+            trace!(
+                node_id = %node_id,
+                count = count,
+                total = self.total_active_tasks,
+                "Task count updated"
             );
             if *count == 0 {
-                info!(
-                    "Task completed: {}. Total active: {}",
-                    &node_id, self.total_active_tasks
-                );
+                info!(node_id = %node_id, "Node tasks completed");
                 self.active_tasks.remove(node_id);
             }
         }
@@ -292,11 +284,11 @@ impl Runner {
         if let Some(edges) = self.graph.edges.get(from_node_id) {
             for edge in edges.iter() {
                 let passes = edge.check_condition(&self.ctx, output.as_any());
-                info!(
-                    "Edge <{}> -> <{}> condition: [{}]",
-                    edge.from(),
-                    edge.to(),
-                    passes
+                trace!(
+                    from = %edge.from(),
+                    to = %edge.to(),
+                    passes = passes,
+                    "Edge condition check"
                 );
                 if passes {
                     next_nodes.push(edge.to().to_owned())

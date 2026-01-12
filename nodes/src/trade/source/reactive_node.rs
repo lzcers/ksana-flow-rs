@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
@@ -55,7 +57,9 @@ impl Node for ReactiveSourceNode {
 
         result.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
-        let filtered_data = result.filter(|k| k.volume > 0.0);
+        let filtered_data = result
+            .filter(|k| k.volume > 0.0)
+            .delay(Duration::from_secs(5));
 
         // Convert Observable to ReactiveStream
         ReactiveStream::from_observable(filtered_data)

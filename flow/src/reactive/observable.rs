@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use std::marker::PhantomData;
 
+use crate::delay::DelayOperator;
+
 use super::filter::FilterOperator;
 
 pub use super::pairwise::PairwiseOperator;
@@ -100,6 +102,12 @@ pub trait ObservableExt<Item, Err>: Sized + Observable<Item, Err> {
         PairwiseOperator {
             upstream: self,
             prev_item: None,
+        }
+    }
+    fn delay(self, duration: std::time::Duration) -> DelayOperator<Self> {
+        DelayOperator {
+            upstream: self,
+            delay: duration,
         }
     }
 }
