@@ -4,7 +4,6 @@ use cron::Schedule;
 use flow::{Context, Node};
 use std::str::FromStr;
 use tokio::time::sleep;
-use tracing::info;
 
 pub struct TimerNode {
     schedule: Schedule,

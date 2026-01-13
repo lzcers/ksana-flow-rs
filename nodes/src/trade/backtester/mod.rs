@@ -32,7 +32,7 @@ impl Node for Backtester {
     type Out = BacktesterOutput;
 
     async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
-        self.order(input.order);
+        let _ = self.order(input.order);
         self.update(&input.k);
         // self.print_backtest_result();
         BacktesterOutput {

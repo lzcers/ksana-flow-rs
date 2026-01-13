@@ -4,7 +4,7 @@ use reqwest::Client;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use thiserror::Error;
-use tracing::{error, info};
+use tracing::info;
 
 pub enum Product {
     STOCK,

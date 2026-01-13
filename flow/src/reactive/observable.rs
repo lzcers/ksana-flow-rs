@@ -116,7 +116,6 @@ impl<Item, Err, T> ObservableExt<Item, Err> for T where T: Observable<Item, Err>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_vec_observable() {}

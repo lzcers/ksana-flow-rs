@@ -7,7 +7,6 @@ use crate::{config::get_config, trade::k::K};
 
 /// 持久化存储股票数据
 pub struct SqliteSource {
-    db_url: String,
     conn: Mutex<Connection>,
 }
 
@@ -17,7 +16,6 @@ impl SqliteSource {
         let db_url = config.source.db_uri;
         let conn = Connection::open(&db_url)?;
         return Ok(SqliteSource {
-            db_url,
             conn: Mutex::new(conn),
         });
     }

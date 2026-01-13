@@ -38,7 +38,7 @@ impl Source {
         let trading_date_list = self
             .sqlite
             .get_all_trading_date((start.parse::<u32>()?, end.parse::<u32>()?))?;
-        return Ok(trading_date_list);
+        Ok(trading_date_list)
     }
 
     pub async fn get_daily_base_data(
