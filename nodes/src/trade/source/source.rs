@@ -95,7 +95,7 @@ impl Source {
             code.to_string()
         };
         let live_result = self.xueqiu.get_realtime_bar(&xueqiu_code).await?;
-        for bar in live_result.data {
+        if let Some(bar) = live_result.data.into_iter().next() {
             let live_bar = K {
                 code: xueqiu_code,
                 timestamp: bar.timestamp,

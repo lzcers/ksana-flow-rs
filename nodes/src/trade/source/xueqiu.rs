@@ -46,10 +46,10 @@ impl XueqiuSource {
             .default_headers(default_headers)
             .build()?;
 
-        return Ok(XueqiuSource {
+        Ok(XueqiuSource {
             realtime_api_url,
             client,
-        });
+        })
     }
 
     pub async fn get_realtime_bar(&self, code: &str) -> Result<XuequiRealtimeApiResponse> {
@@ -62,7 +62,7 @@ impl XueqiuSource {
             .json::<XuequiRealtimeApiResponse>()
             .await?;
 
-        return Ok(result);
+        Ok(result)
     }
 }
 

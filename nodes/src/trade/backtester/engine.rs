@@ -264,7 +264,7 @@ impl Backtester {
                 }
                 Order::HOLD => {}
             }
-            return false;
+            false
         });
 
         let assets_value = calc_positions_value(&self.positions);

@@ -73,7 +73,7 @@ impl Position {
         self.quantity += quantity;
         self.open_price = (add_cost + prev_cost) / self.quantity;
         self.update_position_profit(current_price);
-        return add_cost;
+        add_cost
     }
 
     pub fn sub_position(&mut self, timestamp: u64, current_price: f64, quantity: f64) -> f64 {
@@ -83,10 +83,10 @@ impl Position {
             if self.quantity == 0.0 {
                 self.close_time = Some(timestamp);
             }
-            return current_price * quantity;
+            current_price * quantity
         } else {
             warn!("Can't sell quantity more then held.");
-            return 0.0;
+            0.0
         }
     }
 
