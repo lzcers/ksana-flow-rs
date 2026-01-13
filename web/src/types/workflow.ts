@@ -1,6 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 
-export type NodeType = 'start' | 'task' | 'condition' | 'end';
+export type NodeType = 'start' | 'task' | 'condition' | 'end' | 'LLMNode' | string;
 
 export interface WorkflowNodeData extends Record<string, unknown> {
   label: string;

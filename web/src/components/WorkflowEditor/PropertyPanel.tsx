@@ -8,16 +8,16 @@ interface PropertyPanelProps {
   onDelete: (id: string) => void;
 }
 
-export const PropertyPanel: React.FC<PropertyPanelProps> = ({ 
-  node, 
-  onUpdateData, 
-  onDelete 
+export const PropertyPanel: React.FC<PropertyPanelProps> = ({
+  node,
+  onUpdateData,
+  onDelete
 }) => {
   return (
     <aside className="w-72 border-l border-slate-100 bg-white p-6 z-10 overflow-y-auto">
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-sm font-bold text-slate-900 uppercase tracking-widest">属性</h2>
-        <button 
+        <button
           onClick={() => onDelete(node.id)}
           className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors"
         >
@@ -45,6 +45,41 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             className="w-full text-sm p-2 bg-slate-50 border-none rounded-md focus:ring-1 focus:ring-slate-200 transition-all outline-none resize-none"
           />
         </div>
+
+        {node.data.type === 'LLMNode' && (
+          <>
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-slate-400 uppercase">System Prompt</label>
+              <textarea
+                value={node.data.config?.system_prompt || ''}
+                onChange={(e) => onUpdateData(node.id, {
+                  config: {
+                    ...node.data.config,
+                    system_prompt: e.target.value
+                  }
+                })}
+                rows={4}
+                className="w-full text-sm p-2 bg-slate-50 border-none rounded-md focus:ring-1 focus:ring-slate-200 transition-all outline-none resize-none"
+                placeholder="Enter system prompt..."
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-slate-400 uppercase">User Prompt Template</label>
+              <textarea
+                value={node.data.config?.user_prompt_template || ''}
+                onChange={(e) => onUpdateData(node.id, {
+                  config: {
+                    ...node.data.config,
+                    user_prompt_template: e.target.value
+                  }
+                })}
+                rows={4}
+                className="w-full text-sm p-2 bg-slate-50 border-none rounded-md focus:ring-1 focus:ring-slate-200 transition-all outline-none resize-none"
+                placeholder="Enter user prompt template..."
+              />
+            </div>
+          </>
+        )}
 
         <div className="pt-6 border-t border-slate-100">
           <p className="text-[10px] text-slate-400 italic">

@@ -1,5 +1,6 @@
 use chrono::{Local, NaiveDateTime};
 use flow::AnyNode;
+use nodes::llm::LLMNode;
 use nodes::trade::{Backtester, ReactiveSourceNode, VOLMFINode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -135,6 +136,35 @@ pub fn create_registry() -> NodeRegistry {
             let capital = config["initial_capital"].as_f64().unwrap_or(500000.0);
             let cost = config["transaction_cost"].as_f64().unwrap_or(0.0002354);
             let node = Backtester::new(capital, cost);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "LLMNode".to_string(),
+            description: "Large Language Model Node".to_string(),
+            category: "AI".to_string(),
+            config: json!({
+                "model": "deepseek-chat",
+                "system_prompt": "",
+                "user_prompt_template": ""
+            }),
+        },
+        |config: Value| {
+            let model = config["model"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let system_prompt = config["system_prompt"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let user_prompt_template = config["user_prompt_template"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let node = LLMNode::new(model, system_prompt);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );
