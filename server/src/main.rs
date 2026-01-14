@@ -17,8 +17,8 @@ use tracing::info;
 
 use crate::db::Db;
 use crate::handlers::{
-    create_workflow, delete_workflow, get_nodes, get_workflow, list_workflows, run_workflow,
-    update_workflow, ws_handler,
+    create_workflow, delete_workflow, get_nodes, get_workflow, list_workflows, run_node,
+    run_workflow, update_workflow, ws_handler,
 };
 use crate::registry::create_registry;
 use crate::state::AppState;
@@ -55,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
                 .delete(delete_workflow),
         )
         .route("/api/workflow/run", post(run_workflow))
+        .route("/api/workflow/run_node", post(run_node))
         .route("/api/nodes", get(get_nodes))
         .route("/ws", get(ws_handler))
         .layer(CorsLayer::permissive())

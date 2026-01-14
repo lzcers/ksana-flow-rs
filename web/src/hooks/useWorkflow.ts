@@ -7,7 +7,6 @@ import {
   type NodeChange,
   type EdgeChange,
   type Connection,
-  type Edge,
   type Node
 } from '@xyflow/react';
 import type { WorkflowState, WorkflowNodeData, WorkflowNode, WorkflowEdge } from '../types/workflow';
@@ -43,6 +42,10 @@ export function useWorkflow() {
               const id = msg.NodeStarted;
               const node = draft.nodes.find(n => n.id === id);
               if (node) node.data.status = 'running';
+            } else if (msg.NodeMessage) {
+              const [id, value] = msg.NodeMessage;
+              const node = draft.nodes.find(n => n.id === id);
+              if (node) node.data.lastMessage = value;
             } else if (msg.NodeCompleted) {
               const id = msg.NodeCompleted;
               const node = draft.nodes.find(n => n.id === id);
@@ -364,6 +367,44 @@ export function useWorkflow() {
     }
   }, [state.nodes, state.edges, updateState, toast]);
 
+  const runNode = useCallback(async (nodeId: string) => {
+    const blueprint = {
+      nodes: state.nodes.map(n => ({
+        id: n.id,
+        type: n.data.type,
+        data: n.data.config,
+        position: n.position
+      })),
+      edges: state.edges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle
+      }))
+    };
+
+    try {
+      setIsRunning(true);
+      updateState(draft => {
+        draft.nodes.forEach(node => {
+          node.data.status = 'idle';
+          node.data.errorMessage = undefined;
+        });
+      });
+
+      const res = await api.runNode(blueprint, nodeId);
+      if (res && res.error) {
+        throw new Error(res.error);
+      }
+      toast.success(`Node ${nodeId} execution started`);
+    } catch (e) {
+      console.error(`Failed to run node ${nodeId}`, e);
+      toast.error(`Failed to run node: ` + (e instanceof Error ? e.message : String(e)));
+      setIsRunning(false);
+    }
+  }, [state.nodes, state.edges, updateState, toast]);
+
   return {
     state,
     nodeTypes,
@@ -378,6 +419,7 @@ export function useWorkflow() {
     deleteNode,
     updateNodeData,
     runWorkflow,
+    runNode,
     saveWorkflow,
     loadWorkflow,
     deleteWorkflow,

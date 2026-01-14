@@ -15,7 +15,7 @@ pub trait SendableAny: Any + Send {
     ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>>;
 }
 
-// 为实现了 Clone 的 SendableAny 提供默认实现
+// 为实现了 Clone  的 SendableAny 提供默认实现
 // 所有节点的输出应该是 SendableAny + Clone 的
 impl<T: Any + Send + Clone> SendableAny for T {
     fn clone_box(&self) -> Box<dyn SendableAny> {

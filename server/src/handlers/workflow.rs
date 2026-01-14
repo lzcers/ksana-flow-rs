@@ -7,7 +7,7 @@ use axum::{
     },
     response::IntoResponse,
 };
-use flow::{FlowEvent, Runner};
+use flow::{FlowEvent, Runner, SendableAny};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -21,6 +21,12 @@ pub struct CreateWorkflowRequest {
 pub struct UpdateWorkflowRequest {
     name: Option<String>,
     blueprint: GraphBlueprint,
+}
+
+#[derive(Deserialize)]
+pub struct RunNodeRequest {
+    blueprint: GraphBlueprint,
+    node_id: String,
 }
 
 pub async fn list_workflows(State(state): State<AppState>) -> impl IntoResponse {
@@ -107,16 +113,31 @@ pub async fn run_workflow(
         return Json(json!({"error": "Workflow is already running"}));
     }
 
-    let (graph, start_nodes) = {
+    let (graph, start_inputs) = {
         let registry = state
             .registry
             .read()
             .expect("Failed to read registry: lock poisoned");
 
-        match blueprint.instantiate(&registry) {
+        let (graph, start_nodes) = match blueprint.instantiate(&registry) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
+        };
+
+        let mut inputs = Vec::new();
+        for node_id in &start_nodes {
+            if let Some(node) = blueprint.nodes.iter().find(|n| n.id == *node_id) {
+                if let Some(meta) = registry.get_node_metadata(&node.type_name) {
+                    inputs.push((
+                        node_id.clone(),
+                        crate::registry::create_default_value(&meta.inputs),
+                    ));
+                } else {
+                    inputs.push((node_id.clone(), Box::new(()) as Box<dyn SendableAny>));
+                }
+            }
         }
+        (graph, inputs)
     };
 
     state.set_running(true);
@@ -135,8 +156,8 @@ pub async fn run_workflow(
         {
             let mut runner = Runner::new(graph).set_event_sender(event_tx);
 
-            for node_id in start_nodes {
-                runner = runner.set_start_node(&node_id, &());
+            for (node_id, input) in start_inputs {
+                runner = runner.set_start_node(&node_id, input.as_ref());
             }
 
             if let Err(e) = runner.run().await {
@@ -152,6 +173,82 @@ pub async fn run_workflow(
     });
 
     Json(json!({"status": "started"}))
+}
+
+pub async fn run_node(
+    State(state): State<AppState>,
+    Json(payload): Json<RunNodeRequest>,
+) -> impl IntoResponse {
+    if state.is_running() {
+        return Json(json!({"error": "Workflow is already running"}));
+    }
+
+    let (graph, start_input) = {
+        let registry = state
+            .registry
+            .read()
+            .expect("Failed to read registry: lock poisoned");
+
+        let (graph, _) = match payload.blueprint.instantiate(&registry) {
+            Ok(v) => v,
+            Err(e) => return Json(json!({"error": e})),
+        };
+
+        let input = if let Some(node) = payload
+            .blueprint
+            .nodes
+            .iter()
+            .find(|n| n.id == payload.node_id)
+        {
+            if let Some(meta) = registry.get_node_metadata(&node.type_name) {
+                crate::registry::create_default_value(&meta.inputs)
+            } else {
+                Box::new(()) as Box<dyn SendableAny>
+            }
+        } else {
+            Box::new(()) as Box<dyn SendableAny>
+        };
+
+        (graph, input)
+    };
+
+    if !graph.nodes.contains_key(&payload.node_id) {
+        return Json(json!({
+            "error": format!("Node '{}' not found in blueprint", payload.node_id)
+        }));
+    }
+
+    state.set_running(true);
+    let tx = state.tx.clone();
+    let state_clone = state.clone();
+    let start_node_id = payload.node_id.clone();
+
+    tokio::spawn(async move {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
+        let bridge_tx = tx.clone();
+        let bridge_handle = tokio::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                let _ = bridge_tx.send(event);
+            }
+        });
+
+        {
+            let mut runner = Runner::new(graph).set_event_sender(event_tx);
+            runner = runner.set_start_node(&start_node_id, start_input.as_ref());
+
+            if let Err(e) = runner.run().await {
+                tracing::error!("Flow execution error: {}", e);
+                let _ = tx.send(FlowEvent::NodeError("runner".to_string(), e));
+            }
+        }
+
+        // Wait for all events to be sent before finishing
+        let _ = bridge_handle.await;
+        state_clone.set_running(false);
+        let _ = tx.send(FlowEvent::Finished);
+    });
+
+    Json(json!({"status": "started", "start_node": payload.node_id}))
 }
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {

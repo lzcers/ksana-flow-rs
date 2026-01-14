@@ -28,7 +28,7 @@ const nodeTypes: NodeTypes = {
 const ZoomDisplay = () => {
   const { zoom } = useViewport();
   return (
-    <div className="bg-white/80 backdrop-blur px-2 py-1 rounded border border-slate-100 text-[10px] font-bold text-slate-500 min-w-[40px] text-center">
+    <div className="bg-zinc-900/80 backdrop-blur px-2 py-1 rounded border border-zinc-800 text-[10px] font-bold text-zinc-400 min-w-[40px] text-center">
       {Math.round(zoom * 100)}%
     </div>
   );
@@ -78,7 +78,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   );
 
   return (
-    <main className="flex-1 relative bg-white">
+    <main className="flex-1 relative bg-zinc-950">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -93,7 +93,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         fitViewOptions={{ maxZoom: 1 }}
         deleteKeyCode={['Backspace', 'Delete']}
         // Style overrides for clean look
-        colorMode="light"
+        colorMode="dark"
         defaultEdgeOptions={{
           style: { strokeWidth: 2 },
           type: 'smoothstep',
@@ -103,14 +103,14 @@ export const Canvas: React.FC<CanvasProps> = ({
           strokeWidth: 2,
         }}
       >
-        <Background color="#f1f5f9" gap={24} size={1.5} />
-        <Controls showInteractive={false} className="!bg-white !border-slate-100 !shadow-sm" />
+        <Background color="#27272a" gap={24} size={1.5} />
+        <Controls showInteractive={false} className="!bg-zinc-900 !border-zinc-800 !shadow-sm !fill-zinc-400" />
 
         <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
           <ZoomDisplay />
         </Panel>
 
-        <Panel position="top-right" className="bg-white/80 backdrop-blur px-3 py-1.5 rounded-full border border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <Panel position="top-right" className="bg-zinc-900/80 backdrop-blur px-3 py-1.5 rounded-full border border-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
           React Flow Powered
         </Panel>
       </ReactFlow>

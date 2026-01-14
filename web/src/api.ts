@@ -66,3 +66,12 @@ export const runWorkflow = async (blueprint: any) => {
     });
     return res.json();
 };
+
+export const runNode = async (blueprint: any, nodeId: string) => {
+    const res = await fetch(`${API_BASE}/workflow/run_node`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blueprint, node_id: nodeId }),
+    });
+    return res.json();
+};

@@ -5,6 +5,7 @@ use nodes::trade::K;
 use nodes::trade::backtester::BacktesterInput;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
 
@@ -40,11 +41,23 @@ impl GraphBlueprint {
         let mut new_graph = Graph::new();
         let mut start_nodes = Vec::new();
 
+        // Collect all target nodes (nodes that have incoming edges)
+        let mut has_incoming_edges = HashSet::new();
+        for edge in &self.edges {
+            has_incoming_edges.insert(edge.target.clone());
+        }
+
         for node in &self.nodes {
-            match registry.create_node(&node.type_name, node.data.clone()) {
+            let mut data = node.data.clone();
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("id".to_string(), Value::String(node.id.clone()));
+            }
+
+            match registry.create_node(&node.type_name, data) {
                 Ok(n) => {
                     new_graph.add_arc_node(&node.id, n);
-                    if node.type_name == "ReactiveSourceNode" {
+                    // Treat all nodes with no in-degree as start nodes
+                    if !has_incoming_edges.contains(&node.id) {
                         start_nodes.push(node.id.clone());
                     }
                 }
@@ -75,6 +88,11 @@ impl GraphBlueprint {
                         condition: None,
                     })),
                     "Backtester" => Some(Box::new(FlowEdge::<()> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    })),
+                    "TextNode" | "LLMNode" => Some(Box::new(FlowEdge::<String> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,

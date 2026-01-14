@@ -6,9 +6,11 @@ use std::{
     collections::HashMap,
     sync::Arc,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, mpsc::Sender};
 
-use crate::flow::{reactive_stream::StreamSubscriptionFn, sendable_any::SendableAny};
+use crate::flow::{
+    event::FlowEvent, reactive_stream::StreamSubscriptionFn, sendable_any::SendableAny,
+};
 
 pub type NodeId = String;
 
@@ -90,6 +92,8 @@ where
         ctx: &Context,
         input: Box<dyn SendableAny>,
     ) -> Result<Box<dyn SendableAny>, String> {
+        // let input_is_unit = input.as_ref().as_any().downcast_ref::<()>().is_some();
+
         let input_any = if TypeId::of::<N::In>() == TypeId::of::<()>() {
             Box::new(()) as Box<dyn Any>
         } else if TypeId::of::<N::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream()
@@ -98,7 +102,16 @@ where
                 Ok(sub) => Box::new(sub) as Box<dyn Any>,
                 Err(i) => i.into_any(),
             }
-        } else {
+        }
+        // else if TypeId::of::<N::In>() == TypeId::of::<String>() && input_is_unit {
+        // 对于真实输入是 () 但 N::In 为 String 类型的情况，我们需要转换为 ""
+        // 存在这种情况是因为某些节点定义了 String 输入，但是也可以直接以该节点作为起始节点，不接输入直接运行
+        // todo:
+        // 对于定义了输入类型，但是又可以实际无输入情况下作为起始节点执行的节点，应该在注册节点时同时注册输入输出类型
+        // 并在 set_start 节点时配置输入
+        //     Box::new("".to_owned()) as Box<dyn Any>
+        // }
+        else {
             input.into_any()
         };
 

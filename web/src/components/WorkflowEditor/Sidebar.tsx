@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Save, Activity, Box, Database, FileText, Plus, FolderOpen, Save as SaveIcon, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
+import { Play, Activity, Box, Database, FileText, Plus, Save as SaveIcon, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { NodeMetadata } from '../../api';
 
@@ -28,10 +28,10 @@ const getIconForCategory = (category: string) => {
 
 const getColorForCategory = (category: string) => {
   switch (category.toLowerCase()) {
-    case 'source': return 'bg-blue-100 text-blue-600';
-    case 'strategy': return 'bg-purple-100 text-purple-600';
-    case 'sink': return 'bg-orange-100 text-orange-600';
-    default: return 'bg-slate-100 text-slate-600';
+    case 'source': return 'bg-blue-900/30 text-blue-400 border border-blue-800/50';
+    case 'strategy': return 'bg-purple-900/30 text-purple-400 border border-purple-800/50';
+    case 'sink': return 'bg-orange-900/30 text-orange-400 border border-orange-800/50';
+    default: return 'bg-zinc-800 text-zinc-400 border border-zinc-700';
   }
 };
 
@@ -89,10 +89,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-64 border-r border-slate-100 bg-white p-6 z-10 flex flex-col h-full overflow-hidden">
+    <aside className="w-64 border-r border-zinc-800 bg-zinc-900 p-6 z-10 flex flex-col h-full overflow-hidden">
       <div className="mb-6 flex-shrink-0">
-        <h1 className="text-lg font-bold tracking-tight text-slate-900 flex items-center gap-2 mb-6">
-          <div className="w-6 h-6 bg-slate-900 rounded flex items-center justify-center text-white">
+        <h1 className="text-lg font-bold tracking-tight text-zinc-100 flex items-center gap-2 mb-6">
+          <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
             <Play size={12} fill="currentColor" />
           </div>
           Ksana Flow
@@ -101,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="space-y-2">
           <button
             onClick={onCreateNew}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md transition-colors border border-slate-200"
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 rounded-md transition-colors border border-zinc-800 hover:border-zinc-700"
           >
             <Plus size={16} />
             New Workflow
@@ -109,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="relative group">
             <button
               onClick={handleSave}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-md transition-colors border border-slate-200"
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 rounded-md transition-colors border border-zinc-800 hover:border-zinc-700"
             >
               <SaveIcon size={16} />
               {currentWorkflowId ? 'Save Workflow' : 'Save As...'}
@@ -118,18 +118,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {showSaveDialog && (
-          <div className="mt-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <div className="mt-2 p-3 bg-zinc-800 rounded-lg border border-zinc-700 shadow-xl">
             <input
               type="text"
               value={newWorkflowName}
               onChange={(e) => setNewWorkflowName(e.target.value)}
               placeholder="Workflow Name"
-              className="w-full px-2 py-1 text-sm border border-slate-300 rounded mb-2"
+              className="w-full px-2 py-1 text-sm bg-zinc-900 border border-zinc-700 text-zinc-100 rounded mb-2 focus:outline-none focus:border-blue-500"
               autoFocus
             />
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowSaveDialog(false)} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
-              <button onClick={confirmSave} className="text-xs bg-slate-900 text-white px-2 py-1 rounded hover:bg-slate-800">Save</button>
+              <button onClick={() => setShowSaveDialog(false)} className="text-xs text-zinc-500 hover:text-zinc-300">Cancel</button>
+              <button onClick={confirmSave} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-500">Save</button>
             </div>
           </div>
         )}
@@ -137,7 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="flex-1 overflow-y-auto min-h-0 space-y-6 pr-2">
         <div>
-          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] mb-2 sticky top-0 bg-white py-1">Workflows</h2>
+          <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.1em] mb-2 sticky top-0 bg-zinc-900 py-1">Workflows</h2>
           <div className="space-y-1">
             {workflows.map(wf => (
               <div
@@ -145,14 +145,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={cn(
                   "group relative w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors cursor-pointer",
                   currentWorkflowId === wf.id
-                    ? "bg-blue-50 text-blue-700 font-medium"
-                    : "text-slate-600 hover:bg-slate-50"
+                    ? "bg-blue-900/20 text-blue-400 font-medium border border-blue-900/50"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 border border-transparent"
                 )}
                 onClick={() => {
                   if (editingId !== wf.id) onLoadWorkflow(wf.id);
                 }}
               >
-                <FileText size={14} className={editingId === wf.id ? "text-slate-400" : ""} />
+                <FileText size={14} className={editingId === wf.id ? "text-zinc-600" : ""} />
 
                 {editingId === wf.id ? (
                   <div className="flex-1 flex items-center gap-1 min-w-0" onClick={e => e.stopPropagation()}>
@@ -160,15 +160,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       type="text"
                       value={editingName}
                       onChange={e => setEditingName(e.target.value)}
-                      className="flex-1 min-w-0 px-1 py-0.5 text-xs border border-blue-300 rounded focus:outline-none focus:border-blue-500 bg-white text-slate-900"
+                      className="flex-1 min-w-0 px-1 py-0.5 text-xs border border-blue-500/50 rounded focus:outline-none focus:border-blue-500 bg-zinc-950 text-zinc-100"
                       autoFocus
                       onKeyDown={e => {
                         if (e.key === 'Enter') saveEditing(e as any);
                         if (e.key === 'Escape') cancelEditing(e as any);
                       }}
                     />
-                    <button onClick={saveEditing} className="p-0.5 text-green-600 hover:bg-green-50 rounded"><Check size={12} /></button>
-                    <button onClick={cancelEditing} className="p-0.5 text-red-500 hover:bg-red-50 rounded"><X size={12} /></button>
+                    <button onClick={saveEditing} className="p-0.5 text-green-500 hover:bg-green-900/30 rounded"><Check size={12} /></button>
+                    <button onClick={cancelEditing} className="p-0.5 text-red-500 hover:bg-red-900/30 rounded"><X size={12} /></button>
                   </div>
                 ) : (
                   <>
@@ -178,7 +178,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
                       <button
                         onClick={(e) => startEditing(wf.id, wf.name, e)}
-                        className="p-1 hover:bg-slate-200 text-slate-500 rounded transition-all"
+                        className="p-1 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300 rounded transition-all"
                         title="Rename Workflow"
                       >
                         <Edit2 size={12} />
@@ -190,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onDeleteWorkflow(wf.id);
                           }
                         }}
-                        className="p-1 hover:bg-red-100 hover:text-red-600 rounded transition-all"
+                        className="p-1 hover:bg-red-900/30 hover:text-red-400 text-zinc-500 rounded transition-all"
                         title="Delete Workflow"
                       >
                         <Trash2 size={12} />
@@ -201,13 +201,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             ))}
             {workflows.length === 0 && (
-              <div className="text-xs text-slate-400 italic px-3 py-2">No saved workflows</div>
+              <div className="text-xs text-zinc-600 italic px-3 py-2">No saved workflows</div>
             )}
           </div>
         </div>
 
         <div>
-          <h2 className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] mb-2 sticky top-0 bg-white py-1">Components</h2>
+          <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.1em] mb-2 sticky top-0 bg-zinc-900 py-1">Components</h2>
           <div className="space-y-1.5">
             {nodeTypes.map(nodeType => {
               const Icon = getIconForCategory(nodeType.category);
@@ -221,16 +221,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     e.dataTransfer.setData('application/reactflow', nodeType.name);
                     e.dataTransfer.effectAllowed = 'move';
                   }}
-                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 transition-colors text-left group cursor-grab active:cursor-grabbing"
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800 transition-colors text-left group cursor-grab active:cursor-grabbing border border-transparent hover:border-zinc-700"
                 >
                   <div className={cn("p-1.5 rounded-md transition-colors", colorClass)}>
                     <Icon size={16} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900">
+                    <span className="text-sm font-medium text-zinc-400 group-hover:text-zinc-100">
                       {nodeType.name}
                     </span>
-                    <span className="text-[10px] text-slate-400">{nodeType.category}</span>
+                    <span className="text-[10px] text-zinc-600">{nodeType.category}</span>
                   </div>
                 </button>
               );
@@ -239,16 +239,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-slate-100 flex-shrink-0">
+      <div className="mt-4 pt-4 border-t border-zinc-800 flex-shrink-0">
         <button
           onClick={onRun}
           disabled={isRunning}
           className={cn(
-            "w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-lg text-sm font-medium transition-all active:scale-[0.98]",
-            isRunning ? "opacity-70 cursor-not-allowed" : "hover:bg-slate-800"
+            "w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium transition-all active:scale-[0.98] shadow-lg shadow-blue-900/20",
+            isRunning ? "opacity-70 cursor-not-allowed bg-blue-800" : "hover:bg-blue-500"
           )}
         >
-          {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+          {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
           {isRunning ? 'Running...' : 'Run Workflow'}
         </button>
       </div>

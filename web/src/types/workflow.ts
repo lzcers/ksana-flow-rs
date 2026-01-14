@@ -9,6 +9,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   config?: Record<string, any>;
   status?: 'idle' | 'running' | 'completed' | 'error';
   errorMessage?: string;
+  lastMessage?: any;
 }
 
 export type WorkflowNode = Node<WorkflowNodeData>;

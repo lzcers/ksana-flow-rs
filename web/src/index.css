@@ -8,7 +8,8 @@
 body {
     margin: 0;
     overflow: hidden;
-    background-color: #f8fafc;
+    background-color: #09090b; /* zinc-950 */
+    color: #e4e4e7; /* zinc-200 */
 }
 
 #root {
@@ -18,7 +19,7 @@ body {
 
 /* React Flow Custom Styles */
 .react-flow__edge-path {
-  stroke: #cbd5e1 !important; /* slate-300 */
+  stroke: #52525b !important; /* zinc-600 */
   stroke-width: 2;
   transition: stroke 0.2s, stroke-width 0.2s;
 }
@@ -26,7 +27,7 @@ body {
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: #3b82f6 !important; /* blue-500 */
   stroke-width: 3 !important;
-  transition: none !important; /* 选中时立即变色，防止过渡动画产生中间色 */
+  transition: none !important;
 }
 
 .react-flow__edge.selected {
@@ -41,8 +42,8 @@ body {
 .react-flow__handle {
     width: 8px !important;
     height: 8px !important;
-    background-color: #ffffff !important;
-    border: 2px solid #cbd5e1 !important;
+    background-color: #09090b !important; /* zinc-950 */
+    border: 2px solid #52525b !important; /* zinc-600 */
     transition: all 0.2s ease;
 }
 
@@ -51,7 +52,7 @@ body {
     height: 12px !important;
     background-color: #3b82f6 !important;
     border-color: #ffffff !important;
-    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
 }
 
 .react-flow__handle.react-flow__handle-connecting {

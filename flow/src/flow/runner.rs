@@ -1,19 +1,12 @@
+use crate::flow::event::FlowEvent;
 use crate::flow::sendable_any::SendableAny;
 
 use super::graph::{AnyNode, Context, Graph, NodeId, TaskEvent};
-use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, mpsc::Sender};
 use tracing::{debug, error, info, trace};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum FlowEvent {
-    NodeStarted(String),
-    NodeCompleted(String),
-    NodeError(String, String),
-    Finished,
-}
 
 type TaskPayload = (Vec<NodeId>, Box<dyn SendableAny>);
 
@@ -206,6 +199,16 @@ impl Runner {
             Self::send_flow_event(&event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
 
             let mut node = node.write().await;
+
+            // todo: 考虑任意可以转换为 Value 的类型，都应该能传递到 Web 端
+            if let Some(val) = input.as_ref().as_any().downcast_ref::<String>() {
+                Self::send_flow_event(
+                    &event_sender,
+                    FlowEvent::NodeMessage(node_id.clone(), Value::String(val.clone())),
+                )
+                .await;
+            }
+
             let output = node.run(&ctx, input).await;
 
             debug!(node_id = %node_id, "Node logic executed");

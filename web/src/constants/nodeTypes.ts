@@ -1,9 +1,10 @@
-import { Play, Settings, MousePointer2, Trash2, Sparkles, Database, Activity, Box } from 'lucide-react';
+import { Play, Settings, MousePointer2, Trash2, Sparkles, Database, Activity, Box, Type } from 'lucide-react';
 import type { NodeType } from '../types/workflow';
 
 export const NODE_TYPES: { type: NodeType; label: string; icon: any; color: string }[] = [
   { type: 'start', label: '开始', icon: Play, color: 'text-emerald-500 bg-emerald-50' },
   { type: 'task', label: '任务', icon: Settings, color: 'text-blue-500 bg-blue-50' },
+  { type: 'TextNode', label: 'Text', icon: Type, color: 'text-slate-500 bg-slate-50' },
   { type: 'LLMNode', label: 'LLM', icon: Sparkles, color: 'text-purple-500 bg-purple-50' },
   { type: 'ReactiveSourceNode', label: 'Source', icon: Database, color: 'text-blue-500 bg-blue-50' },
   { type: 'VOLMFINode', label: 'Strategy', icon: Activity, color: 'text-orange-500 bg-orange-50' },

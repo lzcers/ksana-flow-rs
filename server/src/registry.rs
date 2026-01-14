@@ -1,21 +1,33 @@
 use chrono::{Local, NaiveDateTime};
-use flow::AnyNode;
-use nodes::llm::LLMNode;
-use nodes::trade::{Backtester, ReactiveSourceNode, VOLMFINode};
+use flow::{AnyNode, SendableAny};
+use nodes::{
+    llm::LLMNode,
+    text::TextNode,
+    trade::{Backtester, ReactiveSourceNode, VOLMFINode},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 pub type NodeCreator = Box<dyn Fn(Value) -> Result<Arc<RwLock<dyn AnyNode>>, String> + Send + Sync>;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum InputType {
+    String,
+    Number,
+    Boolean,
+    None,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeMetadata {
     pub name: String,
     pub description: String,
     pub category: String,
-    pub config: Value, // Example config or schema
+    pub config: Value,
+    pub inputs: Vec<InputType>,
+    pub outputs: Vec<InputType>,
 }
 
 pub struct NodeRegistry {
@@ -54,11 +66,27 @@ impl NodeRegistry {
     pub fn get_metadata(&self) -> Vec<NodeMetadata> {
         self.metadata.values().cloned().collect()
     }
+
+    pub fn get_node_metadata(&self, name: &str) -> Option<&NodeMetadata> {
+        self.metadata.get(name)
+    }
 }
 
 impl Default for NodeRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub fn create_default_value(inputs: &[InputType]) -> Box<dyn SendableAny> {
+    if inputs.is_empty() {
+        return Box::new(());
+    }
+    match inputs[0] {
+        InputType::String => Box::new("".to_string()),
+        InputType::None => Box::new(()),
+        InputType::Number => Box::new(0.0),
+        InputType::Boolean => Box::new(false),
     }
 }
 
@@ -74,6 +102,8 @@ pub fn create_registry() -> NodeRegistry {
                 "start_time": "2023-01-01T00:00:00",
                 "end_time": null
             }),
+            inputs: vec![InputType::None],
+            outputs: vec![],
         },
         |config: Value| {
             let code = config["code"].as_str().unwrap_or("510300.SH");
@@ -113,6 +143,8 @@ pub fn create_registry() -> NodeRegistry {
                 "ema_period": 8,
                 "mfi_period": 8
             }),
+            inputs: vec![],
+            outputs: vec![],
         },
         |config: Value| {
             let ema = config["ema_period"].as_u64().unwrap_or(8) as usize;
@@ -131,6 +163,8 @@ pub fn create_registry() -> NodeRegistry {
                 "initial_capital": 500000.0,
                 "transaction_cost": 0.0002354
             }),
+            inputs: vec![],
+            outputs: vec![],
         },
         |config: Value| {
             let capital = config["initial_capital"].as_f64().unwrap_or(500000.0);
@@ -150,6 +184,8 @@ pub fn create_registry() -> NodeRegistry {
                 "system_prompt": "",
                 "user_prompt_template": ""
             }),
+            inputs: vec![InputType::String],
+            outputs: vec![],
         },
         |config: Value| {
             let model = config["model"]
@@ -160,11 +196,26 @@ pub fn create_registry() -> NodeRegistry {
                 .as_str()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string());
-            let user_prompt_template = config["user_prompt_template"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
             let node = LLMNode::new(model, system_prompt);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "TextNode".to_string(),
+            description: "Text input node".to_string(),
+            category: "Input".to_string(),
+            config: json!({
+                "text": ""
+            }),
+            inputs: vec![InputType::String],
+            outputs: vec![],
+        },
+        |config: Value| {
+            let text = config["text"].as_str().unwrap_or("").to_string();
+            let id = config["id"].as_str().unwrap_or("unknown").to_string();
+            let node = TextNode::new(id, text);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );
