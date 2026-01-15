@@ -4,7 +4,7 @@ use nodes::{
     EmailNotifyNode, TimerNode,
     llm::LLMNode,
     text::TextNode,
-    trade::{Backtester, ReactiveSourceNode, SourceNode, VOLMFINode},
+    trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

@@ -8,17 +8,24 @@ import {
   useReactFlow,
   useViewport
 } from '@xyflow/react';
+import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
 import type { WorkflowNode as WorkflowNodeType, WorkflowEdge } from '../../types/workflow';
+import type { WorkflowStatus } from '../../hooks/useWorkflow';
 
 interface CanvasProps {
   nodes: WorkflowNodeType[];
   edges: WorkflowEdge[];
+  workflowStatus: WorkflowStatus;
   onNodesChange: (changes: any) => void;
   onEdgesChange: (changes: any) => void;
   onNodeDragStop: (event: any, node: any) => void;
   onConnect: (connection: any) => void;
   onAddNode: (type: string, position: { x: number; y: number }) => void;
+  onRun: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onStop: () => void;
 }
 
 const nodeTypes: NodeTypes = {
@@ -37,11 +44,16 @@ const ZoomDisplay = () => {
 export const Canvas: React.FC<CanvasProps> = ({
   nodes,
   edges,
+  workflowStatus,
   onNodesChange,
   onEdgesChange,
   onNodeDragStop,
   onConnect,
-  onAddNode
+  onAddNode,
+  onRun,
+  onPause,
+  onResume,
+  onStop
 }) => {
   const { screenToFlowPosition } = useReactFlow();
 
@@ -108,6 +120,36 @@ export const Canvas: React.FC<CanvasProps> = ({
 
         <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
           <ZoomDisplay />
+        </Panel>
+
+        <Panel position="bottom-center" className="mb-8">
+            <div className="flex items-center gap-2 bg-zinc-900/90 backdrop-blur border border-zinc-800 p-1.5 rounded-lg shadow-xl">
+                {workflowStatus === 'idle' ? (
+                    <button onClick={onRun} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm font-medium transition-colors">
+                        <Play size={16} fill="currentColor" />
+                        Run Workflow
+                    </button>
+                ) : (
+                    <>
+                        {workflowStatus === 'running' ? (
+                            <button onClick={onPause} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-yellow-500 rounded-md transition-colors" title="Pause">
+                                <Pause size={18} fill="currentColor" />
+                                <span className="text-sm font-medium">Pause</span>
+                            </button>
+                        ) : (
+                            <button onClick={onResume} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-green-500 rounded-md transition-colors" title="Resume">
+                                <Play size={18} fill="currentColor" />
+                                <span className="text-sm font-medium">Resume</span>
+                            </button>
+                        )}
+                        <div className="w-px h-6 bg-zinc-800 mx-1"></div>
+                        <button onClick={onStop} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-red-500 rounded-md transition-colors" title="Stop">
+                            <Square size={18} fill="currentColor" />
+                            <span className="text-sm font-medium">Stop</span>
+                        </button>
+                    </>
+                )}
+            </div>
         </Panel>
       </ReactFlow>
     </main>

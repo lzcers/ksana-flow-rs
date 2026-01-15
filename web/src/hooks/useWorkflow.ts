@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useImmer } from 'use-immer';
 import {
   addEdge as flowAddEdge,
@@ -19,13 +19,22 @@ const INITIAL_STATE: WorkflowState = {
   selectedNodeId: null,
 };
 
+export type WorkflowStatus = 'idle' | 'running' | 'paused';
+
 export function useWorkflow() {
   const [state, updateState] = useImmer<WorkflowState>(INITIAL_STATE);
   const [nodeTypes, setNodeTypes] = useState<api.NodeMetadata[]>([]);
   const [currentWorkflowId, setCurrentWorkflowId] = useState<number | null>(null);
   const [workflows, setWorkflows] = useState<{ id: number; name: string }[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>('idle');
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const toast = useToast();
+  
+  // Use refs to access latest state in websocket callbacks
+  const currentRunIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentRunIdRef.current = currentRunId;
+  }, [currentRunId]);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -36,7 +45,20 @@ export function useWorkflow() {
 
       ws.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data);
+          const wrapper = JSON.parse(event.data);
+          
+          // Handle old format if necessary, but new format is { runId, event }
+          const runId = wrapper.runId;
+          const msg = wrapper.event;
+
+          // Only process events for current run or generic events if needed
+          // For now, we only update UI if it matches current runId, 
+          // or if we decide to support monitoring other runs.
+          // But since the UI is single-document, we focus on currentRunId.
+          if (runId && currentRunIdRef.current && runId !== currentRunIdRef.current) {
+             return;
+          }
+
           updateState(draft => {
             if (msg.NodeStarted) {
               const id = msg.NodeStarted;
@@ -64,7 +86,15 @@ export function useWorkflow() {
                   node.data.status = 'completed';
                 }
               });
-              setIsRunning(false);
+              setWorkflowStatus('idle');
+              setCurrentRunId(null);
+            } else if (msg === 'FlowPaused') {
+                setWorkflowStatus('paused');
+            } else if (msg === 'FlowResumed') {
+                setWorkflowStatus('running');
+            } else if (msg === 'FlowStopped') {
+                setWorkflowStatus('idle');
+                setCurrentRunId(null);
             }
           });
         } catch (e) {
@@ -105,6 +135,26 @@ export function useWorkflow() {
     try {
       const wf = await api.fetchWorkflow(id);
       setCurrentWorkflowId(id);
+      
+      // Fetch status
+      try {
+          const statusRes = await api.getWorkflowStatus(id);
+          if (statusRes.status) {
+             setWorkflowStatus(statusRes.status);
+             if (statusRes.run_id) {
+                 setCurrentRunId(statusRes.run_id);
+             } else {
+                 setCurrentRunId(null);
+             }
+          } else {
+             setWorkflowStatus('idle');
+             setCurrentRunId(null);
+          }
+      } catch (e) {
+          console.error("Failed to fetch workflow status", e);
+          setWorkflowStatus('idle');
+          setCurrentRunId(null);
+      }
 
       // Transform backend nodes to ReactFlow nodes
       const nodes: WorkflowNode[] = wf.blueprint.nodes.map((n: any) => ({
@@ -251,6 +301,8 @@ export function useWorkflow() {
       draft.selectedNodeId = null;
     });
     setCurrentWorkflowId(null);
+    setWorkflowStatus('idle');
+    setCurrentRunId(null);
   }, [updateState]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -258,9 +310,6 @@ export function useWorkflow() {
       draft.nodes = applyNodeChanges(changes, draft.nodes as unknown as WorkflowNode[]) as WorkflowNode[];
 
       // Update selectedNodeId based on changes
-      // We check the actual state of nodes because changes array might contain
-      // multiple select events (e.g. deselect A, select B) and their order
-      // matters. Relying on the final state is more robust.
       const selectedNode = draft.nodes.find(n => n.selected);
       draft.selectedNodeId = selectedNode ? selectedNode.id : null;
     });
@@ -368,7 +417,7 @@ export function useWorkflow() {
     };
 
     try {
-      setIsRunning(true);
+      setWorkflowStatus('running');
       updateState(draft => {
         draft.nodes.forEach(node => {
           node.data.status = 'idle';
@@ -376,17 +425,53 @@ export function useWorkflow() {
         });
       });
 
-      const res = await api.runWorkflow(blueprint);
+      const res = await api.runWorkflow(blueprint, currentWorkflowId || -1);
       if (res && res.error) {
         throw new Error(res.error);
+      }
+      if (res && res.run_id) {
+          setCurrentRunId(res.run_id);
       }
       toast.success('Workflow started');
     } catch (e) {
       console.error("Failed to run workflow", e);
       toast.error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
-      setIsRunning(false);
+      setWorkflowStatus('idle');
+      setCurrentRunId(null);
     }
   }, [state.nodes, state.edges, updateState, toast]);
+
+  const pauseWorkflow = useCallback(async () => {
+      if (!currentRunId) return;
+      try {
+          await api.pauseWorkflow(currentRunId);
+          // Optimistic update, actual state comes from WS
+          // setWorkflowStatus('paused'); 
+      } catch (e) {
+          console.error("Failed to pause workflow", e);
+          toast.error("Failed to pause workflow");
+      }
+  }, [currentRunId, toast]);
+
+  const resumeWorkflow = useCallback(async () => {
+      if (!currentRunId) return;
+      try {
+          await api.resumeWorkflow(currentRunId);
+      } catch (e) {
+          console.error("Failed to resume workflow", e);
+          toast.error("Failed to resume workflow");
+      }
+  }, [currentRunId, toast]);
+
+  const stopWorkflow = useCallback(async () => {
+      if (!currentRunId) return;
+      try {
+          await api.stopWorkflow(currentRunId);
+      } catch (e) {
+          console.error("Failed to stop workflow", e);
+          toast.error("Failed to stop workflow");
+      }
+  }, [currentRunId, toast]);
 
   const runNode = useCallback(async (nodeId: string) => {
     const blueprint = {
@@ -408,7 +493,11 @@ export function useWorkflow() {
     };
 
     try {
-      setIsRunning(true);
+      // Node run also triggers a workflow execution internally in backend, 
+      // but we might not get a runId back or it might be different.
+      // For now, we just set generic running state.
+      // Note: runNode API returns { status: "started", run_id: "...", start_node: "..." }
+      
       updateState(draft => {
         draft.nodes.forEach(node => {
           node.data.status = 'idle';
@@ -420,11 +509,15 @@ export function useWorkflow() {
       if (res && res.error) {
         throw new Error(res.error);
       }
+      if (res && res.run_id) {
+          setCurrentRunId(res.run_id);
+          setWorkflowStatus('running');
+      }
       toast.success(`Node ${nodeId} execution started`);
     } catch (e) {
       console.error(`Failed to run node ${nodeId}`, e);
       toast.error(`Failed to run node: ` + (e instanceof Error ? e.message : String(e)));
-      setIsRunning(false);
+      setWorkflowStatus('idle');
     }
   }, [state.nodes, state.edges, updateState, toast]);
 
@@ -433,7 +526,8 @@ export function useWorkflow() {
     nodeTypes,
     workflows,
     currentWorkflowId,
-    isRunning,
+    workflowStatus,
+    currentRunId,
     onNodesChange,
     onEdgesChange,
     onNodeDragStop,
@@ -443,6 +537,9 @@ export function useWorkflow() {
     updateNodeData,
     updateNodeDimensions,
     runWorkflow,
+    pauseWorkflow,
+    resumeWorkflow,
+    stopWorkflow,
     runNode,
     saveWorkflow,
     loadWorkflow,

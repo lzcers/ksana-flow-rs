@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { Play, FileText, Plus, Save as SaveIcon, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
+import { FileText, Plus, Save as SaveIcon, Trash2, Edit2, X, Check } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { NodeMetadata } from '../../api';
 import { NODE_TYPES } from './nodeTypes';
+import type { WorkflowStatus } from '../../hooks/useWorkflow';
 
 interface SidebarProps {
   nodeTypes: NodeMetadata[];
   workflows: { id: number; name: string }[];
   currentWorkflowId: number | null;
-  isRunning: boolean;
+  workflowStatus: WorkflowStatus;
   onAddNode: (type: string) => void;
-  onRun: () => void;
   onLoadWorkflow: (id: number) => void;
   onSaveWorkflow: (name?: string) => void;
   onDeleteWorkflow: (id: number) => void;
@@ -36,9 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   nodeTypes,
   workflows,
   currentWorkflowId,
-  isRunning,
+  workflowStatus,
   onAddNode,
-  onRun,
   onLoadWorkflow,
   onSaveWorkflow,
   onDeleteWorkflow,
@@ -169,6 +168,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span className="truncate flex-1" onDoubleClick={(e) => startEditing(wf.id, wf.name, e)}>
                       {wf.name}
                     </span>
+                    {currentWorkflowId === wf.id && workflowStatus !== 'idle' && (
+                        <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            workflowStatus === 'running' ? "bg-green-500 animate-pulse" : "bg-yellow-500"
+                        )} title={workflowStatus} />
+                    )}
                     <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
                       <button
                         onClick={(e) => startEditing(wf.id, wf.name, e)}
@@ -231,20 +236,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             })}
           </div>
         </div>
-      </div>
-
-      <div className="mt-4 pt-4 border-t border-zinc-800 flex-shrink-0">
-        <button
-          onClick={onRun}
-          disabled={isRunning}
-          className={cn(
-            "w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium transition-all active:scale-[0.98] shadow-lg shadow-blue-900/20",
-            isRunning ? "opacity-70 cursor-not-allowed bg-blue-800" : "hover:bg-blue-500"
-          )}
-        >
-          {isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} fill="currentColor" />}
-          {isRunning ? 'Running...' : 'Run Workflow'}
-        </button>
       </div>
     </aside>
   );

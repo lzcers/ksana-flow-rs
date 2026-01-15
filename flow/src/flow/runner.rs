@@ -1,16 +1,65 @@
 use super::graph::{AnyNode, Context, Graph, NodeId};
 use super::{
     event::{FlowEvent, TaskEvent},
-    sendable_any::{try_downcast_to_value, SendableAny},
+    sendable_any::{SendableAny, try_downcast_to_value},
 };
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
 };
-use tokio::sync::{RwLock, mpsc, mpsc::Sender};
+use tokio::sync::{Notify, RwLock, mpsc, mpsc::Sender};
 use tracing::{debug, error, info, trace};
 
 type TaskPayload = (Vec<NodeId>, Box<dyn SendableAny>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunnerState {
+    Initial,
+    Running,
+    Paused,
+    Terminated,
+}
+
+#[derive(Clone)]
+pub struct RunnerHandle {
+    state: Arc<RwLock<RunnerState>>,
+    notify: Arc<Notify>,
+}
+
+impl RunnerHandle {
+    pub fn new() -> Self {
+        Self {
+            state: Arc::new(RwLock::new(RunnerState::Initial)),
+            notify: Arc::new(Notify::new()),
+        }
+    }
+
+    pub async fn pause(&self) {
+        let mut state = self.state.write().await;
+        if *state != RunnerState::Terminated {
+            *state = RunnerState::Paused;
+            self.notify.notify_waiters();
+        }
+    }
+
+    pub async fn resume(&self) {
+        let mut state = self.state.write().await;
+        if *state == RunnerState::Paused {
+            *state = RunnerState::Running;
+            self.notify.notify_waiters();
+        }
+    }
+
+    pub async fn stop(&self) {
+        let mut state = self.state.write().await;
+        *state = RunnerState::Terminated;
+        self.notify.notify_waiters();
+    }
+
+    pub async fn get_state(&self) -> RunnerState {
+        *self.state.read().await
+    }
+}
 
 pub struct Runner {
     graph: Graph,
@@ -19,18 +68,24 @@ pub struct Runner {
     active_tasks: HashMap<NodeId, usize>,
     total_active_tasks: usize,
     event_sender: Option<Sender<FlowEvent>>,
+    handle: RunnerHandle,
 }
 
 impl Runner {
-    pub fn new(graph: Graph) -> Self {
-        Self {
-            graph,
-            ctx: Arc::new(Context::new()),
-            task_queue: VecDeque::new(),
-            active_tasks: HashMap::new(),
-            total_active_tasks: 0,
-            event_sender: None,
-        }
+    pub fn new(graph: Graph) -> (Self, RunnerHandle) {
+        let handle = RunnerHandle::new();
+        (
+            Self {
+                graph,
+                ctx: Arc::new(Context::new()),
+                task_queue: VecDeque::new(),
+                active_tasks: HashMap::new(),
+                total_active_tasks: 0,
+                event_sender: None,
+                handle: handle.clone(),
+            },
+            handle,
+        )
     }
 
     pub fn set_event_sender(mut self, sender: Sender<FlowEvent>) -> Self {
@@ -46,6 +101,15 @@ impl Runner {
 
     pub async fn run(&mut self) -> Result<(), String> {
         info!(nodes = ?self.graph.get_node_ids(), "Runner started");
+
+        // Start running
+        {
+            let mut state = self.handle.state.write().await;
+            if *state == RunnerState::Initial {
+                *state = RunnerState::Running;
+            }
+        }
+
         let (task_sender, mut rx) = mpsc::channel::<TaskEvent>(128);
         // 使用计数器跟踪每个节点的活跃任务数
         self.active_tasks.clear();
@@ -58,63 +122,110 @@ impl Runner {
             }
         }
 
+        if self.total_active_tasks == 0 {
+            info!("Runner finished: No tasks started");
+            Self::send_flow_event(&self.event_sender, FlowEvent::Finished).await;
+            return Ok(());
+        }
+
         let mut first_error = None;
 
-        while let Some(first_event) = rx.recv().await {
-            // 批量获取当前队列中的所有事件，以便进行优先级排序
-            let mut events = vec![first_event];
-            while let Ok(event) = rx.try_recv() {
-                events.push(event);
+        loop {
+            let current_state = self.handle.get_state().await;
+
+            if current_state == RunnerState::Terminated {
+                info!("Runner terminated by command");
+                // Clear queues if needed, but we are exiting anyway
+                Self::send_flow_event(&self.event_sender, FlowEvent::FlowStopped).await;
+                break;
             }
 
-            // 优先级排序：Completed/Error > Stream > Next
-            // 这样可以确保下游节点的完成事件优先于上游节点的新数据产生事件被处理
-            // 从而实现更好的任务交织，防止上游流数据阻塞整个流水线
-            events.sort_by_key(|event| match event {
-                TaskEvent::Completed(..) | TaskEvent::Error(..) => 0,
-                TaskEvent::Stream(..) => 1,
-                TaskEvent::Next(..) => 2,
-            });
+            tokio::select! {
+                _ = self.handle.notify.notified() => {
+                    let new_state = self.handle.get_state().await;
+                    match new_state {
+                        RunnerState::Paused => {
+                            info!("Runner paused");
+                            Self::send_flow_event(&self.event_sender, FlowEvent::FlowPaused).await;
+                        }
+                        RunnerState::Running => {
+                            info!("Runner resumed");
+                            Self::send_flow_event(&self.event_sender, FlowEvent::FlowResumed).await;
+                        }
+                        RunnerState::Terminated => {
+                            // Will be handled in next loop iteration
+                        }
+                        _ => {}
+                    }
+                }
 
-            for task_event in events {
-                match task_event {
-                    TaskEvent::Stream(node_id, subscribe_fn) => {
-                        info!(node_id = %node_id, "Received Stream");
-                        // 响应式流作为一个长运行任务，已经在 active_tasks 中计数
-                        // 它会由 subscribe_fn 发送 Completed 或 Error 来结束
-                        let _sub = subscribe_fn(task_sender.clone(), node_id, self.ctx.clone());
-                    }
-                    TaskEvent::Next(node_id, output) => {
-                        info!(
-                            node_id = %node_id,
-                            output_type = %output.as_ref().type_name(),
-                            "Received Next event"
-                        );
-                        // 寻找并启动下游节点
-                        self.trigger_downstream(&node_id, output, task_sender.clone())?;
-                    }
-                    TaskEvent::Completed(node_id, output) => {
-                        // 1. 处理节点产出的数据（如果是普通节点）
-                        if let Some(out) = output {
-                            self.trigger_downstream(&node_id, out, task_sender.clone())?;
+                maybe_event = rx.recv(), if current_state == RunnerState::Running => {
+                    match maybe_event {
+                        Some(first_event) => {
+                            // 批量获取当前队列中的所有事件，以便进行优先级排序
+                            let mut events = vec![first_event];
+                            while let Ok(event) = rx.try_recv() {
+                                events.push(event);
+                            }
+
+                            // 优先级排序：Completed/Error > Stream > Next
+                            // 这样可以确保下游节点的完成事件优先于上游节点的新数据产生事件被处理
+                            // 从而实现更好的任务交织，防止上游流数据阻塞整个流水线
+                            events.sort_by_key(|event| match event {
+                                TaskEvent::Completed(..) | TaskEvent::Error(..) => 0,
+                                TaskEvent::Stream(..) => 1,
+                                TaskEvent::Next(..) => 2,
+                            });
+
+                            for task_event in events {
+                                match task_event {
+                                    TaskEvent::Stream(node_id, subscribe_fn) => {
+                                        info!(node_id = %node_id, "Received Stream");
+                                        // 响应式流作为一个长运行任务，已经在 active_tasks 中计数
+                                        // 它会由 subscribe_fn 发送 Completed 或 Error 来结束
+                                        let _sub = subscribe_fn(task_sender.clone(), node_id, self.ctx.clone());
+                                    }
+                                    TaskEvent::Next(node_id, output) => {
+                                        info!(
+                                            node_id = %node_id,
+                                            output_type = %output.as_ref().type_name(),
+                                            "Received Next event"
+                                        );
+                                        // 寻找并启动下游节点
+                                        self.trigger_downstream(&node_id, output, task_sender.clone())?;
+                                    }
+                                    TaskEvent::Completed(node_id, output) => {
+                                        // 1. 处理节点产出的数据（如果是普通节点）
+                                        if let Some(out) = output {
+                                            self.trigger_downstream(&node_id, out, task_sender.clone())?;
+                                        }
+                                        // 2. 更新任务计数器
+                                        self.update_active_tasks(&node_id);
+                                    }
+                                    TaskEvent::Error(node_id, e) => {
+                                        error!(node_id = %node_id, error = %e, "Node execution failed");
+                                        if first_error.is_none() {
+                                            first_error = Some(e);
+                                        }
+                                        self.update_active_tasks(&node_id);
+                                    }
+                                }
+                            }
+
+                            if self.total_active_tasks == 0 {
+                                info!("Runner finished: All tasks completed");
+                                break;
+                            }
                         }
-                        // 2. 更新任务计数器
-                        self.update_active_tasks(&node_id);
-                    }
-                    TaskEvent::Error(node_id, e) => {
-                        error!(node_id = %node_id, error = %e, "Node execution failed");
-                        if first_error.is_none() {
-                            first_error = Some(e);
+                        None => {
+                            // Channel closed, all senders dropped
+                            break;
                         }
-                        self.update_active_tasks(&node_id);
                     }
                 }
             }
 
-            if self.total_active_tasks == 0 {
-                info!("Runner finished: All tasks completed");
-                break;
-            }
+            if self.total_active_tasks == 0 && current_state == RunnerState::Running {}
         }
 
         Self::send_flow_event(&self.event_sender, FlowEvent::Finished).await;
@@ -247,10 +358,7 @@ impl Runner {
                         if let Some(val) = try_downcast_to_value(out.as_ref()) {
                             Self::send_flow_event(
                                 &event_sender,
-                                FlowEvent::NodeOutMessage(
-                                    node_id.clone(),
-                                    val,
-                                ),
+                                FlowEvent::NodeOutMessage(node_id.clone(), val),
                             )
                             .await;
                         }

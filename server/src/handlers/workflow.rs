@@ -1,4 +1,4 @@
-use crate::state::{AppState, GraphBlueprint};
+use crate::state::{AppState, ExecutionHandle, GraphBlueprint};
 use axum::{
     Json,
     extract::{
@@ -10,6 +10,7 @@ use axum::{
 use flow::{FlowEvent, Runner, SendableAny};
 use serde::Deserialize;
 use serde_json::json;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct CreateWorkflowRequest {
@@ -21,6 +22,12 @@ pub struct CreateWorkflowRequest {
 pub struct UpdateWorkflowRequest {
     name: Option<String>,
     blueprint: GraphBlueprint,
+}
+
+#[derive(Deserialize)]
+pub struct RunWorkflowRequest {
+    blueprint: GraphBlueprint,
+    workflow_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -107,11 +114,12 @@ pub async fn delete_workflow(
 
 pub async fn run_workflow(
     State(state): State<AppState>,
-    Json(blueprint): Json<GraphBlueprint>,
+    Json(request): Json<RunWorkflowRequest>,
 ) -> impl IntoResponse {
-    if state.is_running() {
-        return Json(json!({"error": "Workflow is already running"}));
-    }
+    let blueprint = request.blueprint;
+    let workflow_id = request.workflow_id;
+    // Generate Run ID
+    let run_id = Uuid::new_v4().to_string();
 
     let (graph, start_inputs) = {
         let registry = state
@@ -140,48 +148,159 @@ pub async fn run_workflow(
         (graph, inputs)
     };
 
-    state.set_running(true);
+    // Prepare Runner
+    let (mut runner, handle) = Runner::new(graph);
+
+    // Setup bridge
     let tx = state.tx.clone();
-    let state_clone = state.clone();
+    let run_id_clone = run_id.clone();
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
-    tokio::spawn(async move {
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
-        let bridge_tx = tx.clone();
-        let bridge_handle = tokio::spawn(async move {
-            while let Some(event) = event_rx.recv().await {
-                let _ = bridge_tx.send(event);
-            }
-        });
+    runner = runner.set_event_sender(event_tx);
 
-        {
-            let mut runner = Runner::new(graph).set_event_sender(event_tx);
-
-            for (node_id, input) in start_inputs {
-                runner = runner.set_start_node(&node_id, input.as_ref());
-            }
-
-            if let Err(e) = runner.run().await {
-                tracing::error!("Flow execution error: {}", e);
-                let _ = tx.send(FlowEvent::NodeError("runner".to_string(), e));
-            }
+    let bridge_handle = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let _ = tx.send((run_id_clone.clone(), event));
         }
-
-        // Wait for all events to be sent before finishing
-        let _ = bridge_handle.await;
-        state_clone.set_running(false);
-        let _ = tx.send(FlowEvent::Finished);
     });
 
-    Json(json!({"status": "started"}))
+    // Store execution handle
+    {
+        let mut executions = state.executions.write().expect("lock poisoned");
+        executions.insert(
+            run_id.clone(),
+            ExecutionHandle {
+                runner_handle: handle.clone(),
+                workflow_id,
+            },
+        );
+    }
+
+    let state_clone = state.clone();
+    let run_id_for_task = run_id.clone();
+    let run_id_for_event = run_id.clone();
+
+    tokio::spawn(async move {
+        // Setup inputs
+        for (node_id, input) in start_inputs {
+            runner = runner.set_start_node(&node_id, input.as_ref());
+        }
+
+        if let Err(e) = runner.run().await {
+            tracing::error!("Flow execution error: {}", e);
+            let _ = state_clone.tx.send((
+                run_id_for_event.clone(),
+                FlowEvent::NodeError("runner".to_string(), e),
+            ));
+        }
+
+        let _ = bridge_handle.await;
+
+        // Remove from executions
+        {
+            let mut executions = state_clone.executions.write().expect("lock poisoned");
+            executions.remove(&run_id_for_task);
+        }
+    });
+
+    Json(json!({"status": "started", "run_id": run_id}))
+}
+
+pub async fn get_workflow_status(
+    Path(id): Path<i64>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    // Clone necessary data within a block to drop the lock immediately
+    let (execution, run_id) = {
+        let executions = state.executions.read().expect("lock poisoned");
+        // Find execution for this workflow_id
+        let execution = executions.values().find(|h| h.workflow_id == id).cloned();
+
+        let run_id = executions
+            .iter()
+            .find(|(_, h)| h.workflow_id == id)
+            .map(|(k, _)| k.clone())
+            .unwrap_or_default();
+
+        (execution, run_id)
+    };
+
+    if let Some(handle) = execution {
+        let state = handle.runner_handle.get_state().await;
+        let status = match state {
+            flow::RunnerState::Initial => "idle",
+            flow::RunnerState::Running => "running",
+            flow::RunnerState::Paused => "paused",
+            flow::RunnerState::Terminated => "idle",
+        };
+        Json(json!({
+            "status": status,
+            "run_id": run_id
+        }))
+    } else {
+        Json(json!({
+            "status": "idle",
+            "run_id": null
+        }))
+    }
+}
+
+pub async fn pause_workflow(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let handle = {
+        let executions = state.executions.read().expect("lock poisoned");
+        executions.get(&id).cloned()
+    };
+
+    if let Some(handle) = handle {
+        handle.runner_handle.pause().await;
+        Json(json!({"status": "paused"}))
+    } else {
+        Json(json!({"error": "Workflow execution not found"}))
+    }
+}
+
+pub async fn resume_workflow(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let handle = {
+        let executions = state.executions.read().expect("lock poisoned");
+        executions.get(&id).cloned()
+    };
+
+    if let Some(handle) = handle {
+        handle.runner_handle.resume().await;
+        Json(json!({"status": "resumed"}))
+    } else {
+        Json(json!({"error": "Workflow execution not found"}))
+    }
+}
+
+pub async fn stop_workflow(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let handle = {
+        let executions = state.executions.read().expect("lock poisoned");
+        executions.get(&id).cloned()
+    };
+
+    if let Some(handle) = handle {
+        handle.runner_handle.stop().await;
+        Json(json!({ "status": "stopped" }))
+    } else {
+        Json(json!({ "error": "Workflow execution not found" }))
+    }
 }
 
 pub async fn run_node(
     State(state): State<AppState>,
     Json(payload): Json<RunNodeRequest>,
 ) -> impl IntoResponse {
-    if state.is_running() {
-        return Json(json!({"error": "Workflow is already running"}));
-    }
+    let run_id = Uuid::new_v4().to_string();
 
     let (graph, start_input) = {
         let registry = state
@@ -218,37 +337,59 @@ pub async fn run_node(
         }));
     }
 
-    state.set_running(true);
+    // Prepare Runner
+    let (mut runner, handle) = Runner::new(graph);
+
+    // Setup bridge
     let tx = state.tx.clone();
-    let state_clone = state.clone();
-    let start_node_id = payload.node_id.clone();
+    let run_id_clone = run_id.clone();
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
-    tokio::spawn(async move {
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
-        let bridge_tx = tx.clone();
-        let bridge_handle = tokio::spawn(async move {
-            while let Some(event) = event_rx.recv().await {
-                let _ = bridge_tx.send(event);
-            }
-        });
+    runner = runner.set_event_sender(event_tx);
 
-        {
-            let mut runner = Runner::new(graph).set_event_sender(event_tx);
-            runner = runner.set_start_node(&start_node_id, start_input.as_ref());
-
-            if let Err(e) = runner.run().await {
-                tracing::error!("Flow execution error: {}", e);
-                let _ = tx.send(FlowEvent::NodeError("runner".to_string(), e));
-            }
+    let bridge_handle = tokio::spawn(async move {
+        while let Some(event) = event_rx.recv().await {
+            let _ = tx.send((run_id_clone.clone(), event));
         }
-
-        // Wait for all events to be sent before finishing
-        let _ = bridge_handle.await;
-        state_clone.set_running(false);
-        let _ = tx.send(FlowEvent::Finished);
     });
 
-    Json(json!({"status": "started", "start_node": payload.node_id}))
+    // Store execution handle
+    {
+        let mut executions = state.executions.write().expect("lock poisoned");
+        executions.insert(
+            run_id.clone(),
+            ExecutionHandle {
+                runner_handle: handle.clone(),
+                workflow_id: -1, // Run node doesn't belong to a saved workflow
+            },
+        );
+    }
+
+    let state_clone = state.clone();
+    let start_node_id = payload.node_id.clone();
+    let run_id_for_task = run_id.clone();
+    let run_id_for_event = run_id.clone();
+
+    tokio::spawn(async move {
+        runner = runner.set_start_node(&start_node_id, start_input.as_ref());
+
+        if let Err(e) = runner.run().await {
+            tracing::error!("Flow execution error: {}", e);
+            let _ = state_clone.tx.send((
+                run_id_for_event.clone(),
+                FlowEvent::NodeError("runner".to_string(), e),
+            ));
+        }
+
+        let _ = bridge_handle.await;
+
+        {
+            let mut executions = state_clone.executions.write().expect("lock poisoned");
+            executions.remove(&run_id_for_task);
+        }
+    });
+
+    Json(json!({"status": "started", "run_id": run_id, "start_node": payload.node_id}))
 }
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
@@ -257,8 +398,12 @@ pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> 
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     let mut rx = state.tx.subscribe();
-    while let Ok(msg) = rx.recv().await {
-        if let Ok(json) = serde_json::to_string(&msg) {
+    while let Ok((run_id, event)) = rx.recv().await {
+        let wrapper = json!({
+            "runId": run_id,
+            "event": event
+        });
+        if let Ok(json) = serde_json::to_string(&wrapper) {
             if socket.send(Message::Text(json)).await.is_err() {
                 break;
             }

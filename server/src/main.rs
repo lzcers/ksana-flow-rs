@@ -9,7 +9,6 @@ use axum::{
     routing::{get, post},
 };
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
@@ -17,8 +16,9 @@ use tracing::info;
 
 use crate::db::Db;
 use crate::handlers::{
-    create_workflow, delete_workflow, get_nodes, get_workflow, list_workflows, run_node,
-    run_workflow, update_workflow, ws_handler,
+    create_workflow, delete_workflow, get_nodes, get_workflow, get_workflow_status, list_workflows,
+    pause_workflow, resume_workflow, run_node, run_workflow, stop_workflow, update_workflow,
+    ws_handler,
 };
 use crate::registry::create_registry;
 use crate::state::AppState;
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app_state = AppState {
         registry: Arc::new(RwLock::new(registry)),
-        running: Arc::new(AtomicBool::new(false)),
+        executions: Arc::new(RwLock::new(std::collections::HashMap::new())),
         tx,
         db: Arc::new(Mutex::new(db)),
     };
@@ -56,6 +56,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/workflow/run", post(run_workflow))
         .route("/api/workflow/run_node", post(run_node))
+        .route("/api/workflow/:id/status", get(get_workflow_status))
+        .route("/api/workflow/:id/pause", post(pause_workflow))
+        .route("/api/workflow/:id/resume", post(resume_workflow))
+        .route("/api/workflow/:id/stop", post(stop_workflow))
         .route("/api/nodes", get(get_nodes))
         .route("/ws", get(ws_handler))
         .layer(CorsLayer::permissive())

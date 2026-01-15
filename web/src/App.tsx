@@ -21,7 +21,7 @@ function AppContent() {
     nodeTypes,
     workflows,
     currentWorkflowId,
-    isRunning,
+    workflowStatus,
     onNodesChange,
     onEdgesChange,
     onNodeDragStop,
@@ -30,6 +30,9 @@ function AppContent() {
     deleteNode,
     updateNodeData,
     runWorkflow,
+    pauseWorkflow,
+    resumeWorkflow,
+    stopWorkflow,
     saveWorkflow,
     loadWorkflow,
     deleteWorkflow,
@@ -46,9 +49,8 @@ function AppContent() {
           nodeTypes={nodeTypes}
           workflows={workflows}
           currentWorkflowId={currentWorkflowId}
-          isRunning={isRunning}
+          workflowStatus={workflowStatus}
           onAddNode={addNode}
-          onRun={runWorkflow}
           onLoadWorkflow={loadWorkflow}
           onSaveWorkflow={saveWorkflow}
           onDeleteWorkflow={deleteWorkflow}
@@ -60,11 +62,16 @@ function AppContent() {
           <Canvas
             nodes={state.nodes}
             edges={state.edges}
+            workflowStatus={workflowStatus}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStop={onNodeDragStop}
             onConnect={onConnect}
             onAddNode={addNode}
+            onRun={runWorkflow}
+            onPause={pauseWorkflow}
+            onResume={resumeWorkflow}
+            onStop={stopWorkflow}
           />
         </ReactFlowProvider>
 

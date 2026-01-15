@@ -58,12 +58,17 @@ export const deleteWorkflow = async (id: number) => {
     return res.json();
 };
 
-export const runWorkflow = async (blueprint: any) => {
+export const runWorkflow = async (blueprint: any, workflowId: number) => {
     const res = await fetch(`${API_BASE}/workflow/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(blueprint),
+        body: JSON.stringify({ blueprint, workflow_id: workflowId }),
     });
+    return res.json();
+};
+
+export const getWorkflowStatus = async (id: number) => {
+    const res = await fetch(`${API_BASE}/workflow/${id}/status`);
     return res.json();
 };
 
@@ -72,6 +77,27 @@ export const runNode = async (blueprint: any, nodeId: string) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blueprint, node_id: nodeId }),
+    });
+    return res.json();
+};
+
+export const pauseWorkflow = async (runId: string) => {
+    const res = await fetch(`${API_BASE}/workflow/${runId}/pause`, {
+        method: 'POST',
+    });
+    return res.json();
+};
+
+export const resumeWorkflow = async (runId: string) => {
+    const res = await fetch(`${API_BASE}/workflow/${runId}/resume`, {
+        method: 'POST',
+    });
+    return res.json();
+};
+
+export const stopWorkflow = async (runId: string) => {
+    const res = await fetch(`${API_BASE}/workflow/${runId}/stop`, {
+        method: 'POST',
     });
     return res.json();
 };

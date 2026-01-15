@@ -1,33 +1,27 @@
 use crate::db::Db;
 use crate::registry::NodeRegistry;
-use flow::{AnyEdge, Edge as FlowEdge, FlowEvent, Graph};
+use flow::{AnyEdge, Edge as FlowEdge, FlowEvent, Graph, RunnerHandle};
 use nodes::trade::K;
 use nodes::trade::backtester::BacktesterInput;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
-
-use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::error;
+
+#[derive(Clone)]
+pub struct ExecutionHandle {
+    pub runner_handle: RunnerHandle,
+    pub workflow_id: i64,
+}
 
 #[derive(Clone)]
 pub struct AppState {
     pub registry: Arc<RwLock<NodeRegistry>>,
-    pub running: Arc<AtomicBool>,
-    pub tx: broadcast::Sender<FlowEvent>,
+    pub executions: Arc<RwLock<HashMap<String, ExecutionHandle>>>,
+    pub tx: broadcast::Sender<(String, FlowEvent)>,
     pub db: Arc<Mutex<Db>>,
-}
-
-impl AppState {
-    pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
-    pub fn set_running(&self, running: bool) {
-        self.running.store(running, Ordering::SeqCst);
-    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug)]
