@@ -1,9 +1,10 @@
 use chrono::{Local, NaiveDateTime};
 use flow::{AnyNode, SendableAny};
 use nodes::{
+    EmailNotifyNode, TimerNode,
     llm::LLMNode,
     text::TextNode,
-    trade::{Backtester, ReactiveSourceNode, VOLMFINode},
+    trade::{Backtester, ReactiveSourceNode, SourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -94,6 +95,47 @@ pub fn create_registry() -> NodeRegistry {
     let mut registry = NodeRegistry::new();
     registry.register(
         NodeMetadata {
+            name: "TimerNode".to_string(),
+            description: "Timer node based on Cron expression".to_string(),
+            category: "Trigger".to_string(),
+            config: json!({
+                "cron_expr": "* * * * * * *"
+            }),
+            inputs: vec![InputType::None],
+            outputs: vec![],
+        },
+        |config: Value| {
+            let cron_expr = config["cron_expr"].as_str().unwrap_or("* * * * * * *");
+            let node = TimerNode::new(cron_expr).map_err(|e| e.to_string())?;
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "EmailNotifyNode".to_string(),
+            description: "Email notification node".to_string(),
+            category: "Notification".to_string(),
+            config: json!({
+                "subject": "Notification",
+                "body": ""
+            }),
+            inputs: vec![InputType::None],
+            outputs: vec![],
+        },
+        |config: Value| {
+            let subject = config["subject"]
+                .as_str()
+                .unwrap_or("Notification")
+                .to_string();
+            let body = config["body"].as_str().unwrap_or("").to_string();
+            let node = EmailNotifyNode::new(subject, body);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
             name: "ReactiveSourceNode".to_string(),
             description: "Source node providing K-line data".to_string(),
             category: "Source".to_string(),
@@ -180,23 +222,16 @@ pub fn create_registry() -> NodeRegistry {
             description: "Large Language Model Node".to_string(),
             category: "AI".to_string(),
             config: json!({
-                "model": "deepseek-chat",
                 "system_prompt": "",
-                "user_prompt_template": ""
+                "user_prompt": ""
             }),
             inputs: vec![InputType::String],
             outputs: vec![],
         },
         |config: Value| {
-            let model = config["model"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            let system_prompt = config["system_prompt"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            let node = LLMNode::new(model, system_prompt);
+            let system_prompt = config["system_prompt"].as_str();
+            let user_prompt = config["user_prompt"].as_str();
+            let node = LLMNode::new(system_prompt.unwrap_or(""), user_prompt.unwrap_or(""));
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );

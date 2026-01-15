@@ -42,8 +42,8 @@ export function useWorkflow() {
               const id = msg.NodeStarted;
               const node = draft.nodes.find(n => n.id === id);
               if (node) node.data.status = 'running';
-            } else if (msg.NodeMessage) {
-              const [id, value] = msg.NodeMessage;
+            } else if (msg.NodeInMessage) {
+              const [id, value] = msg.NodeInMessage;
               const node = draft.nodes.find(n => n.id === id);
               if (node) node.data.lastMessage = value;
             } else if (msg.NodeCompleted) {
@@ -111,6 +111,9 @@ export function useWorkflow() {
         id: n.id,
         type: 'workflow',
         position: n.position || { x: 0, y: 0 },
+        width: n.width,
+        height: n.height,
+        style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
         data: {
           label: n.type,
           type: n.type,
@@ -148,7 +151,9 @@ export function useWorkflow() {
         id: n.id,
         type: n.data.type,
         data: n.data.config,
-        position: n.position
+        position: n.position,
+        width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
+        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
       })),
       edges: state.edges.map(e => ({
         id: e.id,
@@ -193,7 +198,9 @@ export function useWorkflow() {
             id: n.id,
             type: n.data.type,
             data: n.data.config,
-            position: n.position
+            position: n.position,
+            width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
+            height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
           })),
           edges: state.edges.map(e => ({
             id: e.id,
@@ -251,14 +258,11 @@ export function useWorkflow() {
       draft.nodes = applyNodeChanges(changes, draft.nodes as unknown as WorkflowNode[]) as WorkflowNode[];
 
       // Update selectedNodeId based on changes
-      const selectChange = changes.find(c => c.type === 'select');
-      if (selectChange && 'selected' in selectChange) {
-        if (selectChange.selected) {
-          draft.selectedNodeId = selectChange.id;
-        } else if (draft.selectedNodeId === selectChange.id) {
-          draft.selectedNodeId = null;
-        }
-      }
+      // We check the actual state of nodes because changes array might contain
+      // multiple select events (e.g. deselect A, select B) and their order
+      // matters. Relying on the final state is more robust.
+      const selectedNode = draft.nodes.find(n => n.selected);
+      draft.selectedNodeId = selectedNode ? selectedNode.id : null;
     });
   }, [updateState]);
 
@@ -295,11 +299,13 @@ export function useWorkflow() {
     const id = `${type}-${nextNum}`;
     const meta = nodeTypes.find(t => t.name === type);
 
+
     updateState(draft => {
       draft.nodes.push({
         id,
         type: 'workflow',
         position,
+
         data: {
           label: type,
           type: type,
@@ -328,6 +334,19 @@ export function useWorkflow() {
     });
   }, [updateState]);
 
+  const updateNodeDimensions = useCallback((id: string, width: number, height: number) => {
+    updateState(draft => {
+      const node = draft.nodes.find(n => n.id === id);
+      if (node) {
+        if (!node.style) node.style = {};
+        node.style.width = width;
+        node.style.height = height;
+        node.width = width;
+        node.height = height;
+      }
+    });
+  }, [updateState]);
+
   const runWorkflow = useCallback(async () => {
     // Transform ReactFlow state to backend blueprint format
     const blueprint = {
@@ -335,7 +354,9 @@ export function useWorkflow() {
         id: n.id,
         type: n.data.type,
         data: n.data.config,
-        position: n.position
+        position: n.position,
+        width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
+        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
       })),
       edges: state.edges.map(e => ({
         id: e.id,
@@ -373,7 +394,9 @@ export function useWorkflow() {
         id: n.id,
         type: n.data.type,
         data: n.data.config,
-        position: n.position
+        position: n.position,
+        width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
+        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
       })),
       edges: state.edges.map(e => ({
         id: e.id,
@@ -418,6 +441,7 @@ export function useWorkflow() {
     addNode,
     deleteNode,
     updateNodeData,
+    updateNodeDimensions,
     runWorkflow,
     runNode,
     saveWorkflow,

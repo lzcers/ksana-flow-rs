@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Play, Activity, Box, Database, FileText, Plus, Save as SaveIcon, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
+import { Play, FileText, Plus, Save as SaveIcon, Trash2, Edit2, X, Check, Loader2 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { NodeMetadata } from '../../api';
+import { NODE_TYPES } from './nodeTypes';
 
 interface SidebarProps {
   nodeTypes: NodeMetadata[];
@@ -17,13 +18,9 @@ interface SidebarProps {
   onCreateNew: () => void;
 }
 
-const getIconForCategory = (category: string) => {
-  switch (category.toLowerCase()) {
-    case 'source': return Database;
-    case 'strategy': return Activity;
-    case 'sink': return Box;
-    default: return Box;
-  }
+const getIcon = (name: string) => {
+  const nodeType = NODE_TYPES.find(i => i.type === name);
+  return nodeType?.icon || FileText;
 };
 
 const getColorForCategory = (category: string) => {
@@ -91,11 +88,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="w-64 border-r border-zinc-800 bg-zinc-900 p-6 z-10 flex flex-col h-full overflow-hidden">
       <div className="mb-6 flex-shrink-0">
-        <h1 className="text-lg font-bold tracking-tight text-zinc-100 flex items-center gap-2 mb-6">
-          <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-            <Play size={12} fill="currentColor" />
-          </div>
-          Ksana Flow
+        <h1 className="text-lg font-bold tracking-tight text-zinc-100 flex items-center gap-2 mb-6 flex justify-center">
+          Ksana Flow Engine
         </h1>
 
         <div className="space-y-2">
@@ -210,7 +204,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <h2 className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.1em] mb-2 sticky top-0 bg-zinc-900 py-1">Components</h2>
           <div className="space-y-1.5">
             {nodeTypes.map(nodeType => {
-              const Icon = getIconForCategory(nodeType.category);
+              const Icon = getIcon(nodeType.name);
               const colorClass = getColorForCategory(nodeType.category);
               return (
                 <button

@@ -109,10 +109,6 @@ export const Canvas: React.FC<CanvasProps> = ({
         <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
           <ZoomDisplay />
         </Panel>
-
-        <Panel position="top-right" className="bg-zinc-900/80 backdrop-blur px-3 py-1.5 rounded-full border border-zinc-800 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-          React Flow Powered
-        </Panel>
       </ReactFlow>
     </main>
   );

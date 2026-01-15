@@ -119,6 +119,10 @@ pub struct Node {
     pub type_name: String,
     pub data: Value,
     pub position: Position,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

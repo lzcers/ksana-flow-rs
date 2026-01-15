@@ -6,7 +6,8 @@ use tokio::sync::mpsc;
 
 use crate::{
     flow::{
-        graph::{Context, NodeId, TaskEvent},
+        event::TaskEvent,
+        graph::{Context, NodeId},
         sendable_any::SendableAny,
     },
     reactive::observable::{Observable, Observer, Subscription},

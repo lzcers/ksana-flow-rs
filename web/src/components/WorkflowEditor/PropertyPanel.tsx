@@ -16,7 +16,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   return (
     <aside className="w-72 border-l border-zinc-800 bg-zinc-900 p-6 z-10 overflow-y-auto">
       <div className="flex items-center justify-between mb-8">
-        <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-widest">属性</h2>
+        <h2 className="text-sm font-bold text-zinc-100 tracking-widest">属性</h2>
         <button
           onClick={() => onDelete(node.id)}
           className="p-1.5 text-zinc-500 hover:text-rose-500 transition-colors"
@@ -27,7 +27,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
 
       <div className="space-y-6">
         <div className="space-y-2">
-          <label className="text-[11px] font-bold text-zinc-500 uppercase">名称</label>
+          <label className="text-[11px] font-bold text-zinc-500 ">名称</label>
           <input
             type="text"
             value={node.data.label}
@@ -37,7 +37,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         </div>
 
         <div className="space-y-2">
-          <label className="text-[11px] font-bold text-zinc-500 uppercase">描述</label>
+          <label className="text-[11px] font-bold text-zinc-500">描述</label>
           <textarea
             value={node.data.description || ''}
             onChange={(e) => onUpdateData(node.id, { description: e.target.value })}
@@ -49,7 +49,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         {node.data.type === 'LLMNode' && (
           <>
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase">System Prompt</label>
+              <label className="text-[11px] font-bold text-zinc-500">System Prompt</label>
               <textarea
                 value={node.data.config?.system_prompt || ''}
                 onChange={(e) => onUpdateData(node.id, {
@@ -64,7 +64,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
               />
             </div>
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase">User Prompt Template</label>
+              <label className="text-[11px] font-bold text-zinc-500">User Prompt Template</label>
               <textarea
                 value={node.data.config?.user_prompt_template || ''}
                 onChange={(e) => onUpdateData(node.id, {

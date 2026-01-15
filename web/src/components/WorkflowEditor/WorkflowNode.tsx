@@ -1,31 +1,34 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import type { WorkflowNodeData } from '../../types/workflow';
-import { StartNode } from '../nodes/StartNode';
-import { EndNode } from '../nodes/EndNode';
-import { TaskNode } from '../nodes/TaskNode';
-import { ConditionNode } from '../nodes/ConditionNode';
 import { LLMNode } from '../nodes/LLMNode';
 import { TextNode } from '../nodes/TextNode';
+import { EmailNotifyNode } from '../nodes/EmailNotifyNode';
+import { TimerNode } from '../nodes/TimerNode';
+import { BacktesterNode } from '../nodes/BacktesterNode';
+import { SourceNode } from '../nodes/SourceNode';
+import { VolMfiNode } from '../nodes/VolMfiNode';
 
 export const WorkflowNode = memo((props: NodeProps & { data: WorkflowNodeData }) => {
   const { data } = props;
 
   switch (data.type) {
-    case 'start':
-      return <StartNode {...props} />;
-    case 'end':
-      return <EndNode {...props} />;
-    case 'task':
-      return <TaskNode {...props} />;
-    case 'condition':
-      return <ConditionNode {...props} />;
     case 'LLMNode':
       return <LLMNode {...props} />;
     case 'TextNode':
       return <TextNode {...props} />;
+    case 'EmailNotifyNode':
+      return <EmailNotifyNode {...props} />;
+    case 'TimerNode':
+      return <TimerNode {...props} />;
+    case 'Backtester':
+      return <BacktesterNode {...props} />;
+    case 'ReactiveSourceNode':
+      return <SourceNode {...props} />;
+    case 'VOLMFINode':
+      return <VolMfiNode {...props} />;
     default:
-      return <TaskNode {...props} />;
+      return null;
   }
 });
 

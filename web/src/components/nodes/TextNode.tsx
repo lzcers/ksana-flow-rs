@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Handle, Position, type NodeProps, NodeResizer } from '@xyflow/react';
+import { Handle, Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { NodeWrapper } from './NodeWrapper';
 import { useWorkflowContext } from '../../contexts/WorkflowContext';
 import { type WorkflowNodeData } from '../../types/workflow';
 
-export const TextNode = ({ id, data, selected }: NodeProps & { data: WorkflowNodeData }) => {
+export const TextNode = ({ id, data, selected, width, height }: NodeProps & { data: WorkflowNodeData }) => {
   const { updateNodeData } = useWorkflowContext();
   const [text, setText] = useState(data.config?.text || '');
+
+  const connections = useNodeConnections({
+    handleType: 'target',
+  });
 
   useEffect(() => {
     setText(data.config?.text || '');
@@ -28,31 +32,27 @@ export const TextNode = ({ id, data, selected }: NodeProps & { data: WorkflowNod
   // If we receive a message from upstream, show it.
   useEffect(() => {
     if (data.lastMessage !== undefined && typeof data.lastMessage === 'string') {
-      if (data.config?.text !== data.lastMessage) {
+      // Only update if we have upstream connections (meaning we are acting as a display node)
+      if (connections.length > 0 && data.config?.text !== data.lastMessage) {
         updateNodeData(id, {
           config: { ...data.config, text: data.lastMessage }
         });
       }
     }
-  }, [data.lastMessage, id, updateNodeData, data.config]);
+  }, [data.lastMessage, id, updateNodeData, data.config, connections.length]);
 
   return (
     <NodeWrapper
       id={id}
       data={data}
       selected={selected}
-      className="max-w-none w-full h-full min-w-[200px] min-h-[150px] transition-none flex flex-col"
+      className="flex flex-col"
       showSourceHandle={false}
       showTargetHandle={false}
+      minWidth={200}
+      minHeight={150}
+      style={{ width: width ?? 240, height: height ?? 160 }}
     >
-      <NodeResizer
-        minWidth={200}
-        minHeight={150}
-        isVisible={selected}
-        lineClassName="border-blue-500"
-        handleClassName="h-3 w-3 bg-white border-2 border-blue-500 rounded"
-      />
-
       <div className="p-2 flex-1 flex flex-col min-h-0">
         <div className="text-xs text-zinc-500 mb-1">Text Content</div>
         <textarea

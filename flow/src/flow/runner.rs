@@ -1,10 +1,13 @@
-use crate::flow::event::FlowEvent;
-use crate::flow::sendable_any::SendableAny;
-
-use super::graph::{AnyNode, Context, Graph, NodeId, TaskEvent};
+use super::graph::{AnyNode, Context, Graph, NodeId};
+use super::{
+    event::{FlowEvent, TaskEvent},
+    sendable_any::SendableAny,
+};
 use serde_json::Value;
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 use tokio::sync::{RwLock, mpsc, mpsc::Sender};
 use tracing::{debug, error, info, trace};
 
@@ -204,7 +207,7 @@ impl Runner {
             if let Some(val) = input.as_ref().as_any().downcast_ref::<String>() {
                 Self::send_flow_event(
                     &event_sender,
-                    FlowEvent::NodeMessage(node_id.clone(), Value::String(val.clone())),
+                    FlowEvent::NodeInMessage(node_id.clone(), Value::String(val.clone())),
                 )
                 .await;
             }
@@ -241,6 +244,17 @@ impl Runner {
                             }
                         }
                     } else {
+                        // todo: 考虑任意可以转换为 Value 的类型，都应该能传递到 Web 端
+                        if let Some(val) = out.as_ref().as_any().downcast_ref::<String>() {
+                            Self::send_flow_event(
+                                &event_sender,
+                                FlowEvent::NodeOutMessage(
+                                    node_id.clone(),
+                                    Value::String(val.clone()),
+                                ),
+                            )
+                            .await;
+                        }
                         // 非流式节点，发送带数据的 Completed 事件
                         Self::send_task_event(
                             &task_sender,
