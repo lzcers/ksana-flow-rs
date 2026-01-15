@@ -1,9 +1,8 @@
 use super::graph::{AnyNode, Context, Graph, NodeId};
 use super::{
     event::{FlowEvent, TaskEvent},
-    sendable_any::SendableAny,
+    sendable_any::{try_downcast_to_value, SendableAny},
 };
-use serde_json::Value;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -203,11 +202,11 @@ impl Runner {
 
             let mut node = node.write().await;
 
-            // todo: 考虑任意可以转换为 Value 的类型，都应该能传递到 Web 端
-            if let Some(val) = input.as_ref().as_any().downcast_ref::<String>() {
+            // 尝试将输入转换为 Value 并发送到 Web 端
+            if let Some(val) = try_downcast_to_value(input.as_ref()) {
                 Self::send_flow_event(
                     &event_sender,
-                    FlowEvent::NodeInMessage(node_id.clone(), Value::String(val.clone())),
+                    FlowEvent::NodeInMessage(node_id.clone(), val),
                 )
                 .await;
             }
@@ -244,13 +243,13 @@ impl Runner {
                             }
                         }
                     } else {
-                        // todo: 考虑任意可以转换为 Value 的类型，都应该能传递到 Web 端
-                        if let Some(val) = out.as_ref().as_any().downcast_ref::<String>() {
+                        // 尝试将输出转换为 Value 并发送到 Web 端
+                        if let Some(val) = try_downcast_to_value(out.as_ref()) {
                             Self::send_flow_event(
                                 &event_sender,
                                 FlowEvent::NodeOutMessage(
                                     node_id.clone(),
-                                    Value::String(val.clone()),
+                                    val,
                                 ),
                             )
                             .await;

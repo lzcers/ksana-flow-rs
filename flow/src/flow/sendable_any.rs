@@ -1,4 +1,5 @@
 use crate::flow::reactive_stream::StreamSubscriptionFn;
+use serde_json::{json, Value};
 use std::any::Any;
 
 pub trait SendableAny: Any + Send {
@@ -13,6 +14,32 @@ pub trait SendableAny: Any + Send {
     fn into_stream_subscriber(
         self: Box<Self>,
     ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>>;
+}
+
+pub fn try_downcast_to_value(any: &dyn SendableAny) -> Option<Value> {
+    let any = any.as_any();
+    if let Some(v) = any.downcast_ref::<String>() {
+        return Some(Value::String(v.clone()));
+    }
+    if let Some(v) = any.downcast_ref::<Value>() {
+        return Some(v.clone());
+    }
+    if let Some(v) = any.downcast_ref::<bool>() {
+        return Some(json!(v));
+    }
+    if let Some(v) = any.downcast_ref::<i32>() {
+        return Some(json!(v));
+    }
+    if let Some(v) = any.downcast_ref::<i64>() {
+        return Some(json!(v));
+    }
+    if let Some(v) = any.downcast_ref::<u64>() {
+        return Some(json!(v));
+    }
+    if let Some(v) = any.downcast_ref::<f64>() {
+        return Some(json!(v));
+    }
+    None
 }
 
 // 为实现了 Clone  的 SendableAny 提供默认实现

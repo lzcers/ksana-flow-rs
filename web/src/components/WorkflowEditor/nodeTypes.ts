@@ -1,4 +1,4 @@
-import { Sparkles, Database, Activity, Box, Type } from 'lucide-react';
+import { Sparkles, Database, Activity, Box, Type, Mail, Timer } from 'lucide-react';
 import type { NodeType } from '../../types/workflow';
 
 export const NODE_TYPES: { type: NodeType; label: string; icon: any; color: string }[] = [
@@ -7,4 +7,6 @@ export const NODE_TYPES: { type: NodeType; label: string; icon: any; color: stri
   { type: 'ReactiveSourceNode', label: 'Source', icon: Database, color: 'text-blue-500 bg-blue-50' },
   { type: 'VOLMFINode', label: 'Strategy', icon: Activity, color: 'text-orange-500 bg-orange-50' },
   { type: 'Backtester', label: 'Backtest', icon: Box, color: 'text-indigo-500 bg-indigo-50' },
+  { type: 'EmailNotifyNode', label: 'EmailNotifyNode', icon: Mail, color: 'text-indigo-500 bg-indigo-50' },
+  { type: 'TimerNode', label: 'TimerNode', icon: Timer, color: 'text-indigo-500 bg-indigo-50' },
 ];
