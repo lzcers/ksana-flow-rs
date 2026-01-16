@@ -226,7 +226,7 @@ pub async fn get_workflow_status(
     };
 
     if let Some(handle) = execution {
-        let state = handle.runner_handle.get_state().await;
+        let state = handle.runner_handle.get_state();
         let status = match state {
             flow::RunnerState::Initial => "idle",
             flow::RunnerState::Running => "running",
