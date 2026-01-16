@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use super::observable::*;
-use std::{time::Duration};
+use async_trait::async_trait;
+use std::time::Duration;
 use tokio::time::sleep;
 
 pub struct NumStream {

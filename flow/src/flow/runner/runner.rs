@@ -103,14 +103,14 @@ impl Runner {
 
     pub async fn run(&mut self) -> Result<(), String> {
         info!(nodes = ?self.graph.get_node_ids(), "Runner started");
-
-        if *self.state_tx.borrow() == RunnerState::Initial {
-            let _ = self.state_tx.send(RunnerState::Running);
+        let init_state = *self.state_tx.borrow();
+        if init_state == RunnerState::Initial {
+            self.update_runner_state(RunnerState::Running)?;
         }
 
+        self.active_tasks.clear();
         let (task_sender, mut rx) = mpsc::channel::<TaskEvent>(128);
         // 使用计数器跟踪每个节点的活跃任务数
-        self.active_tasks.clear();
 
         // 初始启动：将 task_queue 中的初始任务直接启动
         while let Some((node_ids, input)) = self.task_queue.pop_front() {
@@ -140,20 +140,20 @@ impl Runner {
                     match cmd {
                         RunnerCommand::Pause => {
                             if current_state != RunnerState::Terminated {
-                                let _ = self.state_tx.send(RunnerState::Paused);
+                                self.update_runner_state(RunnerState::Paused)?;
                                 info!("Runner paused");
                                 Self::send_flow_event(&self.event_sender, FlowEvent::FlowPaused).await;
                             }
                         }
                         RunnerCommand::Resume => {
                             if current_state == RunnerState::Paused {
-                                let _ = self.state_tx.send(RunnerState::Running);
+                                self.update_runner_state(RunnerState::Running)?;
                                 info!("Runner resumed");
                                 Self::send_flow_event(&self.event_sender, FlowEvent::FlowResumed).await;
                             }
                         }
                         RunnerCommand::Stop => {
-                            let _ = self.state_tx.send(RunnerState::Terminated);
+                            self.update_runner_state(RunnerState::Terminated)?;
                             info!("Runner terminated by command");
                             Self::send_flow_event(&self.event_sender, FlowEvent::FlowStopped).await;
                             break;
@@ -187,13 +187,12 @@ impl Runner {
                         }
                     }
                 }
-                // 3. 检查终止条件，没有任务为止
-                _ = self.tracker.await_notify() => {
-                    if self.tracker.count() == 0 && *self.state_tx.borrow() == RunnerState::Running {
-                        info!("Runner finished: All tasks completed");
-                        break;
-                    }
-                }
+            }
+
+            // 3. 检查终止条件
+            if self.tracker.count() == 0 && *self.state_tx.borrow() == RunnerState::Running {
+                info!("Runner finished: All tasks completed");
+                break;
             }
         }
 
@@ -306,7 +305,11 @@ impl Runner {
     async fn send_task_event(sender: &mpsc::Sender<TaskEvent>, event: TaskEvent) {
         let _ = sender.send(event).await;
     }
-
+    fn update_runner_state(&self, state: RunnerState) -> Result<(), String> {
+        self.state_tx
+            .send(state)
+            .map_err(|_| "Failed to update runner state".to_owned())
+    }
     //创建一个异步任务运行节点
     fn worker(
         node_id: String,

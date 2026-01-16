@@ -77,9 +77,8 @@ async fn test_complex_graph_connections() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("input", &"Test".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("input", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Complex graph execution should succeed");
@@ -109,10 +108,10 @@ async fn test_build_flow_macro() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("node1", &"Start".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("node1", &"Start".to_string());
     let result = runner.run().await;
+
     assert!(result.is_ok());
 
     let is_true = |_ctx: &Context, _out: &String| true;
@@ -125,9 +124,8 @@ async fn test_build_flow_macro() {
             ("node1", "node2", is_true),
         ]
     );
-    let mut runner_cond = Runner::new(graph_cond)
-        .0
-        .set_start_node("node1", &"Start".to_string());
+    let (mut runner_cond, _handle) = Runner::new(graph_cond);
+    runner_cond = runner_cond.set_start_node("node1", &"Start".to_string());
     let result_cond = runner_cond.run().await;
     assert!(result_cond.is_ok());
 }
@@ -191,7 +189,8 @@ async fn test_conditional_branching() {
         ]
     );
 
-    let mut runner = Runner::new(graph).0.set_start_node("input", &42);
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("input", &42);
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Conditional branching should succeed");
@@ -241,9 +240,8 @@ async fn test_multi_level_graph() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("l1_1", &"Start".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("l1_1", &"Start".to_string());
     let result = runner.run().await;
 
     assert!(
@@ -295,9 +293,8 @@ async fn test_large_concurrent_nodes() {
     }
 
     let graph = builder.build();
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("input", &"Data".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("input", &"Data".to_string());
     let result = runner.run().await;
 
     assert!(
@@ -364,9 +361,8 @@ async fn test_concurrent_execution_tracking() {
     }
 
     let graph = builder.build();
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("input", &"Concurrent".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("input", &"Concurrent".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Concurrent execution should succeed");
@@ -418,9 +414,8 @@ async fn test_context_write_and_read() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("writer", &"Test".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("writer", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context read/write should succeed");
@@ -485,9 +480,8 @@ async fn test_context_across_multiple_nodes() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("node1", &"Start".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("node1", &"Start".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context across multiple nodes should work");
@@ -557,7 +551,8 @@ async fn test_context_with_conditional_edges() {
         ]
     );
 
-    let mut runner = Runner::new(graph).0.set_start_node("input", &4);
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("input", &4);
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context with conditional edges should work");
@@ -612,9 +607,8 @@ async fn test_context_serialization() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("serialize", &"Test".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("serialize", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context serialization should work");
@@ -677,9 +671,8 @@ async fn test_diamond_graph_pattern() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("start", &"Diamond".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("start", &"Diamond".to_string());
     let result = runner.run().await;
 
     assert!(
@@ -720,9 +713,8 @@ async fn test_type_mismatch() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("string_node", &"Test".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(result.is_err(), "Type mismatch should cause error");
@@ -761,9 +753,8 @@ async fn test_unit_input_allows_any() {
         ]
     );
 
-    let mut runner = Runner::new(graph)
-        .0
-        .set_start_node("string_node", &"Test".to_string());
+    let (mut runner, _handle) = Runner::new(graph);
+    runner = runner.set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;
 
     assert!(
