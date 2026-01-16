@@ -13,7 +13,7 @@ pub enum FlowEvent {
     FlowPaused,
     FlowResumed,
     FlowStopped,
-    Finished,
+    FlowFinished,
 }
 
 pub enum TaskEvent {

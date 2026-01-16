@@ -90,15 +90,13 @@ impl Runner {
         )
     }
 
-    pub fn set_event_sender(mut self, sender: mpsc::Sender<FlowEvent>) -> Self {
+    pub fn set_event_sender(&mut self, sender: mpsc::Sender<FlowEvent>) {
         self.event_sender = Some(sender);
-        self
     }
 
-    pub fn set_start_node(mut self, node_id: &str, input: &dyn SendableAny) -> Self {
+    pub fn set_start_node(&mut self, node_id: &str, input: &dyn SendableAny) {
         self.task_queue
             .push_back((vec![node_id.to_owned()], input.clone_box()));
-        self
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
@@ -121,7 +119,7 @@ impl Runner {
 
         if self.tracker.count() == 0 {
             info!("Runner finished: No tasks started");
-            Self::send_flow_event(&self.event_sender, FlowEvent::Finished).await;
+            Self::send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
             return Ok(());
         }
 
@@ -191,13 +189,12 @@ impl Runner {
 
             // 3. 检查终止条件
             if self.tracker.count() == 0 && *self.state_tx.borrow() == RunnerState::Running {
-                info!("Runner finished: All tasks completed");
                 break;
             }
         }
-
-        Self::send_flow_event(&self.event_sender, FlowEvent::Finished).await;
-
+        info!("Runner finished: All tasks completed");
+        self.update_runner_state(RunnerState::Terminated)?;
+        Self::send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
         if let Some(e) = first_error {
             return Err(e);
         }
@@ -323,7 +320,6 @@ impl Runner {
         tokio::spawn(async move {
             let _keep_alive = _guard; // Force capture
             Self::send_flow_event(&event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
-
             let mut node = node.write().await;
 
             // 尝试将输入转换为 Value 并发送到 Web 端
@@ -334,13 +330,13 @@ impl Runner {
                 )
                 .await;
             }
-
+            info!(node_id = %node_id, "Node tasks start");
             let output: Result<Box<dyn SendableAny>, String> = node.run(&ctx, input).await;
 
             debug!(node_id = %node_id, "Node logic executed");
 
             Self::send_flow_event(&event_sender, FlowEvent::NodeCompleted(node_id.clone())).await;
-
+            info!(node_id = %node_id, "Node tasks completed");
             match output {
                 Ok(out) => {
                     // 如果节点输出是个响应式流，需要订阅它
@@ -406,7 +402,6 @@ impl Runner {
                 "Task count updated"
             );
             if *count == 0 {
-                info!(node_id = %node_id, "Node tasks completed");
                 self.active_tasks.remove(node_id);
             }
         }

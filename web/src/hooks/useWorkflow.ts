@@ -29,7 +29,7 @@ export function useWorkflow() {
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>('idle');
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const toast = useToast();
-  
+
   // Use refs to access latest state in websocket callbacks
   const currentRunIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -46,7 +46,7 @@ export function useWorkflow() {
       ws.onmessage = (event) => {
         try {
           const wrapper = JSON.parse(event.data);
-          
+
           // Handle old format if necessary, but new format is { runId, event }
           const runId = wrapper.runId;
           const msg = wrapper.event;
@@ -56,7 +56,7 @@ export function useWorkflow() {
           // or if we decide to support monitoring other runs.
           // But since the UI is single-document, we focus on currentRunId.
           if (runId && currentRunIdRef.current && runId !== currentRunIdRef.current) {
-             return;
+            return;
           }
 
           updateState(draft => {
@@ -79,7 +79,7 @@ export function useWorkflow() {
                 node.data.status = 'error';
                 node.data.errorMessage = error;
               }
-            } else if (msg === 'Finished') {
+            } else if (msg === 'FlowFinished') {
               // Optionally mark all running nodes as completed or idle
               draft.nodes.forEach(node => {
                 if (node.data.status === 'running') {
@@ -89,12 +89,12 @@ export function useWorkflow() {
               setWorkflowStatus('idle');
               setCurrentRunId(null);
             } else if (msg === 'FlowPaused') {
-                setWorkflowStatus('paused');
+              setWorkflowStatus('paused');
             } else if (msg === 'FlowResumed') {
-                setWorkflowStatus('running');
+              setWorkflowStatus('running');
             } else if (msg === 'FlowStopped') {
-                setWorkflowStatus('idle');
-                setCurrentRunId(null);
+              setWorkflowStatus('idle');
+              setCurrentRunId(null);
             }
           });
         } catch (e) {
@@ -135,25 +135,25 @@ export function useWorkflow() {
     try {
       const wf = await api.fetchWorkflow(id);
       setCurrentWorkflowId(id);
-      
+
       // Fetch status
       try {
-          const statusRes = await api.getWorkflowStatus(id);
-          if (statusRes.status) {
-             setWorkflowStatus(statusRes.status);
-             if (statusRes.run_id) {
-                 setCurrentRunId(statusRes.run_id);
-             } else {
-                 setCurrentRunId(null);
-             }
+        const statusRes = await api.getWorkflowStatus(id);
+        if (statusRes.status) {
+          setWorkflowStatus(statusRes.status);
+          if (statusRes.run_id) {
+            setCurrentRunId(statusRes.run_id);
           } else {
-             setWorkflowStatus('idle');
-             setCurrentRunId(null);
+            setCurrentRunId(null);
           }
-      } catch (e) {
-          console.error("Failed to fetch workflow status", e);
+        } else {
           setWorkflowStatus('idle');
           setCurrentRunId(null);
+        }
+      } catch (e) {
+        console.error("Failed to fetch workflow status", e);
+        setWorkflowStatus('idle');
+        setCurrentRunId(null);
       }
 
       // Transform backend nodes to ReactFlow nodes
@@ -430,7 +430,7 @@ export function useWorkflow() {
         throw new Error(res.error);
       }
       if (res && res.run_id) {
-          setCurrentRunId(res.run_id);
+        setCurrentRunId(res.run_id);
       }
       toast.success('Workflow started');
     } catch (e) {
@@ -442,35 +442,35 @@ export function useWorkflow() {
   }, [state.nodes, state.edges, updateState, toast]);
 
   const pauseWorkflow = useCallback(async () => {
-      if (!currentRunId) return;
-      try {
-          await api.pauseWorkflow(currentRunId);
-          // Optimistic update, actual state comes from WS
-          // setWorkflowStatus('paused'); 
-      } catch (e) {
-          console.error("Failed to pause workflow", e);
-          toast.error("Failed to pause workflow");
-      }
+    if (!currentRunId) return;
+    try {
+      await api.pauseWorkflow(currentRunId);
+      // Optimistic update, actual state comes from WS
+      // setWorkflowStatus('paused'); 
+    } catch (e) {
+      console.error("Failed to pause workflow", e);
+      toast.error("Failed to pause workflow");
+    }
   }, [currentRunId, toast]);
 
   const resumeWorkflow = useCallback(async () => {
-      if (!currentRunId) return;
-      try {
-          await api.resumeWorkflow(currentRunId);
-      } catch (e) {
-          console.error("Failed to resume workflow", e);
-          toast.error("Failed to resume workflow");
-      }
+    if (!currentRunId) return;
+    try {
+      await api.resumeWorkflow(currentRunId);
+    } catch (e) {
+      console.error("Failed to resume workflow", e);
+      toast.error("Failed to resume workflow");
+    }
   }, [currentRunId, toast]);
 
   const stopWorkflow = useCallback(async () => {
-      if (!currentRunId) return;
-      try {
-          await api.stopWorkflow(currentRunId);
-      } catch (e) {
-          console.error("Failed to stop workflow", e);
-          toast.error("Failed to stop workflow");
-      }
+    if (!currentRunId) return;
+    try {
+      await api.stopWorkflow(currentRunId);
+    } catch (e) {
+      console.error("Failed to stop workflow", e);
+      toast.error("Failed to stop workflow");
+    }
   }, [currentRunId, toast]);
 
   const runNode = useCallback(async (nodeId: string) => {
@@ -497,7 +497,7 @@ export function useWorkflow() {
       // but we might not get a runId back or it might be different.
       // For now, we just set generic running state.
       // Note: runNode API returns { status: "started", run_id: "...", start_node: "..." }
-      
+
       updateState(draft => {
         draft.nodes.forEach(node => {
           node.data.status = 'idle';
@@ -510,8 +510,8 @@ export function useWorkflow() {
         throw new Error(res.error);
       }
       if (res && res.run_id) {
-          setCurrentRunId(res.run_id);
-          setWorkflowStatus('running');
+        setCurrentRunId(res.run_id);
+        setWorkflowStatus('running');
       }
       toast.success(`Node ${nodeId} execution started`);
     } catch (e) {

@@ -1,5 +1,4 @@
 import { useWorkflow } from './hooks/useWorkflow';
-import { Sidebar } from './components/WorkflowEditor/Sidebar';
 import { Canvas } from './components/WorkflowEditor/Canvas';
 import { PropertyPanel } from './components/WorkflowEditor/PropertyPanel';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -44,25 +43,13 @@ function AppContent() {
 
   return (
     <WorkflowProvider value={workflow}>
-      <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
-        <Sidebar
-          nodeTypes={nodeTypes}
-          workflows={workflows}
-          currentWorkflowId={currentWorkflowId}
-          workflowStatus={workflowStatus}
-          onAddNode={addNode}
-          onLoadWorkflow={loadWorkflow}
-          onSaveWorkflow={saveWorkflow}
-          onDeleteWorkflow={deleteWorkflow}
-          onRenameWorkflow={renameWorkflow}
-          onCreateNew={createNewWorkflow}
-        />
-
+      <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100 relative">
         <ReactFlowProvider>
           <Canvas
             nodes={state.nodes}
             edges={state.edges}
             workflowStatus={workflowStatus}
+            availableNodes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeDragStop={onNodeDragStop}
@@ -72,6 +59,13 @@ function AppContent() {
             onPause={pauseWorkflow}
             onResume={resumeWorkflow}
             onStop={stopWorkflow}
+            workflows={workflows}
+            currentWorkflowId={currentWorkflowId}
+            onLoadWorkflow={loadWorkflow}
+            onSaveWorkflow={saveWorkflow}
+            onDeleteWorkflow={deleteWorkflow}
+            onRenameWorkflow={renameWorkflow}
+            onCreateNew={createNewWorkflow}
           />
         </ReactFlowProvider>
 

@@ -156,7 +156,7 @@ pub async fn run_workflow(
     let run_id_clone = run_id.clone();
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
-    runner = runner.set_event_sender(event_tx);
+    runner.set_event_sender(event_tx);
 
     let bridge_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
@@ -183,7 +183,7 @@ pub async fn run_workflow(
     tokio::spawn(async move {
         // Setup inputs
         for (node_id, input) in start_inputs {
-            runner = runner.set_start_node(&node_id, input.as_ref());
+            runner.set_start_node(&node_id, input.as_ref());
         }
 
         if let Err(e) = runner.run().await {
@@ -345,7 +345,7 @@ pub async fn run_node(
     let run_id_clone = run_id.clone();
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
-    runner = runner.set_event_sender(event_tx);
+    runner.set_event_sender(event_tx);
 
     let bridge_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
@@ -371,7 +371,7 @@ pub async fn run_node(
     let run_id_for_event = run_id.clone();
 
     tokio::spawn(async move {
-        runner = runner.set_start_node(&start_node_id, start_input.as_ref());
+        runner.set_start_node(&start_node_id, start_input.as_ref());
 
         if let Err(e) = runner.run().await {
             tracing::error!("Flow execution error: {}", e);
