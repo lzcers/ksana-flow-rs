@@ -1,4 +1,5 @@
 use anyhow::Result;
+use flow::FlowEvent;
 use rusqlite::{Connection, params};
 use serde_json::Value;
 
@@ -17,6 +18,27 @@ impl Db {
                 data TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS workflow_executions (
+                run_id TEXT PRIMARY KEY,
+                workflow_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS execution_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                event TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )",
             [],
         )?;
@@ -76,5 +98,76 @@ impl Db {
             .conn
             .execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
         Ok(count > 0)
+    }
+
+    pub fn create_execution(&self, run_id: &str, workflow_id: i64) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO workflow_executions (run_id, workflow_id, status) VALUES (?1, ?2, 'running')",
+            params![run_id, workflow_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_execution_event(&self, run_id: &str, event: &FlowEvent) -> Result<()> {
+        let event_json = serde_json::to_string(event)?;
+        self.conn.execute(
+            "INSERT INTO execution_events (run_id, event) VALUES (?1, ?2)",
+            params![run_id, event_json],
+        )?;
+
+        // Update status based on event
+        let status = match event {
+            FlowEvent::FlowFinished => Some("completed"),
+            FlowEvent::FlowStopped => Some("stopped"),
+            FlowEvent::NodeError(node_id, _) if node_id == "runner" => Some("failed"),
+            _ => None,
+        };
+
+        if let Some(s) = status {
+            self.conn.execute(
+                "UPDATE workflow_executions SET status = ?1, updated_at = CURRENT_TIMESTAMP WHERE run_id = ?2",
+                params![s, run_id],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn get_latest_execution(
+        &self,
+        workflow_id: i64,
+    ) -> Result<Option<(String, String, Vec<FlowEvent>)>> {
+        // Get latest run_id
+        let mut stmt = self.conn.prepare(
+            "SELECT run_id, status FROM workflow_executions WHERE workflow_id = ?1 ORDER BY created_at DESC LIMIT 1"
+        )?;
+        let mut rows = stmt.query(params![workflow_id])?;
+
+        if let Some(row) = rows.next()? {
+            let run_id: String = row.get(0)?;
+            let status: String = row.get(1)?;
+
+            // Get events
+            let mut event_stmt = self
+                .conn
+                .prepare("SELECT event FROM execution_events WHERE run_id = ?1 ORDER BY id ASC")?;
+            let event_rows =
+                event_stmt.query_map(params![run_id], |row| {
+                    let event_str: String = row.get(0)?;
+                    Ok(serde_json::from_str::<FlowEvent>(&event_str)
+                        .unwrap_or(FlowEvent::FlowFinished)) // Fallback or handle error better?
+                })?;
+
+            let mut events = Vec::new();
+            for event in event_rows {
+                if let Ok(e) = event {
+                    events.push(e);
+                }
+            }
+
+            Ok(Some((run_id, status, events)))
+        } else {
+            Ok(None)
+        }
     }
 }

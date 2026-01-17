@@ -1,56 +1,107 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use cron::Schedule;
-use flow::{Context, Node};
+use flow::observable::{Observable, Observer, Subscription};
+use flow::{Context, Node, ReactiveStream};
 use std::str::FromStr;
 use tokio::time::sleep;
 
 pub struct TimerNode {
-    schedule: Schedule,
+    cron_expr: String,
 }
 
 impl TimerNode {
     pub fn new(cron_expr: &str) -> Result<Self, cron::error::Error> {
-        let schedule = Schedule::from_str(cron_expr)?;
-        Ok(Self { schedule })
+        Ok(Self {
+            cron_expr: cron_expr.to_string(),
+        })
+    }
+}
+
+pub struct TimerObservable {
+    schedule: Schedule,
+}
+
+pub struct TimerSubscription;
+
+impl Subscription for TimerSubscription {
+    fn unsubscribe(self) {}
+}
+
+#[async_trait]
+impl Observable<(), ()> for TimerObservable {
+    type Sub = TimerSubscription;
+
+    async fn subscribe(self, mut observer: impl Observer<(), ()> + 'static) -> TimerSubscription {
+        loop {
+            // Find the next scheduled time
+            if let Some(next) = self.schedule.upcoming(Utc).next() {
+                let now = Utc::now();
+                if next > now {
+                    let duration = next - now;
+                    if let Ok(std_duration) = duration.to_std() {
+                        sleep(std_duration).await;
+                    }
+                }
+                // Emit event
+                observer.on_next(()).await;
+            } else {
+                // Should not happen for cron, but if it does, complete
+                observer.on_completed().await;
+                break;
+            }
+        }
+        TimerSubscription
     }
 }
 
 #[async_trait]
 impl Node for TimerNode {
     type In = ();
-    type Out = ();
+    type Out = ReactiveStream<()>;
 
     async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
-        if let Some(next) = self.schedule.upcoming(Utc).next() {
-            let now = Utc::now();
-            if next > now {
-                let duration = next - now;
-                if let Ok(std_duration) = duration.to_std() {
-                    sleep(std_duration).await;
-                }
-            }
-        }
+        let schedule = Schedule::from_str(&self.cron_expr).expect("Invalid cron expression");
+        let observable = TimerObservable { schedule };
+        ReactiveStream::from_observable(observable)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flow::TaskEvent;
+    use std::sync::Arc;
     use std::time::Instant;
+    use tokio::sync::mpsc;
 
     #[tokio::test]
     async fn test_timer_node() {
         let ctx = Context::new();
-        // 每秒执行一次的表达式 (7位: sec min hour day month dow year)
+        // Execute every second (7 fields: sec min hour day month dow year)
         let mut node = TimerNode::new("* * * * * * *").unwrap();
 
         let start = Instant::now();
-        node.run(&ctx, ()).await;
-        let elapsed = start.elapsed();
+        let stream = node.run(&ctx, ()).await;
 
+        let (tx, mut rx) = mpsc::channel(10);
+
+        // Manually subscribe to the stream
+        (stream.subscribe)(tx, "test_node".to_string(), Arc::new(ctx));
+
+        // Wait for the first event
+        if let Some(event) = rx.recv().await {
+            match event {
+                TaskEvent::Next(node_id, val) => {
+                    assert_eq!(node_id, "test_node");
+                    // Verify the value is ()
+                    assert!(val.as_any().is::<()>());
+                }
+                _ => panic!("Expected Next event"),
+            }
+        }
+
+        let elapsed = start.elapsed();
         println!("Elapsed: {:?}", elapsed);
-        // 应该至少等待到下一秒
-        assert!(elapsed.as_millis() > 0);
     }
 }

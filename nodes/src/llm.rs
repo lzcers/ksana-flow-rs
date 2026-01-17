@@ -78,23 +78,7 @@ mod tests {
             let mut node = LLMNode::new("", "");
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            // We expect this to fail if no API key is set, but let's see if we can mock or if it just builds.
-            // The previous code had tests so presumably environment is set up or tests are ignored/mocked?
-            // Actually, expect("LLM prompt failed") will panic if call fails.
-            // For now, I assume the user wants the code to be correct, execution might depend on env.
-            // I will wrap in a way that doesn't fail the whole test suite if API key is missing?
-            // Or just keep as is, assuming user has env.
-            // But wait, if I run `cargo test`, and it fails due to missing key, I can't verify my logic.
-            // However, the task is to "Support user input system prompt...", logic correctness is key.
-            // I'll keep the test simple.
-            // If it fails at runtime due to network/key, that's expected in this environment unless I mock.
-            // But I am just verifying compilation and basic logic flow if I can.
-            // Let's comment out the actual call in test if we don't have a key,
-            // OR use a mock client if `rig` supports it easily.
-            // For now, I will assume the user has the environment set up or I can't run the test fully.
-            // I'll just try to compile first.
-            // Actually, let's look at the original test. It calls `node.run`.
-            // So I should keep it.
+
             let output = node.run(&ctx, input).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());

@@ -188,11 +188,14 @@ impl Runner {
             }
 
             // 3. 检查终止条件
-            if self.tracker.count() == 0 && *self.state_tx.borrow() == RunnerState::Running {
+            if self.tracker.count() == 0
+                && self.active_tasks.is_empty()
+                && *self.state_tx.borrow() == RunnerState::Running
+            {
                 break;
             }
         }
-        info!("Runner finished: All tasks completed");
+        info!("Runner finished: All tasks completed.",);
         self.update_runner_state(RunnerState::Terminated)?;
         Self::send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
         if let Some(e) = first_error {

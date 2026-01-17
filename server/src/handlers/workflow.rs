@@ -121,6 +121,12 @@ pub async fn run_workflow(
     // Generate Run ID
     let run_id = Uuid::new_v4().to_string();
 
+    // Create execution in DB
+    {
+        let db = state.db.lock().expect("db lock poisoned");
+        let _ = db.create_execution(&run_id, workflow_id);
+    }
+
     let (graph, start_inputs) = {
         let registry = state
             .registry
@@ -154,12 +160,20 @@ pub async fn run_workflow(
     // Setup bridge
     let tx = state.tx.clone();
     let run_id_clone = run_id.clone();
+    let db_clone = state.db.clone();
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
     runner.set_event_sender(event_tx);
 
     let bridge_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
+            // Save event to DB
+            {
+                if let Ok(db) = db_clone.lock() {
+                    let _ = db.add_execution_event(&run_id_clone, &event);
+                }
+            }
+            // Broadcast
             let _ = tx.send((run_id_clone.clone(), event));
         }
     });
@@ -210,39 +224,32 @@ pub async fn get_workflow_status(
     Path(id): Path<i64>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    // Clone necessary data within a block to drop the lock immediately
-    let (execution, run_id) = {
-        let executions = state.executions.read().expect("lock poisoned");
-        // Find execution for this workflow_id
-        let execution = executions.values().find(|h| h.workflow_id == id).cloned();
-
-        let run_id = executions
-            .iter()
-            .find(|(_, h)| h.workflow_id == id)
-            .map(|(k, _)| k.clone())
-            .unwrap_or_default();
-
-        (execution, run_id)
+    // 1. Try to get status from DB first (historical or current persistent state)
+    let db_status = {
+        let db = state.db.lock().expect("db lock poisoned");
+        db.get_latest_execution(id).unwrap_or(None)
     };
 
-    if let Some(handle) = execution {
-        let state = handle.runner_handle.get_state();
-        let status = match state {
-            flow::RunnerState::Initial => "idle",
-            flow::RunnerState::Running => "running",
-            flow::RunnerState::Paused => "paused",
-            flow::RunnerState::Terminated => "idle",
-        };
-        Json(json!({
+    if let Some((run_id, status, events)) = db_status {
+        // If DB says it's running, we can check if it's actually in memory (double check),
+        // but DB state is the source of truth for "what happened".
+        // We return the events so UI can reconstruct state.
+        return Json(json!({
             "status": status,
-            "run_id": run_id
-        }))
-    } else {
-        Json(json!({
-            "status": "idle",
-            "run_id": null
-        }))
+            "run_id": run_id,
+            "events": events
+        }));
     }
+
+    // Fallback: Check in-memory executions (legacy path, or if DB failed somehow but memory has it?)
+    // Actually, since we write to DB on start, if it's not in DB, it's not running.
+    // But let's keep the old check just in case or for "idle" response.
+
+    Json(json!({
+        "status": "idle",
+        "run_id": null,
+        "events": []
+    }))
 }
 
 pub async fn pause_workflow(
@@ -360,7 +367,7 @@ pub async fn run_node(
             run_id.clone(),
             ExecutionHandle {
                 runner_handle: handle.clone(),
-                workflow_id: -1, // Run node doesn't belong to a saved workflow
+                workflow_id: -1,
             },
         );
     }

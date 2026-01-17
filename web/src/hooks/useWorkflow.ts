@@ -36,6 +36,36 @@ export function useWorkflow() {
     currentRunIdRef.current = currentRunId;
   }, [currentRunId]);
 
+  // Helper to apply a single event to the state
+  const applyEventToNodes = useCallback((draft: WorkflowState, event: any) => {
+    if (event.NodeStarted) {
+      const id = event.NodeStarted;
+      const node = draft.nodes.find(n => n.id === id);
+      if (node) node.data.status = 'running';
+    } else if (event.NodeInMessage) {
+      const [id, value] = event.NodeInMessage;
+      const node = draft.nodes.find(n => n.id === id);
+      if (node) node.data.lastMessage = value;
+    } else if (event.NodeCompleted) {
+      const id = event.NodeCompleted;
+      const node = draft.nodes.find(n => n.id === id);
+      if (node) node.data.status = 'completed';
+    } else if (event.NodeError) {
+      const [id, error] = event.NodeError;
+      const node = draft.nodes.find(n => n.id === id);
+      if (node) {
+        node.data.status = 'error';
+        node.data.errorMessage = error;
+      }
+    } else if (event === 'FlowFinished') {
+      draft.nodes.forEach(node => {
+        if (node.data.status === 'running') {
+          node.data.status = 'completed';
+        }
+      });
+    }
+  }, []);
+
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: number | null = null;
@@ -46,61 +76,46 @@ export function useWorkflow() {
       ws.onmessage = (event) => {
         try {
           const wrapper = JSON.parse(event.data);
-
-          // Handle old format if necessary, but new format is { runId, event }
           const runId = wrapper.runId;
           const msg = wrapper.event;
 
-          // Only process events for current run or generic events if needed
-          // For now, we only update UI if it matches current runId, 
-          // or if we decide to support monitoring other runs.
-          // But since the UI is single-document, we focus on currentRunId.
           if (runId && currentRunIdRef.current && runId !== currentRunIdRef.current) {
             return;
           }
 
           updateState(draft => {
-            if (msg.NodeStarted) {
-              const id = msg.NodeStarted;
-              const node = draft.nodes.find(n => n.id === id);
-              if (node) node.data.status = 'running';
-            } else if (msg.NodeInMessage) {
-              const [id, value] = msg.NodeInMessage;
-              const node = draft.nodes.find(n => n.id === id);
-              if (node) node.data.lastMessage = value;
-            } else if (msg.NodeCompleted) {
-              const id = msg.NodeCompleted;
-              const node = draft.nodes.find(n => n.id === id);
-              if (node) node.data.status = 'completed';
-            } else if (msg.NodeError) {
-              const [id, error] = msg.NodeError;
-              const node = draft.nodes.find(n => n.id === id);
-              if (node) {
-                node.data.status = 'error';
-                node.data.errorMessage = error;
-              }
-            } else if (msg === 'FlowFinished') {
-              // Optionally mark all running nodes as completed or idle
-              draft.nodes.forEach(node => {
-                if (node.data.status === 'running') {
-                  node.data.status = 'completed';
-                }
-              });
-              setWorkflowStatus('idle');
-              setCurrentRunId(null);
-            } else if (msg === 'FlowPaused') {
-              setWorkflowStatus('paused');
-            } else if (msg === 'FlowResumed') {
-              setWorkflowStatus('running');
-            } else if (msg === 'FlowStopped') {
-              setWorkflowStatus('idle');
-              setCurrentRunId(null);
-            }
+            applyEventToNodes(draft, msg);
+
+            // Handle Flow-level state changes that affect local React state (outside draft)
+            // Note: We can't set local state inside updateState(draft => ...). 
+            // So we might need to check msg outside or handle it differently.
+            // But updateState is for the immer draft. 
+
+            // Actually, we can check msg here for flow status updates that need to trigger
+            // setWorkflowStatus or setCurrentRunId.
+            // But wait, the previous code handled everything inside updateState block?
+            // No, setWorkflowStatus and setCurrentRunId are separate state setters.
+            // We should move them out of updateState or handle them separately.
           });
+
+          // Handle side effects (React state updates)
+          if (msg === 'FlowFinished') {
+            setWorkflowStatus('idle');
+            setCurrentRunId(null);
+          } else if (msg === 'FlowPaused') {
+            setWorkflowStatus('paused');
+          } else if (msg === 'FlowResumed') {
+            setWorkflowStatus('running');
+          } else if (msg === 'FlowStopped') {
+            setWorkflowStatus('idle');
+            setCurrentRunId(null);
+          }
+
         } catch (e) {
           console.error("WS parse error", e);
         }
       };
+
 
       ws.onclose = () => {
         console.log('WS closed, reconnecting...');
@@ -136,26 +151,6 @@ export function useWorkflow() {
       const wf = await api.fetchWorkflow(id);
       setCurrentWorkflowId(id);
 
-      // Fetch status
-      try {
-        const statusRes = await api.getWorkflowStatus(id);
-        if (statusRes.status) {
-          setWorkflowStatus(statusRes.status);
-          if (statusRes.run_id) {
-            setCurrentRunId(statusRes.run_id);
-          } else {
-            setCurrentRunId(null);
-          }
-        } else {
-          setWorkflowStatus('idle');
-          setCurrentRunId(null);
-        }
-      } catch (e) {
-        console.error("Failed to fetch workflow status", e);
-        setWorkflowStatus('idle');
-        setCurrentRunId(null);
-      }
-
       // Transform backend nodes to ReactFlow nodes
       const nodes: WorkflowNode[] = wf.blueprint.nodes.map((n: any) => ({
         id: n.id,
@@ -188,11 +183,40 @@ export function useWorkflow() {
         draft.edges = edges;
         draft.selectedNodeId = null;
       });
+
+      // Fetch and replay execution status
+      try {
+        const statusRes = await api.getWorkflowStatus(id);
+        if (statusRes) {
+          if (statusRes.run_id) {
+            setCurrentRunId(statusRes.run_id);
+          }
+          if (statusRes.status) {
+            let status = statusRes.status.toLowerCase();
+            if (status === 'completed' || status === 'stopped' || status === 'failed') {
+              status = 'idle';
+            }
+            setWorkflowStatus(status as WorkflowStatus);
+          }
+
+          if (statusRes.events && Array.isArray(statusRes.events)) {
+            updateState(draft => {
+              statusRes.events.forEach((event: any) => {
+                applyEventToNodes(draft, event);
+              });
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch workflow status", e);
+        // Don't fail the whole load if status fetch fails
+      }
+
     } catch (e) {
       console.error("Failed to load workflow", e);
       toast.error('Failed to load workflow');
     }
-  }, [updateState, nodeTypes, toast]);
+  }, [updateState, nodeTypes, toast, applyEventToNodes]);
 
   const saveWorkflow = useCallback(async (name?: string) => {
     // Transform ReactFlow state to backend blueprint format
