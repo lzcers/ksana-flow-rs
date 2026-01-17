@@ -224,26 +224,21 @@ pub async fn get_workflow_status(
     Path(id): Path<i64>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    // 1. Try to get status from DB first (historical or current persistent state)
     let db_status = {
         let db = state.db.lock().expect("db lock poisoned");
         db.get_latest_execution(id).unwrap_or(None)
     };
 
     if let Some((run_id, status, events)) = db_status {
-        // If DB says it's running, we can check if it's actually in memory (double check),
-        // but DB state is the source of truth for "what happened".
-        // We return the events so UI can reconstruct state.
-        return Json(json!({
-            "status": status,
-            "run_id": run_id,
-            "events": events
-        }));
+        // 只返回运行中的
+        if status == "running" {
+            return Json(json!({
+                "status": status,
+                "run_id": run_id,
+                "events": events
+            }));
+        }
     }
-
-    // Fallback: Check in-memory executions (legacy path, or if DB failed somehow but memory has it?)
-    // Actually, since we write to DB on start, if it's not in DB, it's not running.
-    // But let's keep the old check just in case or for "idle" response.
 
     Json(json!({
         "status": "idle",

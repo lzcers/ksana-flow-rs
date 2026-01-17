@@ -5,6 +5,7 @@ use rig::{
     client::{CompletionClient, ProviderClient},
     completion::Prompt,
     providers::deepseek::{self, CompletionModel},
+    providers::openrouter::{self, CompletionModel as OpenRouterCompletionModel},
 };
 
 pub struct LLMNode {
@@ -78,7 +79,6 @@ mod tests {
             let mut node = LLMNode::new("", "");
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-
             let output = node.run(&ctx, input).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
