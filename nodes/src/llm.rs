@@ -1,12 +1,42 @@
 use async_trait::async_trait;
-use flow::Node;
+use flow::{
+    Node, ReactiveStream,
+    observable::{Observable, Observer, VecSubscription},
+};
+use futures::StreamExt;
 use rig::{
     agent::Agent,
     client::{CompletionClient, ProviderClient},
     completion::Prompt,
     providers::deepseek::{self, CompletionModel},
-    providers::openrouter::{self, CompletionModel as OpenRouterCompletionModel},
 };
+use std::sync::Mutex;
+pub struct LLMStreamObservable<S> {
+    stream: S,
+}
+
+#[async_trait]
+impl<S> Observable<String, String> for LLMStreamObservable<S>
+where
+    S: futures::Stream<Item = Result<String, String>> + Send + Unpin + 'static,
+{
+    type Sub = VecSubscription;
+
+    async fn subscribe(mut self, mut observer: impl Observer<String, String>) -> Self::Sub {
+        let mut stream = self.stream;
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(chunk) => observer.on_next(chunk).await,
+                Err(e) => {
+                    observer.on_error(e).await;
+                    return VecSubscription;
+                }
+            }
+        }
+        observer.on_completed().await;
+        VecSubscription
+    }
+}
 
 pub struct LLMNode {
     llm: Agent<CompletionModel>,
@@ -41,7 +71,7 @@ impl LLMNode {
 #[async_trait]
 impl Node for LLMNode {
     type In = String;
-    type Out = String;
+    type Out = ReactiveStream<String>;
 
     async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
         let prompt = if !input.is_empty() {
@@ -55,20 +85,54 @@ impl Node for LLMNode {
             self.user_prompt_template.clone()
         };
 
-        if prompt.is_empty() {
-            return "".to_string();
-        }
+        let stream = if prompt.is_empty() {
+            futures::stream::empty::<Result<String, String>>().boxed()
+        } else {
+            match self.llm.prompt(&prompt).await {
+                Ok(response) => {
+                    futures::stream::once(async move { Ok::<String, String>(response) }).boxed()
+                }
+                Err(e) => {
+                    futures::stream::once(async move { Err::<String, String>(e.to_string()) })
+                        .boxed()
+                }
+            }
+        };
 
-        self.llm.prompt(&prompt).await.expect("LLM prompt failed")
+        let observable = LLMStreamObservable { stream };
+
+        ReactiveStream::from_observable(observable)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use flow::Context;
+    use flow::{Context, TaskEvent};
+    use std::sync::Arc;
     use tokio::runtime::Runtime;
 
     use super::*;
+
+    async fn collect_output(stream: ReactiveStream<String>) -> String {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+        let ctx = Arc::new(Context::new());
+        let _sub = (stream.subscribe)(tx, "test".to_string(), ctx);
+
+        let mut output = String::new();
+        while let Some(event) = rx.recv().await {
+            match event {
+                TaskEvent::Next(_, val) => {
+                    if let Some(s) = val.as_any().downcast_ref::<String>() {
+                        output.push_str(s);
+                    }
+                }
+                TaskEvent::Completed(_, _) => break,
+                TaskEvent::Error(_, e) => panic!("Stream error: {}", e),
+                _ => {}
+            }
+        }
+        output
+    }
 
     #[test]
     fn test_llm_node() {
@@ -79,7 +143,8 @@ mod tests {
             let mut node = LLMNode::new("", "");
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let output = node.run(&ctx, input).await;
+            let stream = node.run(&ctx, input).await;
+            let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -98,7 +163,8 @@ mod tests {
             );
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let output = node.run(&ctx, input).await;
+            let stream = node.run(&ctx, input).await;
+            let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -114,7 +180,8 @@ mod tests {
             let mut node = LLMNode::new("", "Tell me a joke");
             let input = "".to_owned();
             eprintln!("input: {}", &input);
-            let output = node.run(&ctx, input).await;
+            let stream = node.run(&ctx, input).await;
+            let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });

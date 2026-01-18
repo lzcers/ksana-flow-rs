@@ -101,3 +101,16 @@ export const stopWorkflow = async (runId: string) => {
     });
     return res.json();
 };
+
+export const uploadFile = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/upload`, {
+        method: 'POST',
+        body: formData,
+    });
+    if (!res.ok) {
+        throw new Error('Upload failed');
+    }
+    return res.json();
+};

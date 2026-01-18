@@ -13,11 +13,8 @@ use crate::{
     reactive::observable::{Observable, Observer, Subscription},
 };
 
-pub type StreamSubscriptionFn = Box<
-    dyn FnOnce(mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription>
-        + Send
-        + Sync,
->;
+pub type StreamSubscriptionFn =
+    Box<dyn FnOnce(mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription> + Send>;
 pub struct ReactiveStream<T = ()> {
     pub subscribe: StreamSubscriptionFn,
     _marker: std::marker::PhantomData<T>,
@@ -65,7 +62,7 @@ impl<T> ReactiveStream<T> {
     where
         T: SendableAny + 'static,
         E: Send + 'static,
-        O: Observable<T, E> + Send + Sync + 'static,
+        O: Observable<T, E> + Send + 'static,
     {
         Self {
             subscribe: Box::new(move |tx, node_id, _ctx| {

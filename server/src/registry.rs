@@ -4,6 +4,7 @@ use nodes::{
     EmailNotifyNode, TimerNode,
     llm::LLMNode,
     text::TextNode,
+    text_file::TextFileNode,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -251,6 +252,25 @@ pub fn create_registry() -> NodeRegistry {
             let text = config["text"].as_str().unwrap_or("").to_string();
             let id = config["id"].as_str().unwrap_or("unknown").to_string();
             let node = TextNode::new(id, text);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "TextFileNode".to_string(),
+            description: "Reads content from an uploaded text file".to_string(),
+            category: "Input".to_string(),
+            config: json!({
+                "file_id": "",
+                "filename": ""
+            }),
+            inputs: vec![InputType::None],
+            outputs: vec![InputType::String],
+        },
+        |config: Value| {
+            let file_id = config["file_id"].as_str().unwrap_or("").to_string();
+            let node = TextFileNode::new(file_id);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );

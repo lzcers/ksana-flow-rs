@@ -9,6 +9,7 @@ import {
 export type NodeType =
   | 'LLMNode'
   | 'TextNode'
+  | 'TextFileNode'
   | 'EmailNotifyNode'
   | 'TimerNode'
   | 'Backtester'

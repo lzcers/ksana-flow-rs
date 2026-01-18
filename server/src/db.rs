@@ -43,7 +43,47 @@ impl Db {
             [],
         )?;
 
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS uploaded_files (
+                id TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
         Ok(Self { conn })
+    }
+
+    pub fn save_file(
+        &self,
+        id: &str,
+        filename: &str,
+        content: &str,
+        size: i64,
+        mime_type: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO uploaded_files (id, filename, content, size, mime_type) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, filename, content, size, mime_type],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_file(&self, id: &str) -> Result<Option<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT filename, content FROM uploaded_files WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some((row.get(0)?, row.get(1)?)))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn create_workflow(&self, name: &str, data: &Value) -> Result<i64> {

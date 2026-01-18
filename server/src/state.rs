@@ -86,7 +86,12 @@ impl GraphBlueprint {
                         to: edge.target.clone(),
                         condition: None,
                     })),
-                    "TextNode" | "LLMNode" => Some(Box::new(FlowEdge::<String> {
+                    "TextNode" => Some(Box::new(FlowEdge::<String> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    })),
+                    "LLMNode" => Some(Box::new(FlowEdge::<String> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,

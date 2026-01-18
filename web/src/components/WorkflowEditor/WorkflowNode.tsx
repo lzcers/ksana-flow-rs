@@ -3,6 +3,7 @@ import { type NodeProps } from '@xyflow/react';
 import type { WorkflowNodeData } from '../../model/types';
 import { LLMNode } from '../nodes/LLMNode';
 import { TextNode } from '../nodes/TextNode';
+import { TextFileNode } from '../nodes/TextFileNode';
 import { EmailNotifyNode } from '../nodes/EmailNotifyNode';
 import { TimerNode } from '../nodes/TimerNode';
 import { BacktesterNode } from '../nodes/BacktesterNode';
@@ -17,6 +18,8 @@ export const WorkflowNode = memo((props: NodeProps & { data: WorkflowNodeData })
       return <LLMNode {...props} />;
     case 'TextNode':
       return <TextNode {...props} />;
+    case 'TextFileNode':
+      return <TextFileNode {...props} />;
     case 'EmailNotifyNode':
       return <EmailNotifyNode {...props} />;
     case 'TimerNode':
