@@ -18,6 +18,7 @@ interface NodeWrapperProps {
   resizable?: boolean;
   minWidth?: number;
   minHeight?: number;
+  headerActions?: React.ReactNode;
 }
 
 export const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -31,7 +32,8 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   style,
   resizable = true,
   minWidth,
-  minHeight
+  minHeight,
+  headerActions
 }) => {
   const typeConfig = NODE_TYPES.find(t => t.type === data.type);
   const status = data.status || 'idle';
@@ -159,17 +161,20 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           <span className="text-xs font-semibold text-zinc-200">
             {data.label}
           </span>
-          {/* Run Button */}
-          <button
-            onClick={handleRun}
-            className={cn(
-              "ml-auto bg-blue-600 text-white rounded-full p-1 shadow-sm hover:bg-blue-500 transition-all opacity-0 group-hover:opacity-100",
-              selected && "opacity-100"
-            )}
-            title="Run from this node"
-          >
-            <Play size={10} fill="currentColor" />
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            {headerActions}
+            {/* Run Button */}
+            <button
+              onClick={handleRun}
+              className={cn(
+                "bg-blue-600 text-white rounded-full p-1 shadow-sm hover:bg-blue-500 transition-all opacity-0 group-hover:opacity-100",
+                selected && "opacity-100"
+              )}
+              title="Run from this node"
+            >
+              <Play size={10} fill="currentColor" />
+            </button>
+          </div>
         </div>
         {data.errorMessage && (
           <div className="text-[10px] text-red-400 line-clamp-2 mt-1 bg-red-900/20 p-1 rounded border border-red-900/30">
