@@ -23,7 +23,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
   },
 
   loadWorkflow: async (id: number) => {
-    const { nodeTypes, notify, setNodes, setEdges, selectNode, setWorkflowStatus, setWorkflowStatuses, setCurrentRunId, handleWebSocketMessage } = get();
+    const { nodeTypes, error, setNodes, setEdges, selectNode, setWorkflowStatus, setWorkflowStatuses, setCurrentRunId } = get();
     try {
       const wf = await api.fetchWorkflow(id);
       set({ currentWorkflowId: id });
@@ -123,12 +123,12 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
 
     } catch (e) {
       console.error("Failed to load workflow", e);
-      notify('error', 'Failed to load workflow');
+      error('Failed to load workflow');
     }
   },
 
   saveWorkflow: async (name?: string) => {
-    const { nodes, edges, currentWorkflowId, workflows, notify, setWorkflows, setCurrentWorkflowId } = get();
+    const { nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId } = get();
 
     const blueprint = {
       nodes: nodes.map(n => ({
@@ -163,15 +163,15 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
         setCurrentWorkflowId(newWf.id);
         setWorkflows([...workflows, { id: newWf.id, name: name || 'Untitled Workflow' }]);
       }
-      notify('success', 'Workflow saved');
+      success('Workflow saved');
     } catch (e) {
       console.error("Failed to save workflow", e);
-      notify('error', 'Failed to save workflow');
+      error('Failed to save workflow');
     }
   },
 
   renameWorkflow: async (id: number, newName: string) => {
-    const { nodes, edges, currentWorkflowId, workflows, notify, setWorkflows } = get();
+    const { nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows } = get();
     try {
       let blueprint;
       if (id === currentWorkflowId) {
@@ -199,15 +199,15 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
 
       await api.updateWorkflow(id, newName, blueprint);
       setWorkflows(workflows.map(w => w.id === id ? { ...w, name: newName } : w));
-      notify('success', 'Workflow renamed');
+      success('Workflow renamed');
     } catch (e) {
       console.error("Failed to rename workflow", e);
-      notify('error', 'Failed to rename workflow');
+      error('Failed to rename workflow');
     }
   },
 
   deleteWorkflow: async (id: number) => {
-    const { currentWorkflowId, workflows, notify, setWorkflows, setCurrentWorkflowId, setNodes, setEdges, selectNode } = get();
+    const { currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId, setNodes, setEdges, selectNode } = get();
     try {
       await api.deleteWorkflow(id);
       setWorkflows(workflows.filter(w => w.id !== id));
@@ -217,10 +217,10 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
         setEdges([]);
         selectNode(null);
       }
-      notify('success', 'Workflow deleted');
+      success('Workflow deleted');
     } catch (e) {
       console.error("Failed to delete workflow", e);
-      notify('error', 'Failed to delete workflow');
+      error('Failed to delete workflow');
     }
   },
 

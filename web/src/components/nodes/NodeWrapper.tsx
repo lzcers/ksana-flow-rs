@@ -4,7 +4,7 @@ import { Settings, CheckCircle2, AlertCircle, Loader2, Play } from 'lucide-react
 import { NODE_TYPES } from '../WorkflowEditor/nodeTypes';
 import { cn } from '../../utils/cn';
 import type { WorkflowNodeData } from '../../model/types';
-import { useWorkflowContext } from '../../contexts/WorkflowContext';
+import { useStore } from '../../store';
 
 interface NodeWrapperProps {
   id: string;
@@ -35,7 +35,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
 }) => {
   const typeConfig = NODE_TYPES.find(t => t.type === data.type);
   const status = data.status || 'idle';
-  const { runNode, updateNodeDimensions } = useWorkflowContext();
+  const { runNode, updateNodeDimensions } = useStore();
   const handleRun = (e: React.MouseEvent) => {
     e.stopPropagation();
     runNode(id);

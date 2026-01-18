@@ -121,7 +121,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   runWorkflow: async () => {
-    const { nodes, edges, currentWorkflowId, notify, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
+    const { nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
 
     const blueprint = {
       nodes: nodes.map(n => ({
@@ -155,10 +155,10 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
           setWorkflowStatuses({ ...get().workflowStatuses, [currentWorkflowId]: 'running' });
         }
       }
-      notify('success', 'Workflow started');
+      success('Workflow started');
     } catch (e) {
       console.error("Failed to run workflow", e);
-      notify('error', 'Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
+      error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
       setWorkflowStatus('idle');
       setCurrentRunId(null);
       if (currentWorkflowId) {
@@ -168,40 +168,40 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   pauseWorkflow: async () => {
-    const { currentRunId, notify } = get();
+    const { currentRunId, error } = get();
     if (!currentRunId) return;
     try {
       await api.pauseWorkflow(currentRunId);
     } catch (e) {
       console.error("Failed to pause workflow", e);
-      notify('error', "Failed to pause workflow");
+      error("Failed to pause workflow");
     }
   },
 
   resumeWorkflow: async () => {
-    const { currentRunId, notify } = get();
+    const { currentRunId, error } = get();
     if (!currentRunId) return;
     try {
       await api.resumeWorkflow(currentRunId);
     } catch (e) {
       console.error("Failed to resume workflow", e);
-      notify('error', "Failed to resume workflow");
+      error("Failed to resume workflow");
     }
   },
 
   stopWorkflow: async () => {
-    const { currentRunId, notify } = get();
+    const { currentRunId, error } = get();
     if (!currentRunId) return;
     try {
       await api.stopWorkflow(currentRunId);
     } catch (e) {
       console.error("Failed to stop workflow", e);
-      notify('error', "Failed to stop workflow");
+      error("Failed to stop workflow");
     }
   },
 
   runNode: async (nodeId: string) => {
-    const { nodes, edges, notify, setWorkflowStatus, setCurrentRunId } = get();
+    const { nodes, edges, success, error, setWorkflowStatus, setCurrentRunId } = get();
     const blueprint = {
       nodes: nodes.map(n => ({
         id: n.id,
@@ -231,10 +231,10 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         setCurrentRunId(res.run_id);
         setWorkflowStatus('running');
       }
-      notify('success', `Node ${nodeId} execution started`);
+      success(`Node ${nodeId} execution started`);
     } catch (e) {
       console.error(`Failed to run node ${nodeId}`, e);
-      notify('error', `Failed to run node: ` + (e instanceof Error ? e.message : String(e)));
+      error(`Failed to run node: ` + (e instanceof Error ? e.message : String(e)));
       setWorkflowStatus('idle');
     }
   }

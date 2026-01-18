@@ -50,9 +50,20 @@ export interface ExecutionSlice {
   handleWebSocketMessage: (message: any) => void;
 }
 
-export interface NotificationSlice {
-  notify: (type: 'success' | 'error' | 'info', message: string) => void;
-  setNotificationHandler: (handler: (type: 'success' | 'error' | 'info', message: string) => void) => void;
+export interface ToastItem {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+  duration?: number;
 }
 
-export type StoreState = WorkflowSlice & CanvasSlice & ExecutionSlice & NotificationSlice;
+export interface ToastSlice {
+  toasts: ToastItem[];
+  showToast: (message: string, type: 'success' | 'error' | 'info', duration?: number) => void;
+  removeToast: (id: string) => void;
+  success: (message: string, duration?: number) => void;
+  error: (message: string, duration?: number) => void;
+  info: (message: string, duration?: number) => void;
+}
+
+export type StoreState = WorkflowSlice & CanvasSlice & ExecutionSlice & ToastSlice;

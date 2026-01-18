@@ -1,35 +1,10 @@
-import { useEffect } from 'react';
 import { useStore } from '../store';
-import { useToast } from '../contexts/ToastContext';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
 export function useWorkflow() {
   const store = useStore();
-  const toast = useToast();
 
-  // Setup notification handler
-  useEffect(() => {
-    store.setNotificationHandler((type, message) => {
-      if (type === 'success') toast.success(message);
-      else if (type === 'error') toast.error(message);
-      else toast.info(message);
-    });
-  }, [toast, store.setNotificationHandler]);
-
-  // Setup WebSocket
-  useEffect(() => {
-    const cleanup = store.initializeWebSocket();
-    return cleanup;
-  }, [store.initializeWebSocket]);
-
-  // Load metadata
-  useEffect(() => {
-    store.loadMetadata();
-  }, [store.loadMetadata]);
-
-  // Construct the return object to match previous API
-  // We reconstruct the 'state' object to match the expected interface of components
   const state = {
     nodes: store.nodes,
     edges: store.edges,

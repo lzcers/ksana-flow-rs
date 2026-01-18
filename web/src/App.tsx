@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useWorkflow } from './hooks/useWorkflow';
+import { useAppInit } from './hooks/useAppInit';
 import { Canvas } from './components/WorkflowEditor/Canvas';
 import { PropertyPanel } from './components/WorkflowEditor/PropertyPanel';
 import { WorkflowHeader } from './components/WorkflowEditor/WorkflowHeader';
 import { ReactFlowProvider } from '@xyflow/react';
-import { ToastProvider } from './contexts/ToastContext';
-import { WorkflowProvider } from './contexts/WorkflowContext';
+import { ToastContainer } from './components/ui/ToastContainer';
 
 export default function App() {
+  useAppInit();
+
   return (
-    <ToastProvider>
+    <>
       <AppContent />
-    </ToastProvider>
+      <ToastContainer />
+    </>
   );
 }
 
@@ -133,54 +136,52 @@ function AppContent() {
   const selectedNode = state.nodes.find(n => n.id === state.selectedNodeId);
 
   return (
-    <WorkflowProvider value={workflow}>
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
-        {/* Top Menu Bar */}
-        <div className="h-10 border-b border-zinc-800 bg-zinc-900 px-3 flex items-center shrink-0">
-          <WorkflowHeader
-            workflows={workflows}
-            currentWorkflowId={currentWorkflowId}
-            workflowStatus={workflowStatus}
-            workflowStatuses={workflowStatuses}
-            onLoadWorkflow={handleLoadWorkflow}
-            onSaveWorkflow={saveWorkflow}
-            onDeleteWorkflow={deleteWorkflow}
-            onRenameWorkflow={renameWorkflow}
-            onCreateNew={handleCreateNew}
-            tabs={openTabs}
-            onCloseTab={handleCloseTab}
-          />
-        </div>
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex overflow-hidden relative">
-          <ReactFlowProvider>
-            <Canvas
-              nodes={state.nodes}
-              edges={state.edges}
-              workflowStatus={workflowStatus}
-              availableNodes={nodeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onNodeDragStop={onNodeDragStop}
-              onConnect={onConnect}
-              onAddNode={addNode}
-              onRun={runWorkflow}
-              onPause={pauseWorkflow}
-              onResume={resumeWorkflow}
-              onStop={stopWorkflow}
-            />
-          </ReactFlowProvider>
-
-          {selectedNode && (
-            <PropertyPanel
-              node={selectedNode}
-              onUpdateData={updateNodeData}
-              onDelete={deleteNode}
-            />
-          )}
-        </div>
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
+      {/* Top Menu Bar */}
+      <div className="h-10 border-b border-zinc-800 bg-zinc-900 px-3 flex items-center shrink-0">
+        <WorkflowHeader
+          workflows={workflows}
+          currentWorkflowId={currentWorkflowId}
+          workflowStatus={workflowStatus}
+          workflowStatuses={workflowStatuses}
+          onLoadWorkflow={handleLoadWorkflow}
+          onSaveWorkflow={saveWorkflow}
+          onDeleteWorkflow={deleteWorkflow}
+          onRenameWorkflow={renameWorkflow}
+          onCreateNew={handleCreateNew}
+          tabs={openTabs}
+          onCloseTab={handleCloseTab}
+        />
       </div>
-    </WorkflowProvider>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden relative">
+        <ReactFlowProvider>
+          <Canvas
+            nodes={state.nodes}
+            edges={state.edges}
+            workflowStatus={workflowStatus}
+            availableNodes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeDragStop={onNodeDragStop}
+            onConnect={onConnect}
+            onAddNode={addNode}
+            onRun={runWorkflow}
+            onPause={pauseWorkflow}
+            onResume={resumeWorkflow}
+            onStop={stopWorkflow}
+          />
+        </ReactFlowProvider>
+
+        {selectedNode && (
+          <PropertyPanel
+            node={selectedNode}
+            onUpdateData={updateNodeData}
+            onDelete={deleteNode}
+          />
+        )}
+      </div>
+    </div>
   );
 }

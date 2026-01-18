@@ -2,10 +2,10 @@ import { memo, useCallback, useEffect, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import type { WorkflowNodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
-import { useWorkflowContext } from '../../contexts/WorkflowContext';
+import { useStore } from '../../store';
 
 export const BacktesterNode = memo(({ id, data, selected, width, height }: NodeProps & { data: WorkflowNodeData }) => {
-  const { updateNodeData } = useWorkflowContext();
+  const { updateNodeData } = useStore();
 
   const [initMoney, setInitMoney] = useState(data.config?.init_money ?? 100000.0);
   const [feeRate, setFeeRate] = useState(data.config?.fee_rate ?? 0.0003);
