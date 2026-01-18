@@ -1,5 +1,5 @@
 import { Sparkles, Database, Activity, Box, Type, Mail, Timer } from 'lucide-react';
-import type { NodeType } from '../../types/workflow';
+import type { NodeType } from '../../model/types';
 
 export const NODE_TYPES: { type: NodeType; label: string; icon: any; color: string }[] = [
   { type: 'TextNode', label: 'Text', icon: Type, color: 'text-slate-500 bg-slate-50' },

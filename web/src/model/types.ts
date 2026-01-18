@@ -1,4 +1,10 @@
-import type { Node, Edge } from '@xyflow/react';
+import {
+  type EdgeChange,
+  type Connection,
+  type Node as XNode,
+  type NodeChange as XNodeChange,
+  type Edge
+} from '@xyflow/react';
 
 export type NodeType =
   | 'LLMNode'
@@ -10,7 +16,7 @@ export type NodeType =
   | 'VOLMFINode'
   | string;
 
-export interface WorkflowNodeData extends Record<string, unknown> {
+export interface NodeData extends Record<string, unknown> {
   label: string;
   type: string;
   description?: string;
@@ -20,11 +26,13 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   lastMessage?: any;
 }
 
-export type WorkflowNode = Node<WorkflowNodeData>;
-export type WorkflowEdge = Edge;
+export type Node = XNode<NodeData>;
+export type NodeChange = XNodeChange<Node>;
 
 export interface WorkflowState {
-  nodes: WorkflowNode[];
-  edges: WorkflowEdge[];
+  nodes: Node[];
+  edges: Edge[];
   selectedNodeId: string | null;
 }
+
+export type { EdgeChange, Connection, Edge };

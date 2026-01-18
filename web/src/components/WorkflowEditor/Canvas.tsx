@@ -11,14 +11,13 @@ import {
 import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
 import { NodeContextMenu } from './NodeContextMenu';
-import { WorkflowHeader } from './WorkflowHeader';
-import type { WorkflowNode as WorkflowNodeType, WorkflowEdge } from '../../types/workflow';
+import type { Node, Edge } from '../../model/types';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 import type { NodeMetadata } from '../../api';
 
 interface CanvasProps {
-  nodes: WorkflowNodeType[];
-  edges: WorkflowEdge[];
+  nodes: Node[];
+  edges: Edge[];
   workflowStatus: WorkflowStatus;
   availableNodes: NodeMetadata[];
   onNodesChange: (changes: any) => void;
@@ -30,14 +29,6 @@ interface CanvasProps {
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
-  // Workflow Header Props
-  workflows: { id: number; name: string }[];
-  currentWorkflowId: number | null;
-  onLoadWorkflow: (id: number) => void;
-  onSaveWorkflow: (name?: string) => void;
-  onDeleteWorkflow: (id: number) => void;
-  onRenameWorkflow: (id: number, newName: string) => void;
-  onCreateNew: () => void;
 }
 
 const nodeTypes: NodeTypes = {
@@ -67,13 +58,6 @@ export const Canvas: React.FC<CanvasProps> = ({
   onPause,
   onResume,
   onStop,
-  workflows,
-  currentWorkflowId,
-  onLoadWorkflow,
-  onSaveWorkflow,
-  onDeleteWorkflow,
-  onRenameWorkflow,
-  onCreateNew
 }) => {
   const { screenToFlowPosition } = useReactFlow();
 
@@ -185,19 +169,6 @@ export const Canvas: React.FC<CanvasProps> = ({
       >
         <Background color="#27272a" gap={24} size={1.5} />
         <Controls showInteractive={false} className="!bg-zinc-900 !border-zinc-800 !shadow-sm !fill-zinc-400" />
-
-        <Panel position="top-center" className="mt-4">
-          <WorkflowHeader
-            workflows={workflows}
-            currentWorkflowId={currentWorkflowId}
-            workflowStatus={workflowStatus}
-            onLoadWorkflow={onLoadWorkflow}
-            onSaveWorkflow={onSaveWorkflow}
-            onDeleteWorkflow={onDeleteWorkflow}
-            onRenameWorkflow={onRenameWorkflow}
-            onCreateNew={onCreateNew}
-          />
-        </Panel>
 
         <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
           <ZoomDisplay />

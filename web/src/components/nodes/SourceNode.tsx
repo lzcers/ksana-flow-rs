@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { WorkflowNodeData } from '../../types/workflow';
+import type { WorkflowNodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useWorkflowContext } from '../../contexts/WorkflowContext';
 

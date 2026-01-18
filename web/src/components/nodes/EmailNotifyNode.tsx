@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { WorkflowNodeData } from '../../types/workflow';
+import type { WorkflowNodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useWorkflowContext } from '../../contexts/WorkflowContext';
 
@@ -35,9 +35,9 @@ export const EmailNotifyNode = memo(({ id, data, selected, width, height }: Node
     const newValue = e.target.value;
     setBody(newValue);
     if (!isComposingBody.current) {
-        updateNodeData(id, {
-            config: { ...data.config, body: newValue }
-        });
+      updateNodeData(id, {
+        config: { ...data.config, body: newValue }
+      });
     }
   }, [id, data.config, updateNodeData]);
 

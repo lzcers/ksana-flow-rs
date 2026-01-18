@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { WorkflowNodeData } from '../../types/workflow';
+import type { WorkflowNodeData } from '../../model/types';
 import { LLMNode } from '../nodes/LLMNode';
 import { TextNode } from '../nodes/TextNode';
 import { EmailNotifyNode } from '../nodes/EmailNotifyNode';

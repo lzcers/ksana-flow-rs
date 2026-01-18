@@ -3,7 +3,7 @@ import { Handle, Position, NodeResizer } from '@xyflow/react';
 import { Settings, CheckCircle2, AlertCircle, Loader2, Play } from 'lucide-react';
 import { NODE_TYPES } from '../WorkflowEditor/nodeTypes';
 import { cn } from '../../utils/cn';
-import type { WorkflowNodeData } from '../../types/workflow';
+import type { WorkflowNodeData } from '../../model/types';
 import { useWorkflowContext } from '../../contexts/WorkflowContext';
 
 interface NodeWrapperProps {

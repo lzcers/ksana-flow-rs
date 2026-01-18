@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { NodeWrapper } from './NodeWrapper';
 import { useWorkflowContext } from '../../contexts/WorkflowContext';
-import { type WorkflowNodeData } from '../../types/workflow';
+import { type WorkflowNodeData } from '../../model/types';
 
 export const TextNode = ({ id, data, selected, width, height }: NodeProps & { data: WorkflowNodeData }) => {
   const { updateNodeData } = useWorkflowContext();
