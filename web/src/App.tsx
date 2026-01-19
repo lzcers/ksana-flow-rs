@@ -142,7 +142,6 @@ function AppContent() {
         <WorkflowHeader
           workflows={workflows}
           currentWorkflowId={currentWorkflowId}
-          workflowStatus={workflowStatus}
           workflowStatuses={workflowStatuses}
           onLoadWorkflow={handleLoadWorkflow}
           onSaveWorkflow={saveWorkflow}

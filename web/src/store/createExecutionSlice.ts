@@ -1,11 +1,12 @@
 import type { StateCreator } from 'zustand';
-import type { StoreState, ExecutionSlice } from './types';
+import type { StoreState, ExecutionSlice, WorkflowStatus } from './types';
 import * as api from '../api';
 import { updateNodeStatus, updateNodeData, resetWorkflowExecutionState } from '../model';
 
 export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSlice> = (set, get) => ({
   workflowStatus: 'idle',
   workflowStatuses: {},
+  runIdToWorkflowId: {},
   currentRunId: null,
 
   setWorkflowStatus: (status) => set({ workflowStatus: status }),
@@ -50,31 +51,36 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
 
   handleWebSocketMessage: (wrapper: any) => {
     const { runId, event: msg } = wrapper;
-    const { currentRunId, setWorkflowStatus, setCurrentRunId } = get();
+    const { currentRunId, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
 
     if (runId && currentRunId && runId !== currentRunId) {
-      // Ignore messages for other runs for now in terms of state updates
     }
 
     set(state => {
       let nextState = state;
 
-      // Helper to apply operator and merge
       const apply = (opResult: any) => {
         nextState = { ...nextState, ...opResult };
       };
 
-      // Apply event to state (canvas nodes)
       if (!runId || (runId === state.currentRunId)) {
         if (msg.NodeStarted) {
           const id = msg.NodeStarted;
           apply(updateNodeStatus(nextState, id, 'running'));
-        } else if (msg.NodeStreamMessage) {
-          const id = msg.NodeStreamMessage;
+        } else if (msg.NodeStreamStarted) {
+          const id = msg.NodeStreamStarted;
           apply(updateNodeData(nextState, id, { isOutputStream: true }));
         } else if (msg.NodeInMessage) {
           const [id, value] = msg.NodeInMessage;
           apply(updateNodeData(nextState, id, { lastMessage: value }));
+        } else if (msg.NodeOutMessage) {
+          const [id, value] = msg.NodeOutMessage;
+          apply(updateNodeData(nextState, id, { lastMessage: value }));
+          // Propagate to downstream nodes
+          const outEdges = nextState.edges.filter(e => e.source === id);
+          outEdges.forEach(edge => {
+            apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+          });
         } else if (msg.NodeCompleted) {
           const id = msg.NodeCompleted;
           apply(updateNodeStatus(nextState, id, 'completed'));
@@ -82,19 +88,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
           const [id, error] = msg.NodeError;
           apply(updateNodeStatus(nextState, id, 'error', error));
         } else if (msg === 'FlowFinished') {
-          // We need to iterate over nodes.
-          // nextState.nodes might be updated by previous ops if we had chained them, 
-          // but here we are in a single block.
-          // We need to map over nodes and update status.
-          // Since we don't have a bulk update op, we can do it manually or call updateNodeStatus in loop.
-          // Manual update is cleaner here since we are inside set callback and we know structure.
-          // BUT we should respect the pattern.
-          // Let's assume we can mutate nextState.nodes if we deep clone it first?
-          // No, we should use the operators.
-          // But iterating and calling operator repeatedly is inefficient (creates many intermediate states).
-          // However, for FlowFinished, we just need to set running -> completed.
 
-          // Since we don't have a bulk operator, let's create a temporary list of updates.
           const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
           nodesToUpdate.forEach(node => {
             apply(updateNodeStatus(nextState, node.id, 'completed'));
@@ -106,20 +100,33 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
     });
 
     // Handle side effects (React state updates equivalent)
-    if (msg === 'FlowFinished') {
+    // Handle status updates for both current and background workflows
+    const workflowId = runId ? get().runIdToWorkflowId[runId] : null;
+
+    if (msg === 'FlowFinished' || msg === 'FlowStopped') {
+      if (workflowId) {
+        set(state => {
+          const newStatuses: Record<number, WorkflowStatus> = { ...state.workflowStatuses, [workflowId]: 'idle' };
+          const newMap = { ...state.runIdToWorkflowId };
+          delete newMap[runId];
+          return { workflowStatuses: newStatuses, runIdToWorkflowId: newMap };
+        });
+      }
+
       if (!runId || runId === get().currentRunId) {
         setWorkflowStatus('idle');
         setCurrentRunId(null);
       }
     } else if (msg === 'FlowPaused') {
+      if (workflowId) {
+        setWorkflowStatuses({ ...get().workflowStatuses, [workflowId]: 'paused' });
+      }
       if (!runId || runId === get().currentRunId) setWorkflowStatus('paused');
     } else if (msg === 'FlowResumed') {
-      if (!runId || runId === get().currentRunId) setWorkflowStatus('running');
-    } else if (msg === 'FlowStopped') {
-      if (!runId || runId === get().currentRunId) {
-        setWorkflowStatus('idle');
-        setCurrentRunId(null);
+      if (workflowId) {
+        setWorkflowStatuses({ ...get().workflowStatuses, [workflowId]: 'running' });
       }
+      if (!runId || runId === get().currentRunId) setWorkflowStatus('running');
     }
   },
 
@@ -156,6 +163,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         setCurrentRunId(res.run_id);
         if (currentWorkflowId) {
           setWorkflowStatuses({ ...get().workflowStatuses, [currentWorkflowId]: 'running' });
+          set(state => ({ runIdToWorkflowId: { ...state.runIdToWorkflowId, [res.run_id]: currentWorkflowId } }));
         }
       }
       success('Workflow started');

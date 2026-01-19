@@ -159,6 +159,8 @@ impl Db {
         let status = match event {
             FlowEvent::FlowFinished => Some("completed"),
             FlowEvent::FlowStopped => Some("stopped"),
+            FlowEvent::FlowPaused => Some("paused"),
+            FlowEvent::FlowResumed => Some("running"),
             FlowEvent::NodeError(node_id, _) if node_id == "runner" => Some("failed"),
             _ => None,
         };

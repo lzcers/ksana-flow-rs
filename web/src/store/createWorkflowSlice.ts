@@ -2,6 +2,7 @@ import { type StateCreator } from 'zustand';
 import type { StoreState, WorkflowSlice } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
+import { updateNodeData, updateNodeStatus } from '../model';
 
 export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice> = (set, get) => ({
   workflows: [],
@@ -59,14 +60,11 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       setEdges(edges);
       selectNode(null);
 
-      // Fetch and replay execution status
       try {
         const statusRes = await api.getWorkflowStatus(id);
         if (statusRes) {
           if (statusRes.run_id) {
             setCurrentRunId(statusRes.run_id);
-            // We might need a way to map runId to workflowId in execution slice if needed globally
-            // For now, assuming current workflow context
           }
           if (statusRes.status) {
             let status = statusRes.status.toLowerCase();
@@ -78,39 +76,9 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
           }
 
           if (statusRes.events && Array.isArray(statusRes.events)) {
-            // Replay events
-            // We need to access state to replay events.
-            // Since handleWebSocketMessage updates state based on event, we can reuse it?
-            // But handleWebSocketMessage expects a wrapper.
-            // Let's manually apply events or expose applyEventToState.
-            // For simplicity, let's just use handleWebSocketMessage with a fake wrapper if possible,
-            // or better, extract applyEvent logic.
-            // Since we are inside the store, we can just dispatch updates.
-            // Actually, `useWorkflow` had `applyEventToState`. We should probably expose that or just iterate here.
-
-            // To avoid duplication, I will implement event application in execution slice and call it here if exposed,
-            // or just rely on the fact that `handleWebSocketMessage` does it. 
-            // `handleWebSocketMessage` takes `{ runId, event }`.
 
             statusRes.events.forEach((event: any) => {
-              // We need to update nodes based on these events.
-              // This logic is currently in `applyEventToState` in `useWorkflow.ts`.
-              // I should move that logic to `executionSlice`'s `handleWebSocketMessage` or a helper.
-              // Let's assume `handleWebSocketMessage` can handle raw event if we pass a special flag or just call the internal helper.
-              // But `handleWebSocketMessage` is an action.
-              // Let's just defer this implementation detail to `executionSlice` and assume we can call an action there.
-              // Ideally `executionSlice` should expose `processEvent(event)`.
-              // For now, I'll access the store state directly via `get()` in `executionSlice`.
-
-              // Since I cannot call `applyEventToState` easily if it's not exported, I will implement it in `executionSlice` as `applyEvent`.
-              // And I'll call it here.
-              // But `applyEvent` is not in `WorkflowSlice` interface.
-              // I will cast or extend the interface later.
-
-              // Let's try to reuse `handleWebSocketMessage` by constructing a fake message?
-              // No, that's hacky.
-              // I'll add `applyExecutionEvent` to ExecutionSlice interface.
-              const { applyExecutionEvent } = get() as any; // Type assertion for now
+              const { applyExecutionEvent } = get() as any;
               if (applyExecutionEvent) {
                 applyExecutionEvent(event);
               }
@@ -232,5 +200,46 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
     setCurrentWorkflowId(null);
     setWorkflowStatus('idle');
     setCurrentRunId(null);
+  },
+
+  applyExecutionEvent: (event: any) => {
+    set((state) => {
+      let nextState = state;
+      const apply = (opResult: any) => {
+        nextState = { ...nextState, ...opResult };
+      };
+
+      if (event.NodeStarted) {
+        const id = event.NodeStarted;
+        apply(updateNodeStatus(nextState, id, 'running'));
+      } else if (event.NodeStreamStarted) {
+        const id = event.NodeStreamStarted;
+        apply(updateNodeData(nextState, id, { isOutputStream: true }));
+      } else if (event.NodeInMessage) {
+        const [id, value] = event.NodeInMessage;
+        apply(updateNodeData(nextState, id, { lastMessage: value }));
+      } else if (event.NodeOutMessage) {
+        const [id, value] = event.NodeOutMessage;
+        apply(updateNodeData(nextState, id, { lastMessage: value }));
+        // Propagate to downstream nodes
+        const outEdges = nextState.edges.filter(e => e.source === id);
+        outEdges.forEach(edge => {
+          apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+        });
+      } else if (event.NodeCompleted) {
+        const id = event.NodeCompleted;
+        apply(updateNodeStatus(nextState, id, 'completed'));
+      } else if (event.NodeError) {
+        const [id, error] = event.NodeError;
+        apply(updateNodeStatus(nextState, id, 'error', error));
+      } else if (event === 'FlowFinished') {
+        const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
+        nodesToUpdate.forEach(node => {
+          apply(updateNodeStatus(nextState, node.id, 'completed'));
+        });
+      }
+
+      return nextState;
+    });
   }
 });

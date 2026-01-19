@@ -1,14 +1,14 @@
 import React from 'react';
 import { Handle, Position, NodeResizer } from '@xyflow/react';
-import { Settings, CheckCircle2, AlertCircle, Loader2, Play } from 'lucide-react';
+import { Settings, Play } from 'lucide-react';
 import { NODE_TYPES } from '../WorkflowEditor/nodeTypes';
 import { cn } from '../../utils/cn';
-import type { WorkflowNodeData } from '../../model/types';
+import type { NodeData } from '../../model/types';
 import { useStore } from '../../store';
 
 interface NodeWrapperProps {
   id: string;
-  data: WorkflowNodeData;
+  data: NodeData;
   selected: boolean;
   showSourceHandle?: boolean;
   showTargetHandle?: boolean;
@@ -46,13 +46,11 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   return (
     <div
       className={cn(
-        "bg-zinc-900/90 backdrop-blur border transition-all duration-300 group relative",
+        "bg-zinc-900/95 border transition-all duration-300 group relative",
         selected
           ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] scale-[1.02] ring-1 ring-blue-500"
           : "border-zinc-700 hover:border-zinc-500 shadow-lg shadow-black/20",
-        status === 'running' && "border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.5)] ring-1 ring-yellow-400 animate-pulse",
-        status === 'completed' && "border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.5)] border-2",
-        status === 'error' && "border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] ring-1 ring-red-500 animate-shake",
+        status === 'running' && "border-blue-500/60 shadow-[0_0_10px_rgba(59,130,246,0.3)]",
         resizable && "max-w-none w-full h-full",
         className
       )}
@@ -75,24 +73,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           }}
         />
       )}
-      {/* Status Indicator Overlay */}
-      <div className="absolute -top-2 -right-2 z-10 flex gap-1">
-        {status === 'running' && (
-          <div className="bg-yellow-500 text-white rounded-full p-0.5 shadow-sm animate-spin-slow">
-            <Loader2 size={14} />
-          </div>
-        )}
-        {status === 'completed' && (
-          <div className="bg-green-500 text-white rounded-full shadow-sm">
-            <CheckCircle2 size={16} />
-          </div>
-        )}
-        {status === 'error' && (
-          <div className="bg-red-500 text-white rounded-full shadow-sm">
-            <AlertCircle size={16} />
-          </div>
-        )}
-      </div>
+
 
       {/* Handles */}
       {showTargetHandle && (

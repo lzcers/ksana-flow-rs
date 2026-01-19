@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { IncremarkContent, ThemeProvider } from '@incremark/react';
 import { Eye, Pencil } from 'lucide-react';
@@ -8,9 +8,8 @@ import { type NodeData } from '../../model/types';
 import '@incremark/theme/styles.css';
 import './index.css';
 
-export const TextNode = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
-  const nodes = useStore((state) => state.nodes);
   const [text, setText] = useState(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
 
@@ -18,12 +17,12 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
     handleType: 'target',
   });
 
-  const isStreaming = React.useMemo(() => {
+  const isStreaming = useStore(useCallback((state) => {
     return connections.some(conn => {
-      const node = nodes.find(n => n.id === conn.source);
+      const node = state.nodes.find(n => n.id === conn.source);
       return node?.data?.isOutputStream;
     });
-  }, [connections, nodes]);
+  }, [connections]));
 
   const [wasStreaming, setWasStreaming] = useState(false);
   useEffect(() => {
@@ -53,16 +52,12 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
   }, [id, data.config, text, updateNodeData]);
 
 
-  // If we receive a message from upstream, show it.
   useEffect(() => {
     if (data.lastMessage !== undefined && typeof data.lastMessage === 'string') {
-      // Only update if we have upstream connections (meaning we are acting as a display node)
       if (connections.length > 0) {
         if (isStreaming) {
-          setText(prev => {
+          setText((prev: string) => {
             const next = prev + data.lastMessage;
-            // Use setTimeout to break render cycle if necessary, but here we just update store
-            // We must update config.text so that it persists
             updateNodeData(id, {
               config: { ...data.config, text: next }
             });
@@ -75,7 +70,7 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
         }
       }
     }
-  }, [data.lastMessage, id, updateNodeData, connections.length, isStreaming]); // Removed data.config to avoid infinite loop in append mode
+  }, [data.lastMessage, id, updateNodeData, connections.length, isStreaming]);
 
   const headerActions = (
     <button
@@ -155,3 +150,5 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
     </NodeWrapper>
   );
 };
+
+export const TextNode = memo(TextNodeComponent);

@@ -113,7 +113,8 @@ impl Runner {
         // 初始启动：将 task_queue 中的初始任务直接启动
         while let Some((node_ids, input)) = self.task_queue.pop_front() {
             for node_id in node_ids {
-                self.start_node(node_id, input.clone(), task_sender.clone())?;
+                self.start_node(node_id, input.clone(), task_sender.clone())
+                    .await?;
             }
         }
 
@@ -177,7 +178,7 @@ impl Runner {
                             });
 
                             for task_event in events {
-                                self.handle_task_event(task_event, task_sender.clone(), &mut first_error)?;
+                                self.handle_task_event(task_event, task_sender.clone(), &mut first_error).await?;
                             }
                         }
                         None => {
@@ -204,7 +205,7 @@ impl Runner {
         Ok(())
     }
 
-    fn handle_task_event(
+    async fn handle_task_event(
         &mut self,
         event: TaskEvent,
         task_sender: mpsc::Sender<TaskEvent>,
@@ -213,7 +214,9 @@ impl Runner {
         match event {
             TaskEvent::Stream(node_id, subscribe_fn) => {
                 info!(node_id = %node_id, "Received Stream");
-                let _sub = subscribe_fn(task_sender, node_id, self.ctx.clone());
+                let _sub = subscribe_fn(task_sender, node_id.clone(), self.ctx.clone());
+                Self::send_flow_event(&self.event_sender, FlowEvent::NodeStreamStarted(node_id))
+                    .await;
             }
             TaskEvent::Next(node_id, output) => {
                 info!(
@@ -221,26 +224,50 @@ impl Runner {
                     output_type = %output.as_ref().type_name(),
                     "Received Next event"
                 );
-                self.trigger_downstream(&node_id, output, task_sender)?;
+                if let Some(val) = try_downcast_to_value(output.as_ref()) {
+                    Self::send_flow_event(
+                        &self.event_sender,
+                        FlowEvent::NodeStreamNextMessage(node_id.clone(), val),
+                    )
+                    .await;
+                }
+                self.trigger_downstream(&node_id, output, task_sender)
+                    .await?;
             }
             TaskEvent::Completed(node_id, output) => {
                 if let Some(out) = output {
-                    self.trigger_downstream(&node_id, out, task_sender)?;
+                    // 尝试将输出转换为 Value 并发送到 Web 端
+                    if let Some(val) = try_downcast_to_value(out.as_ref()) {
+                        Self::send_flow_event(
+                            &self.event_sender,
+                            FlowEvent::NodeOutMessage(node_id.clone(), val),
+                        )
+                        .await;
+                        Self::send_flow_event(
+                            &self.event_sender,
+                            FlowEvent::NodeCompleted(node_id.clone()),
+                        )
+                        .await;
+                    }
+                    self.trigger_downstream(&node_id, out, task_sender).await?;
                 }
+
                 self.update_active_tasks(&node_id);
             }
             TaskEvent::Error(node_id, e) => {
                 error!(node_id = %node_id, error = %e, "Node execution failed");
                 if first_error.is_none() {
-                    *first_error = Some(e);
+                    *first_error = Some(e.clone());
                 }
+                Self::send_flow_event(&self.event_sender, FlowEvent::NodeError(node_id.clone(), e))
+                    .await;
                 self.update_active_tasks(&node_id);
             }
         }
         Ok(())
     }
 
-    fn trigger_downstream(
+    async fn trigger_downstream(
         &mut self,
         from_node_id: &str,
         output: Box<dyn SendableAny>,
@@ -255,12 +282,13 @@ impl Runner {
             );
         }
         for next_node_id in next_nodes {
-            self.start_node(next_node_id, output.clone(), tx.clone())?;
+            self.start_node(next_node_id, output.clone(), tx.clone())
+                .await?;
         }
         Ok(())
     }
 
-    fn start_node(
+    async fn start_node(
         &mut self,
         node_id: NodeId,
         input: Box<dyn SendableAny>,
@@ -279,21 +307,14 @@ impl Runner {
             "Starting node task"
         );
         // 节点事件发送器
-        let event_sender = self.event_sender.clone();
         // 节点运行上下文
         let ctx = self.ctx.clone();
         // 节点任务计数守卫
         let guard = TaskGuard::new(self.tracker.clone());
         *self.active_tasks.entry(node_id.clone()).or_insert(0) += 1;
-        Self::worker(
-            node_id,
-            node_arc,
-            ctx,
-            input,
-            task_sender,
-            event_sender,
-            guard,
-        );
+
+        Self::send_flow_event(&self.event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
+        Self::worker(node_id, node_arc, ctx, input, task_sender, guard);
         Ok(())
     }
 
@@ -302,9 +323,11 @@ impl Runner {
             let _ = sender.send(event).await;
         }
     }
+
     async fn send_task_event(sender: &mpsc::Sender<TaskEvent>, event: TaskEvent) {
         let _ = sender.send(event).await;
     }
+
     fn update_runner_state(&self, state: RunnerState) -> Result<(), String> {
         self.state_tx
             .send(state)
@@ -317,29 +340,17 @@ impl Runner {
         ctx: Arc<Context>,
         input: Box<dyn SendableAny>,
         task_sender: mpsc::Sender<TaskEvent>,
-        event_sender: Option<mpsc::Sender<FlowEvent>>,
         _guard: TaskGuard,
     ) {
         tokio::spawn(async move {
             let _keep_alive = _guard; // Force capture
-            Self::send_flow_event(&event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
             let mut node = node.write().await;
 
-            // 尝试将输入转换为 Value 并发送到 Web 端
-            if let Some(val) = try_downcast_to_value(input.as_ref()) {
-                Self::send_flow_event(
-                    &event_sender,
-                    FlowEvent::NodeInMessage(node_id.clone(), val),
-                )
-                .await;
-            }
             info!(node_id = %node_id, "Node tasks start");
             let output: Result<Box<dyn SendableAny>, String> = node.run(&ctx, input).await;
-
             debug!(node_id = %node_id, "Node logic executed");
-
-            Self::send_flow_event(&event_sender, FlowEvent::NodeCompleted(node_id.clone())).await;
             info!(node_id = %node_id, "Node tasks completed");
+
             match output {
                 Ok(out) => {
                     // 如果节点输出是个响应式流，需要订阅它
@@ -349,11 +360,6 @@ impl Runner {
                                 Self::send_task_event(
                                     &task_sender,
                                     TaskEvent::Stream(node_id.clone(), subscribe_fn),
-                                )
-                                .await;
-                                Self::send_flow_event(
-                                    &event_sender,
-                                    FlowEvent::NodeStreamMessage(node_id),
                                 )
                                 .await;
                             }
@@ -372,15 +378,6 @@ impl Runner {
                             }
                         }
                     } else {
-                        // 尝试将输出转换为 Value 并发送到 Web 端
-                        if let Some(val) = try_downcast_to_value(out.as_ref()) {
-                            Self::send_flow_event(
-                                &event_sender,
-                                FlowEvent::NodeOutMessage(node_id.clone(), val),
-                            )
-                            .await;
-                        }
-                        // 非流式节点，发送带数据的 Completed 事件
                         Self::send_task_event(
                             &task_sender,
                             TaskEvent::Completed(node_id, Some(out)),
@@ -389,11 +386,6 @@ impl Runner {
                     }
                 }
                 Err(e) => {
-                    Self::send_flow_event(
-                        &event_sender,
-                        FlowEvent::NodeError(node_id.clone(), e.clone()),
-                    )
-                    .await;
                     Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
                 }
             }

@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { WorkflowNodeData } from '../../model/types';
+import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
 
-export const VolMfiNode = memo(({ id, data, selected, width, height }: NodeProps & { data: WorkflowNodeData }) => {
+export const VolMfiNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [emaPeriod, setEmaPeriod] = useState(data.config?.ema_period ?? 20);

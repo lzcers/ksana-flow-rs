@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { WorkflowNodeData } from '../../model/types';
+import type { NodeData } from '../../model/types';
 import { LLMNode } from '../nodes/LLMNode';
 import { TextNode } from '../nodes/TextNode';
 import { TextFileNode } from '../nodes/TextFileNode';
@@ -10,7 +10,7 @@ import { BacktesterNode } from '../nodes/BacktesterNode';
 import { SourceNode } from '../nodes/SourceNode';
 import { VolMfiNode } from '../nodes/VolMfiNode';
 
-export const WorkflowNode = memo((props: NodeProps & { data: WorkflowNodeData }) => {
+export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
   const { data } = props;
 
   switch (data.type) {

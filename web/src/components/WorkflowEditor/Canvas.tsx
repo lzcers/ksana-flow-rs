@@ -6,7 +6,8 @@ import {
   type NodeTypes,
   Panel,
   useReactFlow,
-  useViewport
+  useViewport,
+  type FitViewOptions
 } from '@xyflow/react';
 import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
@@ -34,6 +35,13 @@ interface CanvasProps {
 const nodeTypes: NodeTypes = {
   workflow: WorkflowNode,
 };
+
+const defaultEdgeOptions = {
+  style: { strokeWidth: 2 },
+  type: 'smoothstep',
+};
+
+const fitViewOptions: FitViewOptions = { maxZoom: 1 };
 
 const ZoomDisplay = () => {
   const { zoom } = useViewport();
@@ -154,18 +162,18 @@ export const Canvas: React.FC<CanvasProps> = ({
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         fitView
-        fitViewOptions={{ maxZoom: 1 }}
+        fitViewOptions={fitViewOptions}
         deleteKeyCode={['Backspace', 'Delete']}
         // Style overrides for clean look
         colorMode="dark"
-        defaultEdgeOptions={{
-          style: { strokeWidth: 2 },
-          type: 'smoothstep',
-        }}
+        defaultEdgeOptions={defaultEdgeOptions}
         connectionLineStyle={{
           stroke: '#3b82f6',
           strokeWidth: 2,
         }}
+        onlyRenderVisibleElements={true}
+        minZoom={0.1}
+        maxZoom={2}
       >
         <Background color="#27272a" gap={24} size={1.5} />
         <Controls showInteractive={false} className="!bg-zinc-900 !border-zinc-800 !shadow-sm !fill-zinc-400" />

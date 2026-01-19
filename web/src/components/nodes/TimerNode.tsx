@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { WorkflowNodeData } from '../../model/types';
+import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
 
-export const TimerNode = memo(({ id, data, selected, width, height }: NodeProps & { data: WorkflowNodeData }) => {
+export const TimerNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [cronExpr, setCronExpr] = useState(data.config?.cron_expr || '');

@@ -16,6 +16,7 @@ export interface WorkflowSlice {
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
   setNodeTypes: (types: NodeMetadata[]) => void;
+  applyExecutionEvent: (event: any) => void;
 }
 
 export interface CanvasSlice {
@@ -37,6 +38,7 @@ export interface CanvasSlice {
 export interface ExecutionSlice {
   workflowStatus: WorkflowStatus;
   workflowStatuses: Record<number, WorkflowStatus>;
+  runIdToWorkflowId: Record<string, number>;
   currentRunId: string | null;
   runWorkflow: () => Promise<void>;
   pauseWorkflow: () => Promise<void>;
