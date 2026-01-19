@@ -10,6 +10,7 @@ pub enum FlowEvent {
     NodeError(String, String),
     NodeInMessage(String, Value),
     NodeOutMessage(String, Value),
+    NodeStreamMessage(String),
     FlowPaused,
     FlowResumed,
     FlowStopped,

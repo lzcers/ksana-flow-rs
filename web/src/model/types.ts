@@ -25,6 +25,7 @@ export interface NodeData extends Record<string, unknown> {
   status?: 'idle' | 'running' | 'completed' | 'error';
   errorMessage?: string;
   lastMessage?: any;
+  isOutputStream?: boolean;
 }
 
 export type Node = XNode<NodeData>;

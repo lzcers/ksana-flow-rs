@@ -56,7 +56,7 @@ export const TextFileNode = ({ id, data, selected }: NodeProps & { data: NodeDat
       selected={selected}
       className="flex flex-col"
       minWidth={200}
-      showSourceHandle={true}
+      showSourceHandle={false}
       showTargetHandle={false}
     >
       <div className="p-4 flex flex-col items-center justify-center gap-3">
@@ -109,6 +109,7 @@ export const TextFileNode = ({ id, data, selected }: NodeProps & { data: NodeDat
         type="source"
         position={Position.Right}
         className="!bg-slate-500 !w-3 !h-3"
+        style={{ right: -6 }}
       />
     </NodeWrapper>
   );

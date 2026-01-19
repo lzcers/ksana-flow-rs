@@ -79,6 +79,7 @@ export const resetWorkflowExecutionState = (state: WorkflowState): WorkflowState
       if (node.data) {
         node.data.status = 'idle';
         node.data.errorMessage = undefined;
+        node.data.isOutputStream = undefined;
       }
     });
   });

@@ -102,24 +102,28 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
             position={Position.Top}
             id="t-top"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ top: -4 }}
           />
           <Handle
             type="target"
             position={Position.Bottom}
             id="t-bottom"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ bottom: -4 }}
           />
           <Handle
             type="target"
             position={Position.Left}
             id="t-left"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ left: -4 }}
           />
           <Handle
             type="target"
             position={Position.Right}
             id="t-right"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ right: -4 }}
           />
         </>
       )}
@@ -131,24 +135,28 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
             position={Position.Top}
             id="s-top"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ top: -4 }}
           />
           <Handle
             type="source"
             position={Position.Bottom}
             id="s-bottom"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ bottom: -4 }}
           />
           <Handle
             type="source"
             position={Position.Left}
             id="s-left"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ left: -4 }}
           />
           <Handle
             type="source"
             position={Position.Right}
             id="s-right"
             className="opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ right: -4 }}
           />
         </>
       )}

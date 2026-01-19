@@ -10,6 +10,7 @@ import './index.css';
 
 export const TextNode = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
+  const nodes = useStore((state) => state.nodes);
   const [text, setText] = useState(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
 
@@ -17,9 +18,27 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
     handleType: 'target',
   });
 
+  const isStreaming = React.useMemo(() => {
+    return connections.some(conn => {
+      const node = nodes.find(n => n.id === conn.source);
+      return node?.data?.isOutputStream;
+    });
+  }, [connections, nodes]);
+
+  const [wasStreaming, setWasStreaming] = useState(false);
   useEffect(() => {
-    setText(data.config?.text || '');
-  }, [data.config?.text]);
+    if (!wasStreaming && isStreaming) {
+      setText('');
+      updateNodeData(id, { config: { ...data.config, text: '' } });
+    }
+    setWasStreaming(isStreaming);
+  }, [isStreaming, wasStreaming, id, updateNodeData]); // Intentionally omitting data.config to avoid loop
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setText(data.config?.text || '');
+    }
+  }, [data.config?.text, isStreaming]);
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(evt.target.value);
@@ -38,13 +57,25 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
   useEffect(() => {
     if (data.lastMessage !== undefined && typeof data.lastMessage === 'string') {
       // Only update if we have upstream connections (meaning we are acting as a display node)
-      if (connections.length > 0 && data.config?.text !== data.lastMessage) {
-        updateNodeData(id, {
-          config: { ...data.config, text: data.lastMessage }
-        });
+      if (connections.length > 0) {
+        if (isStreaming) {
+          setText(prev => {
+            const next = prev + data.lastMessage;
+            // Use setTimeout to break render cycle if necessary, but here we just update store
+            // We must update config.text so that it persists
+            updateNodeData(id, {
+              config: { ...data.config, text: next }
+            });
+            return next;
+          });
+        } else if (data.config?.text !== data.lastMessage) {
+          updateNodeData(id, {
+            config: { ...data.config, text: data.lastMessage }
+          });
+        }
       }
     }
-  }, [data.lastMessage, id, updateNodeData, data.config, connections.length]);
+  }, [data.lastMessage, id, updateNodeData, connections.length, isStreaming]); // Removed data.config to avoid infinite loop in append mode
 
   const headerActions = (
     <button
@@ -111,6 +142,7 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
         type="target"
         position={Position.Left}
         className="!bg-slate-500 !w-3 !h-3"
+        style={{ left: -6 }}
       />
 
       {/* Outputs */}
@@ -118,6 +150,7 @@ export const TextNode = ({ id, data, selected, width, height }: NodeProps & { da
         type="source"
         position={Position.Right}
         className="!bg-slate-500 !w-3 !h-3"
+        style={{ right: -6 }}
       />
     </NodeWrapper>
   );

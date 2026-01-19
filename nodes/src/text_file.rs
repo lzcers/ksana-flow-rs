@@ -25,7 +25,7 @@ impl Node for TextFileNode {
             Err(e) => return format!("Error loading config: {}", e),
         };
 
-        let conn = match Connection::open(&config.source.db_uri) {
+        let conn = match Connection::open(&config.source.data_db_uri) {
             Ok(c) => c,
             Err(e) => return format!("Error opening DB: {}", e),
         };

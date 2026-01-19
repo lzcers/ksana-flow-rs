@@ -18,7 +18,7 @@ use crate::db::Db;
 use crate::handlers::{
     create_workflow, delete_workflow, get_nodes, get_workflow, get_workflow_status, list_workflows,
     pause_workflow, resume_workflow, run_node, run_workflow, stop_workflow, update_workflow,
-    ws_handler, upload_file,
+    upload_file, ws_handler,
 };
 use crate::registry::create_registry;
 use crate::state::AppState;
@@ -49,17 +49,17 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/workflows", get(list_workflows).post(create_workflow))
         .route(
-            "/api/workflows/:id",
+            "/api/workflows/{id}",
             get(get_workflow)
                 .put(update_workflow)
                 .delete(delete_workflow),
         )
         .route("/api/workflow/run", post(run_workflow))
         .route("/api/workflow/run_node", post(run_node))
-        .route("/api/workflow/:id/status", get(get_workflow_status))
-        .route("/api/workflow/:id/pause", post(pause_workflow))
-        .route("/api/workflow/:id/resume", post(resume_workflow))
-        .route("/api/workflow/:id/stop", post(stop_workflow))
+        .route("/api/workflow/{id}/status", get(get_workflow_status))
+        .route("/api/workflow/{id}/pause", post(pause_workflow))
+        .route("/api/workflow/{id}/resume", post(resume_workflow))
+        .route("/api/workflow/{id}/stop", post(stop_workflow))
         .route("/api/nodes", get(get_nodes))
         .route("/api/upload", post(upload_file))
         .route("/ws", get(ws_handler))

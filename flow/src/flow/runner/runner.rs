@@ -348,7 +348,12 @@ impl Runner {
                             Ok(subscribe_fn) => {
                                 Self::send_task_event(
                                     &task_sender,
-                                    TaskEvent::Stream(node_id, subscribe_fn),
+                                    TaskEvent::Stream(node_id.clone(), subscribe_fn),
+                                )
+                                .await;
+                                Self::send_flow_event(
+                                    &event_sender,
+                                    FlowEvent::NodeStreamMessage(node_id),
                                 )
                                 .await;
                             }

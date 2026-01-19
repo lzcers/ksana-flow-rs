@@ -69,6 +69,9 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         if (msg.NodeStarted) {
           const id = msg.NodeStarted;
           apply(updateNodeStatus(nextState, id, 'running'));
+        } else if (msg.NodeStreamMessage) {
+          const id = msg.NodeStreamMessage;
+          apply(updateNodeData(nextState, id, { isOutputStream: true }));
         } else if (msg.NodeInMessage) {
           const [id, value] = msg.NodeInMessage;
           apply(updateNodeData(nextState, id, { lastMessage: value }));

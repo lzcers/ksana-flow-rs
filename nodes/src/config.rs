@@ -8,6 +8,7 @@ use serde::Deserialize;
 pub struct SourceConfig {
     pub tushare_token: String,
     pub db_uri: String,
+    pub data_db_uri: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,7 +36,9 @@ pub fn get_config() -> Result<Config> {
     if db_path.is_relative() {
         let project_root = std::path::Path::new(base_path).parent().unwrap();
         let abs_path = project_root.join(&config.source.db_uri);
+        let data_db_abs_path = project_root.join(&config.source.data_db_uri);
         config.source.db_uri = abs_path.to_string_lossy().to_string();
+        config.source.data_db_uri = data_db_abs_path.to_string_lossy().to_string();
     }
 
     Ok(config)

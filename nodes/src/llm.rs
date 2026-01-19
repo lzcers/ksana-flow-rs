@@ -5,12 +5,13 @@ use flow::{
 };
 use futures::StreamExt;
 use rig::{
-    agent::Agent,
+    agent::{Agent, MultiTurnStreamItem, stream_to_stdout},
     client::{CompletionClient, ProviderClient},
-    completion::Prompt,
-    providers::deepseek::{self, CompletionModel},
+    message::{Reasoning, Text},
+    providers::deepseek::{self, CompletionModel, DEEPSEEK_CHAT},
+    streaming::{StreamedAssistantContent, StreamingPrompt},
 };
-use std::sync::Mutex;
+
 pub struct LLMStreamObservable<S> {
     stream: S,
 }
@@ -24,6 +25,7 @@ where
 
     async fn subscribe(mut self, mut observer: impl Observer<String, String>) -> Self::Sub {
         let mut stream = self.stream;
+
         while let Some(result) = stream.next().await {
             match result {
                 Ok(chunk) => observer.on_next(chunk).await,
@@ -50,8 +52,7 @@ impl LLMNode {
         dotenv::dotenv().ok();
         // Initialize the DeepSeek client from environment variables
         let client = deepseek::Client::from_env();
-        let model_name = "deepseek-chat";
-        let mut builder = client.agent(model_name);
+        let mut builder = client.agent(DEEPSEEK_CHAT);
 
         // Handle system prompt
         if !sys_prompt.is_empty() {
@@ -81,27 +82,21 @@ impl Node for LLMNode {
                 input
             }
         } else {
-            // Input is empty, use the template as is
             self.user_prompt_template.clone()
         };
 
-        let stream = if prompt.is_empty() {
-            futures::stream::empty::<Result<String, String>>().boxed()
-        } else {
-            match self.llm.prompt(&prompt).await {
-                Ok(response) => {
-                    futures::stream::once(async move { Ok::<String, String>(response) }).boxed()
-                }
-                Err(e) => {
-                    futures::stream::once(async move { Err::<String, String>(e.to_string()) })
-                        .boxed()
-                }
-            }
-        };
-
-        let observable = LLMStreamObservable { stream };
-
-        ReactiveStream::from_observable(observable)
+        let stream = self.llm.stream_prompt(&prompt).await.map(|res| match res {
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
+                Text { text },
+            ))) => Ok(text),
+            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(
+                Reasoning { reasoning, .. },
+            ))) => Ok(reasoning.join("\n")),
+            Ok(_) => Ok(String::new()),
+            Err(e) => Err(e.to_string()),
+        });
+        let react_stream = LLMStreamObservable { stream };
+        ReactiveStream::from_observable(react_stream)
     }
 }
 
@@ -184,6 +179,31 @@ mod tests {
             let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
+        });
+    }
+
+    #[test]
+    fn test_deepseek_direct_stream() {
+        use futures::StreamExt;
+        use rig::providers::deepseek;
+        use tokio::runtime::Runtime;
+
+        dotenv::dotenv().ok();
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let client = deepseek::Client::from_env();
+            let agent = client
+                .agent(DEEPSEEK_CHAT)
+                .preamble("You are a helpful assistant.")
+                .build();
+
+            let prompt = "Hello, deepseek!";
+            println!("Sending prompt: {}", prompt);
+
+            let mut stream = agent.stream_prompt(prompt).await;
+            stream_to_stdout(&mut stream).await;
+
+            println!("\nDone.");
         });
     }
 }
