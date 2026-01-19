@@ -8,6 +8,9 @@ import { type NodeData } from '../../model/types';
 import '@incremark/theme/styles.css';
 import './index.css';
 
+const SOURCE_HANDLES = [Position.Right];
+const TARGET_HANDLES = [Position.Left];
+
 export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
   const [text, setText] = useState(data.config?.text || '');
@@ -90,6 +93,8 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
       id={id}
       data={data}
       selected={selected}
+      sourceHandles={SOURCE_HANDLES}
+      targetHandles={TARGET_HANDLES}
       className="flex flex-col"
       minWidth={200}
       minHeight={150}
@@ -129,22 +134,6 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           />
         )}
       </div>
-
-      {/* Inputs */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        className="!bg-slate-500 !w-3 !h-3"
-        style={{ left: -6 }}
-      />
-
-      {/* Outputs */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!bg-slate-500 !w-3 !h-3"
-        style={{ right: -6 }}
-      />
     </NodeWrapper>
   );
 };

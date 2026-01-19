@@ -6,6 +6,8 @@ import { useStore } from '../../store';
 import { type NodeData } from '../../model/types';
 import { uploadFile } from '../../api';
 
+const SOURCE_HANDLES = [Position.Right];
+
 export const TextFileNodeComponent = ({ id, data, selected }: NodeProps & { data: NodeData }) => {
     const { updateNodeData } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +57,7 @@ export const TextFileNodeComponent = ({ id, data, selected }: NodeProps & { data
             data={data}
             selected={selected}
             className="flex flex-col"
+            sourceHandles={SOURCE_HANDLES}
             minWidth={200}
         >
             <div className="p-4 flex flex-col items-center justify-center gap-3">
@@ -102,13 +105,6 @@ export const TextFileNodeComponent = ({ id, data, selected }: NodeProps & { data
                     </div>
                 )}
             </div>
-
-            <Handle
-                type="source"
-                position={Position.Right}
-                className="!bg-slate-500 !w-3 !h-3"
-                style={{ right: -6 }}
-            />
         </NodeWrapper>
     );
 };

@@ -7,7 +7,10 @@ import {
   Panel,
   useReactFlow,
   useViewport,
-  type FitViewOptions
+  type FitViewOptions,
+  MarkerType,
+  type OnConnectStart,
+  type OnConnectEnd
 } from '@xyflow/react';
 import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
@@ -15,6 +18,7 @@ import { NodeContextMenu } from './NodeContextMenu';
 import type { Node, Edge } from '../../model/types';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 import type { NodeMetadata } from '../../api';
+import { useStore } from '../../store';
 
 interface CanvasProps {
   nodes: Node[];
@@ -38,7 +42,10 @@ const nodeTypes: NodeTypes = {
 
 const defaultEdgeOptions = {
   style: { strokeWidth: 2 },
-  type: 'smoothstep',
+  type: 'default',
+  markerEnd: {
+    type: MarkerType.ArrowClosed,
+  },
 };
 
 const fitViewOptions: FitViewOptions = { maxZoom: 1 };
@@ -68,6 +75,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onStop,
 }) => {
   const { screenToFlowPosition } = useReactFlow();
+  const { setConnectionState } = useStore();
 
   const [contextMenu, setContextMenu] = React.useState<{
     visible: boolean;
@@ -147,6 +155,14 @@ export const Canvas: React.FC<CanvasProps> = ({
     [screenToFlowPosition, onAddNode],
   );
 
+  const onConnectStart: OnConnectStart = React.useCallback((_, { nodeId }) => {
+    setConnectionState(true, nodeId);
+  }, [setConnectionState]);
+
+  const onConnectEnd: OnConnectEnd = React.useCallback(() => {
+    setConnectionState(false, null);
+  }, [setConnectionState]);
+
   return (
     <main className="flex-1 relative bg-zinc-950">
       <ReactFlow
@@ -158,6 +174,8 @@ export const Canvas: React.FC<CanvasProps> = ({
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
+        onConnectEnd={onConnectEnd}
         onDrop={onDrop}
         onDragOver={onDragOver}
         nodeTypes={nodeTypes}

@@ -1,8 +1,10 @@
 import { memo, useCallback, useEffect, useState } from 'react';
-import { type NodeProps } from '@xyflow/react';
+import { Position, type NodeProps } from '@xyflow/react';
 import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
+
+const SOURCE_HANDLES = [Position.Right];
 
 export const TimerNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
@@ -27,6 +29,7 @@ export const TimerNode = memo(({ id, data, selected, width, height }: NodeProps 
       data={data}
       selected={selected}
       style={{ width: width ?? 250, height: height ?? 'auto' }}
+      sourceHandles={SOURCE_HANDLES}
     >
       <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
         <div>

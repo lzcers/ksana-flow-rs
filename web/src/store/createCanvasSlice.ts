@@ -71,5 +71,9 @@ export const createCanvasSlice: StateCreator<StoreState, [], [], CanvasSlice> = 
 
   updateNodeDimensions: (id: string, width: number, height: number) => set(state => ({ ...state, ...updateNodeDimensions(state, id, width, height) })),
 
-  selectNode: (id: string | null) => set(state => ({ ...state, ...selectNode(state, id) }))
+  selectNode: (id: string | null) => set(state => ({ ...state, ...selectNode(state, id) })),
+
+  isConnecting: false,
+  connectionSourceId: null,
+  setConnectionState: (connecting, sourceId = null) => set({ isConnecting: connecting, connectionSourceId: sourceId })
 });

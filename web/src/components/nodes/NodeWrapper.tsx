@@ -10,8 +10,8 @@ interface NodeWrapperProps {
   id: string;
   data: NodeData;
   selected: boolean;
-  showSourceHandle?: boolean;
-  showTargetHandle?: boolean;
+  sourceHandles?: Position[];
+  targetHandles?: Position[];
   children?: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
@@ -21,12 +21,19 @@ interface NodeWrapperProps {
   headerActions?: React.ReactNode;
 }
 
+const HANDLE_STYLES: Record<Position, React.CSSProperties> = {
+  [Position.Top]: { top: -6, left: '50%', transform: 'translateX(-50%)' },
+  [Position.Bottom]: { bottom: -6, left: '50%', transform: 'translateX(-50%)' },
+  [Position.Left]: { left: -6, top: '50%', transform: 'translateY(-50%)' },
+  [Position.Right]: { right: -6, top: '50%', transform: 'translateY(-50%)' },
+};
+
 export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   id,
   data,
   selected,
-  showSourceHandle = false,
-  showTargetHandle = false,
+  sourceHandles = [],
+  targetHandles = [],
   children,
   className,
   style,
@@ -37,7 +44,8 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
 }) => {
   const typeConfig = NODE_TYPES.find(t => t.type === data.type);
   const status = data.status || 'idle';
-  const { runNode, updateNodeDimensions } = useStore();
+  const { runNode, updateNodeDimensions, isConnecting, connectionSourceId } = useStore();
+
   const handleRun = (e: React.MouseEvent) => {
     e.stopPropagation();
     runNode(id);
@@ -74,72 +82,35 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
         />
       )}
 
-      {/* Handles */}
-      {showTargetHandle && (
-        <>
-          <Handle
-            type="target"
-            position={Position.Top}
-            id="t-top"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ top: -4 }}
-          />
-          <Handle
-            type="target"
-            position={Position.Bottom}
-            id="t-bottom"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -4 }}
-          />
-          <Handle
-            type="target"
-            position={Position.Left}
-            id="t-left"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: -4 }}
-          />
-          <Handle
-            type="target"
-            position={Position.Right}
-            id="t-right"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ right: -4 }}
-          />
-        </>
-      )}
+      {/* Target Handles */}
+      {targetHandles.map((position) => (
+        <Handle
+          key={`target-${position}`}
+          type="target"
+          position={position}
+          id={`t-${position}`}
+          className={cn(
+            "!w-3 !h-3 !bg-zinc-900 !border-2 !border-blue-500 !rounded-full transition-opacity duration-200 z-50",
+            isConnecting && id !== connectionSourceId ? "opacity-100" : "opacity-0 pointer-events-none"
+          )}
+          style={HANDLE_STYLES[position]}
+        />
+      ))}
 
-      {showSourceHandle && (
-        <>
-          <Handle
-            type="source"
-            position={Position.Top}
-            id="s-top"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ top: -4 }}
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="s-bottom"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -4 }}
-          />
-          <Handle
-            type="source"
-            position={Position.Left}
-            id="s-left"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: -4 }}
-          />
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="s-right"
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ right: -4 }}
-          />
-        </>
-      )}
+      {/* Source Handles */}
+      {sourceHandles.map((position) => (
+        <Handle
+          key={`source-${position}`}
+          type="source"
+          position={position}
+          id={`s-${position}`}
+          className={cn(
+            "!w-3 !h-3 !bg-blue-500 !border-2 !border-white !rounded-full transition-opacity duration-200 z-50",
+            (!isConnecting || id === connectionSourceId) && (selected ? "opacity-100" : "opacity-0 group-hover:opacity-100")
+          )}
+          style={HANDLE_STYLES[position]}
+        />
+      ))}
 
       <div className="p-2">
         <div className="flex items-center gap-2">
