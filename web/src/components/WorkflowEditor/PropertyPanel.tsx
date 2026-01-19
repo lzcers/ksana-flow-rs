@@ -1,9 +1,9 @@
 import React from 'react';
 import { Trash2 } from 'lucide-react';
-import type { WorkflowNode, NodeData } from '../../model/types';
+import type { Node, NodeData } from '../../model/types';
 
 interface PropertyPanelProps {
-  node: WorkflowNode;
+  node: Node;
   onUpdateData: (id: string, data: Partial<NodeData>) => void;
   onDelete: (id: string) => void;
 }

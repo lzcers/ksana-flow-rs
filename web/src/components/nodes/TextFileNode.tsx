@@ -56,8 +56,6 @@ export const TextFileNodeComponent = ({ id, data, selected }: NodeProps & { data
             selected={selected}
             className="flex flex-col"
             minWidth={200}
-            showSourceHandle={false}
-            showTargetHandle={false}
         >
             <div className="p-4 flex flex-col items-center justify-center gap-3">
                 <input

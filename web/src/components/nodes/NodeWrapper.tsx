@@ -25,8 +25,8 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   id,
   data,
   selected,
-  showSourceHandle = true,
-  showTargetHandle = true,
+  showSourceHandle = false,
+  showTargetHandle = false,
   children,
   className,
   style,
@@ -73,7 +73,6 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           }}
         />
       )}
-
 
       {/* Handles */}
       {showTargetHandle && (

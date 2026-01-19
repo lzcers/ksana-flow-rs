@@ -93,6 +93,16 @@ export const applyNodeChanges = (
   return produce(state, (draft) => {
     const updatedNodes = applyNodeChangesXyflow(changes, draft.nodes);
     draft.nodes = updatedNodes as any[];
+
+    changes.forEach((change) => {
+      if (change.type === 'select') {
+        if (change.selected) {
+          draft.selectedNodeId = change.id;
+        } else if (draft.selectedNodeId === change.id) {
+          draft.selectedNodeId = null;
+        }
+      }
+    });
   });
 };
 
