@@ -5,7 +5,7 @@ use flow::{
 };
 use futures::StreamExt;
 use rig::{
-    agent::{Agent, MultiTurnStreamItem, stream_to_stdout},
+    agent::{Agent, MultiTurnStreamItem},
     client::{CompletionClient, ProviderClient},
     message::{Reasoning, Text},
     providers::deepseek::{self, CompletionModel, DEEPSEEK_CHAT},

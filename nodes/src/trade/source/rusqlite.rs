@@ -81,6 +81,7 @@ impl SqliteSource {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn insert_live_stock_base_data(&self, data: &K, current_price: f64) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "INSERT OR IGNORE live_stock_base_data (code, timestamp, current, open, high, low, close, volume, amount) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -89,6 +90,7 @@ impl SqliteSource {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn insert_trading_date(&self, date: u32) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "INSERT OR IGNORE INTO trading_date (date) VALUES (?1)",
@@ -97,6 +99,7 @@ impl SqliteSource {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn is_trading_date(&self, date: u32) -> Result<bool> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT count(*) FROM trading_date WHERE date = ?1")?;
@@ -172,6 +175,7 @@ impl SqliteSource {
         Ok(result)
     }
 
+    #[allow(dead_code)]
     pub fn get_live_stock_base_data(
         &self,
         code: &str,

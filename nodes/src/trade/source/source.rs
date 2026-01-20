@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::rusqlite::SqliteSource;
 use super::tushare::{Product, TushareSource};
 use super::xueqiu::XueqiuSource;
@@ -32,7 +33,6 @@ impl Source {
         })
     }
 
-    pub fn get_range_trade_date(start: &str, end: &str) {}
     pub fn get_all_trading_date(&self, date_range: (&str, &str)) -> Result<Vec<u32>> {
         let (start, end) = date_range;
         let trading_date_list = self

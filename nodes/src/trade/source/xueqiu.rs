@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use reqwest::Client;
 use reqwest::header::{ACCEPT_ENCODING, HeaderMap};

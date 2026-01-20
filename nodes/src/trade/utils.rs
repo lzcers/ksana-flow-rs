@@ -4,7 +4,7 @@ use csv::{Writer, WriterBuilder};
 use std::fs::File;
 use std::fs::OpenOptions;
 
-pub fn create_write_csv(file_path: &str, header: Option<Vec<&str>>) -> Result<Writer<File>> {
+pub fn create_write_csv(file_path: &str, _header: Option<Vec<&str>>) -> Result<Writer<File>> {
     let file = OpenOptions::new()
         .append(true)
         .create(true)

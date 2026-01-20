@@ -80,6 +80,7 @@ fn calc_strategy_index(prev: Option<StrategyParams>, now: StrategyParams) -> (K,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TradingSignal {
     signal_type: Order,
     timestamp: NaiveDateTime,

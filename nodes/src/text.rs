@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use flow::{Context, Node, NodeInputs};
 
 pub struct TextNode {
+    #[allow(dead_code)]
     id: String,
     text: String,
 }
@@ -16,7 +17,7 @@ impl TextNode {
 impl Node for TextNode {
     type Out = String;
 
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
         let input = inputs
             .get_any()
             .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())

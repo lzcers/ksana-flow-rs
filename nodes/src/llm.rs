@@ -4,7 +4,7 @@ use rig::{
     agent::Agent,
     client::{CompletionClient, ProviderClient},
     completion::Prompt,
-    providers::deepseek::{self, CompletionModel, DEEPSEEK_CHAT, DEEPSEEK_REASONER},
+    providers::deepseek::{self, CompletionModel, DEEPSEEK_REASONER},
 };
 
 pub struct LLMNode {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::trade::{k::K, utils::date_str_to_timestamp};
 use anyhow::Result;
 use reqwest::Client;
@@ -34,7 +35,7 @@ impl TushareSource {
 
     /// Create a QueryBuilder to actually build and process the query
     /// # api_name:
-    pub fn querybuilder(self: &Self, api_name: &str) -> QueryBuilder {
+    pub fn querybuilder(self: &Self, api_name: &str) -> QueryBuilder<'_> {
         QueryBuilder::new(self, api_name)
     }
 
