@@ -60,6 +60,13 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
     if (data.lastMessage !== undefined && typeof data.lastMessage === 'string') {
       if (connections.length > 0) {
         if (isStreaming) {
+          // If the incoming message is exactly the same as what we have accumulated,
+          // it's likely the final NodeOutMessage containing the full text.
+          // We should ignore it to avoid duplication.
+          if (data.lastMessage === data.config?.text) {
+            return;
+          }
+
           setText((prev: string) => {
             const next = prev + data.lastMessage;
             updateNodeData(id, {

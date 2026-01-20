@@ -210,3 +210,44 @@ impl Graph {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_edge_type_mismatch_unconditional() {
+        // Create an edge expecting i32
+        let edge: Edge<i32> = Edge {
+            from: "a".to_string(),
+            to: "b".to_string(),
+            condition: None,
+        };
+        let ctx = Context::new();
+
+        // Pass a string
+        let output = "hello".to_string();
+        let any_output: &dyn Any = &output;
+
+        // Check condition
+        assert!(edge.check_condition(&ctx, any_output));
+    }
+
+    #[test]
+    fn test_edge_type_mismatch_conditional() {
+        // Create an edge expecting i32 with condition
+        let edge: Edge<i32> = Edge {
+            from: "a".to_string(),
+            to: "b".to_string(),
+            condition: Some(Box::new(|_, val| *val > 0)),
+        };
+        let ctx = Context::new();
+
+        // Pass a string
+        let output = "hello".to_string();
+        let any_output: &dyn Any = &output;
+
+        // Check condition - should be false because type mismatch makes output None, matching _ => false
+        assert!(!edge.check_condition(&ctx, any_output));
+    }
+}

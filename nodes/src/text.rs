@@ -23,7 +23,6 @@ impl Node for TextNode {
             .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
             .cloned()
             .unwrap_or_default();
-
         let output = if input.is_empty() {
             self.text.clone()
         } else {

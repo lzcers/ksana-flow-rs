@@ -230,7 +230,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
         apply(updateNodeData(nextState, id, { lastMessage: value }));
       } else if (event.NodeOutMessage) {
         const [id, value] = event.NodeOutMessage;
-        apply(updateNodeData(nextState, id, { lastMessage: value }));
+        apply(updateNodeData(nextState, id, { lastMessage: value, isOutputStream: false }));
         // Propagate to downstream nodes
         const outEdges = nextState.edges.filter(e => e.source === id);
         outEdges.forEach(edge => {
@@ -242,6 +242,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       } else if (event.NodeError) {
         const [id, error] = event.NodeError;
         apply(updateNodeStatus(nextState, id, 'error', error));
+        apply(updateNodeData(nextState, id, { isOutputStream: false }));
       } else if (event === 'FlowFinished') {
         const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
         nodesToUpdate.forEach(node => {

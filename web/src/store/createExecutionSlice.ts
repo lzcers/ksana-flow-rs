@@ -83,7 +83,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
           apply(updateNodeData(nextState, id, { lastMessage: value }));
         } else if (msg.NodeOutMessage) {
           const [id, value] = msg.NodeOutMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value }));
+          apply(updateNodeData(nextState, id, { lastMessage: value, isOutputStream: false }));
           // Propagate to downstream nodes
           const outEdges = nextState.edges.filter(e => e.source === id);
           outEdges.forEach(edge => {
@@ -95,6 +95,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         } else if (msg.NodeError) {
           const [id, error] = msg.NodeError;
           apply(updateNodeStatus(nextState, id, 'error', error));
+          apply(updateNodeData(nextState, id, { isOutputStream: false }));
         } else if (msg === 'FlowFinished') {
 
           const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');

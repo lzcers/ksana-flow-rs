@@ -70,45 +70,48 @@ impl GraphBlueprint {
             let source_node = self.nodes.iter().find(|n| n.id == edge.source);
             if let Some(source_node) = source_node {
                 let type_name = &source_node.type_name;
-                let edge_instance: Option<Box<dyn AnyEdge>> = match type_name.as_str() {
-                    "ReactiveSourceNode" => Some(Box::new(FlowEdge::<K> {
+                match type_name.as_str() {
+                    "ReactiveSourceNode" => new_graph.add_edge(FlowEdge::<K> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
-                    })),
-                    "VOLMFINode" => Some(Box::new(FlowEdge::<BacktesterInput> {
+                    }),
+                    "VOLMFINode" => new_graph.add_edge(FlowEdge::<BacktesterInput> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
-                    })),
-                    "Backtester" => Some(Box::new(FlowEdge::<()> {
+                    }),
+                    "Backtester" => new_graph.add_edge(FlowEdge::<()> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
-                    })),
-                    "TextNode" => Some(Box::new(FlowEdge::<String> {
+                    }),
+                    "TextNode" => new_graph.add_edge(FlowEdge::<String> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
-                    })),
-                    "LLMNode" => Some(Box::new(FlowEdge::<String> {
+                    }),
+                    "LLMNode" => new_graph.add_edge(FlowEdge::<String> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
-                    })),
-                    "TextFileNode" => Some(Box::new(FlowEdge::<String> {
+                    }),
+                    "TextFileNode" => new_graph.add_edge(FlowEdge::<String> {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
-                    })),
-                    _ => None,
-                };
-                if let Some(e) = edge_instance {
-                    new_graph
-                        .edges
-                        .entry(edge.source.clone())
-                        .or_insert_with(Vec::new)
-                        .push(e);
+                    }),
+                    "StreamLLMNode" => new_graph.add_edge(FlowEdge::<String> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    }),
+                    "TextMergeNode" => new_graph.add_edge(FlowEdge::<String> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    }),
+                    _ => {}
                 }
             }
         }

@@ -182,18 +182,11 @@ impl Runner {
                 maybe_event = rx.recv(), if current_state == RunnerState::Running => {
                     match maybe_event {
                         Some(first_event) => {
-                            // 批量获取当前队列中的所有事件，以便进行优先级排序
+                            // 批量获取当前队列中的所有事件
                             let mut events = vec![first_event];
                             while let Ok(event) = rx.try_recv() {
                                 events.push(event);
                             }
-
-                            // 优先级排序：Completed/Error > Stream > Next
-                            events.sort_by_key(|event| match event {
-                                TaskEvent::Completed(..) | TaskEvent::Error(..) => 0,
-                                TaskEvent::Stream(..) => 1,
-                                TaskEvent::Next(..) => 2,
-                            });
 
                             for task_event in events {
                                 self.handle_task_event(task_event, task_sender.clone(), &mut first_error).await?;
@@ -249,12 +242,15 @@ impl Runner {
                     )
                     .await;
                 }
-                self.trigger_downstream(&node_id, output, task_sender)
-                    .await?;
+                // self.trigger_downstream(&node_id, output, task_sender)
+                //     .await?;
             }
             TaskEvent::Completed(node_id, output) => {
+                trace!(node_id = %node_id, has_output = output.is_some(), "Received Completed event");
                 if let Some(out) = output {
+                    // Check if it's already a Box<dyn SendableAny> wrapper, and if so, unwrap it
                     let out = flatten_sendable_any(out);
+
                     // 尝试将输出转换为 Value 并发送到 Web 端
                     if let Some(val) = try_downcast_to_value(out.as_ref()) {
                         Self::send_flow_event(
@@ -268,20 +264,20 @@ impl Runner {
                         FlowEvent::NodeCompleted(node_id.clone()),
                     )
                     .await;
-                    info!(node_id = %node_id, "Node tasks completed");
-
                     self.execution_ctx
                         .set_state(node_id.clone(), NodeState::Completed);
                     self.execution_ctx.set_output(node_id.clone(), out.clone());
                     // Trigger downstream with dependency check
                     let next_nodes = self.find_next_nodes(&node_id, &out)?;
+
+                    trace!(node_id = %node_id, next_nodes = ?next_nodes, "Triggering dependent nodes");
+
                     for next_node_id in next_nodes {
                         self.check_and_schedule(&next_node_id, task_sender.clone())
                             .await?;
                     }
                 } else {
                     // 对于流式输出的 Completed，只发送 Completed 事件
-                    info!(node_id = %node_id, "Node tasks completed with no output");
                     Self::send_flow_event(
                         &self.event_sender,
                         FlowEvent::NodeCompleted(node_id.clone()),
@@ -290,7 +286,7 @@ impl Runner {
                     self.execution_ctx
                         .set_state(node_id.clone(), NodeState::Completed);
                 }
-
+                info!(node_id = %node_id, "Node tasks completed");
                 self.update_active_tasks(&node_id);
             }
             TaskEvent::Error(node_id, e) => {
@@ -316,11 +312,14 @@ impl Runner {
         task_sender: mpsc::Sender<TaskEvent>,
     ) -> Result<(), String> {
         let parents = self.graph.get_parents(node_id);
+        trace!(node_id = %node_id, parents = ?parents, "Checking dependencies");
 
         let mut inputs_map = HashMap::new();
 
         for parent_id in &parents {
-            match self.execution_ctx.get_state(parent_id) {
+            let state = self.execution_ctx.get_state(parent_id);
+            trace!(parent = %parent_id, state = ?state, "Parent state");
+            match state {
                 Some(NodeState::Completed) => {
                     // Collect input from parent
                     if let Some(output) = self.execution_ctx.get_output(parent_id) {
@@ -338,6 +337,7 @@ impl Runner {
         }
 
         // All parents ready
+        trace!(node_id = %node_id, "All dependencies met, scheduling");
         let inputs = NodeInputs::new(inputs_map);
 
         self.start_node(node_id.to_string(), inputs, task_sender)
@@ -510,6 +510,7 @@ impl Runner {
     ) -> Result<Vec<String>, String> {
         let mut next_nodes = vec![];
         if let Some(edges) = self.graph.edges.get(from_node_id) {
+            trace!(from = %from_node_id, count = edges.len(), "Found outgoing edges");
             for edge in edges.iter() {
                 // Pass the inner value as &dyn Any
                 let passes = edge.check_condition(&self.ctx, (*output).as_any());
@@ -517,12 +518,15 @@ impl Runner {
                     from = %edge.from(),
                     to = %edge.to(),
                     passes = passes,
+                    output_type = %output.as_ref().type_name(),
                     "Edge condition check"
                 );
                 if passes {
                     next_nodes.push(edge.to().to_owned())
                 }
             }
+        } else {
+            trace!(from = %from_node_id, "No outgoing edges found");
         }
         Ok(next_nodes)
     }
