@@ -96,6 +96,11 @@ impl GraphBlueprint {
                         to: edge.target.clone(),
                         condition: None,
                     })),
+                    "TextFileNode" => Some(Box::new(FlowEdge::<String> {
+                        from: edge.source.clone(),
+                        to: edge.target.clone(),
+                        condition: None,
+                    })),
                     _ => None,
                 };
                 if let Some(e) = edge_instance {

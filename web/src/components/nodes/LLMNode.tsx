@@ -123,7 +123,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">System Prompt</label>
           <textarea
             ref={systemInputRef}
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 resize-none outline-none nodrag text-zinc-300 overflow-hidden"
+            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
             rows={1}
             value={systemPrompt}
             onChange={handleSystemPromptChange}
@@ -137,7 +137,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">User Prompt</label>
           <textarea
             ref={userInputRef}
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 resize-none outline-none nodrag text-zinc-300 overflow-hidden"
+            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
             rows={1}
             value={userPrompt}
             onChange={handleUserPromptChange}

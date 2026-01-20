@@ -37,9 +37,6 @@ impl Node for TextFileNode {
 
         let content: Result<String, _> = stmt.query_row(params![self.file_id], |row| row.get(0));
 
-        match content {
-            Ok(c) => c,
-            Err(e) => format!("Error reading file: {}", e),
-        }
+        content.expect("Error reading file content")
     }
 }
