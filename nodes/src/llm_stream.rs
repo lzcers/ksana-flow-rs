@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use flow::{
-    ReactiveStream, SimpleNode,
+    Node, NodeInputs, ReactiveStream,
     observable::{Observable, Observer, VecSubscription},
 };
 use futures::StreamExt;
@@ -70,11 +70,16 @@ impl LLMStreamNode {
 }
 
 #[async_trait]
-impl SimpleNode for LLMStreamNode {
-    type In = String;
+impl Node for LLMStreamNode {
     type Out = ReactiveStream<String>;
 
-    async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
+        let input = inputs
+            .get_any()
+            .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
+            .cloned()
+            .unwrap_or_default();
+
         let prompt = if !input.is_empty() {
             if self.user_prompt_template.contains("{input}") {
                 self.user_prompt_template.replace("{input}", &input)
@@ -102,7 +107,9 @@ impl SimpleNode for LLMStreamNode {
 
 #[cfg(test)]
 mod tests {
+    use flow::NodeInputs;
     use flow::{Context, TaskEvent};
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::runtime::Runtime;
 
@@ -138,7 +145,14 @@ mod tests {
             let mut node = LLMStreamNode::new("", "");
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let stream = node.run(&ctx, input).await;
+
+            let mut inputs = HashMap::new();
+            inputs.insert(
+                "test".to_string(),
+                Box::new(input) as Box<dyn flow::SendableAny>,
+            );
+
+            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
             let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
@@ -158,7 +172,14 @@ mod tests {
             );
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let stream = node.run(&ctx, input).await;
+
+            let mut inputs = HashMap::new();
+            inputs.insert(
+                "test".to_string(),
+                Box::new(input) as Box<dyn flow::SendableAny>,
+            );
+
+            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
             let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
@@ -175,7 +196,14 @@ mod tests {
             let mut node = LLMStreamNode::new("", "Tell me a joke");
             let input = "".to_owned();
             eprintln!("input: {}", &input);
-            let stream = node.run(&ctx, input).await;
+
+            let mut inputs = HashMap::new();
+            inputs.insert(
+                "test".to_string(),
+                Box::new(input) as Box<dyn flow::SendableAny>,
+            );
+
+            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
             let output = collect_output(stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());

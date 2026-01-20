@@ -478,6 +478,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "dashmap",
+ "futures",
  "serde",
  "serde_json",
  "tokio",

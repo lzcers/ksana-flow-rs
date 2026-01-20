@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use cron::Schedule;
 use flow::observable::{Observable, Observer, Subscription};
-use flow::{Context, ReactiveStream, SimpleNode};
+use flow::{Context, Node, NodeInputs, ReactiveStream};
 use std::str::FromStr;
 use tokio::time::sleep;
 
@@ -56,11 +56,10 @@ impl Observable<(), ()> for TimerObservable {
 }
 
 #[async_trait]
-impl SimpleNode for TimerNode {
-    type In = ();
+impl Node for TimerNode {
     type Out = ReactiveStream<()>;
 
-    async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
         let schedule = Schedule::from_str(&self.cron_expr).expect("Invalid cron expression");
         let observable = TimerObservable { schedule };
         ReactiveStream::from_observable(observable)
@@ -70,7 +69,9 @@ impl SimpleNode for TimerNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flow::NodeInputs;
     use flow::TaskEvent;
+    use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Instant;
     use tokio::sync::mpsc;
@@ -82,7 +83,7 @@ mod tests {
         let mut node = TimerNode::new("* * * * * * *").unwrap();
 
         let start = Instant::now();
-        let stream = node.run(&ctx, ()).await;
+        let stream = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
 
         let (tx, mut rx) = mpsc::channel(10);
 

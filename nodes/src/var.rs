@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, SimpleNode};
+use flow::{Context, Node, NodeInputs};
 use std::marker::PhantomData;
 
 /// 一个泛型的变量节点，返回预设的值。
@@ -19,15 +19,14 @@ impl<T, I> VarNode<T, I> {
 }
 
 #[async_trait]
-impl<T, I> SimpleNode for VarNode<T, I>
+impl<T, I> Node for VarNode<T, I>
 where
     T: Clone + Send + Sync + 'static,
     I: Send + Sync,
 {
-    type In = I;
     type Out = T;
 
-    async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
         self.value.clone()
     }
 }
@@ -36,6 +35,8 @@ where
 mod tests {
     use super::*;
     use flow::Context;
+    use flow::NodeInputs;
+    use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
     #[test]
@@ -46,12 +47,12 @@ mod tests {
 
             // 测试字符串类型
             let mut node = VarNode::new("hello".to_string());
-            let output = node.run(&ctx, ()).await;
+            let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
             assert_eq!(output, "hello".to_string());
 
             // 测试整数类型
             let mut int_node = VarNode::new(42i32);
-            let output = int_node.run(&ctx, ()).await;
+            let output = int_node.run(&ctx, NodeInputs::new(HashMap::new())).await;
             assert_eq!(output, 42);
         });
     }

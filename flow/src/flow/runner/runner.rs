@@ -5,7 +5,9 @@ use crate::flow::{
     runner::task_guard::{TaskGuard, TaskTracker},
     sendable_any::{SendableAny, try_downcast_to_value},
 };
+use futures::FutureExt;
 use serde_json::Value;
+use std::panic::AssertUnwindSafe;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -69,7 +71,9 @@ pub struct Runner {
 }
 
 fn flatten_sendable_any(mut out: Box<dyn SendableAny>) -> Box<dyn SendableAny> {
+    eprintln!("Flattening: type_name={}", out.type_name());
     while out.as_any().is::<Box<dyn SendableAny>>() {
+        eprintln!("  Found nested Box<dyn SendableAny>");
         let any = out.into_any();
         match any.downcast::<Box<dyn SendableAny>>() {
             Ok(inner) => {
@@ -151,10 +155,11 @@ impl Runner {
     pub fn set_start_node(&mut self, node_id: &str, input: &dyn SendableAny) {
         let mut inputs = HashMap::new();
         // Since we don't have a "source" for start node, we can just put it as some key or empty key
-        // Or we can say "start" is the source?
-        // But the input is typically the payload.
-        // For compatibility with SimpleNode adapter which does `inputs.values().next()`, any key is fine.
-        inputs.insert("external_start".to_owned(), input.clone_box());
+        // Nodes typically use inputs.get_any() to retrieve the first available input.
+        let boxed_input = input.clone_box();
+        // Ensure we don't have double boxing which can happen with some types
+        let boxed_input = flatten_sendable_any(boxed_input);
+        inputs.insert("external_start".to_owned(), boxed_input);
 
         self.task_queue
             .push_back((vec![node_id.to_owned()], NodeInputs::new(inputs)));
@@ -483,7 +488,24 @@ impl Runner {
             let mut node = node.write().await;
 
             info!(node_id = %node_id, "Node tasks start");
-            let output: Result<Box<dyn SendableAny>, String> = node.run(&ctx, inputs).await;
+            let result = AssertUnwindSafe(node.run(&ctx, inputs))
+                .catch_unwind()
+                .await;
+
+            let output: Result<Box<dyn SendableAny>, String> = match result {
+                Ok(res) => res,
+                Err(panic_err) => {
+                    let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                        format!("Panic: {}", s)
+                    } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                        format!("Panic: {}", s)
+                    } else {
+                        "Panic: unknown error".to_string()
+                    };
+                    Err(msg)
+                }
+            };
+
             debug!(node_id = %node_id, "Node logic executed");
             info!(node_id = %node_id, "Node tasks completed");
 

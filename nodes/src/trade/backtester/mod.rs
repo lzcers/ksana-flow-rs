@@ -3,7 +3,7 @@ mod index_calc;
 pub mod trading;
 
 use async_trait::async_trait;
-use flow::SimpleNode;
+use flow::{Node, NodeInputs};
 use serde::{Deserialize, Serialize};
 
 use crate::trade::k::K;
@@ -27,11 +27,16 @@ pub struct BacktesterOutput {
 }
 
 #[async_trait]
-impl SimpleNode for Backtester {
-    type In = BacktesterInput;
+impl Node for Backtester {
     type Out = BacktesterOutput;
 
-    async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
+        let input = inputs
+            .get_any()
+            .and_then(|any| any.as_ref().as_any().downcast_ref::<BacktesterInput>())
+            .cloned()
+            .expect("Backtester expected BacktesterInput");
+
         let _ = self.order(input.order);
         self.update(&input.k);
         // self.print_backtest_result();

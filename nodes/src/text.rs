@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, SimpleNode};
+use flow::{Context, Node, NodeInputs};
 
 pub struct TextNode {
     id: String,
@@ -13,11 +13,16 @@ impl TextNode {
 }
 
 #[async_trait]
-impl SimpleNode for TextNode {
-    type In = String;
+impl Node for TextNode {
     type Out = String;
 
-    async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out {
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        let input = inputs
+            .get_any()
+            .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
+            .cloned()
+            .unwrap_or_default();
+
         let output = if input.is_empty() {
             self.text.clone()
         } else {
@@ -31,6 +36,8 @@ impl SimpleNode for TextNode {
 mod tests {
     use super::*;
     use flow::Context;
+    use flow::NodeInputs;
+    use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
     #[test]
@@ -41,11 +48,16 @@ mod tests {
             let mut node = TextNode::new("node1".to_string(), "default text".to_string());
 
             // Test with empty input
-            let output = node.run(&ctx, "".to_string()).await;
+            let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
             assert_eq!(output, "default text");
 
             // Test with provided input
-            let output = node.run(&ctx, "input text".to_string()).await;
+            let mut inputs = HashMap::new();
+            inputs.insert(
+                "test".to_string(),
+                Box::new("input text".to_string()) as Box<dyn flow::SendableAny>,
+            );
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
             assert_eq!(output, "input text");
         });
     }

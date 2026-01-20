@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, SimpleNode};
+use flow::{Context, Node, NodeInputs};
 use rusqlite::{Connection, params};
 
 use crate::config::get_config;
@@ -15,11 +15,10 @@ impl TextFileNode {
 }
 
 #[async_trait]
-impl SimpleNode for TextFileNode {
-    type In = ();
+impl Node for TextFileNode {
     type Out = String;
 
-    async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
         let config = match get_config() {
             Ok(c) => c,
             Err(e) => return format!("Error loading config: {}", e),

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::SimpleNode;
+use flow::{Node, NodeInputs};
 use rig::{
     agent::Agent,
     client::{CompletionClient, ProviderClient},
@@ -37,11 +37,16 @@ impl LLMNode {
 }
 
 #[async_trait]
-impl SimpleNode for LLMNode {
-    type In = String;
+impl Node for LLMNode {
     type Out = String;
 
-    async fn run(&mut self, _ctx: &flow::Context, input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
+        let input = inputs
+            .get_any()
+            .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
+            .cloned()
+            .unwrap_or_default();
+
         let prompt = if !input.is_empty() {
             if self.user_prompt_template.contains("{input}") {
                 self.user_prompt_template.replace("{input}", &input)
@@ -62,6 +67,8 @@ impl SimpleNode for LLMNode {
 #[cfg(test)]
 mod tests {
     use flow::Context;
+    use flow::NodeInputs;
+    use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
     use super::*;
@@ -75,7 +82,14 @@ mod tests {
             let mut node = LLMNode::new("", "");
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let output = node.run(&ctx, input).await;
+
+            let mut inputs = HashMap::new();
+            inputs.insert(
+                "test".to_string(),
+                Box::new(input) as Box<dyn flow::SendableAny>,
+            );
+
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
             eprintln!("output: {}", output);
         });
     }
@@ -93,7 +107,14 @@ mod tests {
             );
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
-            let output = node.run(&ctx, input).await;
+
+            let mut inputs = HashMap::new();
+            inputs.insert(
+                "test".to_string(),
+                Box::new(input) as Box<dyn flow::SendableAny>,
+            );
+
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
             eprintln!("output: {}", output);
         });
     }

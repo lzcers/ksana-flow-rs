@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use flow::{Context, SimpleNode};
+use flow::{Context, Node, NodeInputs};
 use lettre::{
     Message, SmtpTransport, Transport,
     transport::smtp::authentication::{Credentials, Mechanism},
@@ -57,11 +57,10 @@ impl EmailNotifyNode {
 }
 
 #[async_trait]
-impl SimpleNode for EmailNotifyNode {
-    type In = ();
+impl Node for EmailNotifyNode {
     type Out = ();
 
-    async fn run(&mut self, _ctx: &Context, _input: Self::In) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
         if let Err(e) = email_notify(&self.subject, &self.body) {
             error!("EmailNotifyNode failed to send email: {:?}", e);
         }
@@ -71,11 +70,14 @@ impl SimpleNode for EmailNotifyNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flow::NodeInputs;
+    use std::collections::HashMap;
+
     #[tokio::test]
     async fn test_email_notify_node() -> Result<()> {
         let mut node = EmailNotifyNode::new("Test Subject".to_string(), "Test Body".to_string());
         let ctx = Context::new();
-        node.run(&ctx, ()).await;
+        node.run(&ctx, NodeInputs::new(HashMap::new())).await;
         Ok(())
     }
 

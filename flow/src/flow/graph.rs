@@ -24,7 +24,7 @@ impl NodeInputs {
     pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
         self.inputs
             .get(key)
-            .and_then(|any| any.as_any().downcast_ref::<T>())
+            .and_then(|any| any.as_ref().as_any().downcast_ref::<T>())
     }
 
     pub fn get_any(&self) -> Option<&Box<dyn SendableAny>> {
@@ -36,73 +36,6 @@ impl NodeInputs {
 pub trait Node {
     type Out: SendableAny;
     async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out;
-}
-
-#[async_trait]
-pub trait SimpleNode {
-    type In;
-    type Out: SendableAny; // 因为 Out 的值会被 Clone 分发到下游节点中
-    async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
-}
-
-#[async_trait]
-impl<T: SimpleNode + Send + Sync> Node for T
-where
-    T::In: Send + 'static,
-{
-    type Out = T::Out;
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
-        // Attempt to find a matching input
-        // 1. If In is (), return ()
-        // 2. If inputs is empty, and In is (), return ()
-        // 3. Try to pick the first input
-
-        if TypeId::of::<T::In>() == TypeId::of::<()>() {
-            // Safe to cast to In (which is ())
-            // We need to create a dummy input of type T::In
-            // Since we know T::In is (), we can just unsafe transmute or Box::new(())
-            // But simpler: just create a Box<dyn Any> of () and downcast
-            let unit = Box::new(()) as Box<dyn Any>;
-            let input = *unit.downcast::<T::In>().unwrap();
-            return SimpleNode::run(self, ctx, input).await;
-        }
-
-        let first_input = inputs.get_any();
-
-        let input_any = if let Some(input) = first_input {
-            if TypeId::of::<T::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream() {
-                match input.as_ref().clone_box().into_stream_subscriber() {
-                    Ok(sub) => Box::new(sub) as Box<dyn Any>,
-                    Err(i) => i.into_any(),
-                }
-            } else {
-                input.as_ref().clone_box().into_any()
-            }
-        } else {
-            // No input provided.
-            // If T::In is (), handled above.
-            // If T::In is something else, this will fail in downcast unless we handle it.
-            // For now, let's assume we provide () if empty?
-            // Or better, panic with meaningful error?
-            Box::new(()) as Box<dyn Any>
-        };
-
-        let input = input_any.downcast::<T::In>().map_err(|any| {
-            format!(
-                "Type mismatch in SimpleNode adapter: expected {}, got {:?}",
-                std::any::type_name::<T::In>(),
-                any.as_ref().type_id()
-            )
-        });
-
-        match input {
-            Ok(input) => SimpleNode::run(self, ctx, *input).await,
-            Err(e) => panic!("{}", e), // We have to panic here because run signature doesn't return Result
-                                       // Ideally Node::run should return Result, but that's a bigger change.
-                                       // Existing SimpleNode::run doesn't return Result.
-                                       // So panic is the only option for type mismatch in adapter.
-        }
-    }
 }
 
 pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send>;
