@@ -268,6 +268,8 @@ impl Runner {
                         FlowEvent::NodeCompleted(node_id.clone()),
                     )
                     .await;
+                    info!(node_id = %node_id, "Node tasks completed");
+
                     self.execution_ctx
                         .set_state(node_id.clone(), NodeState::Completed);
                     self.execution_ctx.set_output(node_id.clone(), out.clone());
@@ -279,6 +281,7 @@ impl Runner {
                     }
                 } else {
                     // 对于流式输出的 Completed，只发送 Completed 事件
+                    info!(node_id = %node_id, "Node tasks completed with no output");
                     Self::send_flow_event(
                         &self.event_sender,
                         FlowEvent::NodeCompleted(node_id.clone()),
@@ -287,7 +290,7 @@ impl Runner {
                     self.execution_ctx
                         .set_state(node_id.clone(), NodeState::Completed);
                 }
-                info!(node_id = %node_id, "Node tasks completed");
+
                 self.update_active_tasks(&node_id);
             }
             TaskEvent::Error(node_id, e) => {
