@@ -1,9 +1,11 @@
+use super::context::{ExecutionContext, NodeState};
 use crate::flow::{
     event::{FlowEvent, TaskEvent},
     graph::{AnyNode, Context, Graph, NodeId},
     runner::task_guard::{TaskGuard, TaskTracker},
     sendable_any::{SendableAny, try_downcast_to_value},
 };
+use serde_json::Value;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -57,12 +59,63 @@ pub struct Runner {
     task_queue: VecDeque<TaskPayload>,
     active_tasks: HashMap<NodeId, usize>,
     tracker: Arc<TaskTracker>,
+    execution_ctx: ExecutionContext,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
     // 外部事件发送通道
     event_sender: Option<mpsc::Sender<FlowEvent>>,
     // 外部命令接收通道
     cmd_rx: mpsc::Receiver<RunnerCommand>,
+}
+
+fn flatten_sendable_any(mut out: Box<dyn SendableAny>) -> Box<dyn SendableAny> {
+    while out.as_any().is::<Box<dyn SendableAny>>() {
+        let any = out.into_any();
+        match any.downcast::<Box<dyn SendableAny>>() {
+            Ok(inner) => {
+                out = *inner;
+            }
+            Err(orig) => {
+                // Handle edge case where type identification mismatches
+                let orig = match orig.downcast::<String>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<Box<String>>() {
+                    Ok(s) => return Box::new(**s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<i32>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<bool>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<f64>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<Value>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<()>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+                let orig = match orig.downcast::<(i32, bool)>() {
+                    Ok(s) => return Box::new(*s),
+                    Err(f) => f,
+                };
+
+                // Try other common types if needed, or panic
+                panic!("Failed to flatten SendableAny: {:?}", orig.type_id());
+            }
+        }
+    }
+    out
 }
 
 impl Runner {
@@ -82,6 +135,7 @@ impl Runner {
                 task_queue: VecDeque::new(),
                 active_tasks: HashMap::new(),
                 tracker: Arc::new(TaskTracker::new()),
+                execution_ctx: ExecutionContext::new(),
                 event_sender: None,
                 cmd_rx,
                 state_tx,
@@ -236,6 +290,8 @@ impl Runner {
             }
             TaskEvent::Completed(node_id, output) => {
                 if let Some(out) = output {
+                    let out = flatten_sendable_any(out);
+
                     // 尝试将输出转换为 Value 并发送到 Web 端
                     if let Some(val) = try_downcast_to_value(out.as_ref()) {
                         Self::send_flow_event(
@@ -249,7 +305,18 @@ impl Runner {
                         )
                         .await;
                     }
-                    self.trigger_downstream(&node_id, out, task_sender).await?;
+
+                    // Update Execution Context
+                    self.execution_ctx
+                        .set_state(node_id.clone(), NodeState::Completed);
+                    self.execution_ctx.set_output(node_id.clone(), out.clone());
+
+                    // Trigger downstream with dependency check
+                    let next_nodes = self.find_next_nodes(&node_id, &out)?;
+                    for next_node_id in next_nodes {
+                        self.check_and_schedule(&next_node_id, task_sender.clone())
+                            .await?;
+                    }
                 }
 
                 self.update_active_tasks(&node_id);
@@ -259,11 +326,51 @@ impl Runner {
                 if first_error.is_none() {
                     *first_error = Some(e.clone());
                 }
+
+                self.execution_ctx
+                    .set_state(node_id.clone(), NodeState::Failed);
+
                 Self::send_flow_event(&self.event_sender, FlowEvent::NodeError(node_id.clone(), e))
                     .await;
                 self.update_active_tasks(&node_id);
             }
         }
+        Ok(())
+    }
+
+    async fn check_and_schedule(
+        &mut self,
+        node_id: &str,
+        task_sender: mpsc::Sender<TaskEvent>,
+    ) -> Result<(), String> {
+        let parents = self.graph.get_parents(node_id);
+
+        let mut input: Option<Box<dyn SendableAny>> = None;
+
+        for parent_id in &parents {
+            match self.execution_ctx.get_state(parent_id) {
+                Some(NodeState::Completed) => {
+                    // Simple logic for Phase 2: Take the first available input
+                    if input.is_none() {
+                        input = self.execution_ctx.get_output(parent_id);
+                    }
+                }
+                Some(NodeState::Skipped) => {
+                    // Dependency met but no data
+                }
+                _ => {
+                    // Parent not ready (Pending, Running, Failed, or None)
+                    return Ok(());
+                }
+            }
+        }
+
+        // All parents ready
+        // If input is None (e.g. all parents skipped or unit), use Unit
+        let input_to_send = input.unwrap_or_else(|| Box::new(()) as Box<dyn SendableAny>);
+
+        self.start_node(node_id.to_string(), input_to_send, task_sender)
+            .await?;
         Ok(())
     }
 

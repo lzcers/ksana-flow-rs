@@ -1,5 +1,5 @@
 use crate::flow::reactive_stream::StreamSubscriptionFn;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::any::Any;
 
 pub trait SendableAny: Any + Send {

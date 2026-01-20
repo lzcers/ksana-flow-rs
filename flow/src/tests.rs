@@ -79,9 +79,10 @@ async fn test_complex_graph_connections() {
 
     let (mut runner, _handle) = Runner::new(graph);
     runner.set_start_node("input", &"Test".to_string());
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Complex graph execution should succeed");
+    runner
+        .run()
+        .await
+        .expect("Complex graph execution should succeed");
 }
 
 #[tokio::test]
@@ -673,12 +674,10 @@ async fn test_diamond_graph_pattern() {
 
     let (mut runner, _handle) = Runner::new(graph);
     runner.set_start_node("start", &"Diamond".to_string());
-    let result = runner.run().await;
-
-    assert!(
-        result.is_ok(),
-        "Diamond pattern should execute successfully"
-    );
+    runner
+        .run()
+        .await
+        .expect("Diamond pattern should execute successfully");
 }
 
 #[tokio::test]

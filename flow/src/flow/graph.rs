@@ -150,6 +150,7 @@ impl<Out: Any> AnyEdge for Edge<Out> {
 pub struct Graph {
     pub nodes: HashMap<NodeId, Arc<RwLock<dyn AnyNode>>>,
     pub edges: HashMap<NodeId, Vec<Box<dyn AnyEdge>>>,
+    pub incoming_nodes: HashMap<NodeId, Vec<NodeId>>,
 }
 
 impl Graph {
@@ -157,11 +158,19 @@ impl Graph {
         Self {
             nodes: HashMap::new(),
             edges: HashMap::new(),
+            incoming_nodes: HashMap::new(),
         }
     }
 
     pub fn get_node_ids(&self) -> Vec<String> {
         self.nodes.keys().cloned().collect()
+    }
+
+    pub fn get_parents(&self, node_id: &str) -> Vec<String> {
+        self.incoming_nodes
+            .get(node_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn add_node<N: AnyNode>(&mut self, id: &str, node: N) {
@@ -172,6 +181,11 @@ impl Graph {
     }
 
     pub fn add_edge<Out: Any>(&mut self, edge: Edge<Out>) {
+        self.incoming_nodes
+            .entry(edge.to.clone())
+            .or_insert_with(Vec::new)
+            .push(edge.from.clone());
+
         self.edges
             .entry(edge.from.clone())
             .or_insert_with(Vec::new)
@@ -184,16 +198,33 @@ impl Graph {
 
     pub fn remove_node(&mut self, id: &str) {
         self.nodes.remove(id);
-        self.edges.remove(id); // remove outgoing edges
-        // remove incoming edges
-        for edges in self.edges.values_mut() {
-            edges.retain(|e| e.to() != id);
+
+        // Remove outgoing edges and update incoming_nodes of children
+        if let Some(outgoing_edges) = self.edges.remove(id) {
+            for edge in outgoing_edges {
+                if let Some(parents) = self.incoming_nodes.get_mut(edge.to()) {
+                    parents.retain(|p| p != id);
+                }
+            }
+        }
+
+        // Remove incoming edges (edges pointing TO this node)
+        if let Some(parents) = self.incoming_nodes.remove(id) {
+            for parent_id in parents {
+                if let Some(edges) = self.edges.get_mut(&parent_id) {
+                    edges.retain(|e| e.to() != id);
+                }
+            }
         }
     }
 
     pub fn remove_edge(&mut self, from: &str, to: &str) {
         if let Some(edges) = self.edges.get_mut(from) {
             edges.retain(|e| e.to() != to);
+        }
+
+        if let Some(parents) = self.incoming_nodes.get_mut(to) {
+            parents.retain(|p| p != from);
         }
     }
 }
