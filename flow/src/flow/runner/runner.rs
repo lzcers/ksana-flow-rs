@@ -1,12 +1,14 @@
 use super::context::{ExecutionContext, NodeState};
-use crate::flow::{
-    event::{FlowEvent, TaskEvent},
-    graph::{AnyNode, Context, Graph, NodeId, NodeInputs},
-    runner::task_guard::{TaskGuard, TaskTracker},
-    sendable_any::{SendableAny, try_downcast_to_value},
+use crate::{
+    flatten_sendable_any,
+    flow::{
+        event::{FlowEvent, TaskEvent},
+        graph::{AnyNode, Context, Graph, NodeId, NodeInputs},
+        runner::task_guard::{TaskGuard, TaskTracker},
+        sendable_any::{SendableAny, try_downcast_to_value},
+    },
 };
 use futures::FutureExt;
-use serde_json::Value;
 use std::panic::AssertUnwindSafe;
 use std::{
     collections::{HashMap, VecDeque},
@@ -70,58 +72,6 @@ pub struct Runner {
     cmd_rx: mpsc::Receiver<RunnerCommand>,
 }
 
-fn flatten_sendable_any(mut out: Box<dyn SendableAny>) -> Box<dyn SendableAny> {
-    eprintln!("Flattening: type_name={}", out.type_name());
-    while out.as_any().is::<Box<dyn SendableAny>>() {
-        eprintln!("  Found nested Box<dyn SendableAny>");
-        let any = out.into_any();
-        match any.downcast::<Box<dyn SendableAny>>() {
-            Ok(inner) => {
-                out = *inner;
-            }
-            Err(orig) => {
-                // Handle edge case where type identification mismatches
-                let orig = match orig.downcast::<String>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<Box<String>>() {
-                    Ok(s) => return Box::new(**s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<i32>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<bool>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<f64>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<Value>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<()>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-                let orig = match orig.downcast::<(i32, bool)>() {
-                    Ok(s) => return Box::new(*s),
-                    Err(f) => f,
-                };
-
-                // Try other common types if needed, or panic
-                panic!("Failed to flatten SendableAny: {:?}", orig.type_id());
-            }
-        }
-    }
-    out
-}
-
 impl Runner {
     pub fn new(graph: Graph) -> (Self, RunnerHandle) {
         let (cmd_tx, cmd_rx) = mpsc::channel(32);
@@ -154,10 +104,7 @@ impl Runner {
 
     pub fn set_start_node(&mut self, node_id: &str, input: &dyn SendableAny) {
         let mut inputs = HashMap::new();
-        // Since we don't have a "source" for start node, we can just put it as some key or empty key
-        // Nodes typically use inputs.get_any() to retrieve the first available input.
         let boxed_input = input.clone_box();
-        // Ensure we don't have double boxing which can happen with some types
         let boxed_input = flatten_sendable_any(boxed_input);
         inputs.insert("external_start".to_owned(), boxed_input);
 
@@ -179,13 +126,6 @@ impl Runner {
         // 初始启动：将 task_queue 中的初始任务直接启动
         while let Some((node_ids, inputs)) = self.task_queue.pop_front() {
             for node_id in node_ids {
-                // For start node, we clone the inputs because multiple start nodes might share the same initial payload?
-                // Or each start node gets the same input?
-                // NodeInputs is not Clone. We need to implement Clone for NodeInputs or re-construct it.
-                // But wait, Box<dyn SendableAny> is clonable via clone_box.
-
-                // Let's implement Clone for NodeInputs in graph.rs later.
-                // For now, let's manually clone.
                 let mut inputs_map = HashMap::new();
                 for (k, v) in &inputs.inputs {
                     inputs_map.insert(k.clone(), v.clone_box());
@@ -297,7 +237,7 @@ impl Runner {
                     .await;
             }
             TaskEvent::Next(node_id, output) => {
-                info!(
+                trace!(
                     node_id = %node_id,
                     output_type = %output.as_ref().type_name(),
                     "Received Next event"
@@ -315,7 +255,6 @@ impl Runner {
             TaskEvent::Completed(node_id, output) => {
                 if let Some(out) = output {
                     let out = flatten_sendable_any(out);
-
                     // 尝试将输出转换为 Value 并发送到 Web 端
                     if let Some(val) = try_downcast_to_value(out.as_ref()) {
                         Self::send_flow_event(
@@ -323,26 +262,32 @@ impl Runner {
                             FlowEvent::NodeOutMessage(node_id.clone(), val),
                         )
                         .await;
-                        Self::send_flow_event(
-                            &self.event_sender,
-                            FlowEvent::NodeCompleted(node_id.clone()),
-                        )
-                        .await;
                     }
-
-                    // Update Execution Context
+                    Self::send_flow_event(
+                        &self.event_sender,
+                        FlowEvent::NodeCompleted(node_id.clone()),
+                    )
+                    .await;
                     self.execution_ctx
                         .set_state(node_id.clone(), NodeState::Completed);
                     self.execution_ctx.set_output(node_id.clone(), out.clone());
-
                     // Trigger downstream with dependency check
                     let next_nodes = self.find_next_nodes(&node_id, &out)?;
                     for next_node_id in next_nodes {
                         self.check_and_schedule(&next_node_id, task_sender.clone())
                             .await?;
                     }
+                } else {
+                    // 对于流式输出的 Completed，只发送 Completed 事件
+                    Self::send_flow_event(
+                        &self.event_sender,
+                        FlowEvent::NodeCompleted(node_id.clone()),
+                    )
+                    .await;
+                    self.execution_ctx
+                        .set_state(node_id.clone(), NodeState::Completed);
                 }
-
+                info!(node_id = %node_id, "Node tasks completed");
                 self.update_active_tasks(&node_id);
             }
             TaskEvent::Error(node_id, e) => {
@@ -412,15 +357,6 @@ impl Runner {
             );
         }
         for next_node_id in next_nodes {
-            // For direct trigger (Phase 1 legacy logic? or still useful?)
-            // Phase 2 replaced direct start with check_and_schedule.
-            // But wait, in `handle_task_event`, we call `trigger_downstream` for `TaskEvent::Next` (streaming).
-            // For `TaskEvent::Completed`, we call `check_and_schedule`.
-
-            // For Streaming (Next), we probably still want to pass data directly?
-            // But `NodeInputs` expects a map.
-            // If we are triggering downstream with partial data (stream chunk), we should probably construct a NodeInputs with just this chunk.
-
             let mut inputs = HashMap::new();
             inputs.insert(from_node_id.to_owned(), output.clone_box());
 
@@ -507,7 +443,6 @@ impl Runner {
             };
 
             debug!(node_id = %node_id, "Node logic executed");
-            info!(node_id = %node_id, "Node tasks completed");
 
             match output {
                 Ok(out) => {

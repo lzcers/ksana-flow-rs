@@ -39,6 +39,10 @@ pub fn try_downcast_to_value(any: &dyn SendableAny) -> Option<Value> {
     if let Some(v) = any.downcast_ref::<f64>() {
         return Some(json!(v));
     }
+    if let Some(()) = any.downcast_ref::<()>() {
+        return Some(json!(null));
+    }
+
     None
 }
 

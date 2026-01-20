@@ -101,7 +101,10 @@ impl Node for LLMStreamNode {
             Err(e) => Err(e.to_string()),
         });
         let react_stream = LLMStreamObservable { stream };
-        ReactiveStream::from_observable(react_stream)
+        ReactiveStream::from_observable_with_accumulator(react_stream, |chunks: Vec<String>| {
+            let full_text = chunks.join("");
+            Some(Box::new(full_text))
+        })
     }
 }
 
@@ -228,9 +231,59 @@ mod tests {
             println!("Sending prompt: {}", prompt);
 
             let mut stream = agent.stream_prompt(prompt).await;
-            let _ = stream_to_stdout(&mut stream).await;
+            let _ = rig::agent::stream_to_stdout(&mut stream).await;
 
             println!("\nDone.");
+        });
+    }
+
+    #[test]
+    fn test_llm_node_completed_payload() {
+        dotenv::dotenv().ok();
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = LLMStreamNode::new("", "Say hello");
+            
+            let inputs = HashMap::new();
+            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
+            
+            let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+            let ctx = Arc::new(Context::new());
+            let _sub = (stream.subscribe)(tx, "test".to_string(), ctx);
+
+            let mut full_output = String::new();
+            let mut completed_payload = None;
+
+            while let Some(event) = rx.recv().await {
+                match event {
+                    TaskEvent::Next(_, val) => {
+                        if let Some(s) = val.as_any().downcast_ref::<String>() {
+                            full_output.push_str(s);
+                        }
+                    }
+                    TaskEvent::Completed(_, output) => {
+                        completed_payload = output;
+                        break;
+                    }
+                    TaskEvent::Error(_, e) => panic!("Stream error: {}", e),
+                    _ => {}
+                }
+            }
+            
+            // Verify that we got a payload in Completed event
+            assert!(completed_payload.is_some(), "Completed event should have a payload");
+            
+            // Verify the payload matches the accumulated stream
+            let payload_str = completed_payload
+                .unwrap()
+                .as_any()
+                .downcast_ref::<String>()
+                .expect("Payload should be string")
+                .clone();
+                
+            assert_eq!(payload_str, full_output, "Completed payload should match accumulated stream");
+            assert!(!payload_str.is_empty(), "Output should not be empty");
         });
     }
 }

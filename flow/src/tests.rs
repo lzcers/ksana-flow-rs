@@ -860,3 +860,52 @@ async fn test_multi_input_merge() {
     // To verify output, we could use a context or something, but `flatten_sendable_any` print might show it if we enable logs.
     // Or we can add an assertion inside the node? No, let's use a side effect.
 }
+
+#[tokio::test]
+async fn test_stream_node_emits_completed() {
+    use crate::flow::{FlowEvent, ReactiveStream};
+
+    struct StreamNode;
+    #[async_trait]
+    impl Node for StreamNode {
+        type Out = ReactiveStream<String>;
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+            let data = vec!["A".to_string()];
+            ReactiveStream::from_observable(data)
+        }
+    }
+
+    let graph = crate::build_flow!(
+        nodes: [("stream", StreamNode)],
+        edges: []
+    );
+
+    let (mut runner, _handle) = Runner::new(graph);
+    runner.set_start_node("stream", &"start".to_string());
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(20);
+    runner.set_event_sender(tx);
+
+    let runner_task = tokio::spawn(async move { runner.run().await });
+
+    let mut completed_received = false;
+    let mut next_received = false;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            FlowEvent::NodeCompleted(id) if id == "stream" => {
+                completed_received = true;
+            }
+            FlowEvent::NodeStreamNextMessage(id, _) if id == "stream" => {
+                next_received = true;
+            }
+            FlowEvent::FlowFinished => break,
+            _ => {}
+        }
+    }
+
+    runner_task.await.unwrap().unwrap();
+
+    assert!(next_received, "Should receive stream message");
+    assert!(completed_received, "Should receive NodeCompleted event");
+}

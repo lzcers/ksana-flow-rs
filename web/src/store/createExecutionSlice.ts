@@ -70,6 +70,14 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         } else if (msg.NodeStreamStarted) {
           const id = msg.NodeStreamStarted;
           apply(updateNodeData(nextState, id, { isOutputStream: true }));
+        } else if (msg.NodeStreamNextMessage) {
+          const [id, value] = msg.NodeStreamNextMessage;
+          apply(updateNodeData(nextState, id, { lastMessage: value }));
+          // Propagate to downstream nodes
+          const outEdges = nextState.edges.filter(e => e.source === id);
+          outEdges.forEach(edge => {
+            apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+          });
         } else if (msg.NodeInMessage) {
           const [id, value] = msg.NodeInMessage;
           apply(updateNodeData(nextState, id, { lastMessage: value }));

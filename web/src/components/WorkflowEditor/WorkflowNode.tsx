@@ -3,6 +3,7 @@ import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '../../model/types';
 import { LLMNode } from '../nodes/LLMNode';
 import { TextNode } from '../nodes/TextNode';
+import { TextMergeNode } from '../nodes/TextMergeNode';
 import { TextFileNode } from '../nodes/TextFileNode';
 import { EmailNotifyNode } from '../nodes/EmailNotifyNode';
 import { TimerNode } from '../nodes/TimerNode';
@@ -18,6 +19,8 @@ export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
       return <LLMNode {...props} />;
     case 'TextNode':
       return <TextNode {...props} />;
+    case 'TextMergeNode':
+      return <TextMergeNode {...props} />;
     case 'TextFileNode':
       return <TextFileNode {...props} />;
     case 'EmailNotifyNode':
@@ -30,6 +33,8 @@ export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
       return <SourceNode {...props} />;
     case 'VOLMFINode':
       return <VolMfiNode {...props} />;
+    case 'StreamLLMNode':
+      return <LLMNode {...props} />;
     default:
       return null;
   }

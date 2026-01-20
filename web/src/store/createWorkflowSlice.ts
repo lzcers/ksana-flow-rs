@@ -53,7 +53,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
         target: e.target,
         sourceHandle: e.sourceHandle,
         targetHandle: e.targetHandle,
-        type: 'smoothstep'
+        type: e.type || 'default'
       }));
 
       setNodes(nodes);
@@ -112,7 +112,8 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
         source: e.source,
         target: e.target,
         sourceHandle: e.sourceHandle,
-        targetHandle: e.targetHandle
+        targetHandle: e.targetHandle,
+        type: e.type
       }))
     };
 
@@ -157,7 +158,8 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
             source: e.source,
             target: e.target,
             sourceHandle: e.sourceHandle,
-            targetHandle: e.targetHandle
+            targetHandle: e.targetHandle,
+            type: e.type
           }))
         };
       } else {
@@ -215,6 +217,14 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       } else if (event.NodeStreamStarted) {
         const id = event.NodeStreamStarted;
         apply(updateNodeData(nextState, id, { isOutputStream: true }));
+      } else if (event.NodeStreamNextMessage) {
+        const [id, value] = event.NodeStreamNextMessage;
+        apply(updateNodeData(nextState, id, { lastMessage: value }));
+        // Propagate to downstream nodes
+        const outEdges = nextState.edges.filter(e => e.source === id);
+        outEdges.forEach(edge => {
+          apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+        });
       } else if (event.NodeInMessage) {
         const [id, value] = event.NodeInMessage;
         apply(updateNodeData(nextState, id, { lastMessage: value }));

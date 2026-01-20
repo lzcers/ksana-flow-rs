@@ -1,7 +1,7 @@
 use chrono::{Local, NaiveDateTime};
 use flow::{AnyNode, SendableAny};
 use nodes::{
-    EmailNotifyNode, LLMNode, LLMStreamNode, TextFileNode, TextNode, TimerNode,
+    EmailNotifyNode, LLMNode, LLMStreamNode, TextFileNode, TextMergeNode, TextNode, TimerNode,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -233,6 +233,25 @@ pub fn create_registry() -> NodeRegistry {
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );
+    registry.register(
+        NodeMetadata {
+            name: "StreamLLMNode".to_string(),
+            description: "Large Language Model Node".to_string(),
+            category: "AI".to_string(),
+            config: json!({
+                "system_prompt": "",
+                "user_prompt": ""
+            }),
+            inputs: vec![InputType::String],
+            outputs: vec![],
+        },
+        |config: Value| {
+            let system_prompt = config["system_prompt"].as_str();
+            let user_prompt = config["user_prompt"].as_str();
+            let node = LLMStreamNode::new(system_prompt.unwrap_or(""), user_prompt.unwrap_or(""));
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
 
     registry.register(
         NodeMetadata {
@@ -268,6 +287,24 @@ pub fn create_registry() -> NodeRegistry {
         |config: Value| {
             let file_id = config["file_id"].as_str().unwrap_or("").to_string();
             let node = TextFileNode::new(file_id);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "TextMergeNode".to_string(),
+            description: "Merges multiple text inputs".to_string(),
+            category: "Logic".to_string(),
+            config: json!({
+                "separator": "\n"
+            }),
+            inputs: vec![InputType::String],
+            outputs: vec![InputType::String],
+        },
+        |config: Value| {
+            let separator = config["separator"].as_str().map(|s| s.to_string());
+            let node = TextMergeNode::new(separator);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );

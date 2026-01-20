@@ -46,12 +46,12 @@ mod tests {
             let ctx = Context::new();
 
             // 测试字符串类型
-            let mut node = VarNode::new("hello".to_string());
+            let mut node: VarNode<String, ()> = VarNode::new("hello".to_string());
             let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
             assert_eq!(output, "hello".to_string());
 
             // 测试整数类型
-            let mut int_node = VarNode::new(42i32);
+            let mut int_node: VarNode<i32, ()> = VarNode::new(42i32);
             let output = int_node.run(&ctx, NodeInputs::new(HashMap::new())).await;
             assert_eq!(output, 42);
         });

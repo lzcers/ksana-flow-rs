@@ -10,6 +10,16 @@ const SOURCE_HANDLES = [Position.Right];
 export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
+  const adjustHeight = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+    if (el.scrollHeight > el.clientHeight) {
+      el.style.overflowY = 'auto';
+    } else {
+      el.style.overflowY = 'hidden';
+    }
+  };
+
   const systemInputRef = useRef<HTMLTextAreaElement>(null);
   const userInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -25,8 +35,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
       setSystemPrompt(data.config?.system_prompt || '');
       // Adjust height if needed
       if (systemInputRef.current) {
-        systemInputRef.current.style.height = 'auto';
-        systemInputRef.current.style.height = `${systemInputRef.current.scrollHeight}px`;
+        adjustHeight(systemInputRef.current);
       }
     }
   }, [data.config?.system_prompt]);
@@ -36,8 +45,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
       setUserPrompt(data.config?.user_prompt_template || '');
       // Adjust height if needed
       if (userInputRef.current) {
-        userInputRef.current.style.height = 'auto';
-        userInputRef.current.style.height = `${userInputRef.current.scrollHeight}px`;
+        adjustHeight(userInputRef.current);
       }
     }
   }, [data.config?.user_prompt_template]);
@@ -47,8 +55,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
     const newValue = e.target.value;
     setSystemPrompt(newValue);
 
-    e.target.style.height = 'auto';
-    e.target.style.height = `${e.target.scrollHeight}px`;
+    adjustHeight(e.target);
 
     if (!isComposingSystem.current) {
       updateNodeData(id, {
@@ -81,8 +88,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
     const newValue = e.target.value;
     setUserPrompt(newValue);
 
-    e.target.style.height = 'auto';
-    e.target.style.height = `${e.target.scrollHeight}px`;
+    adjustHeight(e.target);
 
     if (!isComposingUser.current) {
       updateNodeData(id, {
@@ -108,13 +114,12 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
       }
     });
   }, [id, data.config, updateNodeData]);
-
   return (
     <NodeWrapper
       id={id}
       data={data}
       selected={selected}
-      style={{ width: width ?? 300, height: height ?? 300 }}
+      style={{ width: width !== 0 ? width : 300, height: height !== 0 ? height : 300 }}
       targetHandles={TARGET_HANDLES}
       sourceHandles={SOURCE_HANDLES}
     >
@@ -122,9 +127,10 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">System Prompt</label>
           <textarea
+            style={{ boxSizing: 'content-box' }}
             ref={systemInputRef}
-            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
-            rows={1}
+            className="w-full flex-1 box-sizing: content-box text-xs bg-zinc-950 border overflow-hidden max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            rows={5}
             value={systemPrompt}
             onChange={handleSystemPromptChange}
             onCompositionStart={handleSystemCompositionStart}
@@ -136,9 +142,10 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">User Prompt</label>
           <textarea
+            style={{ boxSizing: 'content-box' }}
             ref={userInputRef}
-            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
-            rows={1}
+            className="w-full flex-1 text-xs bg-zinc-950 border overflow-x-hidden over max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            rows={5}
             value={userPrompt}
             onChange={handleUserPromptChange}
             onCompositionStart={handleUserCompositionStart}

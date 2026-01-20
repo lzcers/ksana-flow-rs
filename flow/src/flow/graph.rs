@@ -1,14 +1,10 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use serde_json::Value;
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
-use super::{reactive_stream::StreamSubscriptionFn, sendable_any::SendableAny};
+use super::sendable_any::SendableAny;
 
 pub type NodeId = String;
 
@@ -195,7 +191,6 @@ impl Graph {
             }
         }
 
-        // Remove incoming edges (edges pointing TO this node)
         if let Some(parents) = self.incoming_nodes.remove(id) {
             for parent_id in parents {
                 if let Some(edges) = self.edges.get_mut(&parent_id) {

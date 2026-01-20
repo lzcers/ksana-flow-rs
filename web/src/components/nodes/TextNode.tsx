@@ -1,6 +1,6 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Handle, Position, type NodeProps, useNodeConnections } from '@xyflow/react';
-import { IncremarkContent, ThemeProvider } from '@incremark/react';
+import { AutoScrollContainer, IncremarkContent, ThemeProvider } from '@incremark/react';
 import { Eye, Pencil } from 'lucide-react';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
@@ -15,6 +15,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
   const { updateNodeData } = useStore();
   const [text, setText] = useState(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
+  const scrollRef = useRef(null)
 
   const connections = useNodeConnections({
     handleType: 'target',
@@ -117,9 +118,11 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
             }}
           >
             <ThemeProvider theme="dark">
-              <IncremarkContent content={text} isFinished={true} incremarkOptions={{
-                math: { tex: true }
-              }} />
+              <AutoScrollContainer ref={scrollRef} enabled className="h-[300px]">
+                <IncremarkContent content={text} isFinished={true} incremarkOptions={{
+                  math: { tex: true }
+                }} />
+              </AutoScrollContainer>
             </ThemeProvider>
           </div>
         ) : (
@@ -134,7 +137,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           />
         )}
       </div>
-    </NodeWrapper>
+    </NodeWrapper >
   );
 };
 
