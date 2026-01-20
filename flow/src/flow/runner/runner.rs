@@ -1,7 +1,7 @@
 use super::context::{ExecutionContext, NodeState};
 use crate::flow::{
     event::{FlowEvent, TaskEvent},
-    graph::{AnyNode, Context, Graph, NodeId},
+    graph::{AnyNode, Context, Graph, NodeId, NodeInputs},
     runner::task_guard::{TaskGuard, TaskTracker},
     sendable_any::{SendableAny, try_downcast_to_value},
 };
@@ -13,7 +13,7 @@ use std::{
 use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, trace};
 
-type TaskPayload = (Vec<NodeId>, Box<dyn SendableAny>);
+type TaskPayload = (Vec<NodeId>, NodeInputs);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerState {
@@ -149,8 +149,15 @@ impl Runner {
     }
 
     pub fn set_start_node(&mut self, node_id: &str, input: &dyn SendableAny) {
+        let mut inputs = HashMap::new();
+        // Since we don't have a "source" for start node, we can just put it as some key or empty key
+        // Or we can say "start" is the source?
+        // But the input is typically the payload.
+        // For compatibility with SimpleNode adapter which does `inputs.values().next()`, any key is fine.
+        inputs.insert("external_start".to_owned(), input.clone_box());
+
         self.task_queue
-            .push_back((vec![node_id.to_owned()], input.clone_box()));
+            .push_back((vec![node_id.to_owned()], NodeInputs::new(inputs)));
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
@@ -165,9 +172,21 @@ impl Runner {
         // 使用计数器跟踪每个节点的活跃任务数
 
         // 初始启动：将 task_queue 中的初始任务直接启动
-        while let Some((node_ids, input)) = self.task_queue.pop_front() {
+        while let Some((node_ids, inputs)) = self.task_queue.pop_front() {
             for node_id in node_ids {
-                self.start_node(node_id, input.clone(), task_sender.clone())
+                // For start node, we clone the inputs because multiple start nodes might share the same initial payload?
+                // Or each start node gets the same input?
+                // NodeInputs is not Clone. We need to implement Clone for NodeInputs or re-construct it.
+                // But wait, Box<dyn SendableAny> is clonable via clone_box.
+
+                // Let's implement Clone for NodeInputs in graph.rs later.
+                // For now, let's manually clone.
+                let mut inputs_map = HashMap::new();
+                for (k, v) in &inputs.inputs {
+                    inputs_map.insert(k.clone(), v.clone_box());
+                }
+
+                self.start_node(node_id, NodeInputs::new(inputs_map), task_sender.clone())
                     .await?;
             }
         }
@@ -345,14 +364,14 @@ impl Runner {
     ) -> Result<(), String> {
         let parents = self.graph.get_parents(node_id);
 
-        let mut input: Option<Box<dyn SendableAny>> = None;
+        let mut inputs_map = HashMap::new();
 
         for parent_id in &parents {
             match self.execution_ctx.get_state(parent_id) {
                 Some(NodeState::Completed) => {
-                    // Simple logic for Phase 2: Take the first available input
-                    if input.is_none() {
-                        input = self.execution_ctx.get_output(parent_id);
+                    // Collect input from parent
+                    if let Some(output) = self.execution_ctx.get_output(parent_id) {
+                        inputs_map.insert(parent_id.clone(), output);
                     }
                 }
                 Some(NodeState::Skipped) => {
@@ -366,10 +385,9 @@ impl Runner {
         }
 
         // All parents ready
-        // If input is None (e.g. all parents skipped or unit), use Unit
-        let input_to_send = input.unwrap_or_else(|| Box::new(()) as Box<dyn SendableAny>);
+        let inputs = NodeInputs::new(inputs_map);
 
-        self.start_node(node_id.to_string(), input_to_send, task_sender)
+        self.start_node(node_id.to_string(), inputs, task_sender)
             .await?;
         Ok(())
     }
@@ -389,7 +407,19 @@ impl Runner {
             );
         }
         for next_node_id in next_nodes {
-            self.start_node(next_node_id, output.clone(), tx.clone())
+            // For direct trigger (Phase 1 legacy logic? or still useful?)
+            // Phase 2 replaced direct start with check_and_schedule.
+            // But wait, in `handle_task_event`, we call `trigger_downstream` for `TaskEvent::Next` (streaming).
+            // For `TaskEvent::Completed`, we call `check_and_schedule`.
+
+            // For Streaming (Next), we probably still want to pass data directly?
+            // But `NodeInputs` expects a map.
+            // If we are triggering downstream with partial data (stream chunk), we should probably construct a NodeInputs with just this chunk.
+
+            let mut inputs = HashMap::new();
+            inputs.insert(from_node_id.to_owned(), output.clone_box());
+
+            self.start_node(next_node_id, NodeInputs::new(inputs), tx.clone())
                 .await?;
         }
         Ok(())
@@ -398,7 +428,7 @@ impl Runner {
     async fn start_node(
         &mut self,
         node_id: NodeId,
-        input: Box<dyn SendableAny>,
+        inputs: NodeInputs,
         task_sender: mpsc::Sender<TaskEvent>,
     ) -> Result<(), String> {
         // 节点实例
@@ -413,7 +443,6 @@ impl Runner {
             total_active = self.tracker.count(),
             "Starting node task"
         );
-        // 节点事件发送器
         // 节点运行上下文
         let ctx = self.ctx.clone();
         // 节点任务计数守卫
@@ -421,7 +450,7 @@ impl Runner {
         *self.active_tasks.entry(node_id.clone()).or_insert(0) += 1;
 
         Self::send_flow_event(&self.event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
-        Self::worker(node_id, node_arc, ctx, input, task_sender, guard);
+        Self::worker(node_id, node_arc, ctx, inputs, task_sender, guard);
         Ok(())
     }
 
@@ -445,7 +474,7 @@ impl Runner {
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
         ctx: Arc<Context>,
-        input: Box<dyn SendableAny>,
+        inputs: NodeInputs,
         task_sender: mpsc::Sender<TaskEvent>,
         _guard: TaskGuard,
     ) {
@@ -454,7 +483,7 @@ impl Runner {
             let mut node = node.write().await;
 
             info!(node_id = %node_id, "Node tasks start");
-            let output: Result<Box<dyn SendableAny>, String> = node.run(&ctx, input).await;
+            let output: Result<Box<dyn SendableAny>, String> = node.run(&ctx, inputs).await;
             debug!(node_id = %node_id, "Node logic executed");
             info!(node_id = %node_id, "Node tasks completed");
 

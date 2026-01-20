@@ -12,11 +12,97 @@ use super::{reactive_stream::StreamSubscriptionFn, sendable_any::SendableAny};
 
 pub type NodeId = String;
 
+pub struct NodeInputs {
+    pub inputs: HashMap<NodeId, Box<dyn SendableAny>>,
+}
+
+impl NodeInputs {
+    pub fn new(inputs: HashMap<NodeId, Box<dyn SendableAny>>) -> Self {
+        Self { inputs }
+    }
+
+    pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
+        self.inputs
+            .get(key)
+            .and_then(|any| any.as_any().downcast_ref::<T>())
+    }
+
+    pub fn get_any(&self) -> Option<&Box<dyn SendableAny>> {
+        self.inputs.values().next()
+    }
+}
+
 #[async_trait]
 pub trait Node {
+    type Out: SendableAny;
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out;
+}
+
+#[async_trait]
+pub trait SimpleNode {
     type In;
     type Out: SendableAny; // 因为 Out 的值会被 Clone 分发到下游节点中
     async fn run(&mut self, ctx: &Context, input: Self::In) -> Self::Out;
+}
+
+#[async_trait]
+impl<T: SimpleNode + Send + Sync> Node for T
+where
+    T::In: Send + 'static,
+{
+    type Out = T::Out;
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        // Attempt to find a matching input
+        // 1. If In is (), return ()
+        // 2. If inputs is empty, and In is (), return ()
+        // 3. Try to pick the first input
+
+        if TypeId::of::<T::In>() == TypeId::of::<()>() {
+            // Safe to cast to In (which is ())
+            // We need to create a dummy input of type T::In
+            // Since we know T::In is (), we can just unsafe transmute or Box::new(())
+            // But simpler: just create a Box<dyn Any> of () and downcast
+            let unit = Box::new(()) as Box<dyn Any>;
+            let input = *unit.downcast::<T::In>().unwrap();
+            return SimpleNode::run(self, ctx, input).await;
+        }
+
+        let first_input = inputs.get_any();
+
+        let input_any = if let Some(input) = first_input {
+            if TypeId::of::<T::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream() {
+                match input.clone_box().into_stream_subscriber() {
+                    Ok(sub) => Box::new(sub) as Box<dyn Any>,
+                    Err(i) => i.into_any(),
+                }
+            } else {
+                input.clone_box().into_any()
+            }
+        } else {
+            // No input provided.
+            // If T::In is (), handled above.
+            // If T::In is something else, this will fail in downcast unless we handle it.
+            // For now, let's assume we provide () if empty?
+            // Or better, panic with meaningful error?
+            Box::new(()) as Box<dyn Any>
+        };
+
+        let input = input_any.downcast::<T::In>().map_err(|any| {
+            format!(
+                "Type mismatch in SimpleNode adapter: expected {}, got {:?}",
+                std::any::type_name::<T::In>(),
+                any.as_ref().type_id()
+            )
+        });
+
+        match input {
+            Ok(input) => SimpleNode::run(self, ctx, *input).await,
+            Err(e) => panic!("{}", e), // We have to panic here because run signature doesn't return Result
+                                       // Ideally Node::run should return Result, but that's a bigger change.
+                                       // Existing SimpleNode::run doesn't return Result.
+                                       // So panic is the only option for type mismatch in adapter.
+        }
+    }
 }
 
 pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send>;
@@ -61,15 +147,12 @@ pub trait AnyNode: Any + Send + Sync {
     async fn run(
         &mut self,
         ctx: &Context,
-        input: Box<dyn SendableAny>,
+        inputs: NodeInputs,
     ) -> Result<Box<dyn SendableAny>, String>;
 }
 
 #[async_trait]
-impl<N: Node + Any + Send + Sync> AnyNode for N
-where
-    N::In: Send,
-{
+impl<N: Node + Any + Send + Sync> AnyNode for N {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -81,38 +164,9 @@ where
     async fn run(
         &mut self,
         ctx: &Context,
-        input: Box<dyn SendableAny>,
+        inputs: NodeInputs,
     ) -> Result<Box<dyn SendableAny>, String> {
-        // let input_is_unit = input.as_ref().as_any().downcast_ref::<()>().is_some();
-
-        let input_any = if TypeId::of::<N::In>() == TypeId::of::<()>() {
-            Box::new(()) as Box<dyn Any>
-        } else if TypeId::of::<N::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream()
-        {
-            match input.into_stream_subscriber() {
-                Ok(sub) => Box::new(sub) as Box<dyn Any>,
-                Err(i) => i.into_any(),
-            }
-        }
-        // else if TypeId::of::<N::In>() == TypeId::of::<String>() && input_is_unit {
-        // 对于真实输入是 () 但 N::In 为 String 类型的情况，我们需要转换为 ""
-        // 存在这种情况是因为某些节点定义了 String 输入，但是也可以直接以该节点作为起始节点，不接输入直接运行
-        // 对于定义了输入类型，但是又可以实际无输入情况下作为起始节点执行的节点，应该在注册节点时同时注册输入输出类型
-        // 并在 set_start 节点时配置输入
-        //     Box::new("".to_owned()) as Box<dyn Any>
-        // }
-        else {
-            input.into_any()
-        };
-
-        let input = input_any.downcast::<N::In>().map_err(|any| {
-            format!(
-                "Type mismatch: expected {}, got {:?}",
-                std::any::type_name::<N::In>(),
-                any.as_ref().type_id()
-            )
-        })?;
-        let result = self.run(ctx, *input).await;
+        let result = self.run(ctx, inputs).await;
         Ok(Box::new(result))
     }
 }
