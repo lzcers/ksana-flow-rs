@@ -4,7 +4,7 @@ use crate::trade::{
 };
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
-use flow::Node;
+use flow::SimpleNode;
 use ta::Next;
 use ta::indicators::{ExponentialMovingAverage, MoneyFlowIndex};
 
@@ -28,7 +28,7 @@ impl VOLMFINode {
 }
 
 #[async_trait]
-impl Node for VOLMFINode {
+impl SimpleNode for VOLMFINode {
     type In = K;
     type Out = BacktesterInput;
 

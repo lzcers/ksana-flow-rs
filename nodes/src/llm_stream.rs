@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use flow::{
-    Node, ReactiveStream,
+    ReactiveStream, SimpleNode,
     observable::{Observable, Observer, VecSubscription},
 };
 use futures::StreamExt;
@@ -70,7 +70,7 @@ impl LLMStreamNode {
 }
 
 #[async_trait]
-impl Node for LLMStreamNode {
+impl SimpleNode for LLMStreamNode {
     type In = String;
     type Out = ReactiveStream<String>;
 
@@ -200,7 +200,7 @@ mod tests {
             println!("Sending prompt: {}", prompt);
 
             let mut stream = agent.stream_prompt(prompt).await;
-            stream_to_stdout(&mut stream).await;
+            let _ = stream_to_stdout(&mut stream).await;
 
             println!("\nDone.");
         });

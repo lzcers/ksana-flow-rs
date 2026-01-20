@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node};
+use flow::{Context, SimpleNode};
 
 pub struct TextNode {
     id: String,
@@ -13,7 +13,7 @@ impl TextNode {
 }
 
 #[async_trait]
-impl Node for TextNode {
+impl SimpleNode for TextNode {
     type In = String;
     type Out = String;
 

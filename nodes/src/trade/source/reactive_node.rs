@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use flow::observable::ObservableExt;
-use flow::{Context, Node, ReactiveStream};
+use flow::{Context, ReactiveStream, SimpleNode};
 
 use crate::trade::{
     k::K,
@@ -35,7 +35,7 @@ impl ReactiveSourceNode {
 }
 
 #[async_trait]
-impl Node for ReactiveSourceNode {
+impl SimpleNode for ReactiveSourceNode {
     type In = ();
     type Out = ReactiveStream<K>;
 

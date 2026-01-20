@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use flow::{Context, Node};
+use flow::{Context, SimpleNode};
 use lettre::{
     Message, SmtpTransport, Transport,
     transport::smtp::authentication::{Credentials, Mechanism},
@@ -57,7 +57,7 @@ impl EmailNotifyNode {
 }
 
 #[async_trait]
-impl Node for EmailNotifyNode {
+impl SimpleNode for EmailNotifyNode {
     type In = ();
     type Out = ();
 

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::Node;
+use flow::SimpleNode;
 use rig::{
     agent::Agent,
     client::{CompletionClient, ProviderClient},
@@ -37,7 +37,7 @@ impl LLMNode {
 }
 
 #[async_trait]
-impl Node for LLMNode {
+impl SimpleNode for LLMNode {
     type In = String;
     type Out = String;
 

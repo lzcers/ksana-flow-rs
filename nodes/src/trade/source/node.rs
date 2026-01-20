@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use flow::{Context, Node};
+use flow::{Context, SimpleNode};
 
 use crate::trade::{
     k::K,
@@ -69,7 +69,7 @@ impl SourceNode {
 }
 
 #[async_trait]
-impl Node for SourceNode {
+impl SimpleNode for SourceNode {
     type In = ();
     type Out = Option<K>;
     async fn run(&mut self, _ctx: &Context, _: Self::In) -> Self::Out {

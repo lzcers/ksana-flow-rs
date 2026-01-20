@@ -3,7 +3,7 @@ mod index_calc;
 pub mod trading;
 
 use async_trait::async_trait;
-use flow::Node;
+use flow::SimpleNode;
 use serde::{Deserialize, Serialize};
 
 use crate::trade::k::K;
@@ -27,7 +27,7 @@ pub struct BacktesterOutput {
 }
 
 #[async_trait]
-impl Node for Backtester {
+impl SimpleNode for Backtester {
     type In = BacktesterInput;
     type Out = BacktesterOutput;
 

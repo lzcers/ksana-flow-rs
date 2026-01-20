@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use cron::Schedule;
 use flow::observable::{Observable, Observer, Subscription};
-use flow::{Context, Node, ReactiveStream};
+use flow::{Context, ReactiveStream, SimpleNode};
 use std::str::FromStr;
 use tokio::time::sleep;
 
@@ -56,7 +56,7 @@ impl Observable<(), ()> for TimerObservable {
 }
 
 #[async_trait]
-impl Node for TimerNode {
+impl SimpleNode for TimerNode {
     type In = ();
     type Out = ReactiveStream<()>;
 

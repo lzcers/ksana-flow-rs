@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node};
+use flow::{Context, SimpleNode};
 use std::marker::PhantomData;
 
 /// 一个泛型的变量节点，返回预设的值。
@@ -19,7 +19,7 @@ impl<T, I> VarNode<T, I> {
 }
 
 #[async_trait]
-impl<T, I> Node for VarNode<T, I>
+impl<T, I> SimpleNode for VarNode<T, I>
 where
     T: Clone + Send + Sync + 'static,
     I: Send + Sync,

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node};
+use flow::{Context, SimpleNode};
 use rusqlite::{Connection, params};
 
 use crate::config::get_config;
@@ -15,7 +15,7 @@ impl TextFileNode {
 }
 
 #[async_trait]
-impl Node for TextFileNode {
+impl SimpleNode for TextFileNode {
     type In = ();
     type Out = String;
 
