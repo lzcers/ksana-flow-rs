@@ -71,12 +71,12 @@ where
 
         let input_any = if let Some(input) = first_input {
             if TypeId::of::<T::In>() == TypeId::of::<StreamSubscriptionFn>() && input.is_stream() {
-                match input.clone_box().into_stream_subscriber() {
+                match input.as_ref().clone_box().into_stream_subscriber() {
                     Ok(sub) => Box::new(sub) as Box<dyn Any>,
                     Err(i) => i.into_any(),
                 }
             } else {
-                input.clone_box().into_any()
+                input.as_ref().clone_box().into_any()
             }
         } else {
             // No input provided.
