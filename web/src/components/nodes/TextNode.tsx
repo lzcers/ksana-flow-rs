@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Handle, Position, type NodeProps, useNodeConnections } from '@xyflow/react';
+import { Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { AutoScrollContainer, IncremarkContent, ThemeProvider } from '@incremark/react';
 import { Eye, Pencil } from 'lucide-react';
 import { NodeWrapper } from './NodeWrapper';
@@ -11,10 +11,41 @@ import './index.css';
 const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
+function createStreamChannel() {
+  let notify: (() => void) | null = null;
+  const queue: string[] = [];
+  let closed = false;
+
+  const generator = async function* () {
+    while (true) {
+      while (queue.length > 0) {
+        yield queue.shift()!;
+      }
+      if (closed) return;
+      await new Promise<void>(resolve => notify = resolve);
+      notify = null;
+    }
+  };
+
+  return {
+    stream: generator,
+    enqueue: (chunk: string) => {
+      queue.push(chunk);
+      if (notify) notify();
+    },
+    close: () => {
+      closed = true;
+      if (notify) notify();
+    }
+  };
+}
+
 export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, currentRunId } = useStore();
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
+  const [stream, setStream] = useState<(() => AsyncGenerator<string, void, unknown>) | undefined>(undefined);
+  const streamController = useRef<{ enqueue: (s: string) => void; close: () => void } | null>(null);
   const scrollRef = useRef(null)
 
   const connections = useNodeConnections({
@@ -69,15 +100,23 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
 
     if (isStreaming && !wasUpstreamStreaming.current) {
       // Start streaming: switch to markdown and clear text
+      const channel = createStreamChannel();
+      streamController.current = channel;
+      setStream(() => channel.stream);
+      setIsMarkdown(true);
+
       setText('');
       updateNodeData(id, { config: { ...data.config, text: '' } });
     } else if (isStreaming && lastMessageChanged) {
       // Streaming: append new chunk
       if (typeof data.lastMessage === 'string') {
+        streamController.current?.enqueue(data.lastMessage);
         setText(prev => prev + data.lastMessage);
       }
     } else if (!isStreaming && wasUpstreamStreaming.current) {
       // End streaming: ignore the final message (NodeOutMessage)
+      streamController.current?.close();
+      setStream(undefined);
       justStreamed.current = true;
     } else if (!isStreaming && !wasUpstreamStreaming.current) {
       // Normal mode: update text if changed
@@ -148,9 +187,13 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           >
             <ThemeProvider theme="dark">
               <AutoScrollContainer ref={scrollRef} enabled className="h-[300px]">
-                <IncremarkContent content={text} isFinished={true} incremarkOptions={{
-                  math: { tex: true }
-                }} />
+                <IncremarkContent
+                  content={stream ? undefined : text}
+                  stream={stream}
+                  incremarkOptions={{
+                    math: { tex: true }
+                  }}
+                />
               </AutoScrollContainer>
             </ThemeProvider>
           </div>
