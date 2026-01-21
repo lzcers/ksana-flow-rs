@@ -9,7 +9,7 @@ import '@incremark/theme/styles.css';
 import './index.css';
 
 const SOURCE_HANDLES = [Position.Right];
-const TARGET_HANDLES = [Position.Left];
+const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, currentRunId } = useStore();

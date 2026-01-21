@@ -4,8 +4,8 @@ import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
 
-const TARGET_HANDLES = [Position.Left];
-const SOURCE_HANDLES = [Position.Right];
+const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
+const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
 export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();

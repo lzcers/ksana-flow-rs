@@ -4,7 +4,7 @@ import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
 import { type NodeData } from '../../model/types';
 
-const SOURCE_HANDLES = [Position.Right];
+const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 const TARGET_HANDLES = [Position.Left];
 
 export const TextMergeNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
