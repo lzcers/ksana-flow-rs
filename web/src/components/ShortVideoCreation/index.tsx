@@ -16,11 +16,11 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
   const [currentModule, setCurrentModule] = useState<ModuleType>('storyboard'); // Default to storyboard as per image
 
   // Use passed data or fallback to mock data if empty
-  const displayData = (data && data.storyboard && data.storyboard.length > 0) ? data : {
-    storyboard: [],
-    script: { content: '' },
-    characters: [],
-  }
+  const displayData = {
+    storyboard: data?.storyboard || [],
+    script: data?.script || { content: '' },
+    characters: data?.characters || [],
+  };
 
   return (
     <div className="w-full h-full flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans">
