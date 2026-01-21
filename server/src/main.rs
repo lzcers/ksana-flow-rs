@@ -47,21 +47,36 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = Router::new()
-        .route("/api/space/:space_id/workflows", get(list_workflows).post(create_workflow))
         .route(
-            "/api/space/:space_id/workflows/{id}",
+            "/api/space/{space_id}/workflows",
+            get(list_workflows).post(create_workflow),
+        )
+        .route(
+            "/api/space/{space_id}/workflows/{id}",
             get(get_workflow)
                 .put(update_workflow)
                 .delete(delete_workflow),
         )
-        .route("/api/space/:space_id/workflow/run", post(run_workflow))
-        .route("/api/space/:space_id/workflow/run_node", post(run_node))
-        .route("/api/space/:space_id/workflow/{id}/status", get(get_workflow_status))
-        .route("/api/space/:space_id/workflow/{id}/pause", post(pause_workflow))
-        .route("/api/space/:space_id/workflow/{id}/resume", post(resume_workflow))
-        .route("/api/space/:space_id/workflow/{id}/stop", post(stop_workflow))
-        .route("/api/space/:space_id/nodes", get(get_nodes))
-        .route("/api/space/:space_id/upload", post(upload_file))
+        .route("/api/space/{space_id}/workflow/run", post(run_workflow))
+        .route("/api/space/{space_id}/workflow/run_node", post(run_node))
+        .route(
+            "/api/space/{space_id}/workflow/{id}/status",
+            get(get_workflow_status),
+        )
+        .route(
+            "/api/space/{space_id}/workflow/{id}/pause",
+            post(pause_workflow),
+        )
+        .route(
+            "/api/space/{space_id}/workflow/{id}/resume",
+            post(resume_workflow),
+        )
+        .route(
+            "/api/space/{space_id}/workflow/{id}/stop",
+            post(stop_workflow),
+        )
+        .route("/api/space/{space_id}/nodes", get(get_nodes))
+        .route("/api/space/{space_id}/upload", post(upload_file))
         .route("/ws", get(ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);
