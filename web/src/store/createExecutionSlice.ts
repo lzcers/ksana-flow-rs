@@ -70,24 +70,29 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         } else if (msg.NodeStreamStarted) {
           const id = msg.NodeStreamStarted;
           apply(updateNodeData(nextState, id, { isOutputStream: true }));
-        } else if (msg.NodeStreamNextMessage) {
-          const [id, value] = msg.NodeStreamNextMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value }));
           // Propagate to downstream nodes
           const outEdges = nextState.edges.filter(e => e.source === id);
           outEdges.forEach(edge => {
-            apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+            apply(updateNodeData(nextState, edge.target, { upstreamIsStreaming: true }));
+          });
+        } else if (msg.NodeStreamNextMessage) {
+          const [id, value] = msg.NodeStreamNextMessage;
+          apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId }));
+          // Propagate to downstream nodes
+          const outEdges = nextState.edges.filter(e => e.source === id);
+          outEdges.forEach(edge => {
+            apply(updateNodeData(nextState, edge.target, { lastMessage: value, lastMessageRunId: runId }));
           });
         } else if (msg.NodeInMessage) {
           const [id, value] = msg.NodeInMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value }));
+          apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId }));
         } else if (msg.NodeOutMessage) {
           const [id, value] = msg.NodeOutMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value, isOutputStream: false }));
+          apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId, isOutputStream: false }));
           // Propagate to downstream nodes
           const outEdges = nextState.edges.filter(e => e.source === id);
           outEdges.forEach(edge => {
-            apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+            apply(updateNodeData(nextState, edge.target, { lastMessage: value, lastMessageRunId: runId, upstreamIsStreaming: false }));
           });
         } else if (msg.NodeCompleted) {
           const id = msg.NodeCompleted;
@@ -97,7 +102,6 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
           apply(updateNodeStatus(nextState, id, 'error', error));
           apply(updateNodeData(nextState, id, { isOutputStream: false }));
         } else if (msg === 'FlowFinished') {
-
           const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
           nodesToUpdate.forEach(node => {
             apply(updateNodeStatus(nextState, node.id, 'completed'));

@@ -12,8 +12,8 @@ const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left];
 
 export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData } = useStore();
-  const [text, setText] = useState(data.config?.text || '');
+  const { updateNodeData, currentRunId } = useStore();
+  const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
   const scrollRef = useRef(null)
 
@@ -21,27 +21,77 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
     handleType: 'target',
   });
 
-  const isStreaming = useStore(useCallback((state) => {
-    return connections.some(conn => {
-      const node = state.nodes.find(n => n.id === conn.source);
-      return node?.data?.isOutputStream;
-    });
-  }, [connections]));
+  const prevStatus = useRef(data.status);
+  const textRef = useRef(text);
+  const wasUpstreamStreaming = useRef(data.upstreamIsStreaming || false);
+  const prevLastMessage = useRef(data.lastMessage);
+  const justStreamed = useRef(false);
 
-  const [wasStreaming, setWasStreaming] = useState(false);
   useEffect(() => {
-    if (!wasStreaming && isStreaming) {
+    textRef.current = text;
+  }, [text]);
+
+  useEffect(() => {
+    if (data.status === 'running' && prevStatus.current !== 'running') {
+      if (justStreamed.current) {
+        justStreamed.current = false;
+      } else {
+        // If we have an upstream connection and the message is from the current run, don't clear
+        const isNewMessage = connections.length > 0 &&
+          data.lastMessageRunId === currentRunId &&
+          data.lastMessage !== undefined;
+
+        if (!isNewMessage) {
+          setText('');
+          updateNodeData(id, { config: { ...data.config, text: '' } });
+        }
+      }
+    } else if (data.status === 'idle' || !data.status) {
+      justStreamed.current = false;
+    }
+    prevStatus.current = data.status;
+  }, [data.status, id, updateNodeData, data.config, connections.length, data.lastMessageRunId, currentRunId, data.lastMessage]);
+
+  // Sync text to store during streaming (debounced)
+  useEffect(() => {
+    if (data.upstreamIsStreaming && text !== data.config?.text) {
+      const timeoutId = setTimeout(() => {
+        updateNodeData(id, { config: { ...data.config, text } });
+      }, 200);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [text, data.upstreamIsStreaming, id, data.config, updateNodeData]);
+
+  // Handle upstream streaming and messages
+  useEffect(() => {
+    const isStreaming = data.upstreamIsStreaming || false;
+    const lastMessageChanged = data.lastMessage !== prevLastMessage.current;
+
+    if (isStreaming && !wasUpstreamStreaming.current) {
+      // Start streaming: switch to markdown and clear text
       setText('');
       updateNodeData(id, { config: { ...data.config, text: '' } });
+    } else if (isStreaming && lastMessageChanged) {
+      // Streaming: append new chunk
+      if (typeof data.lastMessage === 'string') {
+        setText(prev => prev + data.lastMessage);
+      }
+    } else if (!isStreaming && wasUpstreamStreaming.current) {
+      // End streaming: ignore the final message (NodeOutMessage)
+      justStreamed.current = true;
+    } else if (!isStreaming && !wasUpstreamStreaming.current) {
+      // Normal mode: update text if changed
+      if (lastMessageChanged && typeof data.lastMessage === 'string' && connections.length > 0) {
+        if (data.config?.text !== data.lastMessage) {
+          setText(data.lastMessage);
+          updateNodeData(id, { config: { ...data.config, text: data.lastMessage } });
+        }
+      }
     }
-    setWasStreaming(isStreaming);
-  }, [isStreaming, wasStreaming, id, updateNodeData]); // Intentionally omitting data.config to avoid loop
 
-  useEffect(() => {
-    if (!isStreaming) {
-      setText(data.config?.text || '');
-    }
-  }, [data.config?.text, isStreaming]);
+    wasUpstreamStreaming.current = isStreaming;
+    prevLastMessage.current = data.lastMessage;
+  }, [data.lastMessage, data.upstreamIsStreaming, id, updateNodeData, connections.length, data.config]);
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(evt.target.value);
@@ -54,34 +104,6 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
       });
     }
   }, [id, data.config, text, updateNodeData]);
-
-
-  useEffect(() => {
-    if (data.lastMessage !== undefined && typeof data.lastMessage === 'string') {
-      if (connections.length > 0) {
-        if (isStreaming) {
-          // If the incoming message is exactly the same as what we have accumulated,
-          // it's likely the final NodeOutMessage containing the full text.
-          // We should ignore it to avoid duplication.
-          if (data.lastMessage === data.config?.text) {
-            return;
-          }
-
-          setText((prev: string) => {
-            const next = prev + data.lastMessage;
-            updateNodeData(id, {
-              config: { ...data.config, text: next }
-            });
-            return next;
-          });
-        } else if (data.config?.text !== data.lastMessage) {
-          updateNodeData(id, {
-            config: { ...data.config, text: data.lastMessage }
-          });
-        }
-      }
-    }
-  }, [data.lastMessage, id, updateNodeData, connections.length, isStreaming]);
 
   const headerActions = (
     <button
