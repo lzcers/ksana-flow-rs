@@ -13,7 +13,7 @@ const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, currentRunId } = useStore();
+  const { updateNodeData, currentRunId, events$ } = useStore();
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -27,39 +27,18 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
     handleType: 'target',
   });
 
-  const prevStatus = useRef(data.status);
   const textRef = useRef(text);
-  const wasUpstreamStreaming = useRef(data.upstreamIsStreaming || false);
-  const prevLastMessage = useRef(data.lastMessage);
-  const justStreamed = useRef(false);
+  const isStreamingRef = useRef(data.upstreamIsStreaming || false);
 
   useEffect(() => {
     textRef.current = text;
   }, [text]);
 
+  // Sync isStreamingRef with data prop on mount/update to handle remounts correctly
   useEffect(() => {
-    if (data.status === 'running' && prevStatus.current !== 'running') {
-      if (justStreamed.current) {
-        justStreamed.current = false;
-      } else {
-        // If we have an upstream connection and the message is from the current run, don't clear
-        const isNewMessage = connections.length > 0 &&
-          data.lastMessageRunId === currentRunId &&
-          data.lastMessage !== undefined;
+    isStreamingRef.current = data.upstreamIsStreaming || false;
+  }, [data.upstreamIsStreaming]);
 
-        if (!isNewMessage && data.upstreamIsStreaming) {
-          setText('');
-          updateNodeData(id, { config: { ...data.config, text: '' } });
-          incremark.render('');
-        }
-      }
-    } else if (data.status === 'idle' || !data.status) {
-      justStreamed.current = false;
-    }
-    prevStatus.current = data.status;
-  }, [data.status, id, updateNodeData, data.config, connections.length, data.lastMessageRunId, currentRunId, data.lastMessage, incremark, data.upstreamIsStreaming]);
-
-  // Sync text to store during streaming (debounced)
   useEffect(() => {
     if (data.upstreamIsStreaming && text !== data.config?.text) {
       const timeoutId = setTimeout(() => {
@@ -69,53 +48,62 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
     }
   }, [text, data.upstreamIsStreaming, id, data.config, updateNodeData]);
 
-  // Sync text to incremark when not streaming and in markdown mode
   useEffect(() => {
     if (!data.upstreamIsStreaming && isMarkdown && text !== incremark.markdown) {
       incremark.render(text);
     }
   }, [text, isMarkdown, data.upstreamIsStreaming, incremark]);
 
-  // Handle upstream streaming and messages
   useEffect(() => {
-    const isStreaming = data.upstreamIsStreaming || false;
-    const lastMessageChanged = data.lastMessage !== prevLastMessage.current;
+    if (!events$) return;
 
-    if (isStreaming && !wasUpstreamStreaming.current) {
-      // Start streaming: switch to markdown and clear text
-      setIsMarkdown(true);
-      incremark.reset();
+    const subscription = events$.subscribe((wrapper: any) => {
+      const { event, runId } = wrapper;
+      // Filter by runId if available to avoid stale events
+      if (currentRunId && runId !== currentRunId) return;
 
-      // Clear the ref immediately so we don't assume old text
-      textRef.current = '';
-      setText('');
-      updateNodeData(id, { config: { ...data.config, text: '' } });
-    } else if (isStreaming && lastMessageChanged) {
-      // Streaming: append new chunk
-      if (typeof data.lastMessage === 'string') {
-        incremark.append(data.lastMessage);
-        setText(prev => prev + data.lastMessage);
-      }
-    } else if (!isStreaming && wasUpstreamStreaming.current) {
-      // End streaming: ignore the final message (NodeOutMessage)
-      incremark.finalize();
-      justStreamed.current = true;
-    } else if (!isStreaming && !wasUpstreamStreaming.current) {
-      // Normal mode: update text if changed
-      if (lastMessageChanged && typeof data.lastMessage === 'string' && connections.length > 0) {
-        if (data.config?.text !== data.lastMessage) {
-          setText(data.lastMessage);
-          updateNodeData(id, { config: { ...data.config, text: data.lastMessage } });
-          if (isMarkdown) {
-            incremark.render(data.lastMessage);
+      const upstreamNodeIds = connections.map(conn => conn.source);
+      const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
+
+      if (event.NodeStarted) {
+        const nodeId = event.NodeStarted;
+        if (isUpstream(nodeId)) {
+          isStreamingRef.current = false;
+        }
+      } else if (event.NodeStreamStarted) {
+        const nodeId = event.NodeStreamStarted;
+        if (isUpstream(nodeId)) {
+          isStreamingRef.current = true;
+          setText('');
+          setIsMarkdown(true);
+          incremark.reset();
+          // Clear data in store immediately
+          updateNodeData(id, { config: { ...data.config, text: '' } });
+        }
+      } else if (event.NodeStreamNextMessage) {
+        const [nodeId, value] = event.NodeStreamNextMessage;
+        if (isUpstream(nodeId) && isStreamingRef.current) {
+          if (typeof value === 'string') {
+            incremark.append(value);
+            setText(prev => prev + value);
+          }
+        }
+      } else if (event.NodeOutMessage) {
+        const [nodeId, value] = event.NodeOutMessage;
+        if (isUpstream(nodeId) && !isStreamingRef.current) {
+          if (typeof value === 'string') {
+            setText(value);
+            updateNodeData(id, { config: { ...data.config, text: value } });
+            if (isMarkdown) {
+              incremark.render(value);
+            }
           }
         }
       }
-    }
+    });
 
-    wasUpstreamStreaming.current = isStreaming;
-    prevLastMessage.current = data.lastMessage;
-  }, [data.lastMessage, data.upstreamIsStreaming, id, updateNodeData, connections.length, data.config, incremark, isMarkdown]);
+    return () => subscription.unsubscribe();
+  }, [events$, connections, incremark, currentRunId, id, updateNodeData, data.config, isMarkdown]);
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(evt.target.value);

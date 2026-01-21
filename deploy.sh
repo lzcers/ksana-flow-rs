@@ -28,12 +28,10 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 # 3. Install Node.js (if not present)
-if ! command -v npm &> /dev/null; then
-    echo "Installing Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs
+if ! command -v bun &> /dev/null; then
+    echo "Installing bun.js..."
+    curl -fsSL https://bun.sh/install | bash -
 fi
-
 # 4. Build Frontend
 echo "Building Frontend..."
 cd web

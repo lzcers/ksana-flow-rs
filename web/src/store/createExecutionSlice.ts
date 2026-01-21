@@ -1,13 +1,17 @@
 import type { StateCreator } from 'zustand';
+import { Subject } from 'rxjs';
 import type { StoreState, ExecutionSlice, WorkflowStatus } from './types';
 import * as api from '../api';
 import { updateNodeStatus, updateNodeData, resetWorkflowExecutionState } from '../model';
+
+const eventSubject = new Subject<any>();
 
 export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSlice> = (set, get) => ({
   workflowStatus: 'idle',
   workflowStatuses: {},
   runIdToWorkflowId: {},
   currentRunId: null,
+  events$: eventSubject.asObservable(),
 
   setWorkflowStatus: (status) => set({ workflowStatus: status }),
   setWorkflowStatuses: (statuses) => set({ workflowStatuses: statuses }),
@@ -58,6 +62,9 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
     const { runId, event: msg } = wrapper;
     const { currentRunId, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
 
+    // Emit event to subscribers
+    eventSubject.next(wrapper);
+
     if (runId && currentRunId && runId !== currentRunId) {
     }
 
@@ -81,13 +88,8 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
             apply(updateNodeData(nextState, edge.target, { upstreamIsStreaming: true }));
           });
         } else if (msg.NodeStreamNextMessage) {
-          const [id, value] = msg.NodeStreamNextMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId }));
-          // Propagate to downstream nodes
-          const outEdges = nextState.edges.filter(e => e.source === id);
-          outEdges.forEach(edge => {
-            apply(updateNodeData(nextState, edge.target, { lastMessage: value, lastMessageRunId: runId }));
-          });
+          // Skip updating store for stream chunks to improve performance
+          // Components should subscribe to events$ to handle streaming data
         } else if (msg.NodeInMessage) {
           const [id, value] = msg.NodeInMessage;
           apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId }));

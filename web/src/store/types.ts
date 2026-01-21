@@ -1,5 +1,6 @@
 import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/types';
+import type { Observable } from 'rxjs';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
@@ -58,6 +59,7 @@ export interface ExecutionSlice {
   setCurrentRunId: (runId: string | null) => void;
   initializeWebSocket: () => () => void;
   handleWebSocketMessage: (message: any) => void;
+  events$: Observable<any>;
 }
 
 export interface ToastItem {
