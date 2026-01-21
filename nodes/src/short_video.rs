@@ -14,7 +14,6 @@ const SYSTEM_PROMPT: &str = r#"
 You are a professional short video script writer.
 Your task is to generate a detailed script, character list, and storyboard based on the user's input.
 You must output STRICTLY valid JSON content that matches the following TypeScript interface.
-Do not include any markdown formatting (like ```json), just the raw JSON string.
 
 interface ScriptData {
   content: string;
@@ -53,6 +52,7 @@ interface ProjectData {
   characters: CharacterData[];
   storyboard: StoryboardShot[];
 }
+Do not include any markdown formatting (like ```json), just the raw JSON string.
 "#;
 
 pub struct ShortVideoScriptNode {
@@ -89,7 +89,7 @@ impl Node for ShortVideoScriptNode {
                 if !all_inputs.is_empty() {
                     all_inputs.push_str("\n\n");
                 }
-                all_inputs.push_str(&format!("Input '{}': {}", key, s));
+                all_inputs.push_str(&format!("{}", s));
             }
         }
 
@@ -98,9 +98,7 @@ impl Node for ShortVideoScriptNode {
         }
 
         let prompt = format!(
-            "
-            Do not include any markdown formatting (like ```json), just the raw JSON string，
-            Generate a short video script based on the following inputs:\n{}",
+            "Generate a short video script based on the following inputs:\n{}",
             all_inputs
         );
 
@@ -144,9 +142,9 @@ mod tests {
             match event {
                 TaskEvent::Next(_, val) => {
                     if let Some(s) = val.as_any().downcast_ref::<String>() {
+                        print!("{}", &s);
                         output.push_str(s);
                     }
-                    print!("{}", &s);
                 }
                 TaskEvent::Completed(_, _) => break,
                 TaskEvent::Error(_, e) => panic!("Stream error: {}", e),

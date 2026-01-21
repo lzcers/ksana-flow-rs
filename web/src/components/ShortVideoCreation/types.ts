@@ -37,3 +37,10 @@ export interface ProjectData {
 }
 
 export type ModuleType = 'script' | 'character' | 'storyboard';
+
+export interface ShortVideoCreationProps {
+  data: ProjectData;
+  onBack?: () => void;
+  onDataChange?: (data: ProjectData) => void;
+  isNodeCompleted?: (value: any) => boolean;
+}

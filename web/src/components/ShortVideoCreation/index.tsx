@@ -3,16 +3,11 @@ import { ArrowLeft, Book, Users, Clapperboard } from 'lucide-react';
 import { ScriptModule } from './ScriptModule';
 import { CharacterModule } from './CharacterModule';
 import { StoryboardModule } from './StoryboardModule';
-import type { ProjectData, ModuleType } from './types';
-
-interface ShortVideoCreationProps {
-  data: ProjectData;
-  onBack?: () => void;
-  onDataChange?: (data: ProjectData) => void;
-}
+import type { ModuleType, ShortVideoCreationProps } from './types';
 
 
-export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, onBack }) => {
+
+export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, onBack, isNodeCompleted }) => {
   const [currentModule, setCurrentModule] = useState<ModuleType>('storyboard'); // Default to storyboard as per image
 
   // Use passed data or fallback to mock data if empty
@@ -90,10 +85,10 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
           />
         )}
         {currentModule === 'character' && (
-          <CharacterModule characters={displayData.characters || []} />
+          <CharacterModule characters={displayData.characters || []} isNodeCompleted={isNodeCompleted} />
         )}
         {currentModule === 'storyboard' && (
-          <StoryboardModule shots={displayData.storyboard || []} />
+          <StoryboardModule shots={displayData.storyboard || []} isNodeCompleted={isNodeCompleted} />
         )}
       </main>
     </div>
