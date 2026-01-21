@@ -8,7 +8,7 @@ use rig::{
     agent::{Agent, MultiTurnStreamItem},
     client::{CompletionClient, ProviderClient},
     message::{Reasoning, Text},
-    providers::deepseek::{self, CompletionModel, DEEPSEEK_CHAT},
+    providers::deepseek::{self, CompletionModel},
     streaming::{StreamedAssistantContent, StreamingPrompt},
 };
 
@@ -43,16 +43,18 @@ where
 pub struct LLMStreamNode {
     llm: Agent<CompletionModel>,
     #[allow(dead_code)]
+    model: String,
+    #[allow(dead_code)]
     system_prompt: String,
     user_prompt_template: String,
 }
 
 impl LLMStreamNode {
-    pub fn new(sys_prompt: &str, user_tmpl: &str) -> Self {
+    pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
         dotenv::dotenv().ok();
         // Initialize the DeepSeek client from environment variables
         let client = deepseek::Client::from_env();
-        let mut builder = client.agent(DEEPSEEK_CHAT);
+        let mut builder = client.agent(model);
 
         // Handle system prompt
         if !sys_prompt.is_empty() {
@@ -63,6 +65,7 @@ impl LLMStreamNode {
 
         Self {
             llm,
+            model: model.to_owned(),
             system_prompt: sys_prompt.to_owned(),
             user_prompt_template: user_tmpl.to_owned(),
         }
@@ -117,6 +120,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use super::*;
+    use rig::providers::deepseek::DEEPSEEK_CHAT;
 
     async fn collect_output(stream: ReactiveStream<String>) -> String {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
@@ -145,7 +149,7 @@ mod tests {
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            let mut node = LLMStreamNode::new("", "");
+            let mut node = LLMStreamNode::new("", "", DEEPSEEK_CHAT);
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
 
@@ -172,6 +176,7 @@ mod tests {
             let mut node = LLMStreamNode::new(
                 "You are a helpful translator.",
                 "Translate this to English: {input}",
+                DEEPSEEK_CHAT,
             );
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
@@ -196,7 +201,7 @@ mod tests {
         runtime.block_on(async {
             let ctx = Context::new();
             // Template without placeholder, used when input is empty
-            let mut node = LLMStreamNode::new("", "Tell me a joke");
+            let mut node = LLMStreamNode::new("", "Tell me a joke", DEEPSEEK_CHAT);
             let input = "".to_owned();
             eprintln!("input: {}", &input);
 
@@ -243,11 +248,11 @@ mod tests {
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            let mut node = LLMStreamNode::new("", "Say hello");
-            
+            let mut node = LLMStreamNode::new("", "Say hello", DEEPSEEK_CHAT);
+
             let inputs = HashMap::new();
             let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
-            
+
             let (tx, mut rx) = tokio::sync::mpsc::channel(100);
             let ctx = Arc::new(Context::new());
             let _sub = (stream.subscribe)(tx, "test".to_string(), ctx);
@@ -270,10 +275,13 @@ mod tests {
                     _ => {}
                 }
             }
-            
+
             // Verify that we got a payload in Completed event
-            assert!(completed_payload.is_some(), "Completed event should have a payload");
-            
+            assert!(
+                completed_payload.is_some(),
+                "Completed event should have a payload"
+            );
+
             // Verify the payload matches the accumulated stream
             let payload_str = completed_payload
                 .unwrap()
@@ -281,8 +289,11 @@ mod tests {
                 .downcast_ref::<String>()
                 .expect("Payload should be string")
                 .clone();
-                
-            assert_eq!(payload_str, full_output, "Completed payload should match accumulated stream");
+
+            assert_eq!(
+                payload_str, full_output,
+                "Completed payload should match accumulated stream"
+            );
             assert!(!payload_str.is_empty(), "Output should not be empty");
         });
     }

@@ -25,6 +25,8 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
 
   const [systemPrompt, setSystemPrompt] = useState(data.config?.system_prompt || '');
   const [userPrompt, setUserPrompt] = useState(data.config?.user_prompt_template || '');
+  const [model, setModel] = useState(data.config?.model || 'deepseek-chat');
+  const [stream, setStream] = useState(data.config?.stream || false);
 
   const isComposingSystem = useRef(false);
   const isComposingUser = useRef(false);
@@ -49,6 +51,23 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
       }
     }
   }, [data.config?.user_prompt_template]);
+
+  useEffect(() => {
+    setModel(data.config?.model || 'deepseek-chat');
+    setStream(data.config?.stream || false);
+  }, [data.config?.model, data.config?.stream]);
+
+  const handleModelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newModel = e.target.value;
+    setModel(newModel);
+    updateNodeData(id, { config: { ...data.config, model: newModel } });
+  }, [id, data.config, updateNodeData]);
+
+  const handleStreamChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newStream = e.target.checked;
+    setStream(newStream);
+    updateNodeData(id, { config: { ...data.config, stream: newStream } });
+  }, [id, data.config, updateNodeData]);
 
   // System Prompt Handlers
   const handleSystemPromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -124,6 +143,30 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
       sourceHandles={SOURCE_HANDLES}
     >
       <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="text-[10px] text-zinc-500 font-bold block mb-1">Model</label>
+            <select
+              className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded px-1 py-1 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              value={model}
+              onChange={handleModelChange}
+            >
+              <option value="deepseek-chat">DeepSeek Chat</option>
+              <option value="deepseek-reasoner">DeepSeek Reasoner</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] text-zinc-500 font-bold block mb-1">Stream</label>
+            <div className="flex items-center h-[26px]">
+              <input
+                type="checkbox"
+                className="rounded border-zinc-800 bg-zinc-950 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                checked={stream}
+                onChange={handleStreamChange}
+              />
+            </div>
+          </div>
+        </div>
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">System Prompt</label>
           <textarea

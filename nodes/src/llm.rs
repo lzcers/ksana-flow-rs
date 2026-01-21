@@ -4,22 +4,24 @@ use rig::{
     agent::Agent,
     client::{CompletionClient, ProviderClient},
     completion::Prompt,
-    providers::deepseek::{self, CompletionModel, DEEPSEEK_REASONER},
+    providers::deepseek::{self, CompletionModel},
 };
 
 pub struct LLMNode {
     llm: Agent<CompletionModel>,
+    #[allow(dead_code)]
+    model: String,
     #[allow(dead_code)]
     system_prompt: String,
     user_prompt_template: String,
 }
 
 impl LLMNode {
-    pub fn new(sys_prompt: &str, user_tmpl: &str) -> Self {
+    pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
         dotenv::dotenv().ok();
         // Initialize the DeepSeek client from environment variables
         let client = deepseek::Client::from_env();
-        let mut builder = client.agent(DEEPSEEK_REASONER);
+        let mut builder = client.agent(model);
 
         // Handle system prompt
         if !sys_prompt.is_empty() {
@@ -30,6 +32,7 @@ impl LLMNode {
 
         Self {
             llm,
+            model: model.to_owned(),
             system_prompt: sys_prompt.to_owned(),
             user_prompt_template: user_tmpl.to_owned(),
         }
@@ -72,6 +75,7 @@ mod tests {
     use tokio::runtime::Runtime;
 
     use super::*;
+    use rig::providers::deepseek::DEEPSEEK_REASONER;
 
     #[test]
     fn test_llm_node() {
@@ -79,7 +83,7 @@ mod tests {
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            let mut node = LLMNode::new("", "");
+            let mut node = LLMNode::new("", "", DEEPSEEK_REASONER);
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
 
@@ -104,6 +108,7 @@ mod tests {
             let mut node = LLMNode::new(
                 "You are a helpful translator.",
                 "Translate this to English: {input}",
+                DEEPSEEK_REASONER,
             );
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);

@@ -33,8 +33,6 @@ export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
       return <SourceNode {...props} />;
     case 'VOLMFINode':
       return <VolMfiNode {...props} />;
-    case 'StreamLLMNode':
-      return <LLMNode {...props} />;
     default:
       return null;
   }

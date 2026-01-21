@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Position, type NodeProps, useNodeConnections } from '@xyflow/react';
-import { AutoScrollContainer, IncremarkContent, ThemeProvider } from '@incremark/react';
+import { AutoScrollContainer, Incremark, ThemeProvider, useIncremark } from '@incremark/react';
 import { Eye, Pencil, Maximize2 } from 'lucide-react';
 import { NodeWrapper } from './NodeWrapper';
 import { FullScreenModal } from '../ui/FullScreenModal';
@@ -12,73 +12,16 @@ import './index.css';
 const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
-function createStreamChannel() {
-  const subscribers = new Set<{
-    notify: () => void;
-    queue: string[];
-  }>();
-  let closed = false;
-
-  const subscribe = async function* () {
-    const state = {
-      notify: () => { },
-      queue: [] as string[]
-    };
-
-    let nextPromiseResolve: (() => void) | null = null;
-
-    state.notify = () => {
-      if (nextPromiseResolve) {
-        nextPromiseResolve();
-        nextPromiseResolve = null;
-      }
-    };
-
-    subscribers.add(state);
-
-    try {
-      while (true) {
-        while (state.queue.length > 0) {
-          yield state.queue.shift()!;
-        }
-
-        if (closed) return;
-
-        await new Promise<void>(resolve => {
-          nextPromiseResolve = resolve;
-        });
-      }
-    } finally {
-      subscribers.delete(state);
-    }
-  };
-
-  return {
-    subscribe,
-    enqueue: (chunk: string) => {
-      if (closed) return;
-      for (const sub of subscribers) {
-        sub.queue.push(chunk);
-        sub.notify();
-      }
-    },
-    close: () => {
-      closed = true;
-      for (const sub of subscribers) {
-        sub.notify();
-      }
-    }
-  };
-}
-
 export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, currentRunId } = useStore();
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [stream, setStream] = useState<(() => AsyncGenerator<string, void, unknown>) | undefined>(undefined);
-  const streamController = useRef<{ enqueue: (s: string) => void; close: () => void } | null>(null);
   const scrollRef = useRef(null)
+
+  const incremark = useIncremark({
+    math: { tex: true }
+  });
 
   const connections = useNodeConnections({
     handleType: 'target',
@@ -107,13 +50,14 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
         if (!isNewMessage) {
           setText('');
           updateNodeData(id, { config: { ...data.config, text: '' } });
+          incremark.render('');
         }
       }
     } else if (data.status === 'idle' || !data.status) {
       justStreamed.current = false;
     }
     prevStatus.current = data.status;
-  }, [data.status, id, updateNodeData, data.config, connections.length, data.lastMessageRunId, currentRunId, data.lastMessage]);
+  }, [data.status, id, updateNodeData, data.config, connections.length, data.lastMessageRunId, currentRunId, data.lastMessage, incremark]);
 
   // Sync text to store during streaming (debounced)
   useEffect(() => {
@@ -125,6 +69,13 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
     }
   }, [text, data.upstreamIsStreaming, id, data.config, updateNodeData]);
 
+  // Sync text to incremark when not streaming and in markdown mode
+  useEffect(() => {
+    if (!data.upstreamIsStreaming && isMarkdown && text !== incremark.markdown) {
+      incremark.render(text);
+    }
+  }, [text, isMarkdown, data.upstreamIsStreaming, incremark]);
+
   // Handle upstream streaming and messages
   useEffect(() => {
     const isStreaming = data.upstreamIsStreaming || false;
@@ -132,32 +83,22 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
 
     if (isStreaming && !wasUpstreamStreaming.current) {
       // Start streaming: switch to markdown and clear text
-      const channel = createStreamChannel();
-      streamController.current = channel;
-      setStream(() => async function* () {
-        // Yield current text history first for late subscribers (e.g. full screen modal)
-        if (textRef.current) {
-          yield textRef.current;
-        }
-        const sub = channel.subscribe();
-        for await (const chunk of sub) {
-          yield chunk;
-        }
-      });
       setIsMarkdown(true);
+      incremark.reset();
 
+      // Clear the ref immediately so we don't assume old text
+      textRef.current = '';
       setText('');
       updateNodeData(id, { config: { ...data.config, text: '' } });
     } else if (isStreaming && lastMessageChanged) {
       // Streaming: append new chunk
       if (typeof data.lastMessage === 'string') {
-        streamController.current?.enqueue(data.lastMessage);
+        incremark.append(data.lastMessage);
         setText(prev => prev + data.lastMessage);
       }
     } else if (!isStreaming && wasUpstreamStreaming.current) {
       // End streaming: ignore the final message (NodeOutMessage)
-      streamController.current?.close();
-      setStream(undefined);
+      incremark.finalize();
       justStreamed.current = true;
     } else if (!isStreaming && !wasUpstreamStreaming.current) {
       // Normal mode: update text if changed
@@ -165,13 +106,16 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
         if (data.config?.text !== data.lastMessage) {
           setText(data.lastMessage);
           updateNodeData(id, { config: { ...data.config, text: data.lastMessage } });
+          if (isMarkdown) {
+            incremark.render(data.lastMessage);
+          }
         }
       }
     }
 
     wasUpstreamStreaming.current = isStreaming;
     prevLastMessage.current = data.lastMessage;
-  }, [data.lastMessage, data.upstreamIsStreaming, id, updateNodeData, connections.length, data.config]);
+  }, [data.lastMessage, data.upstreamIsStreaming, id, updateNodeData, connections.length, data.config, incremark, isMarkdown]);
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(evt.target.value);
@@ -238,14 +182,8 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
             <div className="w-full h-full text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
               {isMarkdown ? (
                 <ThemeProvider theme="dark">
-                  <AutoScrollContainer enabled={!!stream} className="h-full">
-                    <IncremarkContent
-                      content={stream ? undefined : text}
-                      stream={stream}
-                      incremarkOptions={{
-                        math: { tex: true }
-                      }}
-                    />
+                  <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full">
+                    <Incremark incremark={incremark} />
                   </AutoScrollContainer>
                 </ThemeProvider>
               ) : (
@@ -272,13 +210,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           >
             <ThemeProvider theme="dark">
               <AutoScrollContainer ref={scrollRef} enabled className="h-[300px]">
-                <IncremarkContent
-                  content={stream ? undefined : text}
-                  stream={stream}
-                  incremarkOptions={{
-                    math: { tex: true }
-                  }}
-                />
+                <Incremark incremark={incremark} />
               </AutoScrollContainer>
             </ThemeProvider>
           </div>
