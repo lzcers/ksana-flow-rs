@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useWorkflow } from './hooks/useWorkflow';
 import { useAppInit } from './hooks/useAppInit';
 import { Canvas } from './components/WorkflowEditor/Canvas';
@@ -8,7 +9,23 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { ToastContainer } from './components/ui/ToastContainer';
 
 export default function App() {
-  useAppInit();
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/space/:spaceId/*" element={<WorkspaceWrapper />} />
+        <Route path="/" element={<Navigate to="/space/ksana" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+function WorkspaceWrapper() {
+  const { spaceId } = useParams<{ spaceId: string }>();
+  
+  // Guard against undefined spaceId (though routing ensures it's there)
+  const currentSpaceId = spaceId || 'ksana';
+  
+  useAppInit(currentSpaceId);
 
   return (
     <>

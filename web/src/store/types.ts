@@ -6,13 +6,16 @@ export type WorkflowStatus = 'idle' | 'running' | 'paused';
 export interface WorkflowSlice {
   workflows: { id: number; name: string }[];
   currentWorkflowId: number | null;
+  currentSpaceId: string | null;
   nodeTypes: NodeMetadata[];
+  setSpaceId: (id: string) => void;
   loadMetadata: () => Promise<void>;
   loadWorkflow: (id: number) => Promise<void>;
   saveWorkflow: (name?: string) => Promise<void>;
   renameWorkflow: (id: number, newName: string) => Promise<void>;
   deleteWorkflow: (id: number) => Promise<void>;
   createNewWorkflow: () => Promise<void>;
+  uploadFile: (file: File) => Promise<any>;
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
   setNodeTypes: (types: NodeMetadata[]) => void;

@@ -18,7 +18,10 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
     let reconnectTimeout: number | null = null;
 
     const connect = () => {
-      ws = new WebSocket('ws://localhost:3000/ws');
+      const { currentSpaceId } = get();
+      if (!currentSpaceId) return;
+
+      ws = new WebSocket(`ws://localhost:3000/ws?workspace_id=${currentSpaceId}`);
 
       ws.onmessage = (event) => {
         try {
@@ -144,7 +147,8 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   runWorkflow: async () => {
-    const { nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
+    const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
+    if (!currentSpaceId) return;
 
     const blueprint = {
       nodes: nodes.map(n => ({
@@ -168,7 +172,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
       setWorkflowStatus('running');
       set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
 
-      const res = await api.runWorkflow(blueprint, currentWorkflowId || -1);
+      const res = await api.runWorkflow(currentSpaceId, blueprint, currentWorkflowId || -1);
       if (res && res.error) {
         throw new Error(res.error);
       }
@@ -192,10 +196,10 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   pauseWorkflow: async () => {
-    const { currentRunId, error } = get();
-    if (!currentRunId) return;
+    const { currentSpaceId, currentRunId, error } = get();
+    if (!currentRunId || !currentSpaceId) return;
     try {
-      await api.pauseWorkflow(currentRunId);
+      await api.pauseWorkflow(currentSpaceId, currentRunId);
     } catch (e) {
       console.error("Failed to pause workflow", e);
       error("Failed to pause workflow");
@@ -203,10 +207,10 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   resumeWorkflow: async () => {
-    const { currentRunId, error } = get();
-    if (!currentRunId) return;
+    const { currentSpaceId, currentRunId, error } = get();
+    if (!currentRunId || !currentSpaceId) return;
     try {
-      await api.resumeWorkflow(currentRunId);
+      await api.resumeWorkflow(currentSpaceId, currentRunId);
     } catch (e) {
       console.error("Failed to resume workflow", e);
       error("Failed to resume workflow");
@@ -214,10 +218,10 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   stopWorkflow: async () => {
-    const { currentRunId, error } = get();
-    if (!currentRunId) return;
+    const { currentSpaceId, currentRunId, error } = get();
+    if (!currentRunId || !currentSpaceId) return;
     try {
-      await api.stopWorkflow(currentRunId);
+      await api.stopWorkflow(currentSpaceId, currentRunId);
     } catch (e) {
       console.error("Failed to stop workflow", e);
       error("Failed to stop workflow");
@@ -225,7 +229,8 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
   },
 
   runNode: async (nodeId: string) => {
-    const { nodes, edges, success, error, setWorkflowStatus, setCurrentRunId } = get();
+    const { currentSpaceId, nodes, edges, success, error, setWorkflowStatus, setCurrentRunId } = get();
+    if (!currentSpaceId) return;
     const blueprint = {
       nodes: nodes.map(n => ({
         id: n.id,
@@ -247,7 +252,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
     try {
       set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
 
-      const res = await api.runNode(blueprint, nodeId);
+      const res = await api.runNode(currentSpaceId, blueprint, nodeId);
       if (res && res.error) {
         throw new Error(res.error);
       }

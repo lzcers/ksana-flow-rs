@@ -7,16 +7,20 @@ import { updateNodeData, updateNodeStatus } from '../model';
 export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice> = (set, get) => ({
   workflows: [],
   currentWorkflowId: null,
+  currentSpaceId: null,
   nodeTypes: [],
 
+  setSpaceId: (id) => set({ currentSpaceId: id }),
   setWorkflows: (workflows) => set({ workflows }),
   setCurrentWorkflowId: (currentWorkflowId) => set({ currentWorkflowId }),
   setNodeTypes: (nodeTypes) => set({ nodeTypes }),
 
   loadMetadata: async () => {
+    const { currentSpaceId } = get();
+    if (!currentSpaceId) return;
     try {
-      const types = await api.fetchNodes();
-      const wfList = await api.fetchWorkflows();
+      const types = await api.fetchNodes(currentSpaceId);
+      const wfList = await api.fetchWorkflows(currentSpaceId);
       set({ nodeTypes: types, workflows: wfList });
     } catch (e) {
       console.error("Failed to load metadata", e);
@@ -24,9 +28,10 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
   },
 
   loadWorkflow: async (id: number) => {
-    const { nodeTypes, error, setNodes, setEdges, selectNode, setWorkflowStatus, setWorkflowStatuses, setCurrentRunId } = get();
+    const { currentSpaceId, nodeTypes, error, setNodes, setEdges, selectNode, setWorkflowStatus, setWorkflowStatuses, setCurrentRunId } = get();
+    if (!currentSpaceId) return;
     try {
-      const wf = await api.fetchWorkflow(id);
+      const wf = await api.fetchWorkflow(currentSpaceId, id);
       set({ currentWorkflowId: id });
 
       // Transform backend nodes to ReactFlow nodes
@@ -61,7 +66,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       selectNode(null);
 
       try {
-        const statusRes = await api.getWorkflowStatus(id);
+        const statusRes = await api.getWorkflowStatus(currentSpaceId, id);
         if (statusRes) {
           if (statusRes.run_id) {
             setCurrentRunId(statusRes.run_id);
@@ -96,7 +101,8 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
   },
 
   saveWorkflow: async (name?: string) => {
-    const { nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId } = get();
+    const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId } = get();
+    if (!currentSpaceId) return;
 
     const blueprint = {
       nodes: nodes.map(n => ({
@@ -122,13 +128,13 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
         const currentWf = workflows.find(w => w.id === currentWorkflowId);
         const nameToUse = name || currentWf?.name || 'Untitled';
 
-        await api.updateWorkflow(currentWorkflowId, nameToUse, blueprint);
+        await api.updateWorkflow(currentSpaceId, currentWorkflowId, nameToUse, blueprint);
 
         if (name && name !== currentWf?.name) {
           setWorkflows(workflows.map(w => w.id === currentWorkflowId ? { ...w, name } : w));
         }
       } else {
-        const newWf = await api.createWorkflow(name || 'Untitled Workflow', blueprint);
+        const newWf = await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint);
         setCurrentWorkflowId(newWf.id);
         setWorkflows([...workflows, { id: newWf.id, name: name || 'Untitled Workflow' }]);
       }
@@ -140,7 +146,8 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
   },
 
   renameWorkflow: async (id: number, newName: string) => {
-    const { nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows } = get();
+    const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows } = get();
+    if (!currentSpaceId) return;
     try {
       let blueprint;
       if (id === currentWorkflowId) {
@@ -163,11 +170,11 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
           }))
         };
       } else {
-        const wf = await api.fetchWorkflow(id);
+        const wf = await api.fetchWorkflow(currentSpaceId, id);
         blueprint = wf.blueprint;
       }
 
-      await api.updateWorkflow(id, newName, blueprint);
+      await api.updateWorkflow(currentSpaceId, id, newName, blueprint);
       setWorkflows(workflows.map(w => w.id === id ? { ...w, name: newName } : w));
       success('Workflow renamed');
     } catch (e) {
@@ -177,9 +184,10 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
   },
 
   deleteWorkflow: async (id: number) => {
-    const { currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId, setNodes, setEdges, selectNode } = get();
+    const { currentSpaceId, currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId, setNodes, setEdges, selectNode } = get();
+    if (!currentSpaceId) return;
     try {
-      await api.deleteWorkflow(id);
+      await api.deleteWorkflow(currentSpaceId, id);
       setWorkflows(workflows.filter(w => w.id !== id));
       if (currentWorkflowId === id) {
         setCurrentWorkflowId(null);
@@ -202,6 +210,12 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
     setCurrentWorkflowId(null);
     setWorkflowStatus('idle');
     setCurrentRunId(null);
+  },
+
+  uploadFile: async (file: File) => {
+    const { currentSpaceId } = get();
+    if (!currentSpaceId) throw new Error("No active workspace");
+    return api.uploadFile(currentSpaceId, file);
   },
 
   applyExecutionEvent: (event: any) => {

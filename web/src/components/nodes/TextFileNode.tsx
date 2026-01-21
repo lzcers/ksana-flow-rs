@@ -4,12 +4,11 @@ import { Upload, FileText } from 'lucide-react';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
 import { type NodeData } from '../../model/types';
-import { uploadFile } from '../../api';
 
 const SOURCE_HANDLES = [Position.Right];
 
 export const TextFileNodeComponent = ({ id, data, selected }: NodeProps & { data: NodeData }) => {
-    const { updateNodeData } = useStore();
+    const { updateNodeData, uploadFile } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);

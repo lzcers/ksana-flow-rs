@@ -16,6 +16,7 @@ impl Db {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 data TEXT NOT NULL,
+                workspace_id TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )",
@@ -50,12 +51,48 @@ impl Db {
                 size INTEGER NOT NULL,
                 content TEXT NOT NULL,
                 mime_type TEXT NOT NULL,
+                workspace_id TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )",
             [],
         )?;
 
+        // Migration: Ensure workspace_id column exists and default data to 'ksana'
+        Self::migrate_workspace_column(&conn, "workflows")?;
+        Self::migrate_workspace_column(&conn, "uploaded_files")?;
+
         Ok(Self { conn })
+    }
+
+    fn migrate_workspace_column(conn: &Connection, table: &str) -> Result<()> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let rows = stmt.query_map([], |row| {
+            let name: String = row.get(1)?;
+            Ok(name)
+        })?;
+
+        let mut has_workspace_id = false;
+        for row in rows {
+            if row? == "workspace_id" {
+                has_workspace_id = true;
+                break;
+            }
+        }
+
+        if !has_workspace_id {
+            conn.execute(
+                &format!("ALTER TABLE {} ADD COLUMN workspace_id TEXT", table),
+                [],
+            )?;
+            conn.execute(
+                &format!(
+                    "UPDATE {} SET workspace_id = 'ksana' WHERE workspace_id IS NULL",
+                    table
+                ),
+                [],
+            )?;
+        }
+        Ok(())
     }
 
     pub fn save_file(
@@ -65,19 +102,20 @@ impl Db {
         content: &str,
         size: i64,
         mime_type: &str,
+        workspace_id: &str,
     ) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO uploaded_files (id, filename, content, size, mime_type) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, filename, content, size, mime_type],
+            "INSERT INTO uploaded_files (id, filename, content, size, mime_type, workspace_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, filename, content, size, mime_type, workspace_id],
         )?;
         Ok(())
     }
 
-    pub fn get_file(&self, id: &str) -> Result<Option<(String, String)>> {
+    pub fn get_file(&self, id: &str, workspace_id: &str) -> Result<Option<(String, String)>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT filename, content FROM uploaded_files WHERE id = ?1")?;
-        let mut rows = stmt.query(params![id])?;
+            .prepare("SELECT filename, content FROM uploaded_files WHERE id = ?1 AND workspace_id = ?2")?;
+        let mut rows = stmt.query(params![id, workspace_id])?;
 
         if let Some(row) = rows.next()? {
             Ok(Some((row.get(0)?, row.get(1)?)))
@@ -86,20 +124,20 @@ impl Db {
         }
     }
 
-    pub fn create_workflow(&self, name: &str, data: &Value) -> Result<i64> {
+    pub fn create_workflow(&self, name: &str, data: &Value, workspace_id: &str) -> Result<i64> {
         let data_json = serde_json::to_string(data)?;
         self.conn.execute(
-            "INSERT INTO workflows (name, data) VALUES (?1, ?2)",
-            params![name, data_json],
+            "INSERT INTO workflows (name, data, workspace_id) VALUES (?1, ?2, ?3)",
+            params![name, data_json, workspace_id],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
-    pub fn get_workflow(&self, id: i64) -> Result<Option<(String, Value)>> {
+    pub fn get_workflow(&self, id: i64, workspace_id: &str) -> Result<Option<(String, Value)>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT name, data FROM workflows WHERE id = ?1")?;
-        let mut rows = stmt.query(params![id])?;
+            .prepare("SELECT name, data FROM workflows WHERE id = ?1 AND workspace_id = ?2")?;
+        let mut rows = stmt.query(params![id, workspace_id])?;
 
         if let Some(row) = rows.next()? {
             let name: String = row.get(0)?;
@@ -111,11 +149,11 @@ impl Db {
         }
     }
 
-    pub fn list_workflows(&self) -> Result<Vec<(i64, String)>> {
+    pub fn list_workflows(&self, workspace_id: &str) -> Result<Vec<(i64, String)>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, name FROM workflows ORDER BY updated_at DESC")?;
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            .prepare("SELECT id, name FROM workflows WHERE workspace_id = ?1 ORDER BY updated_at DESC")?;
+        let rows = stmt.query_map(params![workspace_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
 
         let mut workflows = Vec::new();
         for row in rows {
@@ -124,19 +162,19 @@ impl Db {
         Ok(workflows)
     }
 
-    pub fn update_workflow(&self, id: i64, name: &str, data: &Value) -> Result<bool> {
+    pub fn update_workflow(&self, id: i64, name: &str, data: &Value, workspace_id: &str) -> Result<bool> {
         let data_json = serde_json::to_string(data)?;
         let count = self.conn.execute(
-            "UPDATE workflows SET name = ?1, data = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
-            params![name, data_json, id],
+            "UPDATE workflows SET name = ?1, data = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3 AND workspace_id = ?4",
+            params![name, data_json, id, workspace_id],
         )?;
         Ok(count > 0)
     }
 
-    pub fn delete_workflow(&self, id: i64) -> Result<bool> {
+    pub fn delete_workflow(&self, id: i64, workspace_id: &str) -> Result<bool> {
         let count = self
             .conn
-            .execute("DELETE FROM workflows WHERE id = ?1", params![id])?;
+            .execute("DELETE FROM workflows WHERE id = ?1 AND workspace_id = ?2", params![id, workspace_id])?;
         Ok(count > 0)
     }
 

@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Multipart, State},
+    extract::{Multipart, State, Path},
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::state::AppState;
 
 pub async fn upload_file(
+    Path(workspace_id): Path<String>,
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Result<Json<Value>, String> {
@@ -22,7 +23,7 @@ pub async fn upload_file(
             let id = Uuid::new_v4().to_string();
 
             let db = state.db.lock().map_err(|_| "Failed to lock db")?;
-            db.save_file(&id, &file_name, &data, size, &content_type)
+            db.save_file(&id, &file_name, &data, size, &content_type, &workspace_id)
                 .map_err(|e| e.to_string())?;
 
             return Ok(Json(json!({

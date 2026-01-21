@@ -14,13 +14,15 @@ use tracing::error;
 pub struct ExecutionHandle {
     pub runner_handle: RunnerHandle,
     pub workflow_id: i64,
+    pub workspace_id: String,
 }
 
 #[derive(Clone)]
 pub struct AppState {
     pub registry: Arc<RwLock<NodeRegistry>>,
     pub executions: Arc<RwLock<HashMap<String, ExecutionHandle>>>,
-    pub tx: broadcast::Sender<(String, FlowEvent)>,
+    // (workspace_id, run_id, event)
+    pub tx: broadcast::Sender<(String, String, FlowEvent)>,
     pub db: Arc<Mutex<Db>>,
 }
 
