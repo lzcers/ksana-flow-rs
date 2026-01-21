@@ -212,6 +212,66 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
     setCurrentRunId(null);
   },
 
+  importWorkflow: (blueprint: any) => {
+    const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId, nodeTypes } = get();
+    
+    // Transform backend nodes to ReactFlow nodes
+    const nodes: Node[] = (blueprint.nodes || []).map((n: any) => ({
+      id: n.id,
+      type: 'workflow',
+      position: n.position || { x: 0, y: 0 },
+      width: n.width,
+      height: n.height,
+      style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
+      data: {
+        label: n.type,
+        type: n.type,
+        description: nodeTypes.find(t => t.name === n.type)?.description || '',
+        config: n.data,
+        status: 'idle'
+      }
+    }));
+
+    // Transform backend edges to ReactFlow edges
+    const edges: Edge[] = (blueprint.edges || []).map((e: any) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+      type: e.type || 'default'
+    }));
+
+    setNodes(nodes);
+    setEdges(edges);
+    selectNode(null);
+    setCurrentWorkflowId(null);
+    setWorkflowStatus('idle');
+    setCurrentRunId(null);
+  },
+
+  getWorkflowBlueprint: () => {
+    const { nodes, edges } = get();
+    return {
+      nodes: nodes.map(n => ({
+        id: n.id,
+        type: n.data.type,
+        data: n.data.config,
+        position: n.position,
+        width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
+        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
+      })),
+      edges: edges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
+        type: e.type
+      }))
+    };
+  },
+
   uploadFile: async (file: File) => {
     const { currentSpaceId } = get();
     if (!currentSpaceId) throw new Error("No active workspace");

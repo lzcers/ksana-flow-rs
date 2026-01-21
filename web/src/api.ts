@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export interface NodeMetadata {
     name: string;

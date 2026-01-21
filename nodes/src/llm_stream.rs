@@ -13,7 +13,7 @@ use rig::{
 };
 
 pub struct LLMStreamObservable<S> {
-    stream: S,
+    pub stream: S,
 }
 
 #[async_trait]

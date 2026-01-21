@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Plus, Save, Edit2, Check, X, Trash2, FileText, LayoutGrid, Loader2 } from 'lucide-react';
+import { Plus, Save, X, Trash2, FileText, LayoutGrid, Loader2, Upload, Download } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 
@@ -17,6 +17,8 @@ interface WorkflowHeaderProps {
   onDeleteWorkflow: (id: number) => void;
   onRenameWorkflow: (id: number, newName: string) => void;
   onCreateNew: () => void;
+  onExportWorkflow: () => void;
+  onImportWorkflow: (file: File) => void;
   tabs: Tab[];
   onCloseTab: (id: number | null) => void;
 }
@@ -30,6 +32,8 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   onDeleteWorkflow,
   onRenameWorkflow,
   onCreateNew,
+  onExportWorkflow,
+  onImportWorkflow,
   tabs,
   onCloseTab
 }) => {
@@ -39,6 +43,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newWorkflowName, setNewWorkflowName] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentTab = tabs.find(t => t.id === currentWorkflowId);
   const displayName = currentTab?.name || 'New Workflow';
@@ -94,6 +99,20 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
     setEditingName('');
   };
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onImportWorkflow(file);
+    }
+    // Reset value so same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setIsDropdownOpen(false);
+  };
+
   return (
     <div className="flex items-center gap-2 h-full w-full">
       {/* Workflow Selector (Menu) */}
@@ -122,6 +141,33 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                 <Plus size={12} />
                 New Workflow
               </button>
+              
+              <button
+                onClick={handleImportClick}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors border-b border-zinc-800/50"
+              >
+                <Upload size={12} />
+                Import Workflow
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                className="hidden" 
+                accept=".json" 
+              />
+
+              <button
+                onClick={() => {
+                  onExportWorkflow();
+                  setIsDropdownOpen(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors border-b border-zinc-800/50"
+              >
+                <Download size={12} />
+                Export Workflow
+              </button>
+
               {workflows.map(wf => (
                 <div
                   key={wf.id}

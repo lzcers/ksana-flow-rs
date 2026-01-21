@@ -34,7 +34,7 @@ export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
       return <SourceNode {...props} />;
     case 'VOLMFINode':
       return <VolMfiNode {...props} />;
-    case 'ShortVideoCreationNode':
+    case 'ShortVideoScriptNode':
       return <ShortVideoNode {...props} />;
     default:
       return null;

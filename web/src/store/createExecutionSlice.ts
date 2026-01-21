@@ -21,7 +21,9 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
       const { currentSpaceId } = get();
       if (!currentSpaceId) return;
 
-      ws = new WebSocket(`ws://localhost:3000/ws?workspace_id=${currentSpaceId}`);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = import.meta.env.PROD ? window.location.host : 'localhost:3000';
+      ws = new WebSocket(`${protocol}//${host}/ws?workspace_id=${currentSpaceId}`);
 
       ws.onmessage = (event) => {
         try {

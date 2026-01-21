@@ -36,6 +36,8 @@ export function useWorkflow() {
     loadWorkflow: store.loadWorkflow,
     deleteWorkflow: store.deleteWorkflow,
     renameWorkflow: store.renameWorkflow,
-    createNewWorkflow: store.createNewWorkflow
+    createNewWorkflow: store.createNewWorkflow,
+    importWorkflow: store.importWorkflow,
+    getWorkflowBlueprint: store.getWorkflowBlueprint
   };
 }

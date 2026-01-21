@@ -11,6 +11,6 @@ export const getConnectedEdges = (state: WorkflowState, nodeId: string): Edge[] 
 };
 
 
-export const isValidConnection = (connection: Connection, state: WorkflowState): boolean => {
+export const isValidConnection = (_connection: Connection, _state: WorkflowState): boolean => {
   return true;
 };

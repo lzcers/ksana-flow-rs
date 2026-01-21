@@ -15,6 +15,8 @@ export interface WorkflowSlice {
   renameWorkflow: (id: number, newName: string) => Promise<void>;
   deleteWorkflow: (id: number) => Promise<void>;
   createNewWorkflow: () => Promise<void>;
+  importWorkflow: (blueprint: any) => void;
+  getWorkflowBlueprint: () => any;
   uploadFile: (file: File) => Promise<any>;
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;

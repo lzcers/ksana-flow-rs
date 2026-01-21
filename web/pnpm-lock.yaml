@@ -26,6 +26,9 @@ importers:
       immer:
         specifier: ^11.1.3
         version: 11.1.3
+      jsonriver:
+        specifier: ^1.1.1
+        version: 1.1.1
       lucide-react:
         specifier: ^0.562.0
         version: 0.562.0(react@19.2.3)
@@ -1348,6 +1351,9 @@ packages:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
     hasBin: true
+
+  jsonriver@1.1.1:
+    resolution: {integrity: sha512-w/y/ZvC0YlJxRjySXt6hEji3RltOLAbSiDe3jlWekbIT7qLIOJF+tGNscwTWJZhoNQzi1dItJVMM2jEPZbHSEQ==}
 
   katex@0.16.27:
     resolution: {integrity: sha512-aeQoDkuRWSqQN6nSvVCEFvfXdqo1OQiCmmW1kc9xSdjutPv7BGO7pqY9sQRJpMOGrEdfDgF2TfRXe5eUAD2Waw==}
@@ -3428,6 +3434,8 @@ snapshots:
   json-stable-stringify-without-jsonify@1.0.1: {}
 
   json5@2.2.3: {}
+
+  jsonriver@1.1.1: {}
 
   katex@0.16.27:
     dependencies:

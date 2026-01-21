@@ -1,7 +1,8 @@
 use chrono::{Local, NaiveDateTime};
 use flow::{AnyNode, SendableAny};
 use nodes::{
-    EmailNotifyNode, LLMNode, LLMStreamNode, TextFileNode, TextMergeNode, TextNode, TimerNode,
+    EmailNotifyNode, LLMNode, LLMStreamNode, ShortVideoScriptNode, TextFileNode, TextMergeNode,
+    TextNode, TimerNode,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -329,6 +330,24 @@ pub fn create_registry() -> NodeRegistry {
         |config: Value| {
             let separator = config["separator"].as_str().map(|s| s.to_string());
             let node = TextMergeNode::new(separator);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "ShortVideoScriptNode".to_string(),
+            description: "Generates short video scripts in JSON format".to_string(),
+            category: "AI".to_string(),
+            config: json!({
+                "model": "deepseek-chat"
+            }),
+            inputs: vec![InputType::String],
+            outputs: vec![InputType::String],
+        },
+        |config: Value| {
+            let model = config["model"].as_str().unwrap_or("deepseek-chat");
+            let node = ShortVideoScriptNode::new(model);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );

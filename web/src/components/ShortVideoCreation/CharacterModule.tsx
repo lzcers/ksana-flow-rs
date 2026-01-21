@@ -13,10 +13,10 @@ export const CharacterModule: React.FC<CharacterModuleProps> = ({ characters }) 
         <thead className="sticky top-0 bg-white dark:bg-zinc-950 z-10 shadow-sm">
           <tr className="border-b border-zinc-200 dark:border-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100">
             <th className="p-4 w-20">ID</th>
-            <th className="p-4 w-32">Avatar</th>
-            <th className="p-4 w-40">Name</th>
-            <th className="p-4">Description</th>
-            <th className="p-4 w-48">Tags</th>
+            <th className="p-4 w-32">头像</th>
+            <th className="p-4 w-40">名称</th>
+            <th className="p-4">描述</th>
+            <th className="p-4 w-48">标签</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">

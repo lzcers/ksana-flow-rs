@@ -1,5 +1,5 @@
 import React, { memo, useRef, useState } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Position, type NodeProps } from '@xyflow/react';
 import { Upload, FileText } from 'lucide-react';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';

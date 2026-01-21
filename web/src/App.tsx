@@ -59,10 +59,56 @@ function AppContent() {
     loadWorkflow,
     deleteWorkflow,
     renameWorkflow,
-    createNewWorkflow
+    createNewWorkflow,
+    importWorkflow,
+    getWorkflowBlueprint
   } = workflow;
 
   const [openTabs, setOpenTabs] = useState<{ id: number | null; name: string }[]>([]);
+
+  const handleExportWorkflow = () => {
+    const blueprint = getWorkflowBlueprint();
+    const currentWf = workflows.find(w => w.id === currentWorkflowId);
+    const name = currentWf?.name || 'workflow';
+    const blob = new Blob([JSON.stringify({
+        ...blueprint,
+        name // Include name in export
+    }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportWorkflow = async (file: File) => {
+    const text = await file.text();
+    try {
+      const data = JSON.parse(text);
+      if (!data.nodes || !data.edges) {
+        throw new Error("Invalid workflow format");
+      }
+      
+      importWorkflow(data);
+      
+      setOpenTabs(prev => {
+         const nullTab = prev.find(t => t.id === null);
+         const newName = data.name || 'Imported Workflow';
+         
+         if (nullTab) {
+           return prev.map(t => t.id === null ? { ...t, name: newName } : t);
+         }
+         return [...prev, { id: null, name: newName }];
+      });
+
+    } catch (e) {
+      console.error("Failed to import workflow", e);
+      alert('Failed to import workflow: Invalid file format');
+    }
+  };
 
   // Initialize tabs with current workflow if tabs are empty and we have a current workflow
   useEffect(() => {
@@ -165,6 +211,8 @@ function AppContent() {
           onDeleteWorkflow={deleteWorkflow}
           onRenameWorkflow={renameWorkflow}
           onCreateNew={handleCreateNew}
+          onExportWorkflow={handleExportWorkflow}
+          onImportWorkflow={handleImportWorkflow}
           tabs={openTabs}
           onCloseTab={handleCloseTab}
         />
