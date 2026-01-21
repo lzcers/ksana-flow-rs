@@ -5,6 +5,7 @@ import { NODE_TYPES } from '../WorkflowEditor/nodeTypes';
 import { cn } from '../../utils/cn';
 import type { NodeData } from '../../model/types';
 import { useStore } from '../../store';
+import './index.css';
 
 interface NodeWrapperProps {
   id: string;
@@ -54,11 +55,11 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   return (
     <div
       className={cn(
-        "bg-zinc-900/95 border transition-all duration-300 group relative",
+        "bg-zinc-900/95 border transition duration-300 group relative",
         selected
           ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] scale-[1.02] ring-1 ring-blue-500"
           : "border-zinc-700 hover:border-zinc-500 shadow-lg shadow-black/20",
-        status === 'running' && "border-blue-500/60 shadow-[0_0_10px_rgba(59,130,246,0.3)]",
+        status === 'running' && "node-running",
         resizable && "max-w-none w-full h-full",
         className
       )}
