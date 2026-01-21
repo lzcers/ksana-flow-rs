@@ -146,6 +146,7 @@ mod tests {
                     if let Some(s) = val.as_any().downcast_ref::<String>() {
                         output.push_str(s);
                     }
+                    print!("{}", &s);
                 }
                 TaskEvent::Completed(_, _) => break,
                 TaskEvent::Error(_, e) => panic!("Stream error: {}", e),

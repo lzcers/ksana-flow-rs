@@ -47,7 +47,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           data.lastMessageRunId === currentRunId &&
           data.lastMessage !== undefined;
 
-        if (!isNewMessage) {
+        if (!isNewMessage && data.upstreamIsStreaming) {
           setText('');
           updateNodeData(id, { config: { ...data.config, text: '' } });
           incremark.render('');
@@ -57,7 +57,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
       justStreamed.current = false;
     }
     prevStatus.current = data.status;
-  }, [data.status, id, updateNodeData, data.config, connections.length, data.lastMessageRunId, currentRunId, data.lastMessage, incremark]);
+  }, [data.status, id, updateNodeData, data.config, connections.length, data.lastMessageRunId, currentRunId, data.lastMessage, incremark, data.upstreamIsStreaming]);
 
   // Sync text to store during streaming (debounced)
   useEffect(() => {
