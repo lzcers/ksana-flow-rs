@@ -1,8 +1,9 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { AutoScrollContainer, IncremarkContent, ThemeProvider } from '@incremark/react';
-import { Eye, Pencil } from 'lucide-react';
+import { Eye, Pencil, Maximize2 } from 'lucide-react';
 import { NodeWrapper } from './NodeWrapper';
+import { FullScreenModal } from '../ui/FullScreenModal';
 import { useStore } from '../../store';
 import { type NodeData } from '../../model/types';
 import '@incremark/theme/styles.css';
@@ -12,30 +13,60 @@ const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 function createStreamChannel() {
-  let notify: (() => void) | null = null;
-  const queue: string[] = [];
+  const subscribers = new Set<{
+    notify: () => void;
+    queue: string[];
+  }>();
   let closed = false;
 
-  const generator = async function* () {
-    while (true) {
-      while (queue.length > 0) {
-        yield queue.shift()!;
+  const subscribe = async function* () {
+    const state = {
+      notify: () => { },
+      queue: [] as string[]
+    };
+
+    let nextPromiseResolve: (() => void) | null = null;
+
+    state.notify = () => {
+      if (nextPromiseResolve) {
+        nextPromiseResolve();
+        nextPromiseResolve = null;
       }
-      if (closed) return;
-      await new Promise<void>(resolve => notify = resolve);
-      notify = null;
+    };
+
+    subscribers.add(state);
+
+    try {
+      while (true) {
+        while (state.queue.length > 0) {
+          yield state.queue.shift()!;
+        }
+
+        if (closed) return;
+
+        await new Promise<void>(resolve => {
+          nextPromiseResolve = resolve;
+        });
+      }
+    } finally {
+      subscribers.delete(state);
     }
   };
 
   return {
-    stream: generator,
+    subscribe,
     enqueue: (chunk: string) => {
-      queue.push(chunk);
-      if (notify) notify();
+      if (closed) return;
+      for (const sub of subscribers) {
+        sub.queue.push(chunk);
+        sub.notify();
+      }
     },
     close: () => {
       closed = true;
-      if (notify) notify();
+      for (const sub of subscribers) {
+        sub.notify();
+      }
     }
   };
 }
@@ -44,6 +75,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
   const { updateNodeData, currentRunId } = useStore();
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [stream, setStream] = useState<(() => AsyncGenerator<string, void, unknown>) | undefined>(undefined);
   const streamController = useRef<{ enqueue: (s: string) => void; close: () => void } | null>(null);
   const scrollRef = useRef(null)
@@ -102,7 +134,16 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
       // Start streaming: switch to markdown and clear text
       const channel = createStreamChannel();
       streamController.current = channel;
-      setStream(() => channel.stream);
+      setStream(() => async function* () {
+        // Yield current text history first for late subscribers (e.g. full screen modal)
+        if (textRef.current) {
+          yield textRef.current;
+        }
+        const sub = channel.subscribe();
+        for await (const chunk of sub) {
+          yield chunk;
+        }
+      });
       setIsMarkdown(true);
 
       setText('');
@@ -145,16 +186,28 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
   }, [id, data.config, text, updateNodeData]);
 
   const headerActions = (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setIsMarkdown(!isMarkdown);
-      }}
-      className="text-zinc-400 hover:text-zinc-200 transition-colors p-1 rounded hover:bg-zinc-800"
-      title={isMarkdown ? "Switch to Edit Mode" : "Switch to Markdown Preview"}
-    >
-      {isMarkdown ? <Pencil size={12} /> : <Eye size={12} />}
-    </button>
+    <div className="flex items-center gap-1">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsFullScreen(true);
+        }}
+        className="text-zinc-400 hover:text-zinc-200 transition-colors p-1 rounded hover:bg-zinc-800"
+        title="Full Screen"
+      >
+        <Maximize2 size={12} />
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsMarkdown(!isMarkdown);
+        }}
+        className="text-zinc-400 hover:text-zinc-200 transition-colors p-1 rounded hover:bg-zinc-800"
+        title={isMarkdown ? "Switch to Edit Mode" : "Switch to Markdown Preview"}
+      >
+        {isMarkdown ? <Pencil size={12} /> : <Eye size={12} />}
+      </button>
+    </div>
   );
 
   return (
@@ -175,6 +228,38 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           <span>Text Content</span>
           <span className="text-[10px] opacity-50">{isMarkdown ? 'Markdown' : 'Raw'}</span>
         </div>
+
+        {isFullScreen && (
+          <FullScreenModal
+            isOpen={isFullScreen}
+            onClose={() => setIsFullScreen(false)}
+            title={isMarkdown ? "Markdown Preview" : "Text Content"}
+          >
+            <div className="w-full h-full text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
+              {isMarkdown ? (
+                <ThemeProvider theme="dark">
+                  <AutoScrollContainer enabled={!!stream} className="h-full">
+                    <IncremarkContent
+                      content={stream ? undefined : text}
+                      stream={stream}
+                      incremarkOptions={{
+                        math: { tex: true }
+                      }}
+                    />
+                  </AutoScrollContainer>
+                </ThemeProvider>
+              ) : (
+                <textarea
+                  className="w-full h-full p-4 bg-zinc-950 resize-none focus:outline-none text-zinc-200 font-mono"
+                  value={text}
+                  onChange={onChange}
+                  placeholder="Enter text here..."
+                  spellCheck={false}
+                />
+              )}
+            </div>
+          </FullScreenModal>
+        )}
 
         {isMarkdown ? (
           <div
