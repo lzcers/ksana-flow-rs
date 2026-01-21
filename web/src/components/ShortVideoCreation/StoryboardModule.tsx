@@ -25,7 +25,7 @@ export const StoryboardModule: React.FC<StoryboardModuleProps> = ({ shots, isNod
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-          {shots.map((shot) => {
+          {shots?.map((shot) => {
             const isComplete = isNodeCompleted ? isNodeCompleted(shot) : true;
             return (
               <tr

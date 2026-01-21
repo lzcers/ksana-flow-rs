@@ -14,15 +14,13 @@ const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left];
 
 export const ShortVideoNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData } = useStore();
+  const { updateNodeData, events$, currentRunId } = useStore();
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [projectData, setProjectData] = useState<ProjectData | null>(null);
+  const [projectData, setProjectData] = useState<ProjectData | null>(data.config?.projectData || null);
 
-
-  const lastMessage = data.lastMessage;
   const streamControllerRef = useRef<ReadableStreamDefaultController<string> | null>(null);
-  const processedLengthRef = useRef(0);
   const completedRef = useRef(new WeakMap<object, boolean>());
+  const isStreamingRef = useRef(false);
 
   const isNodeCompleted = (value: any) => {
     if (value && typeof value === 'object') {
@@ -31,60 +29,125 @@ export const ShortVideoNodeComponent = ({ id, data, selected, width, height }: N
     return false;
   };
 
-  useEffect(() => {
-    if (!lastMessage) {
-      if (streamControllerRef.current) {
-        try { streamControllerRef.current.close(); } catch { }
-        streamControllerRef.current = null;
-      }
-      processedLengthRef.current = 0;
-      completedRef.current = new WeakMap();
-      return;
+  const startNewStream = () => {
+    // Close existing stream if any
+    if (streamControllerRef.current) {
+      try { streamControllerRef.current.close(); } catch { }
+      streamControllerRef.current = null;
     }
+    completedRef.current = new WeakMap();
 
-    if (lastMessage.length < processedLengthRef.current) {
-      if (streamControllerRef.current) {
-        try { streamControllerRef.current.close(); } catch { }
-        streamControllerRef.current = null;
+    const stream = new ReadableStream<string>({
+      start(controller) {
+        streamControllerRef.current = controller;
       }
-      processedLengthRef.current = 0;
-      completedRef.current = new WeakMap();
-    }
+    });
 
-    if (!streamControllerRef.current) {
-      const stream = new ReadableStream<string>({
-        start(controller) {
-          streamControllerRef.current = controller;
-        }
-      });
-
-      (async () => {
-        try {
-          const parser = parse(stream as unknown as AsyncIterable<string>, {
-            completeCallback: (value: any) => {
-              if (value && typeof value === 'object') {
-                completedRef.current.set(value, true);
-              }
-            }
-          });
-          for await (const value of parser) {
+    (async () => {
+      try {
+        const parser = parse(stream as unknown as AsyncIterable<string>, {
+          completeCallback: (value: any) => {
             if (value && typeof value === 'object') {
-              setProjectData(value as unknown as ProjectData);
+              completedRef.current.set(value, true);
             }
           }
-        } catch (e) {
-          console.debug('JSON stream parsing ended', e);
+        });
+        for await (const value of parser) {
+          if (value && typeof value === 'object') {
+            const newData = value as unknown as ProjectData;
+            setProjectData(newData);
+            // Optional: Sync to store occasionally if needed, but for high-freq streaming 
+            // we usually wait until end or use a debounce.
+            // Here we just update local state for performance.
+          }
         }
-      })();
-    }
+      } catch (e) {
+        console.debug('JSON stream parsing ended', e);
+      }
+    })();
+  };
 
-    // Enqueue new content
-    const newContent = lastMessage.slice(processedLengthRef.current);
-    if (newContent.length > 0) {
-      streamControllerRef.current?.enqueue(newContent);
-      processedLengthRef.current = lastMessage.length;
+  useEffect(() => {
+    if (!events$) return;
+
+    const subscription = events$.subscribe((wrapper: any) => {
+      const { event, runId } = wrapper;
+      // Filter by runId if available to avoid stale events
+      if (currentRunId && runId !== currentRunId) return;
+
+      if (event.NodeStarted) {
+        if (event.NodeStarted === id) {
+          isStreamingRef.current = false;
+        }
+      } else if (event.NodeStreamStarted) {
+        if (event.NodeStreamStarted === id) {
+          isStreamingRef.current = true;
+          setProjectData(null);
+          startNewStream();
+        }
+      } else if (event.NodeStreamNextMessage) {
+        const [nodeId, value] = event.NodeStreamNextMessage;
+        if (nodeId === id && isStreamingRef.current) {
+          if (typeof value === 'string') {
+            streamControllerRef.current?.enqueue(value);
+          }
+        }
+      } else if (event.NodeOutMessage) {
+        const [nodeId, value] = event.NodeOutMessage;
+        if (nodeId === id) {
+          // If we receive the final message, ensure we update the state
+          // If we were streaming, the stream parser might have already finished or be about to finish.
+          // But NodeOutMessage is the source of truth for the final state.
+
+          if (!isStreamingRef.current) {
+            // Non-streaming case: parse the full value
+            try {
+              const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+              setProjectData(parsed);
+              updateNodeData(id, { config: { ...data.config, projectData: parsed } });
+            } catch (e) {
+              console.error('Failed to parse NodeOutMessage', e);
+            }
+          } else {
+            // Streaming case finished. 
+            // We can close the controller to ensure the parser loop finishes if it hasn't.
+            if (streamControllerRef.current) {
+              try { streamControllerRef.current.close(); } catch { }
+              streamControllerRef.current = null;
+            }
+            // We might want to use the final value from NodeOutMessage to be safe,
+            // or trust the stream parser. 
+            // Usually NodeOutMessage has the complete valid JSON.
+            try {
+              const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+              setProjectData(parsed);
+              updateNodeData(id, { config: { ...data.config, projectData: parsed } });
+            } catch (e) {
+              // If stream was successful, we might already have data.
+            }
+            isStreamingRef.current = false;
+          }
+        }
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [events$, currentRunId, id, updateNodeData, data.config]);
+
+  // Handle initial data load (if page refreshed or loaded with existing data)
+  useEffect(() => {
+    if (data.config?.projectData) {
+      setProjectData(data.config.projectData);
+    } else if (data.lastMessage && !isStreamingRef.current && !projectData) {
+      // Fallback to lastMessage if config is empty but lastMessage exists (legacy/migration)
+      try {
+        const parsed = typeof data.lastMessage === 'string' ? JSON.parse(data.lastMessage) : data.lastMessage;
+        setProjectData(parsed);
+      } catch (e) {
+        // ignore
+      }
     }
-  }, [lastMessage]);
+  }, []); // Run once on mount
 
   const headerActions = (
     <div className="flex items-center gap-1">

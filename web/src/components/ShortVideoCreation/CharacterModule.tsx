@@ -21,7 +21,7 @@ export const CharacterModule: React.FC<CharacterModuleProps> = ({ characters, is
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-900">
-          {characters.map((char) => {
+          {characters?.map((char) => {
             const isComplete = isNodeCompleted ? isNodeCompleted(char) : true;
             return (
               <tr
@@ -49,7 +49,7 @@ export const CharacterModule: React.FC<CharacterModuleProps> = ({ characters, is
                 </td>
                 <td className="p-4">
                   <div className="flex flex-wrap gap-1">
-                    {char.tags.map((tag, idx) => (
+                    {char.tags?.map((tag, idx) => (
                       <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
                         <Tag size={10} />
                         {tag}
