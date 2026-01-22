@@ -3,6 +3,7 @@ import type { StoreState, WorkflowSlice } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
 import { updateNodeData, updateNodeStatus } from '../model';
+import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 
 export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice> = (set, get) => ({
   workflows: [],
@@ -21,7 +22,11 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
     try {
       const types = await api.fetchNodes(currentSpaceId);
       const wfList = await api.fetchWorkflows(currentSpaceId);
-      set({ nodeTypes: types, workflows: wfList });
+      
+      const allowedTypes = new Set(NODE_TYPES.map(nt => nt.type));
+      const filteredTypes = types.filter(t => allowedTypes.has(t.name as any));
+      
+      set({ nodeTypes: filteredTypes, workflows: wfList });
     } catch (e) {
       console.error("Failed to load metadata", e);
     }

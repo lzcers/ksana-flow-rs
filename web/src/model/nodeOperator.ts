@@ -1,7 +1,22 @@
 import { produce } from 'immer';
-import type { WorkflowState, Node, NodeData, NodeChange } from './types';
+import type { WorkflowState, Node, NodeData, NodeChange, Edge } from './types';
 import { applyNodeChangesXyflow } from './utils';
 
+
+export const getNextNodeId = (nodes: Node[], type: string): string => {
+  const sameTypeNodes = nodes.filter(n => n.id.startsWith(`${type}-`));
+  let nextNum = 1;
+  if (sameTypeNodes.length > 0) {
+    const nums = sameTypeNodes.map(n => {
+      const parts = n.id.split('-');
+      const lastPart = parts[parts.length - 1];
+      const num = parseInt(lastPart, 10);
+      return isNaN(num) ? 0 : num;
+    });
+    nextNum = Math.max(...nums) + 1;
+  }
+  return `${type}-${nextNum}`;
+};
 
 export const addNode = (state: WorkflowState, node: Node): WorkflowState => {
   return produce(state, (draft) => {
@@ -121,5 +136,55 @@ export const selectNode = (state: WorkflowState, nodeId: string | null): Workflo
 export const setNodes = (state: WorkflowState, nodes: Node[]): WorkflowState => {
   return produce(state, (draft) => {
     draft.nodes = nodes as any[];
+  });
+};
+
+
+export const pasteNodes = (state: WorkflowState, newNodes: Node[], newEdges: Edge[]): WorkflowState => {
+  return produce(state, (draft) => {
+    // Deselect all existing nodes and edges
+    draft.nodes.forEach(n => n.selected = false);
+    draft.edges.forEach(e => e.selected = false);
+    draft.selectedNodeId = null;
+
+    const idMap = new Map<string, string>();
+
+    // Process Nodes
+    newNodes.forEach(node => {
+      // Ensure we have a valid type for ID generation
+      const type = (node.data && typeof node.data.type === 'string') ? node.data.type : 'node';
+      const newId = getNextNodeId(draft.nodes, type);
+      idMap.set(node.id, newId);
+
+      const newNode = {
+        ...node,
+        id: newId,
+        selected: true,
+        dragging: false,
+        data: {
+          ...node.data,
+          status: 'idle', // Reset status
+        }
+      };
+      draft.nodes.push(newNode as any);
+      draft.selectedNodeId = newId; // Set last pasted as selected ID
+    });
+
+    // Process Edges
+    newEdges.forEach(edge => {
+      const newSource = idMap.get(edge.source);
+      const newTarget = idMap.get(edge.target);
+
+      if (newSource && newTarget) {
+        const newEdge = {
+          ...edge,
+          id: `e${newSource}-${newTarget}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          source: newSource,
+          target: newTarget,
+          selected: true
+        };
+        draft.edges.push(newEdge);
+      }
+    });
   });
 };

@@ -12,7 +12,8 @@ import {
   onConnect,
   selectNode,
   setNodes,
-  setEdges
+  setEdges,
+  pasteNodes
 } from '../model';
 
 export const createCanvasSlice: StateCreator<StoreState, [], [], CanvasSlice> = (set, get) => ({
@@ -22,6 +23,7 @@ export const createCanvasSlice: StateCreator<StoreState, [], [], CanvasSlice> = 
 
   setNodes: (nodes) => set(state => ({ ...state, ...setNodes(state, nodes) })),
   setEdges: (edges) => set(state => ({ ...state, ...setEdges(state, edges) })),
+  pasteNodes: (nodes, edges) => set(state => ({ ...state, ...pasteNodes(state, nodes, edges) })),
 
   onNodesChange: (changes: NodeChange[]) => set(state => ({ ...state, ...applyNodeChanges(state, changes) })),
   onEdgesChange: (changes: EdgeChange[]) => set(state => ({ ...state, ...applyEdgeChanges(state, changes) })),

@@ -10,7 +10,8 @@ import {
   type FitViewOptions,
   MarkerType,
   type OnConnectStart,
-  type OnConnectEnd
+  type OnConnectEnd,
+  useKeyPress
 } from '@xyflow/react';
 import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
@@ -74,8 +75,105 @@ export const Canvas: React.FC<CanvasProps> = ({
   onResume,
   onStop,
 }) => {
-  const { screenToFlowPosition } = useReactFlow();
-  const { setConnectionState } = useStore();
+  const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
+  const { setConnectionState, pasteNodes, deleteNode } = useStore();
+
+  const spacePressed = useKeyPress('Space');
+  const mousePositionRef = React.useRef({ x: 0, y: 0 });
+
+  const onMouseMove = React.useCallback((event: React.MouseEvent) => {
+    mousePositionRef.current = { x: event.clientX, y: event.clientY };
+  }, []);
+
+  React.useEffect(() => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isInputActive = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+      // Copy: Ctrl+C or Cmd+C
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (isInputActive) return;
+
+        const selectedNodes = getNodes().filter(n => n.selected);
+        if (selectedNodes.length === 0) return;
+
+        const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
+        // Copy edges where both source and target are selected
+        const selectedEdges = getEdges().filter(e =>
+          selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+        );
+
+        const data = {
+          nodes: selectedNodes,
+          edges: selectedEdges
+        };
+        await navigator.clipboard.writeText(JSON.stringify(data));
+      }
+
+      // Cut: Ctrl+X or Cmd+X
+      if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+        if (isInputActive) return;
+
+        const selectedNodes = getNodes().filter(n => n.selected);
+        if (selectedNodes.length === 0) return;
+
+        const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
+        const selectedEdges = getEdges().filter(e =>
+          selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+        );
+
+        const data = {
+          nodes: selectedNodes,
+          edges: selectedEdges
+        };
+        await navigator.clipboard.writeText(JSON.stringify(data));
+
+        // Delete selected nodes
+        selectedNodes.forEach(node => deleteNode(node.id));
+      }
+
+      // Paste: Ctrl+V or Cmd+V
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        if (isInputActive) return;
+        try {
+          const text = await navigator.clipboard.readText();
+          const data = JSON.parse(text);
+          if (!data.nodes || !Array.isArray(data.nodes)) return;
+
+          // Calculate center of copied nodes
+          const nodes = data.nodes;
+          const minX = Math.min(...nodes.map((n: any) => n.position.x));
+          const minY = Math.min(...nodes.map((n: any) => n.position.y));
+          const maxX = Math.max(...nodes.map((n: any) => n.position.x + (n.measured?.width || n.width || 0)));
+          const maxY = Math.max(...nodes.map((n: any) => n.position.y + (n.measured?.height || n.height || 0)));
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+
+          // Target position (Mouse or Viewport Center)
+          const targetScreen = mousePositionRef.current;
+          const targetPos = screenToFlowPosition(targetScreen);
+
+          const offsetX = targetPos.x - centerX;
+          const offsetY = targetPos.y - centerY;
+
+          const newNodes = nodes.map((n: any) => ({
+            ...n,
+            position: {
+              x: n.position.x + offsetX,
+              y: n.position.y + offsetY
+            }
+          }));
+
+          pasteNodes(newNodes, data.edges || []);
+        } catch (err) {
+          // Ignore invalid JSON or clipboard issues
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [getNodes, getEdges, pasteNodes, screenToFlowPosition]);
 
   const [contextMenu, setContextMenu] = React.useState<{
     visible: boolean;
@@ -164,8 +262,11 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [setConnectionState]);
 
   return (
-    <main className="flex-1 relative bg-zinc-950">
+    <main className="flex-1 relative bg-zinc-950" onMouseMove={onMouseMove}>
       <ReactFlow
+        panOnDrag={spacePressed}
+        selectionOnDrag={!spacePressed}
+        panOnScroll={true}
         nodes={nodes}
         edges={edges}
         onPaneContextMenu={onPaneContextMenu}

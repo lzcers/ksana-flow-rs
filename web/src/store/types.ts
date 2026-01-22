@@ -39,6 +39,7 @@ export interface CanvasSlice {
   selectNode: (id: string | null) => void;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
+  pasteNodes: (nodes: Node[], edges: Edge[]) => void;
   isConnecting: boolean;
   connectionSourceId: string | null;
   setConnectionState: (connecting: boolean, sourceId?: string | null) => void;

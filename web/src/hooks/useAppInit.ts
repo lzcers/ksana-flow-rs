@@ -11,9 +11,6 @@ export function useAppInit(spaceId: string) {
   }, [spaceId, setSpaceId]);
 
   useEffect(() => {
-    // Only load metadata if spaceId is set and matches store
-    // (Though setSpaceId updates store, we might want to wait for that update)
-    // Actually, setSpaceId is synchronous.
     loadMetadata();
   }, [loadMetadata, spaceId]);
 
