@@ -125,11 +125,28 @@ impl Node for LLMStreamNode {
     type Out = ReactiveStream<String>;
 
     async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
-        let input = inputs
-            .get_any()
-            .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
-            .cloned()
-            .unwrap_or_default();
+        let input = match inputs.get_any() {
+            Some(any) => {
+                let inner: &dyn flow::SendableAny = &**any;
+                // Double unwrap to handle Box<Box<dyn SendableAny>> which might be created during restore_value
+                if let Some(inner_box) = inner.as_any().downcast_ref::<Box<dyn flow::SendableAny>>()
+                {
+                    let inner_inner: &dyn flow::SendableAny = &**inner_box;
+                    inner_inner
+                        .as_any()
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .unwrap_or_default()
+                } else {
+                    inner
+                        .as_any()
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .unwrap_or_default()
+                }
+            }
+            None => String::new(),
+        };
 
         let prompt = if !input.is_empty() {
             if self.user_prompt_template.contains("{input}") {

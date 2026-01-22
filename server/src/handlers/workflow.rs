@@ -424,8 +424,9 @@ pub async fn run_node(
                         && !parent_node.data.outputs.is_null()
                     {
                         let mut val = parent_node.data.outputs.clone();
-
+                        info!("parent_node.data.outputs: {:?}", val);
                         // Try to find the edge to determine which output to use
+                        let mut extracted = false;
                         if let Some(edge) = blueprint
                             .edges
                             .iter()
@@ -435,11 +436,30 @@ pub async fn run_node(
                                 if let Value::Object(map) = &val {
                                     if let Some(v) = map.get(handle) {
                                         val = v.clone();
+                                        info!("Extracted value via handle {}: {:?}", handle, val);
+                                        extracted = true;
                                     }
                                 }
                             }
                         }
 
+                        // Fallback: if not extracted via handle, try to extract "output" or single value
+                        // This handles cases where sourceHandle is missing but the structure implies a wrapped output
+                        if !extracted {
+                            if let Value::Object(map) = &val {
+                                if let Some(v) = map.get("output") {
+                                    val = v.clone();
+                                    info!("Fallback extracted 'output': {:?}", val);
+                                } else if map.len() == 1 {
+                                    if let Some(v) = map.values().next() {
+                                        val = v.clone();
+                                        info!("Fallback extracted single value: {:?}", val);
+                                    }
+                                }
+                            }
+                        }
+
+                        info!("Final value before restore: {:?}", val);
                         let output = restore_value(val);
                         inputs_map.insert(parent_id, output);
                     }
