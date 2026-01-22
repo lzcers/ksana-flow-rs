@@ -18,9 +18,19 @@ impl NodeInputs {
     }
 
     pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
-        self.inputs
-            .get(key)
-            .and_then(|any| any.as_ref().as_any().downcast_ref::<T>())
+        self.inputs.get(key).and_then(|any| {
+            let inner: &dyn SendableAny = &**any;
+            // First try direct downcast
+            if let Some(v) = inner.as_any().downcast_ref::<T>() {
+                return Some(v);
+            }
+            // If failed, check if it's a Box<dyn SendableAny> and unwrap
+            if let Some(inner_box) = inner.as_any().downcast_ref::<Box<dyn SendableAny>>() {
+                let inner_inner: &dyn SendableAny = &**inner_box;
+                return inner_inner.as_any().downcast_ref::<T>();
+            }
+            None
+        })
     }
 
     pub fn get_any(&self) -> Option<&Box<dyn SendableAny>> {
