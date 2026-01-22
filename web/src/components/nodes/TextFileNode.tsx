@@ -30,7 +30,6 @@ export const TextFileNodeComponent = ({ id, type, data, selected }: NodeProps & 
 
         try {
             const result = await uploadFile(file);
-
             updateNodeData(id, {
                 config: {
                     ...data.config,
@@ -52,13 +51,14 @@ export const TextFileNodeComponent = ({ id, type, data, selected }: NodeProps & 
 
     return (
         <NodeWrapper
-      id={id}
-      type={type}
-      data={data}
-      selected={selected}
+            id={id}
+            type={type}
+            data={data}
+            selected={selected}
             className="flex flex-col"
             sourceHandles={SOURCE_HANDLES}
-            minWidth={200}
+            minWidth={300}
+            minHeight={250}
         >
             <div className="p-4 flex flex-col items-center justify-center gap-3">
                 <input

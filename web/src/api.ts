@@ -75,11 +75,11 @@ export const getWorkflowStatus = async (_spaceId: string, id: number) => {
     return res.json();
 };
 
-export const runNode = async (spaceId: string, blueprint: any, nodeId: string) => {
+export const runNode = async (spaceId: string, blueprint: any, nodeId: string, workflowId: number) => {
     const res = await fetch(`${API_BASE}/workflow/run_node`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ space_id: spaceId, blueprint, node_id: nodeId }),
+        body: JSON.stringify({ space_id: spaceId, blueprint, node_id: nodeId, workflow_id: workflowId }),
     });
     return res.json();
 };

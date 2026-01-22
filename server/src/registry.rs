@@ -57,7 +57,6 @@ impl NodeRegistry {
         config: Value,
     ) -> Result<Arc<RwLock<dyn AnyNode>>, String> {
         if let Some(creator) = self.creators.get(name) {
-            println!("Creating node '{}' with config: {:?}", name, config);
             creator(config)
         } else {
             Err(format!("Node type '{}' not found", name))

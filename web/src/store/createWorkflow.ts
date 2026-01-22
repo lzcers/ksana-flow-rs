@@ -2,7 +2,7 @@ import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
-import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput } from '../model';
+import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput, resetWorkflowExecutionState } from '../model';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
@@ -219,8 +219,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
   },
 
   importWorkflow: (blueprint: any) => {
-    const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId, nodeTypes } = get();
-
+    const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId } = get();
     // Transform backend nodes to ReactFlow nodes
     const nodes: Node[] = (blueprint.nodes || []).map((n: any) => {
       const { type: _, ...cleanData } = n.data || {};
@@ -287,7 +286,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const apply = (opResult: any) => {
         nextState = { ...nextState, ...opResult };
       };
-
       if (event.NodeStarted) {
         const id = event.NodeStarted;
         apply(updateNodeStatus(nextState, id, 'running'));
@@ -325,11 +323,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         const [id, error] = event.NodeError;
         apply(updateNodeStatus(nextState, id, 'error', error));
         apply(updateNodeData(nextState, id, { isOutputStream: false }));
-      } else if (event === 'FlowFinished') {
-        const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
-        nodesToUpdate.forEach(node => {
-          apply(updateNodeStatus(nextState, node.id, 'completed'));
-        });
+      } else if (event.WorkflowFinished || event.WorkflowStopped) {
+        apply(resetWorkflowExecutionState(nextState));
       }
 
       return nextState;

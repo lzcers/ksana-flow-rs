@@ -112,6 +112,11 @@ impl Runner {
             .push_back((vec![node_id.to_owned()], NodeInputs::new(inputs)));
     }
 
+    pub fn set_start_node_with_inputs(&mut self, node_id: &str, inputs: NodeInputs) {
+        self.task_queue
+            .push_back((vec![node_id.to_owned()], inputs));
+    }
+
     pub async fn run(&mut self) -> Result<(), String> {
         info!(nodes = ?self.graph.get_node_ids(), "Runner started");
         let init_state = *self.state_tx.borrow();

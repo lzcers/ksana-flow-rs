@@ -107,7 +107,6 @@ function AppContent() {
       alert('Failed to import workflow: Invalid file format');
     }
   };
-
   useEffect(() => {
     if (openTabs.length === 0) {
       if (currentWorkflowId !== null) {

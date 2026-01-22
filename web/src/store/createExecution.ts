@@ -115,7 +115,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
             apply(updateNodeStatus(nextState, id, 'error', error));
             apply(updateNodeData(nextState, id, { isOutputStream: false }));
           }
-        } else if (msg === 'FlowFinished') {
+        } else if ('FlowFinished' === msg || msg === 'FlowStopped') {
           const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
           nodesToUpdate.forEach(node => {
             apply(updateNodeStatus(nextState, node.id, 'completed'));
@@ -165,7 +165,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       nodes: nodes.map(n => ({
         id: n.id,
         type: n.type,
-        data: n.data.config,
+        data: n.data,
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
         height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
@@ -240,13 +240,13 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
   },
 
   runNode: async (nodeId: string) => {
-    const { currentSpaceId, nodes, edges, success, error, setWorkflowStatus, setCurrentRunId } = get();
+    const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId } = get();
     if (!currentSpaceId) return;
     const blueprint = {
       nodes: nodes.map(n => ({
         id: n.id,
         type: n.type,
-        data: n.data.config,
+        data: n.data,
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
         height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
@@ -263,7 +263,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     try {
       set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
 
-      const res = await api.runNode(currentSpaceId, blueprint, nodeId);
+      const res = await api.runNode(currentSpaceId, blueprint, nodeId, currentWorkflowId || -1);
       if (res && res.error) {
         throw new Error(res.error);
       }

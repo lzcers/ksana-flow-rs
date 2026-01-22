@@ -11,11 +11,13 @@ use axum::{
     response::IntoResponse,
 };
 use flow::{
-    FlowEvent, Runner, SendableAny,
+    FlowEvent, NodeInputs, Runner, SendableAny,
     context::{ExecutionContext, NodeState},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use tracing::info;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -44,6 +46,7 @@ pub struct RunNodeRequest {
     pub space_id: String,
     blueprint: GraphBlueprint,
     node_id: String,
+    pub workflow_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -150,13 +153,14 @@ fn restore_value(v: Value) -> Box<dyn SendableAny> {
     }
 }
 
-pub async fn run_workflow(
-    State(state): State<AppState>,
-    Json(request): Json<RunWorkflowRequest>,
-) -> impl IntoResponse {
-    let blueprint = request.blueprint;
-    let workflow_id = request.workflow_id;
-    let workspace_id = request.space_id;
+async fn start_execution(
+    state: AppState,
+    graph: flow::Graph,
+    blueprint: GraphBlueprint,
+    start_inputs: Vec<(String, NodeInputs)>,
+    workflow_id: i64,
+    workspace_id: String,
+) -> Result<String, String> {
     let run_id = Uuid::new_v4().to_string();
 
     // Create execution in DB
@@ -164,31 +168,6 @@ pub async fn run_workflow(
         let db = state.db.lock().expect("db lock poisoned");
         let _ = db.create_execution(&run_id, workflow_id);
     }
-
-    let (graph, start_inputs) = {
-        let registry = &state.registry;
-
-        // 解析 JSON 实例化整个蓝图
-        let (graph, start_nodes) = match blueprint.instantiate(registry) {
-            Ok(v) => v,
-            Err(e) => return Json(json!({"error": e})),
-        };
-
-        let mut inputs = Vec::new();
-        for node_id in &start_nodes {
-            if let Some(node) = blueprint.nodes.iter().find(|n| n.id == *node_id) {
-                if let Some(meta) = registry.get_node_metadata(&node.type_name) {
-                    inputs.push((
-                        node_id.clone(),
-                        registry::create_default_value(&meta.inputs),
-                    ));
-                } else {
-                    inputs.push((node_id.clone(), Box::new(()) as Box<dyn SendableAny>));
-                }
-            }
-        }
-        (graph, inputs)
-    };
 
     // Reconstruct ExecutionContext from blueprint
     let execution_ctx = ExecutionContext::new();
@@ -204,7 +183,9 @@ pub async fn run_workflow(
             };
             execution_ctx.set_state(node.id.clone(), state);
 
-            if state == NodeState::Completed && !node.data.outputs.is_null() {
+            if (state == NodeState::Completed || state == NodeState::Idle)
+                && !node.data.outputs.is_null()
+            {
                 let val = node.data.outputs.clone();
                 let output = restore_value(val);
                 execution_ctx.set_output(node.id.clone(), output);
@@ -258,7 +239,7 @@ pub async fn run_workflow(
     tokio::spawn(async move {
         // Setup inputs
         for (node_id, input) in start_inputs {
-            runner.set_start_node(&node_id, input.as_ref());
+            runner.set_start_node_with_inputs(&node_id, input);
         }
 
         if let Err(e) = runner.run().await {
@@ -279,7 +260,56 @@ pub async fn run_workflow(
         }
     });
 
-    Json(json!({"status": "started", "run_id": run_id}))
+    Ok(run_id)
+}
+
+pub async fn run_workflow(
+    State(state): State<AppState>,
+    Json(request): Json<RunWorkflowRequest>,
+) -> impl IntoResponse {
+    let blueprint = request.blueprint;
+    let workflow_id = request.workflow_id;
+    let workspace_id = request.space_id;
+
+    let (graph, start_inputs) = {
+        let registry = &state.registry;
+
+        // 解析 JSON 实例化整个蓝图
+        let (graph, start_nodes) = match blueprint.instantiate(registry) {
+            Ok(v) => v,
+            Err(e) => return Json(json!({"error": e})),
+        };
+
+        let mut inputs = Vec::new();
+        for node_id in &start_nodes {
+            if let Some(node) = blueprint.nodes.iter().find(|n| n.id == *node_id) {
+                let default_val = if let Some(meta) = registry.get_node_metadata(&node.type_name) {
+                    registry::create_default_value(&meta.inputs)
+                } else {
+                    Box::new(()) as Box<dyn SendableAny>
+                };
+
+                let mut map = HashMap::new();
+                map.insert("external_start".to_owned(), default_val);
+                inputs.push((node_id.clone(), NodeInputs::new(map)));
+            }
+        }
+        (graph, inputs)
+    };
+
+    match start_execution(
+        state,
+        graph,
+        blueprint,
+        start_inputs,
+        workflow_id,
+        workspace_id,
+    )
+    .await
+    {
+        Ok(run_id) => Json(json!({"status": "started", "run_id": run_id})),
+        Err(e) => Json(json!({"error": e})),
+    }
 }
 
 pub async fn get_workflow_status(
@@ -365,97 +395,100 @@ pub async fn run_node(
     Json(payload): Json<RunNodeRequest>,
 ) -> impl IntoResponse {
     let workspace_id = payload.space_id;
-    let run_id = Uuid::new_v4().to_string();
+    let workflow_id = payload.workflow_id;
+    let blueprint = payload.blueprint;
+    let node_id = payload.node_id;
 
     let (graph, start_input) = {
         let registry = &state.registry;
 
-        let (graph, _) = match payload.blueprint.instantiate(registry) {
+        let (graph, _) = match blueprint.instantiate(registry) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
         };
 
-        let input = if let Some(node) = payload
-            .blueprint
-            .nodes
-            .iter()
-            .find(|n| n.id == payload.node_id)
-        {
-            if let Some(meta) = registry.get_node_metadata(&node.type_name) {
-                crate::registry::create_default_value(&meta.inputs)
+        // Construct inputs from parents if available
+        let mut inputs_map = HashMap::new();
+        let parents = graph.get_parents(&node_id);
+
+        for parent_id in parents {
+            if let Some(parent_node) = blueprint.nodes.iter().find(|n| n.id == parent_id) {
+                if let Some(status) = &parent_node.data.status {
+                    let state = match status.as_str() {
+                        "completed" => NodeState::Completed,
+                        "idle" => NodeState::Idle,
+                        _ => NodeState::Pending,
+                    };
+
+                    if (state == NodeState::Completed || state == NodeState::Idle)
+                        && !parent_node.data.outputs.is_null()
+                    {
+                        let mut val = parent_node.data.outputs.clone();
+
+                        // Try to find the edge to determine which output to use
+                        if let Some(edge) = blueprint
+                            .edges
+                            .iter()
+                            .find(|e| e.source == parent_id && e.target == node_id)
+                        {
+                            if let Some(handle) = &edge.source_handle {
+                                if let Value::Object(map) = &val {
+                                    if let Some(v) = map.get(handle) {
+                                        val = v.clone();
+                                    }
+                                }
+                            }
+                        }
+
+                        let output = restore_value(val);
+                        inputs_map.insert(parent_id, output);
+                    }
+                }
+            }
+        }
+
+        // If no parent inputs, use default value (legacy behavior)
+        if inputs_map.is_empty() {
+            let default_val = if let Some(node) = blueprint.nodes.iter().find(|n| n.id == node_id) {
+                if let Some(meta) = registry.get_node_metadata(&node.type_name) {
+                    crate::registry::create_default_value(&meta.inputs)
+                } else {
+                    Box::new(()) as Box<dyn SendableAny>
+                }
             } else {
                 Box::new(()) as Box<dyn SendableAny>
-            }
-        } else {
-            Box::new(()) as Box<dyn SendableAny>
-        };
+            };
+            inputs_map.insert("external_start".to_owned(), default_val);
+        }
 
-        (graph, input)
+        (graph, NodeInputs::new(inputs_map))
     };
 
-    if !graph.nodes.contains_key(&payload.node_id) {
+    if !graph.nodes.contains_key(&node_id) {
         return Json(json!({
-            "error": format!("Node '{}' not found in blueprint", payload.node_id)
+            "error": format!("Node '{}' not found in blueprint", node_id)
         }));
     }
 
-    // Prepare Runner
-    let (mut runner, handle) = Runner::new(graph, None);
+    let start_inputs = vec![(node_id.clone(), start_input)];
 
-    // Setup bridge
-    let tx = state.tx.clone();
-    let run_id_clone = run_id.clone();
-    let workspace_id_clone = workspace_id.clone();
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
-
-    runner.set_event_sender(event_tx);
-
-    let bridge_handle = tokio::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            let _ = tx.send((workspace_id_clone.clone(), run_id_clone.clone(), event));
-        }
-    });
-
-    // Store execution handle
+    match start_execution(
+        state,
+        graph,
+        blueprint,
+        start_inputs,
+        workflow_id,
+        workspace_id,
+    )
+    .await
     {
-        let mut executions = state.executions.write().expect("lock poisoned");
-        executions.insert(
-            run_id.clone(),
-            ExecutionHandle {
-                runner_handle: handle.clone(),
-                workflow_id: -1,
-                workspace_id: workspace_id.clone(),
-            },
-        );
+        Ok(run_id) => Json(json!({
+            "status": "started",
+            "run_id": run_id,
+            "start_node": node_id
+        })),
+        Err(e) => Json(json!({"error": e})),
     }
-
-    let state_clone = state.clone();
-    let start_node_id = payload.node_id.clone();
-    let run_id_for_task = run_id.clone();
-    let run_id_for_event = run_id.clone();
-    let workspace_id_for_event = workspace_id.clone();
-
-    tokio::spawn(async move {
-        runner.set_start_node(&start_node_id, start_input.as_ref());
-
-        if let Err(e) = runner.run().await {
-            tracing::error!("Flow execution error: {}", e);
-            let _ = state_clone.tx.send((
-                workspace_id_for_event.clone(),
-                run_id_for_event.clone(),
-                FlowEvent::NodeError("runner".to_string(), e),
-            ));
-        }
-
-        let _ = bridge_handle.await;
-
-        {
-            let mut executions = state_clone.executions.write().expect("lock poisoned");
-            executions.remove(&run_id_for_task);
-        }
-    });
-
-    Json(json!({"status": "started", "run_id": run_id, "start_node": payload.node_id}))
 }
 
 pub async fn ws_handler(
