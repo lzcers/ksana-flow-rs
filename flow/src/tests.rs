@@ -94,7 +94,7 @@ async fn test_complex_graph_connections() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("input", &"Test".to_string());
     runner
         .run()
@@ -125,7 +125,7 @@ async fn test_build_flow_macro() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("node1", &"Start".to_string());
     let result = runner.run().await;
 
@@ -141,7 +141,7 @@ async fn test_build_flow_macro() {
             ("node1", "node2", is_true),
         ]
     );
-    let (mut runner_cond, _handle) = Runner::new(graph_cond);
+    let (mut runner_cond, _handle) = Runner::new(graph_cond, None);
     runner_cond.set_start_node("node1", &"Start".to_string());
     let result_cond = runner_cond.run().await;
     assert!(result_cond.is_ok());
@@ -205,7 +205,7 @@ async fn test_conditional_branching() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("input", &42);
     let result = runner.run().await;
 
@@ -256,7 +256,7 @@ async fn test_multi_level_graph() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("l1_1", &"Start".to_string());
     let result = runner.run().await;
 
@@ -309,7 +309,7 @@ async fn test_large_concurrent_nodes() {
     }
 
     let graph = builder.build();
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("input", &"Data".to_string());
     let result = runner.run().await;
 
@@ -376,7 +376,7 @@ async fn test_concurrent_execution_tracking() {
     }
 
     let graph = builder.build();
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("input", &"Concurrent".to_string());
     let result = runner.run().await;
 
@@ -429,7 +429,7 @@ async fn test_context_write_and_read() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("writer", &"Test".to_string());
     let result = runner.run().await;
 
@@ -495,7 +495,7 @@ async fn test_context_across_multiple_nodes() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("node1", &"Start".to_string());
     let result = runner.run().await;
 
@@ -566,7 +566,7 @@ async fn test_context_with_conditional_edges() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("input", &4);
     let result = runner.run().await;
 
@@ -622,7 +622,7 @@ async fn test_context_serialization() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("serialize", &"Test".to_string());
     let result = runner.run().await;
 
@@ -685,7 +685,7 @@ async fn test_diamond_graph_pattern() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("start", &"Diamond".to_string());
     runner
         .run()
@@ -723,7 +723,7 @@ async fn test_type_mismatch() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;
 
@@ -761,7 +761,7 @@ async fn test_unit_input_allows_any() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("string_node", &"Test".to_string());
     let result = runner.run().await;
 
@@ -789,7 +789,7 @@ async fn test_no_start_nodes_hang_fix() {
     );
 
     // Create runner but do NOT set start node
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
 
     // Use timeout to ensure it doesn't hang
     let result = tokio::time::timeout(std::time::Duration::from_secs(1), runner.run()).await;
@@ -845,7 +845,7 @@ async fn test_multi_input_merge() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     // Trigger source1 and source2
     // Since we don't have a common start node, we can trigger them individually or use a start node.
     // Let's use a dummy start node.
@@ -880,7 +880,7 @@ async fn test_stream_node_emits_completed() {
         edges: []
     );
 
-    let (mut runner, _handle) = Runner::new(graph);
+    let (mut runner, _handle) = Runner::new(graph, None);
     runner.set_start_node("stream", &"start".to_string());
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(20);

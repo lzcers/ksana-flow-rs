@@ -10,9 +10,12 @@ use axum::{
     },
     response::IntoResponse,
 };
-use flow::{FlowEvent, Runner, SendableAny};
+use flow::{
+    FlowEvent, Runner, SendableAny,
+    context::{ExecutionContext, NodeState},
+};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -137,6 +140,16 @@ pub async fn delete_workflow(
     }
 }
 
+fn restore_value(v: Value) -> Box<dyn SendableAny> {
+    match v {
+        Value::Null => Box::new(()),
+        Value::Bool(b) => Box::new(b),
+        Value::String(s) => Box::new(s),
+        // Keep others as Value
+        other => Box::new(other),
+    }
+}
+
 pub async fn run_workflow(
     State(state): State<AppState>,
     Json(request): Json<RunWorkflowRequest>,
@@ -177,8 +190,30 @@ pub async fn run_workflow(
         (graph, inputs)
     };
 
+    // Reconstruct ExecutionContext from blueprint
+    let execution_ctx = ExecutionContext::new();
+    for node in &blueprint.nodes {
+        if let Some(status) = &node.data.status {
+            let state = match status.as_str() {
+                "completed" => NodeState::Completed,
+                "failed" => NodeState::Failed,
+                "running" => NodeState::Running,
+                "skipped" => NodeState::Skipped,
+                "idle" => NodeState::Idle,
+                _ => NodeState::Pending,
+            };
+            execution_ctx.set_state(node.id.clone(), state);
+
+            if state == NodeState::Completed && !node.data.outputs.is_null() {
+                let val = node.data.outputs.clone();
+                let output = restore_value(val);
+                execution_ctx.set_output(node.id.clone(), output);
+            }
+        }
+    }
+
     // Prepare Runner
-    let (mut runner, handle) = Runner::new(graph);
+    let (mut runner, handle) = Runner::new(graph, Some(execution_ctx));
 
     // Setup bridge
     let tx = state.tx.clone();
@@ -365,7 +400,7 @@ pub async fn run_node(
     }
 
     // Prepare Runner
-    let (mut runner, handle) = Runner::new(graph);
+    let (mut runner, handle) = Runner::new(graph, None);
 
     // Setup bridge
     let tx = state.tx.clone();

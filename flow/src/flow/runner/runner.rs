@@ -73,7 +73,7 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(graph: Graph) -> (Self, RunnerHandle) {
+    pub fn new(graph: Graph, initial_context: Option<ExecutionContext>) -> (Self, RunnerHandle) {
         let (cmd_tx, cmd_rx) = mpsc::channel(32);
         let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
 
@@ -89,7 +89,7 @@ impl Runner {
                 task_queue: VecDeque::new(),
                 active_tasks: HashMap::new(),
                 tracker: Arc::new(TaskTracker::new()),
-                execution_ctx: ExecutionContext::new(),
+                execution_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
                 event_sender: None,
                 cmd_rx,
                 state_tx,

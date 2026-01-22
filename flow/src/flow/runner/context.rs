@@ -3,6 +3,7 @@ use dashmap::DashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeState {
+    Idle,
     Pending,
     Running,
     Completed,
