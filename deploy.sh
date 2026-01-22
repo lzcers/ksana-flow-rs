@@ -27,17 +27,26 @@ if ! command -v cargo &> /dev/null; then
     source $HOME/.cargo/env
 fi
 
-# 3. Install Node.js (if not present)
+# 3. Install Bun (JavaScript Runtime)
 if ! command -v bun &> /dev/null; then
     echo "Installing bun.js..."
     curl -fsSL https://bun.sh/install | bash -
+    export PATH="$HOME/.bun/bin:$PATH"
 fi
+
 # 4. Build Frontend
 echo "Building Frontend..."
 cd web
-npm install
-npm run build
+# Use bun for faster and more reliable builds (npm might be missing or old)
+bun install
+bun run build
 cd ..
+
+# Check if build succeeded
+if [ ! -d "web/dist" ] || [ -z "$(ls -A web/dist)" ]; then
+    echo "Error: Frontend build failed. web/dist is missing or empty."
+    exit 1
+fi
 
 # 5. Build Backend
 echo "Building Backend..."
@@ -91,14 +100,14 @@ echo "Configuring Nginx..."
 cat > /etc/nginx/sites-available/$APP_NAME <<EOF
 server {
     listen 80;
-    server_name _; # Replace with your domain
+    server_name $DOMAIN_NAME;
 
-    root /var/www/$APP_NAME;
+    root $WEB_DIR;
     index index.html;
 
-    # Serve Static Files (Frontend)
+    # Serve Static Files (Frontend) - Support SPA Routing
     location / {
-        try_files \$uri \$uri/ /index.html;
+        try_files \$uri \$uri/ /index.html =404;
     }
 
     # Proxy API Requests to Backend
@@ -129,4 +138,6 @@ nginx -t
 systemctl reload nginx
 
 echo "Deployment Complete!"
-echo "Server is running at http://localhost (or your server IP)"
+echo "Server is running at http://$DOMAIN_NAME"
+echo "To enable HTTPS (Recommended), run:"
+echo "  certbot --nginx -d $DOMAIN_NAME"

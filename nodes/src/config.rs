@@ -25,18 +25,36 @@ pub struct Config {
 }
 
 pub fn get_config() -> Result<Config> {
-    let base_path = env!("CARGO_MANIFEST_DIR");
-    let config_path = std::path::Path::new(base_path).join("config.toml");
+    // 1. Try finding config.toml in current working directory (Runtime)
+    let cwd_config = std::path::Path::new("config.toml");
+    
+    // 2. Fallback to CARGO_MANIFEST_DIR (Development)
+    let config_path = if cwd_config.exists() {
+        cwd_config.to_path_buf()
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config.toml")
+    };
 
-    let config_content = fs::read_to_string(config_path)?;
+    if !config_path.exists() {
+        return Err(anyhow::anyhow!("config.toml not found at {:?}", config_path));
+    }
+
+    let config_content = fs::read_to_string(&config_path)?;
     let mut config: Config = toml::from_str(&config_content)?;
 
     // resolve db_uri to absolute path
+    // If we found config in CWD, resolve relative to CWD
+    // If we found config in MANIFEST_DIR, resolve relative to project root (parent of nodes)
+    let base_dir = if cwd_config.exists() {
+        std::env::current_dir()?
+    } else {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    };
+
     let db_path = std::path::Path::new(&config.source.db_uri);
     if db_path.is_relative() {
-        let project_root = std::path::Path::new(base_path).parent().unwrap();
-        let abs_path = project_root.join(&config.source.db_uri);
-        let data_db_abs_path = project_root.join(&config.source.data_db_uri);
+        let abs_path = base_dir.join(&config.source.db_uri);
+        let data_db_abs_path = base_dir.join(&config.source.data_db_uri);
         config.source.db_uri = abs_path.to_string_lossy().to_string();
         config.source.data_db_uri = data_db_abs_path.to_string_lossy().to_string();
     }
