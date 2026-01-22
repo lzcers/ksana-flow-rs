@@ -1,6 +1,6 @@
 use crate::db::Db;
 use crate::registry::NodeRegistry;
-use flow::{AnyEdge, Edge as FlowEdge, FlowEvent, Graph, RunnerHandle};
+use flow::{Edge as FlowEdge, FlowEvent, Graph, RunnerHandle};
 use nodes::trade::K;
 use nodes::trade::backtester::BacktesterInput;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,9 @@ pub struct ExecutionHandle {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub registry: Arc<RwLock<NodeRegistry>>,
+    // 所有节点的定义
+    pub registry: Arc<NodeRegistry>,
+    // 持有 Runner 的句柄
     pub executions: Arc<RwLock<HashMap<String, ExecutionHandle>>>,
     // (workspace_id, run_id, event)
     pub tx: broadcast::Sender<(String, String, FlowEvent)>,
@@ -37,7 +39,7 @@ impl GraphBlueprint {
         let mut new_graph = Graph::new();
         let mut start_nodes = Vec::new();
 
-        // Collect all target nodes (nodes that have incoming edges)
+        // 所有入度为 0 的节点都是起始节点
         let mut has_incoming_edges = HashSet::new();
         for edge in &self.edges {
             has_incoming_edges.insert(edge.target.clone());

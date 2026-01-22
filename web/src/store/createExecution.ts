@@ -1,12 +1,12 @@
 import type { StateCreator } from 'zustand';
 import { Subject } from 'rxjs';
-import type { StoreState, ExecutionSlice, WorkflowStatus } from './types';
+import type { StoreState, Execution, WorkflowStatus, WebSocketFlowMessage } from './types';
 import * as api from '../api';
-import { updateNodeStatus, updateNodeData, resetWorkflowExecutionState } from '../model';
+import { updateNodeStatus, updateNodeData, updateNodeInput, updateNodeInputs, updateNodeOutput, resetWorkflowExecutionState } from '../model';
 
 const eventSubject = new Subject<any>();
 
-export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSlice> = (set, get) => ({
+export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => ({
   workflowStatus: 'idle',
   workflowStatuses: {},
   runIdToWorkflowId: {},
@@ -58,11 +58,11 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
     };
   },
 
-  handleWebSocketMessage: (wrapper: any) => {
+  // 
+  handleWebSocketMessage: (wrapper: WebSocketFlowMessage) => {
     const { runId, event: msg } = wrapper;
     const { currentRunId, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
 
-    // Emit event to subscribers
     eventSubject.next(wrapper);
 
     if (runId && currentRunId && runId !== currentRunId) {
@@ -76,38 +76,45 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
       };
 
       if (!runId || (runId === state.currentRunId)) {
-        if (msg.NodeStarted) {
-          const id = msg.NodeStarted;
-          apply(updateNodeStatus(nextState, id, 'running'));
-        } else if (msg.NodeStreamStarted) {
-          const id = msg.NodeStreamStarted;
-          apply(updateNodeData(nextState, id, { isOutputStream: true }));
-          // Propagate to downstream nodes
-          const outEdges = nextState.edges.filter(e => e.source === id);
-          outEdges.forEach(edge => {
-            apply(updateNodeData(nextState, edge.target, { upstreamIsStreaming: true }));
-          });
-        } else if (msg.NodeStreamNextMessage) {
-          // Skip updating store for stream chunks to improve performance
-          // Components should subscribe to events$ to handle streaming data
-        } else if (msg.NodeInMessage) {
-          const [id, value] = msg.NodeInMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId }));
-        } else if (msg.NodeOutMessage) {
-          const [id, value] = msg.NodeOutMessage;
-          apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId, isOutputStream: false }));
-          // Propagate to downstream nodes
-          const outEdges = nextState.edges.filter(e => e.source === id);
-          outEdges.forEach(edge => {
-            apply(updateNodeData(nextState, edge.target, { lastMessage: value, lastMessageRunId: runId, upstreamIsStreaming: false }));
-          });
-        } else if (msg.NodeCompleted) {
-          const id = msg.NodeCompleted;
-          apply(updateNodeStatus(nextState, id, 'completed'));
-        } else if (msg.NodeError) {
-          const [id, error] = msg.NodeError;
-          apply(updateNodeStatus(nextState, id, 'error', error));
-          apply(updateNodeData(nextState, id, { isOutputStream: false }));
+        if (typeof msg === 'object') {
+          if ('NodeStarted' in msg) {
+            const id = msg.NodeStarted;
+            apply(updateNodeStatus(nextState, id, 'running'));
+          } else if ('NodeStreamStarted' in msg) {
+            const id = msg.NodeStreamStarted;
+            apply(updateNodeData(nextState, id, { isOutputStream: true }));
+            // Propagate to downstream nodes
+            const outEdges = nextState.edges.filter(e => e.source === id);
+            outEdges.forEach(edge => {
+              apply(updateNodeData(nextState, edge.target, { upstreamIsStreaming: true }));
+            });
+          } else if ('NodeStreamNextMessage' in msg) {
+            // Skip updating store for stream chunks to improve performance
+            // Components should subscribe to events$ to handle streaming data
+          } else if ('NodeInMessage' in msg) {
+            const [id, value] = msg.NodeInMessage;
+            apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId }));
+            if (typeof value === 'object' && value !== null) {
+              apply(updateNodeInputs(nextState, id, value));
+            }
+          } else if ('NodeOutMessage' in msg) {
+            const [id, value] = msg.NodeOutMessage;
+            apply(updateNodeData(nextState, id, { lastMessage: value, lastMessageRunId: runId, isOutputStream: false }));
+            apply(updateNodeOutput(nextState, id, 'output', value));
+            // Propagate to downstream nodes
+            const outEdges = nextState.edges.filter(e => e.source === id);
+            outEdges.forEach(edge => {
+              apply(updateNodeData(nextState, edge.target, { lastMessage: value, lastMessageRunId: runId, upstreamIsStreaming: false }));
+              apply(updateNodeInput(nextState, edge.target, edge.targetHandle || 'default', value));
+            });
+          } else if ('NodeCompleted' in msg) {
+            const id = msg.NodeCompleted;
+            apply(updateNodeStatus(nextState, id, 'completed'));
+          } else if ('NodeError' in msg) {
+            const [id, error] = msg.NodeError;
+            apply(updateNodeStatus(nextState, id, 'error', error));
+            apply(updateNodeData(nextState, id, { isOutputStream: false }));
+          }
         } else if (msg === 'FlowFinished') {
           const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
           nodesToUpdate.forEach(node => {
@@ -128,7 +135,7 @@ export const createExecutionSlice: StateCreator<StoreState, [], [], ExecutionSli
         set(state => {
           const newStatuses: Record<number, WorkflowStatus> = { ...state.workflowStatuses, [workflowId]: 'idle' };
           const newMap = { ...state.runIdToWorkflowId };
-          delete newMap[runId];
+          if (runId) delete newMap[runId];
           return { workflowStatuses: newStatuses, runIdToWorkflowId: newMap };
         });
       }

@@ -1,11 +1,11 @@
 import { type StateCreator } from 'zustand';
-import type { StoreState, WorkflowSlice } from './types';
+import type { StoreState, Workflow } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
-import { updateNodeData, updateNodeStatus } from '../model';
+import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput } from '../model';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 
-export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice> = (set, get) => ({
+export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],
   currentWorkflowId: null,
   currentSpaceId: null,
@@ -22,10 +22,10 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
     try {
       const types = await api.fetchNodes(currentSpaceId);
       const wfList = await api.fetchWorkflows(currentSpaceId);
-      
+
       const allowedTypes = new Set(NODE_TYPES.map(nt => nt.type));
       const filteredTypes = types.filter(t => allowedTypes.has(t.name as any));
-      
+
       set({ nodeTypes: filteredTypes, workflows: wfList });
     } catch (e) {
       console.error("Failed to load metadata", e);
@@ -39,24 +39,27 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       const wf = await api.fetchWorkflow(currentSpaceId, id);
       set({ currentWorkflowId: id });
 
-      // Transform backend nodes to ReactFlow nodes
-      const nodes: Node[] = wf.blueprint.nodes.map((n: any) => ({
-        id: n.id,
-        type: 'workflow',
-        position: n.position || { x: 0, y: 0 },
-        width: n.width,
-        height: n.height,
-        style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
-        data: {
-          label: n.type,
-          type: n.type,
-          description: nodeTypes.find(t => t.name === n.type)?.description || '',
-          config: n.data,
-          status: 'idle'
-        }
-      }));
+      const nodes: Node[] = wf.blueprint.nodes.map((n: any) => {
+        const { __inputs, __outputs, ...config } = n.data || {};
+        return {
+          id: n.id,
+          type: 'workflow',
+          position: n.position || { x: 0, y: 0 },
+          width: n.width,
+          height: n.height,
+          style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
+          data: {
+            label: n.type,
+            type: n.type,
+            description: nodeTypes.find(t => t.name === n.type)?.description || '',
+            config,
+            inputs: __inputs,
+            outputs: __outputs,
+            status: 'idle'
+          }
+        };
+      });
 
-      // Transform backend edges to ReactFlow edges
       const edges: Edge[] = wf.blueprint.edges.map((e: any) => ({
         id: e.id,
         source: e.source,
@@ -113,7 +116,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       nodes: nodes.map(n => ({
         id: n.id,
         type: n.data.type,
-        data: n.data.config,
+        data: { ...n.data.config, __inputs: n.data.inputs, __outputs: n.data.outputs },
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
         height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
@@ -160,7 +163,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
           nodes: nodes.map(n => ({
             id: n.id,
             type: n.data.type,
-            data: n.data.config,
+            data: { ...n.data.config, __inputs: n.data.inputs, __outputs: n.data.outputs },
             position: n.position,
             width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
             height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
@@ -219,23 +222,28 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
 
   importWorkflow: (blueprint: any) => {
     const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId, nodeTypes } = get();
-    
+
     // Transform backend nodes to ReactFlow nodes
-    const nodes: Node[] = (blueprint.nodes || []).map((n: any) => ({
-      id: n.id,
-      type: 'workflow',
-      position: n.position || { x: 0, y: 0 },
-      width: n.width,
-      height: n.height,
-      style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
-      data: {
-        label: n.type,
-        type: n.type,
-        description: nodeTypes.find(t => t.name === n.type)?.description || '',
-        config: n.data,
-        status: 'idle'
-      }
-    }));
+    const nodes: Node[] = (blueprint.nodes || []).map((n: any) => {
+      const { __inputs, __outputs, ...config } = n.data || {};
+      return {
+        id: n.id,
+        type: 'workflow',
+        position: n.position || { x: 0, y: 0 },
+        width: n.width,
+        height: n.height,
+        style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
+        data: {
+          label: n.type,
+          type: n.type,
+          description: nodeTypes.find(t => t.name === n.type)?.description || '',
+          config,
+          inputs: __inputs,
+          outputs: __outputs,
+          status: 'idle'
+        }
+      };
+    });
 
     // Transform backend edges to ReactFlow edges
     const edges: Edge[] = (blueprint.edges || []).map((e: any) => ({
@@ -261,7 +269,7 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       nodes: nodes.map(n => ({
         id: n.id,
         type: n.data.type,
-        data: n.data.config,
+        data: { ...n.data.config, __inputs: n.data.inputs, __outputs: n.data.outputs },
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
         height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
@@ -307,13 +315,18 @@ export const createWorkflowSlice: StateCreator<StoreState, [], [], WorkflowSlice
       } else if (event.NodeInMessage) {
         const [id, value] = event.NodeInMessage;
         apply(updateNodeData(nextState, id, { lastMessage: value }));
+        if (typeof value === 'object' && value !== null) {
+          apply(updateNodeInputs(nextState, id, value));
+        }
       } else if (event.NodeOutMessage) {
         const [id, value] = event.NodeOutMessage;
         apply(updateNodeData(nextState, id, { lastMessage: value, isOutputStream: false }));
+        apply(updateNodeOutput(nextState, id, 'output', value));
         // Propagate to downstream nodes
         const outEdges = nextState.edges.filter(e => e.source === id);
         outEdges.forEach(edge => {
           apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
+          apply(updateNodeInput(nextState, edge.target, edge.targetHandle || 'default', value));
         });
       } else if (event.NodeCompleted) {
         const id = event.NodeCompleted;

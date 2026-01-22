@@ -21,10 +21,10 @@ export default function App() {
 
 function WorkspaceWrapper() {
   const { spaceId } = useParams<{ spaceId: string }>();
-  
+
   // Guard against undefined spaceId (though routing ensures it's there)
   const currentSpaceId = spaceId || 'ksana';
-  
+
   useAppInit(currentSpaceId);
 
   return (
@@ -49,8 +49,6 @@ function AppContent() {
     onNodeDragStop,
     onConnect,
     addNode,
-    deleteNode,
-    updateNodeData,
     runWorkflow,
     pauseWorkflow,
     resumeWorkflow,
@@ -71,8 +69,8 @@ function AppContent() {
     const currentWf = workflows.find(w => w.id === currentWorkflowId);
     const name = currentWf?.name || 'workflow';
     const blob = new Blob([JSON.stringify({
-        ...blueprint,
-        name // Include name in export
+      ...blueprint,
+      name // Include name in export
     }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -91,17 +89,17 @@ function AppContent() {
       if (!data.nodes || !data.edges) {
         throw new Error("Invalid workflow format");
       }
-      
+
       importWorkflow(data);
-      
+
       setOpenTabs(prev => {
-         const nullTab = prev.find(t => t.id === null);
-         const newName = data.name || 'Imported Workflow';
-         
-         if (nullTab) {
-           return prev.map(t => t.id === null ? { ...t, name: newName } : t);
-         }
-         return [...prev, { id: null, name: newName }];
+        const nullTab = prev.find(t => t.id === null);
+        const newName = data.name || 'Imported Workflow';
+
+        if (nullTab) {
+          return prev.map(t => t.id === null ? { ...t, name: newName } : t);
+        }
+        return [...prev, { id: null, name: newName }];
       });
 
     } catch (e) {
@@ -110,7 +108,6 @@ function AppContent() {
     }
   };
 
-  // Initialize tabs with current workflow if tabs are empty and we have a current workflow
   useEffect(() => {
     if (openTabs.length === 0) {
       if (currentWorkflowId !== null) {
@@ -196,8 +193,6 @@ function AppContent() {
     }
   };
 
-  const selectedNode = state.nodes.find(n => n.id === state.selectedNodeId);
-
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
       {/* Top Menu Bar */}
@@ -237,14 +232,6 @@ function AppContent() {
             onStop={stopWorkflow}
           />
         </ReactFlowProvider>
-
-        {selectedNode && (
-          <PropertyPanel
-            node={selectedNode}
-            onUpdateData={updateNodeData}
-            onDelete={deleteNode}
-          />
-        )}
       </div>
     </div>
   );

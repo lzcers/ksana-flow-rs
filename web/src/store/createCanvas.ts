@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import type { StoreState, CanvasSlice } from './types';
+import type { StoreState, Canvas } from './types';
 import type { Node, NodeChange, EdgeChange, Connection } from '../model/types';
 
 import {
@@ -16,7 +16,7 @@ import {
   pasteNodes
 } from '../model';
 
-export const createCanvasSlice: StateCreator<StoreState, [], [], CanvasSlice> = (set, get) => ({
+export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,

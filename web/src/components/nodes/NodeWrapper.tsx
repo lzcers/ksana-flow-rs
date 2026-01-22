@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, Position, NodeResizer } from '@xyflow/react';
+import { Handle, Position, NodeResizeControl } from '@xyflow/react';
 import { Settings, Play } from 'lucide-react';
 import { NODE_TYPES } from '../WorkflowEditor/nodeTypes';
 import { cn } from '../../utils/cn';
@@ -77,16 +77,36 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           }}
         >
           {resizable && (
-            <NodeResizer
+            <NodeResizeControl
               minWidth={minWidth ?? 0}
               minHeight={minHeight ?? 0}
-              isVisible={selected}
-              lineClassName="border-blue-500"
-              handleClassName="h-3 w-3 bg-white border-2 border-blue-500 rounded"
+              position="bottom-right"
+              className={cn(
+                "!bg-transparent !border-none",
+                !selected && "opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+              )}
               onResizeEnd={(_event, params) => {
                 updateNodeDimensions(id, params.width, params.height);
               }}
-            />
+            >
+              <div className="absolute bottom-1 right-1 p-0.5">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-zinc-600 dark:text-zinc-400"
+                >
+                  <path d="M21 15L21 21L15 21" />
+                  <path d="M21 21L14 14" />
+                </svg>
+              </div>
+            </NodeResizeControl>
           )}
 
           {/* Target Handles */}

@@ -80,9 +80,6 @@ impl Node for ShortVideoScriptNode {
 
     async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
         let mut all_inputs = String::new();
-        // Collect all inputs
-        // NodeInputs wraps a HashMap, access via .inputs (if public) or we need another way.
-        // Based on compiler suggestion, .inputs seems accessible.
         for (key, value) in inputs.inputs.iter() {
             // value is Box<dyn SendableAny>
             if let Some(s) = value.as_ref().as_any().downcast_ref::<String>() {

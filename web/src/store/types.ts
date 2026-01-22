@@ -4,7 +4,30 @@ import type { Observable } from 'rxjs';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
-export interface WorkflowSlice {
+export type FlowEvent =
+  | { NodeStarted: string }
+  | { NodeCompleted: string }
+  | { NodeError: [string, string] }
+  | { NodeInMessage: [string, any] }
+  | { NodeOutMessage: [string, any] }
+  | { NodeStreamStarted: string }
+  | { NodeStreamNextMessage: [string, any] }
+  | 'FlowPaused'
+  | 'FlowResumed'
+  | 'FlowStopped'
+  | 'FlowFinished';
+
+export interface WebSocketFlowMessage {
+  runId?: string;
+  event: FlowEvent;
+}
+
+export interface WorkflowBlueprint {
+  nodes: Partial<Node>[];
+  edges: Partial<Edge>[];
+}
+// 处理工作流相关的状态和操作
+export interface Workflow {
   workflows: { id: number; name: string }[];
   currentWorkflowId: number | null;
   currentSpaceId: string | null;
@@ -17,7 +40,7 @@ export interface WorkflowSlice {
   deleteWorkflow: (id: number) => Promise<void>;
   createNewWorkflow: () => Promise<void>;
   importWorkflow: (blueprint: any) => void;
-  getWorkflowBlueprint: () => any;
+  getWorkflowBlueprint: () => WorkflowBlueprint;
   uploadFile: (file: File) => Promise<any>;
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
@@ -25,7 +48,8 @@ export interface WorkflowSlice {
   applyExecutionEvent: (event: any) => void;
 }
 
-export interface CanvasSlice {
+// 处理画布相关的状态和操作
+export interface Canvas {
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
@@ -45,7 +69,8 @@ export interface CanvasSlice {
   setConnectionState: (connecting: boolean, sourceId?: string | null) => void;
 }
 
-export interface ExecutionSlice {
+// 处理执行相关的状态和操作
+export interface Execution {
   workflowStatus: WorkflowStatus;
   workflowStatuses: Record<number, WorkflowStatus>;
   runIdToWorkflowId: Record<string, number>;
@@ -59,8 +84,8 @@ export interface ExecutionSlice {
   setWorkflowStatuses: (statuses: Record<number, WorkflowStatus>) => void;
   setCurrentRunId: (runId: string | null) => void;
   initializeWebSocket: () => () => void;
-  handleWebSocketMessage: (message: any) => void;
-  events$: Observable<any>;
+  handleWebSocketMessage: (message: WebSocketFlowMessage) => void;
+  events$: Observable<WebSocketFlowMessage>;
 }
 
 export interface ToastItem {
@@ -70,7 +95,7 @@ export interface ToastItem {
   duration?: number;
 }
 
-export interface ToastSlice {
+export interface Toast {
   toasts: ToastItem[];
   showToast: (message: string, type: 'success' | 'error' | 'info', duration?: number) => void;
   removeToast: (id: string) => void;
@@ -79,4 +104,4 @@ export interface ToastSlice {
   info: (message: string, duration?: number) => void;
 }
 
-export type StoreState = WorkflowSlice & CanvasSlice & ExecutionSlice & ToastSlice;
+export type StoreState = Workflow & Canvas & Execution & Toast;

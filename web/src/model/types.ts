@@ -19,9 +19,11 @@ export type NodeType =
   | string;
 
 export interface NodeData extends Record<string, unknown> {
-  label: string;
-  type: string;
+  label?: string;
+  type?: string;
   description?: string;
+  inputs?: Record<string, any>;
+  outputs?: Record<string, any>;
   config?: Record<string, any>;
   status?: 'idle' | 'running' | 'completed' | 'error';
   errorMessage?: string;

@@ -394,6 +394,22 @@ impl Runner {
         *self.active_tasks.entry(node_id.clone()).or_insert(0) += 1;
 
         Self::send_flow_event(&self.event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
+
+        let mut inputs_json = serde_json::Map::new();
+        for (key, val) in &inputs.inputs {
+            if let Some(v) = try_downcast_to_value(val.as_ref()) {
+                inputs_json.insert(key.clone(), v);
+            }
+        }
+
+        if !inputs_json.is_empty() {
+            Self::send_flow_event(
+                &self.event_sender,
+                FlowEvent::NodeInMessage(node_id.clone(), serde_json::Value::Object(inputs_json)),
+            )
+            .await;
+        }
+
         Self::worker(node_id, node_arc, ctx, inputs, task_sender, guard);
         Ok(())
     }

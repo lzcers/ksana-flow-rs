@@ -2,12 +2,13 @@ import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { AutoScrollContainer, Incremark, ThemeProvider, useIncremark } from '@incremark/react';
 import { Eye, Pencil, Maximize2 } from 'lucide-react';
-import { NodeWrapper } from './NodeWrapper';
-import { FullScreenModal } from '../ui/FullScreenModal';
-import { useStore } from '../../store';
-import { type NodeData } from '../../model/types';
+import { NodeWrapper } from '../NodeWrapper';
+import { FullScreenModal } from '../../ui/FullScreenModal';
+import { useStore } from '../../../store';
+import { type NodeData } from '../../../model/types';
+import { theme } from './theme';
 import '@incremark/theme/styles.css';
-import './index.css';
+import '../index.css';
 
 const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
@@ -20,7 +21,8 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
   const scrollRef = useRef(null)
 
   const incremark = useIncremark({
-    math: { tex: true }
+    math: { tex: true },
+    gfm: true,
   });
 
   const connections = useNodeConnections({
@@ -29,24 +31,38 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
 
   const textRef = useRef(text);
   const isStreamingRef = useRef(data.upstreamIsStreaming || false);
+  
+  // Use refs for data and connections to avoid dependency cycles in effects
+  const dataRef = useRef(data);
+  const connectionsRef = useRef(connections);
+
+  useEffect(() => {
+    dataRef.current = data;
+    connectionsRef.current = connections;
+  }, [data, connections]);
 
   useEffect(() => {
     textRef.current = text;
   }, [text]);
 
-  // Sync isStreamingRef with data prop on mount/update to handle remounts correctly
   useEffect(() => {
     isStreamingRef.current = data.upstreamIsStreaming || false;
   }, [data.upstreamIsStreaming]);
 
   useEffect(() => {
-    if (data.upstreamIsStreaming && text !== data.config?.text) {
+    // We access dataRef.current to avoid re-triggering this effect when data.config changes
+    // This prevents the "Maximum update depth exceeded" error caused by circular updates
+    const currentData = dataRef.current;
+    
+    if (currentData.upstreamIsStreaming && text !== currentData.config?.text) {
       const timeoutId = setTimeout(() => {
-        updateNodeData(id, { config: { ...data.config, text } });
+        // Double check ref in timeout
+        const freshData = dataRef.current;
+        updateNodeData(id, { config: { ...freshData.config, text } });
       }, 200);
       return () => clearTimeout(timeoutId);
     }
-  }, [text, data.upstreamIsStreaming, id, data.config, updateNodeData]);
+  }, [text, id, updateNodeData]); // Removed data.config, data.upstreamIsStreaming from deps
 
   useEffect(() => {
     if (!data.upstreamIsStreaming && isMarkdown && text !== incremark.markdown) {
@@ -62,7 +78,10 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
       // Filter by runId if available to avoid stale events
       if (currentRunId && runId !== currentRunId) return;
 
-      const upstreamNodeIds = connections.map(conn => conn.source);
+      const currentConnections = connectionsRef.current;
+      const currentData = dataRef.current;
+
+      const upstreamNodeIds = currentConnections.map(conn => conn.source);
       const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
 
       if (event.NodeStarted) {
@@ -78,7 +97,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           setIsMarkdown(true);
           incremark.reset();
           // Clear data in store immediately
-          updateNodeData(id, { config: { ...data.config, text: '' } });
+          updateNodeData(id, { config: { ...currentData.config, text: '' } });
         }
       } else if (event.NodeStreamNextMessage) {
         const [nodeId, value] = event.NodeStreamNextMessage;
@@ -93,7 +112,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
         if (isUpstream(nodeId) && !isStreamingRef.current) {
           if (typeof value === 'string') {
             setText(value);
-            updateNodeData(id, { config: { ...data.config, text: value } });
+            updateNodeData(id, { config: { ...currentData.config, text: value } });
             if (isMarkdown) {
               incremark.render(value);
             }
@@ -103,19 +122,21 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
     });
 
     return () => subscription.unsubscribe();
-  }, [events$, connections, incremark, currentRunId, id, updateNodeData, data.config, isMarkdown]);
+  }, [events$, incremark, currentRunId, id, updateNodeData, isMarkdown]); 
+  // Removed connections and data.config from dependencies
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(evt.target.value);
   }, []);
 
   const onBlur = useCallback(() => {
-    if (text !== data.config?.text) {
+    const currentData = dataRef.current;
+    if (text !== currentData.config?.text) {
       updateNodeData(id, {
-        config: { ...data.config, text }
+        config: { ...currentData.config, text }
       });
     }
-  }, [id, data.config, text, updateNodeData]);
+  }, [id, text, updateNodeData]); // Removed data.config
 
   const headerActions = (
     <div className="flex items-center gap-1">
@@ -167,9 +188,9 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
             onClose={() => setIsFullScreen(false)}
             title={isMarkdown ? "Markdown Preview" : "Text Content"}
           >
-            <div className="w-full h-full text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
+            <div className="w-full h-full p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
               {isMarkdown ? (
-                <ThemeProvider theme="dark">
+                <ThemeProvider theme={theme}>
                   <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full">
                     <Incremark incremark={incremark} />
                   </AutoScrollContainer>
@@ -196,7 +217,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
               e.stopPropagation();
             }}
           >
-            <ThemeProvider theme="dark">
+            <ThemeProvider theme={theme}>
               <AutoScrollContainer ref={scrollRef} enabled className="h-[300px]">
                 <Incremark incremark={incremark} />
               </AutoScrollContainer>

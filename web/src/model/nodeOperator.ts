@@ -88,6 +88,50 @@ export const updateNodeStatus = (
   });
 };
 
+export const updateNodeInput = (
+  state: WorkflowState,
+  nodeId: string,
+  key: string,
+  value: any
+): WorkflowState => {
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      if (!node.data.inputs) node.data.inputs = {};
+      node.data.inputs[key] = value;
+    }
+  });
+};
+
+export const updateNodeInputs = (
+  state: WorkflowState,
+  nodeId: string,
+  inputs: Record<string, any>
+): WorkflowState => {
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      node.data.inputs = { ...node.data.inputs, ...inputs };
+    }
+  });
+};
+
+export const updateNodeOutput = (
+  state: WorkflowState,
+  nodeId: string,
+  key: string,
+  value: any
+): WorkflowState => {
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === nodeId);
+    if (node) {
+      if (!node.data.outputs) node.data.outputs = {};
+      node.data.outputs[key] = value;
+    }
+  });
+};
+
+
 export const resetWorkflowExecutionState = (state: WorkflowState): WorkflowState => {
   return produce(state, (draft) => {
     draft.nodes.forEach((node) => {

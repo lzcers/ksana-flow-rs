@@ -1,8 +1,11 @@
-use crate::state::{AppState, ExecutionHandle, GraphBlueprint};
+use crate::{
+    registry,
+    state::{AppState, ExecutionHandle, GraphBlueprint},
+};
 use axum::{
     Json,
     extract::{
-        Path, State, Query,
+        Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
@@ -14,26 +17,35 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct CreateWorkflowRequest {
+    pub space_id: String,
     name: String,
     blueprint: GraphBlueprint,
 }
 
 #[derive(Deserialize)]
 pub struct UpdateWorkflowRequest {
+    pub space_id: String,
     name: Option<String>,
     blueprint: GraphBlueprint,
 }
 
 #[derive(Deserialize)]
 pub struct RunWorkflowRequest {
+    pub space_id: String,
     blueprint: GraphBlueprint,
     workflow_id: i64,
 }
 
 #[derive(Deserialize)]
 pub struct RunNodeRequest {
+    pub space_id: String,
     blueprint: GraphBlueprint,
     node_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct WorkflowQueryParams {
+    pub space_id: String,
 }
 
 #[derive(Deserialize)]
@@ -42,12 +54,12 @@ pub struct WsParams {
 }
 
 pub async fn list_workflows(
-    Path(workspace_id): Path<String>,
-    State(state): State<AppState>
+    Query(params): Query<WorkflowQueryParams>,
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
     let workflows = {
         let db = state.db.lock().expect("db lock poisoned");
-        db.list_workflows(&workspace_id).unwrap_or_default()
+        db.list_workflows(&params.space_id).unwrap_or_default()
     };
     let response: Vec<_> = workflows
         .into_iter()
@@ -57,12 +69,13 @@ pub async fn list_workflows(
 }
 
 pub async fn get_workflow(
-    Path((workspace_id, id)): Path<(String, i64)>,
-    State(state): State<AppState>
+    Path(id): Path<i64>,
+    Query(params): Query<WorkflowQueryParams>,
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
     let workflow = {
         let db = state.db.lock().expect("db lock poisoned");
-        db.get_workflow(id, &workspace_id).unwrap_or(None)
+        db.get_workflow(id, &params.space_id).unwrap_or(None)
     };
 
     if let Some((name, blueprint)) = workflow {
@@ -73,14 +86,13 @@ pub async fn get_workflow(
 }
 
 pub async fn create_workflow(
-    Path(workspace_id): Path<String>,
     State(state): State<AppState>,
     Json(payload): Json<CreateWorkflowRequest>,
 ) -> impl IntoResponse {
     let result = {
         let db = state.db.lock().expect("db lock poisoned");
         let blueprint_value = serde_json::to_value(&payload.blueprint).unwrap();
-        db.create_workflow(&payload.name, &blueprint_value, &workspace_id)
+        db.create_workflow(&payload.name, &blueprint_value, &payload.space_id)
     };
 
     match result {
@@ -90,7 +102,7 @@ pub async fn create_workflow(
 }
 
 pub async fn update_workflow(
-    Path((workspace_id, id)): Path<(String, i64)>,
+    Path(id): Path<i64>,
     State(state): State<AppState>,
     Json(payload): Json<UpdateWorkflowRequest>,
 ) -> impl IntoResponse {
@@ -98,7 +110,7 @@ pub async fn update_workflow(
         let db = state.db.lock().expect("db lock poisoned");
         let blueprint_value = serde_json::to_value(&payload.blueprint).unwrap();
         let name = payload.name.unwrap_or_else(|| "Untitled".to_string());
-        db.update_workflow(id, &name, &blueprint_value, &workspace_id)
+        db.update_workflow(id, &name, &blueprint_value, &payload.space_id)
     };
 
     match result {
@@ -109,12 +121,13 @@ pub async fn update_workflow(
 }
 
 pub async fn delete_workflow(
-    Path((workspace_id, id)): Path<(String, i64)>,
+    Path(id): Path<i64>,
+    Query(params): Query<WorkflowQueryParams>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let result = {
         let db = state.db.lock().expect("db lock poisoned");
-        db.delete_workflow(id, &workspace_id)
+        db.delete_workflow(id, &params.space_id)
     };
 
     match result {
@@ -125,13 +138,12 @@ pub async fn delete_workflow(
 }
 
 pub async fn run_workflow(
-    Path(workspace_id): Path<String>,
     State(state): State<AppState>,
     Json(request): Json<RunWorkflowRequest>,
 ) -> impl IntoResponse {
     let blueprint = request.blueprint;
     let workflow_id = request.workflow_id;
-    // Generate Run ID
+    let workspace_id = request.space_id;
     let run_id = Uuid::new_v4().to_string();
 
     // Create execution in DB
@@ -141,12 +153,10 @@ pub async fn run_workflow(
     }
 
     let (graph, start_inputs) = {
-        let registry = state
-            .registry
-            .read()
-            .expect("Failed to read registry: lock poisoned");
+        let registry = &state.registry;
 
-        let (graph, start_nodes) = match blueprint.instantiate(&registry) {
+        // 解析 JSON 实例化整个蓝图
+        let (graph, start_nodes) = match blueprint.instantiate(registry) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
         };
@@ -157,7 +167,7 @@ pub async fn run_workflow(
                 if let Some(meta) = registry.get_node_metadata(&node.type_name) {
                     inputs.push((
                         node_id.clone(),
-                        crate::registry::create_default_value(&meta.inputs),
+                        registry::create_default_value(&meta.inputs),
                     ));
                 } else {
                     inputs.push((node_id.clone(), Box::new(()) as Box<dyn SendableAny>));
@@ -238,7 +248,7 @@ pub async fn run_workflow(
 }
 
 pub async fn get_workflow_status(
-    Path((_workspace_id, id)): Path<(String, i64)>,
+    Path(id): Path<i64>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let db_status = {
@@ -265,7 +275,7 @@ pub async fn get_workflow_status(
 }
 
 pub async fn pause_workflow(
-    Path((_workspace_id, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let handle = {
@@ -282,7 +292,7 @@ pub async fn pause_workflow(
 }
 
 pub async fn resume_workflow(
-    Path((_workspace_id, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let handle = {
@@ -299,7 +309,7 @@ pub async fn resume_workflow(
 }
 
 pub async fn stop_workflow(
-    Path((_workspace_id, id)): Path<(String, String)>,
+    Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let handle = {
@@ -316,19 +326,16 @@ pub async fn stop_workflow(
 }
 
 pub async fn run_node(
-    Path(workspace_id): Path<String>,
     State(state): State<AppState>,
     Json(payload): Json<RunNodeRequest>,
 ) -> impl IntoResponse {
+    let workspace_id = payload.space_id;
     let run_id = Uuid::new_v4().to_string();
 
     let (graph, start_input) = {
-        let registry = state
-            .registry
-            .read()
-            .expect("Failed to read registry: lock poisoned");
+        let registry = &state.registry;
 
-        let (graph, _) = match payload.blueprint.instantiate(&registry) {
+        let (graph, _) = match payload.blueprint.instantiate(registry) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
         };
@@ -419,7 +426,7 @@ pub async fn run_node(
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<WsParams>,
-    State(state): State<AppState>
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state, params.workspace_id))
 }

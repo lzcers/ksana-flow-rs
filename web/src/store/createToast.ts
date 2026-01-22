@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand';
-import type { StoreState, ToastSlice } from './types';
+import type { StoreState, Toast } from './types';
 
-export const createToastSlice: StateCreator<StoreState, [], [], ToastSlice> = (set, get) => ({
+export const createToast: StateCreator<StoreState, [], [], Toast> = (set, get) => ({
   toasts: [],
   showToast: (message, type, duration = 3000) => {
     const id = Math.random().toString(36).substring(2, 9);
