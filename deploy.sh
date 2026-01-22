@@ -149,5 +149,4 @@ systemctl restart nginx
 
 echo "Deployment Complete!"
 echo "Server is running at http://$DOMAIN_NAME"
-echo "To enable HTTPS (Recommended), run:"
 echo "  certbot --nginx -d $DOMAIN_NAME"
