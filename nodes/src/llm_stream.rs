@@ -8,9 +8,36 @@ use rig::{
     agent::{Agent, MultiTurnStreamItem},
     client::{CompletionClient, ProviderClient},
     message::{Reasoning, Text},
-    providers::deepseek::{self, CompletionModel},
+    providers::{
+        deepseek::{self, CompletionModel as DeepSeekCompletionModel},
+        openai::{self, CompletionModel as OpenAICompletionModel},
+    },
     streaming::{StreamedAssistantContent, StreamingPrompt},
 };
+
+// Define an enum to wrap different completion models
+pub enum ModelWrapper {
+    DeepSeek(Agent<DeepSeekCompletionModel>),
+    OpenAI(Agent<OpenAICompletionModel>),
+}
+
+impl ModelWrapper {
+    async fn stream_prompt(&self, prompt: &str) -> Result<impl futures::Stream<Item = Result<MultiTurnStreamItem, rig::agent::PromptError>> + Send + '_, rig::agent::PromptError> {
+        match self {
+            ModelWrapper::DeepSeek(agent) => {
+                let stream = agent.stream_prompt(prompt).await?;
+                Ok(futures::stream::iter(stream.collect::<Vec<_>>().await).boxed())
+            },
+            ModelWrapper::OpenAI(agent) => {
+                 let stream = agent.stream_prompt(prompt).await?;
+                 Ok(futures::stream::iter(stream.collect::<Vec<_>>().await).boxed())
+            }
+        }
+    }
+}
+// Helper trait to unify stream prompt return type since streams are opaque
+// Actually, since we process the stream immediately in run(), we can just return the processed stream in run()
+// But we need to store the agent in the struct.
 
 pub struct LLMStreamObservable<S> {
     pub stream: S,
@@ -41,7 +68,9 @@ where
 }
 
 pub struct LLMStreamNode {
-    llm: Agent<CompletionModel>,
+    // We can't easily unify Agent types because they have different generic parameters.
+    // So we store them as an enum and dispatch.
+    llm: ModelWrapper,
     #[allow(dead_code)]
     model: String,
     #[allow(dead_code)]
@@ -52,16 +81,27 @@ pub struct LLMStreamNode {
 impl LLMStreamNode {
     pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
         dotenv::dotenv().ok();
-        // Initialize the DeepSeek client from environment variables
-        let client = deepseek::Client::from_env();
-        let mut builder = client.agent(model);
+        
+        // Check for OPENROUTER_API_KEY first
+        let openrouter_key = std::env::var("OPENROUTER_API_KEY").ok();
 
-        // Handle system prompt
-        if !sys_prompt.is_empty() {
-            builder = builder.preamble(&sys_prompt);
-        }
-
-        let llm = builder.build();
+        let llm = if let Some(key) = openrouter_key {
+            // Use OpenAI client with OpenRouter Base URL
+            let client = openai::Client::from_url(key.as_str(), "https://openrouter.ai/api/v1");
+            let mut builder = client.agent(model);
+            if !sys_prompt.is_empty() {
+                builder = builder.preamble(&sys_prompt);
+            }
+            ModelWrapper::OpenAI(builder.build())
+        } else {
+            // Fallback to DeepSeek
+            let client = deepseek::Client::from_env();
+            let mut builder = client.agent(model);
+            if !sys_prompt.is_empty() {
+                builder = builder.preamble(&sys_prompt);
+            }
+            ModelWrapper::DeepSeek(builder.build())
+        };
 
         Self {
             llm,
@@ -93,21 +133,45 @@ impl Node for LLMStreamNode {
             self.user_prompt_template.clone()
         };
 
-        let stream = self.llm.stream_prompt(&prompt).await.map(|res| match res {
-            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
-                Text { text },
-            ))) => Ok(text),
-            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(
-                Reasoning { reasoning, .. },
-            ))) => Ok(reasoning.join("\n")),
-            Ok(_) => Ok(String::new()),
-            Err(e) => Err(e.to_string()),
-        });
+        // We need to handle the stream dispatch here because the return types of stream_prompt are different
+        // and complicated to unify with Box<dyn Stream>.
+        // Instead, we can process the stream items into a common Result<String, String> stream here.
+        
+        let stream = match &self.llm {
+            ModelWrapper::DeepSeek(agent) => {
+                let stream_result = agent.stream_prompt(&prompt).await;
+                match stream_result {
+                    Ok(s) => s.map(|res| map_stream_item(res)).boxed(),
+                    Err(e) => futures::stream::once(async move { Err(e.to_string()) }).boxed(),
+                }
+            },
+            ModelWrapper::OpenAI(agent) => {
+                let stream_result = agent.stream_prompt(&prompt).await;
+                match stream_result {
+                    Ok(s) => s.map(|res| map_stream_item(res)).boxed(),
+                    Err(e) => futures::stream::once(async move { Err(e.to_string()) }).boxed(),
+                }
+            }
+        };
+
         let react_stream = LLMStreamObservable { stream };
         ReactiveStream::from_observable_with_accumulator(react_stream, |chunks: Vec<String>| {
             let full_text = chunks.join("");
             Some(Box::new(full_text))
         })
+    }
+}
+
+fn map_stream_item(res: Result<MultiTurnStreamItem, rig::agent::PromptError>) -> Result<String, String> {
+    match res {
+        Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(
+            Text { text },
+        ))) => Ok(text),
+        Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(
+            Reasoning { reasoning, .. },
+        ))) => Ok(reasoning.join("\n")),
+        Ok(_) => Ok(String::new()),
+        Err(e) => Err(e.to_string()),
     }
 }
 

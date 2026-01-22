@@ -28,16 +28,22 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 # 3. Install Bun (JavaScript Runtime)
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
 if ! command -v bun &> /dev/null; then
     echo "Installing bun.js..."
     curl -fsSL https://bun.sh/install | bash -
-    export PATH="$HOME/.bun/bin:$PATH"
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
 fi
 
 # 4. Build Frontend
 echo "Building Frontend..."
 cd web
-# Use bun for faster and more reliable builds (npm might be missing or old)
+# Clean old npm modules to avoid conflicts
+rm -rf node_modules
+# Use bun for faster and more reliable builds
 bun install
 bun run build
 cd ..
@@ -45,6 +51,7 @@ cd ..
 # Check if build succeeded
 if [ ! -d "web/dist" ] || [ -z "$(ls -A web/dist)" ]; then
     echo "Error: Frontend build failed. web/dist is missing or empty."
+    ls -la web/
     exit 1
 fi
 
@@ -64,6 +71,9 @@ chmod +x $INSTALL_DIR/ksana-server
 # Copy Frontend Assets
 rm -rf $WEB_DIR/*
 cp -r web/dist/* $WEB_DIR/
+echo "Frontend assets installed to $WEB_DIR"
+ls -la $WEB_DIR
+
 
 # Copy .env if it exists in current dir
 if [ -f .env ]; then

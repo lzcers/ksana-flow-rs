@@ -4,11 +4,29 @@ use rig::{
     agent::Agent,
     client::{CompletionClient, ProviderClient},
     completion::Prompt,
-    providers::deepseek::{self, CompletionModel},
+    providers::{
+        deepseek::{self, CompletionModel as DeepSeekCompletionModel},
+        openai::{self, CompletionModel as OpenAICompletionModel},
+    },
 };
 
+// Define an enum to wrap different completion models
+pub enum ModelWrapper {
+    DeepSeek(Agent<DeepSeekCompletionModel>),
+    OpenAI(Agent<OpenAICompletionModel>),
+}
+
+impl ModelWrapper {
+    async fn prompt(&self, prompt: &str) -> Result<String, rig::completion::PromptError> {
+        match self {
+            ModelWrapper::DeepSeek(agent) => agent.prompt(prompt).await,
+            ModelWrapper::OpenAI(agent) => agent.prompt(prompt).await,
+        }
+    }
+}
+
 pub struct LLMNode {
-    llm: Agent<CompletionModel>,
+    llm: ModelWrapper,
     #[allow(dead_code)]
     model: String,
     #[allow(dead_code)]
@@ -19,16 +37,27 @@ pub struct LLMNode {
 impl LLMNode {
     pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
         dotenv::dotenv().ok();
-        // Initialize the DeepSeek client from environment variables
-        let client = deepseek::Client::from_env();
-        let mut builder = client.agent(model);
 
-        // Handle system prompt
-        if !sys_prompt.is_empty() {
-            builder = builder.preamble(&sys_prompt);
-        }
+        // Check for OPENROUTER_API_KEY first
+        let openrouter_key = std::env::var("OPENROUTER_API_KEY").ok();
 
-        let llm = builder.build();
+        let llm = if let Some(key) = openrouter_key {
+            // Use OpenAI client with OpenRouter Base URL
+            let client = openai::Client::from_url(key.as_str(), "https://openrouter.ai/api/v1");
+            let mut builder = client.agent(model);
+            if !sys_prompt.is_empty() {
+                builder = builder.preamble(&sys_prompt);
+            }
+            ModelWrapper::OpenAI(builder.build())
+        } else {
+            // Fallback to DeepSeek
+            let client = deepseek::Client::from_env();
+            let mut builder = client.agent(model);
+            if !sys_prompt.is_empty() {
+                builder = builder.preamble(&sys_prompt);
+            }
+            ModelWrapper::DeepSeek(builder.build())
+        };
 
         Self {
             llm,
