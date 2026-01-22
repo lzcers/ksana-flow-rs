@@ -46,7 +46,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
           />
         </div>
 
-        {node.data.type === 'LLMNode' && (
+        {node.type === 'LLMNode' && (
           <>
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-zinc-500">System Prompt</label>

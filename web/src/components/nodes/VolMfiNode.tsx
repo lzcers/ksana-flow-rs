@@ -7,7 +7,7 @@ import { useStore } from '../../store';
 const TARGET_HANDLES = [Position.Left];
 const SOURCE_HANDLES = [Position.Right];
 
-export const VolMfiNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const VolMfiNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [emaPeriod, setEmaPeriod] = useState(data.config?.ema_period ?? 20);
@@ -40,6 +40,7 @@ export const VolMfiNode = memo(({ id, data, selected, width, height }: NodeProps
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       style={{ width: width ?? 250, height: height ?? 'auto' }}

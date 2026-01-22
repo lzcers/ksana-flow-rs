@@ -49,11 +49,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
 
     const newNode: Node = {
       id,
-      type: 'workflow',
+      type: type as any,
       position,
       data: {
         label: type,
-        type: type,
         description: meta?.description || '',
         config: meta?.config || {},
         status: 'idle'

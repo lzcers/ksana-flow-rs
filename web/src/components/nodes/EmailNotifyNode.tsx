@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 
 const TARGET_HANDLES = [Position.Left];
 
-export const EmailNotifyNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const EmailNotifyNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [subject, setSubject] = useState(data.config?.subject || '');
@@ -58,6 +58,7 @@ export const EmailNotifyNode = memo(({ id, data, selected, width, height }: Node
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       style={{ width: width ?? 300, height: height ?? 'auto' }}

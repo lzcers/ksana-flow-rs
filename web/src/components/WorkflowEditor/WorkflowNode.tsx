@@ -13,9 +13,9 @@ import { VolMfiNode } from '../nodes/VolMfiNode';
 import { ShortVideoNode } from '../nodes/ShortVideoNode';
 
 export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
-  const { data } = props;
+  const { type } = props;
 
-  switch (data.type) {
+  switch (type) {
     case 'LLMNode':
       return <LLMNode {...props} />;
     case 'TextNode':

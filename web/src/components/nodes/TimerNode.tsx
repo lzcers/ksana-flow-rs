@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 
 const SOURCE_HANDLES = [Position.Right];
 
-export const TimerNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const TimerNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [cronExpr, setCronExpr] = useState(data.config?.cron_expr || '');
@@ -26,6 +26,7 @@ export const TimerNode = memo(({ id, data, selected, width, height }: NodeProps 
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       style={{ width: width ?? 250, height: height ?? 'auto' }}

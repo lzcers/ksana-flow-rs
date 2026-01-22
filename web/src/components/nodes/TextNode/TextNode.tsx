@@ -13,7 +13,7 @@ import '../index.css';
 const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
-export const TextNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const TextNodeComponent = ({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, currentRunId, events$ } = useStore();
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
@@ -166,6 +166,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       sourceHandles={SOURCE_HANDLES}

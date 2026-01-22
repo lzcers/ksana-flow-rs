@@ -46,12 +46,17 @@ impl GraphBlueprint {
         }
 
         for node in &self.nodes {
-            let mut data = node.data.clone();
-            if let Some(obj) = data.as_object_mut() {
+            let mut config = node.data.config.clone();
+            // Ensure config is an object so we can insert id
+            if !config.is_object() {
+                config = serde_json::json!({});
+            }
+
+            if let Some(obj) = config.as_object_mut() {
                 obj.insert("id".to_string(), Value::String(node.id.clone()));
             }
 
-            match registry.create_node(&node.type_name, data) {
+            match registry.create_node(&node.type_name, config) {
                 Ok(n) => {
                     new_graph.add_arc_node(&node.id, n);
                     // Treat all nodes with no in-degree as start nodes
@@ -128,12 +133,34 @@ pub struct Node {
     pub id: String,
     #[serde(rename = "type")]
     pub type_name: String,
-    pub data: Value,
+    pub data: NodeData,
     pub position: Position,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<f64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct NodeData {
+    #[serde(default)]
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub config: Value,
+    #[serde(default)]
+    pub inputs: Value,
+    #[serde(default)]
+    pub outputs: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(rename = "errorMessage", skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<String>,
+    #[serde(rename = "lastMessage", skip_serializing_if = "Option::is_none")]
+    pub last_message: Option<Value>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

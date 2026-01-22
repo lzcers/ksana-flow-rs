@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 
 const SOURCE_HANDLES = [Position.Right];
 
-export const SourceNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const SourceNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [code, setCode] = useState(data.config?.code || '');
@@ -65,6 +65,7 @@ export const SourceNode = memo(({ id, data, selected, width, height }: NodeProps
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       style={{ width: width ?? 280, height: height ?? 'auto' }}

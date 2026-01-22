@@ -7,7 +7,7 @@ import { type NodeData } from '../../model/types';
 const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 const TARGET_HANDLES = [Position.Left];
 
-export const TextMergeNodeComponent = ({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const TextMergeNodeComponent = ({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
   const [separator, setSeparator] = useState(data.config?.separator ?? '\n');
 
@@ -30,6 +30,7 @@ export const TextMergeNodeComponent = ({ id, data, selected, width, height }: No
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       sourceHandles={SOURCE_HANDLES}

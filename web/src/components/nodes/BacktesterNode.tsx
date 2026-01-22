@@ -7,7 +7,7 @@ import { useStore } from '../../store';
 const TARGET_HANDLES = [Position.Left];
 const SOURCE_HANDLES = [Position.Right];
 
-export const BacktesterNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const BacktesterNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const [initMoney, setInitMoney] = useState(data.config?.init_money ?? 100000.0);
@@ -40,6 +40,7 @@ export const BacktesterNode = memo(({ id, data, selected, width, height }: NodeP
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       style={{ width: width ?? 250, height: height ?? 'auto' }}

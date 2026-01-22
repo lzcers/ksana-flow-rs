@@ -157,7 +157,7 @@ const syncEdgeHighlighting = (draft: WorkflowState) => {
         delete edge.style.stroke;
         delete edge.style.strokeWidth;
         if (Object.keys(edge.style).length === 0) {
-           edge.style = undefined;
+          edge.style = undefined;
         }
       }
     }
@@ -220,7 +220,7 @@ export const pasteNodes = (state: WorkflowState, newNodes: Node[], newEdges: Edg
     // Process Nodes
     newNodes.forEach(node => {
       // Ensure we have a valid type for ID generation
-      const type = (node.data && typeof node.data.type === 'string') ? node.data.type : 'node';
+      const type = (node.type && typeof node.type === 'string') ? node.type : 'node';
       const newId = getNextNodeId(draft.nodes, type);
       idMap.set(node.id, newId);
 

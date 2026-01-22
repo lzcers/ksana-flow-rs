@@ -20,7 +20,6 @@ export type NodeType =
 
 export interface NodeData extends Record<string, unknown> {
   label?: string;
-  type?: string;
   description?: string;
   inputs?: Record<string, any>;
   outputs?: Record<string, any>;
@@ -35,7 +34,6 @@ export interface NodeData extends Record<string, unknown> {
 
 export type Node = XNode<NodeData>;
 export type NodeChange = XNodeChange<Node>;
-
 export interface WorkflowState {
   nodes: Node[];
   edges: Edge[];

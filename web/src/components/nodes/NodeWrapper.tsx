@@ -9,6 +9,7 @@ import './index.css';
 
 interface NodeWrapperProps {
   id: string;
+  type: string;
   data: NodeData;
   selected: boolean;
   sourceHandles?: Position[];
@@ -31,6 +32,7 @@ const HANDLE_STYLES: Record<Position, React.CSSProperties> = {
 
 export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   id,
+  type,
   data,
   selected,
   sourceHandles = [],
@@ -43,7 +45,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   minHeight,
   headerActions
 }) => {
-  const typeConfig = NODE_TYPES.find(t => t.type === data.type);
+  const typeConfig = NODE_TYPES.find(t => t.type === type);
   const status = data.status || 'idle';
   const { runNode, updateNodeDimensions, isConnecting, connectionSourceId } = useStore();
 

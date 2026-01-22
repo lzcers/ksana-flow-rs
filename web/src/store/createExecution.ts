@@ -164,7 +164,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     const blueprint = {
       nodes: nodes.map(n => ({
         id: n.id,
-        type: n.data.type,
+        type: n.type,
         data: n.data.config,
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
@@ -245,7 +245,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     const blueprint = {
       nodes: nodes.map(n => ({
         id: n.id,
-        type: n.data.type,
+        type: n.type,
         data: n.data.config,
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),

@@ -15,6 +15,7 @@ import {
 } from '@xyflow/react';
 import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
+import { NODE_TYPES } from './nodeTypes';
 import { NodeContextMenu } from './NodeContextMenu';
 import type { Node, Edge } from '../../model/types';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
@@ -39,6 +40,7 @@ interface CanvasProps {
 
 const nodeTypes: NodeTypes = {
   workflow: WorkflowNode,
+  ...Object.fromEntries(NODE_TYPES.map(nt => [nt.type, WorkflowNode]))
 };
 
 const defaultEdgeOptions = {

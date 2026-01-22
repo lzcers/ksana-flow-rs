@@ -7,7 +7,7 @@ import { useStore } from '../../store';
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
-export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const LLMNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
 
   const adjustHeight = (el: HTMLTextAreaElement) => {
@@ -136,6 +136,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
   return (
     <NodeWrapper
       id={id}
+      type={type}
       data={data}
       selected={selected}
       minWidth={300}
