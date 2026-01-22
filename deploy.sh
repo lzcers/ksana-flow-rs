@@ -93,7 +93,7 @@ server {
     listen 80;
     server_name _; # Replace with your domain
 
-    root $WEB_DIR;
+    root /var/www/$APP_NAME;
     index index.html;
 
     # Serve Static Files (Frontend)
