@@ -153,7 +153,7 @@ export const LLMNode = memo(({ id, data, selected, width, height }: NodeProps & 
             >
               <option value="deepseek-chat">DeepSeek Chat</option>
               <option value="deepseek-reasoner">DeepSeek Reasoner</option>
-              <option value="google/gemini-3-pro-preview">Gemini 3 Pro</option>
+              <option value="google/gemini-3-pro-preview">Gemini 3 Pro preview</option>
             </select>
           </div>
           <div>

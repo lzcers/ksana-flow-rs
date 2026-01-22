@@ -100,6 +100,26 @@ export const resetWorkflowExecutionState = (state: WorkflowState): WorkflowState
   });
 };
 
+const syncEdgeHighlighting = (draft: WorkflowState) => {
+  const selectedNodeIds = new Set(draft.nodes.filter(n => n.selected).map(n => n.id));
+
+  draft.edges.forEach(edge => {
+    if (selectedNodeIds.has(edge.source)) {
+      edge.animated = true;
+      edge.style = { ...edge.style, stroke: '#3b82f6', strokeWidth: 3 };
+    } else {
+      edge.animated = false;
+      if (edge.style) {
+        delete edge.style.stroke;
+        delete edge.style.strokeWidth;
+        if (Object.keys(edge.style).length === 0) {
+           edge.style = undefined;
+        }
+      }
+    }
+  });
+};
+
 
 export const applyNodeChanges = (
   state: WorkflowState,
@@ -118,6 +138,8 @@ export const applyNodeChanges = (
         }
       }
     });
+
+    syncEdgeHighlighting(draft);
   });
 };
 
@@ -129,6 +151,8 @@ export const selectNode = (state: WorkflowState, nodeId: string | null): Workflo
     draft.nodes.forEach(node => {
       node.selected = node.id === nodeId;
     });
+
+    syncEdgeHighlighting(draft);
   });
 };
 
@@ -186,5 +210,7 @@ export const pasteNodes = (state: WorkflowState, newNodes: Node[], newEdges: Edg
         draft.edges.push(newEdge);
       }
     });
+
+    syncEdgeHighlighting(draft);
   });
 };
