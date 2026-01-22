@@ -132,10 +132,10 @@ systemctl restart $APP_NAME
 # EOF
 
 # Enable Site
-ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl reload nginx
+# ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
+# rm -f /etc/nginx/sites-enabled/default
+# nginx -t
+systemctl restart nginx
 
 echo "Deployment Complete!"
 echo "Server is running at http://$DOMAIN_NAME"
