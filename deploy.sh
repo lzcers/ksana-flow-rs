@@ -16,9 +16,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # 1. Update system and install dependencies
-echo "Installing system dependencies..."
-apt-get update
-apt-get install -y curl build-essential nginx git
+# echo "Installing system dependencies..."
+# apt-get update
+# apt-get install -y curl build-essential nginx git
 
 # 2. Install Rust (if not present)
 if ! command -v cargo &> /dev/null; then
