@@ -54,7 +54,7 @@ const fitViewOptions: FitViewOptions = { maxZoom: 1 };
 const ZoomDisplay = () => {
   const { zoom } = useViewport();
   return (
-    <div className="bg-zinc-900/80 backdrop-blur px-2 py-1 rounded border border-zinc-800 text-[10px] font-bold text-zinc-400 min-w-[40px] text-center">
+    <div className="px-2 py-1 rounded text-[10px] font-bold text-zinc-400 min-w-[40px] text-center">
       {Math.round(zoom * 100)}%
     </div>
   );

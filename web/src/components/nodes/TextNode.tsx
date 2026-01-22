@@ -189,7 +189,7 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
 
         {isMarkdown ? (
           <div
-            className="w-full flex-1 text-xs bg-zinc-950 border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag text-zinc-200 custom-scrollbar"
+            className="w-full flex-1 text-xs bg-zinc-950 border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
             onKeyDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onWheel={(e) => {
@@ -204,11 +204,12 @@ export const TextNodeComponent = ({ id, data, selected, width, height }: NodePro
           </div>
         ) : (
           <textarea
-            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
             value={text}
             onChange={onChange}
             onBlur={onBlur}
             placeholder="Enter text here..."
+            onWheel={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
           />
