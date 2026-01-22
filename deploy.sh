@@ -96,40 +96,40 @@ systemctl enable $APP_NAME
 systemctl restart $APP_NAME
 
 # 8. Setup Nginx
-echo "Configuring Nginx..."
-cat > /etc/nginx/sites-available/$APP_NAME <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN_NAME;
+# echo "Configuring Nginx..."
+# cat > /etc/nginx/sites-available/$APP_NAME <<EOF
+# server {
+#     listen 80;
+#     server_name $DOMAIN_NAME;
 
-    root $WEB_DIR;
-    index index.html;
+#     root $WEB_DIR;
+#     index index.html;
 
-    # Serve Static Files (Frontend) - Support SPA Routing
-    location / {
-        try_files \$uri \$uri/ /index.html =404;
-    }
+#     # Serve Static Files (Frontend) - Support SPA Routing
+#     location / {
+#         try_files \$uri \$uri/ /index.html =404;
+#     }
 
-    # Proxy API Requests to Backend
-    location /api/ {
-        proxy_pass http://127.0.0.1:3000/api/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
+#     # Proxy API Requests to Backend
+#     location /api/ {
+#         proxy_pass http://127.0.0.1:3000/api/;
+#         proxy_set_header Host \$host;
+#         proxy_set_header X-Real-IP \$remote_addr;
+#         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto \$scheme;
+#     }
 
-    # Proxy WebSocket Requests
-    location /ws {
-        proxy_pass http://127.0.0.1:3000/ws;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-    }
-}
-EOF
+#     # Proxy WebSocket Requests
+#     location /ws {
+#         proxy_pass http://127.0.0.1:3000/ws;
+#         proxy_http_version 1.1;
+#         proxy_set_header Upgrade \$http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#         proxy_set_header Host \$host;
+#         proxy_set_header X-Real-IP \$remote_addr;
+#     }
+# }
+# EOF
 
 # Enable Site
 ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
