@@ -64,15 +64,15 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Header Info - Floating above the node */}
       <div
         className={cn(
-          "absolute -top-9 left-0 w-full flex items-center justify-between transition-all duration-300 z-10",
+          "absolute -top-9 left-0 w-full h-9 flex items-center justify-between transition-all duration-300 z-10",
           selected ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
         )}
       >
         <div className="flex items-center gap-2">
           {/* Dot Indicator */}
-          <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
+          <div className="w-2 h-2 rounded-full bg-zinc-400 shadow-[0_0_8px_rgba(161,161,170,0.4)]"></div>
           {/* Title */}
-          <span className="text-sm font-bold text-zinc-200 tracking-wide drop-shadow-md">
+          <span className="text-sm font-bold text-zinc-300 tracking-wide drop-shadow-sm">
             {data.label}
           </span>
         </div>
@@ -82,10 +82,10 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           {/* Run Button */}
           <button
             onClick={handleRun}
-            className="group/run flex items-center justify-center w-7 h-7 backdrop-blur-xl bg-white/5 hover:bg-blue-500/40 text-zinc-200 hover:text-white rounded-full border border-white/10 hover:border-blue-400/50 shadow-[0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] hover:scale-110 active:scale-95 transition-all duration-300"
+            className="group/run flex items-center justify-center w-7 h-7 backdrop-blur-xl bg-zinc-800/50 hover:bg-zinc-700/80 text-zinc-400 hover:text-zinc-200 rounded-full border border-zinc-700/30 hover:border-zinc-600 shadow-sm hover:shadow-md transition-all duration-300"
             title="Run Node"
           >
-            <Play size={12} fill="currentColor" className="ml-0.5" />
+            <Play size={12} fill="currentColor" className="ml-0.5 opacity-80" />
           </button>
         </div>
       </div>

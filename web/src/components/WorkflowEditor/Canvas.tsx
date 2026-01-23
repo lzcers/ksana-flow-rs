@@ -323,7 +323,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 {workflowStatus === 'running' ? (
                   <button
                     onClick={onPause}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-yellow-500/80 hover:text-yellow-400 border border-zinc-700/50 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500/90 hover:text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
                     title="Pause"
                   >
                     <Pause size={18} fill="currentColor" />
@@ -332,7 +332,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 ) : (
                   <button
                     onClick={onResume}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-green-500/80 hover:text-green-400 border border-zinc-700/50 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500/90 hover:text-green-400 border border-green-500/20 hover:border-green-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
                     title="Resume"
                   >
                     <Play size={18} fill="currentColor" />
@@ -341,7 +341,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 )}
                 <button
                   onClick={onStop}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-red-500/80 hover:text-red-400 border border-zinc-700/50 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500/90 hover:text-red-400 border border-red-500/20 hover:border-red-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
                   title="Stop"
                 >
                   <Square size={18} fill="currentColor" />

@@ -443,8 +443,6 @@ pub async fn run_node(
                             }
                         }
 
-                        // Fallback: if not extracted via handle, try to extract "output" or single value
-                        // This handles cases where sourceHandle is missing but the structure implies a wrapped output
                         if !extracted {
                             if let Value::Object(map) = &val {
                                 if let Some(v) = map.get("output") {
@@ -459,7 +457,6 @@ pub async fn run_node(
                             }
                         }
 
-                        info!("Final value before restore: {:?}", val);
                         let output = restore_value(val);
                         inputs_map.insert(parent_id, output);
                     }

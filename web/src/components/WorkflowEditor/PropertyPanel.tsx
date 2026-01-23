@@ -19,7 +19,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         <h2 className="text-sm font-bold text-zinc-100 tracking-widest uppercase">Properties</h2>
         <button
           onClick={() => onDelete(node.id)}
-          className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-red-500/20 transition-all"
+          className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-all"
           title="Delete Node"
         >
           <Trash2 size={16} />
@@ -33,7 +33,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             type="text"
             value={node.data.label}
             onChange={(e) => onUpdateData(node.id, { label: e.target.value })}
-            className="w-full text-sm p-3 bg-black/40 border border-white/10 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all outline-none text-zinc-200 placeholder-zinc-700"
+            className="w-full text-sm p-3 bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border border-transparent focus:border-zinc-800 rounded-xl focus:ring-1 focus:ring-zinc-700/50 transition-all outline-none text-zinc-200 placeholder-zinc-600"
             placeholder="Node Label"
           />
         </div>
@@ -77,7 +77,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
                   }
                 })}
                 rows={4}
-                className="w-full text-sm p-3 bg-black/40 border border-white/10 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all outline-none resize-none text-zinc-200 placeholder-zinc-700 font-mono text-xs"
+                className="w-full text-sm p-3 bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border border-transparent focus:border-zinc-800 rounded-xl focus:ring-1 focus:ring-zinc-700/50 transition-all outline-none resize-none text-zinc-200 placeholder-zinc-600 font-mono text-xs"
                 placeholder="Enter user prompt template..."
               />
             </div>

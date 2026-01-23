@@ -189,10 +189,10 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
             onClose={() => setIsFullScreen(false)}
             title={isMarkdown ? "Markdown Preview" : "Text Content"}
           >
-            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black">
+            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black justify-center items-center">
               {isMarkdown ? (
                 <ThemeProvider theme={theme}>
-                  <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full">
+                  <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full w-full">
                     <Incremark incremark={incremark} />
                   </AutoScrollContainer>
                 </ThemeProvider>

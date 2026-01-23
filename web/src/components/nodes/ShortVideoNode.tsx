@@ -180,8 +180,8 @@ export const ShortVideoNode = memo(({ id, type, data, selected, width, height }:
     >
       <div className="p-4 flex-1 flex flex-col items-center justify-center min-h-0 bg-zinc-950/50">
         <div className="text-center space-y-2">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg shadow-indigo-500/20">
-            <Clapperboard className="text-white" size={24} />
+          <div className="w-12 h-12 rounded-xl bg-zinc-900 flex items-center justify-center mx-auto border border-zinc-800 shadow-sm">
+            <Clapperboard className="text-zinc-500" size={24} />
           </div>
           <div>
             <h3 className="text-sm font-medium text-zinc-200">AI Short Video Creator</h3>
@@ -192,7 +192,7 @@ export const ShortVideoNode = memo(({ id, type, data, selected, width, height }:
 
           <button
             onClick={() => setIsFullScreen(true)}
-            className="px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs rounded-md transition-colors border border-zinc-700"
+            className="px-4 py-1.5 bg-zinc-800/50 hover:bg-zinc-700/80 text-zinc-300 hover:text-zinc-100 text-xs rounded-md transition-colors border border-zinc-700/30 hover:border-zinc-600"
           >
             Open Studio
           </button>

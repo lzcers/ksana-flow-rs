@@ -19,9 +19,6 @@ const getIcon = (name: string) => {
 
 const getColorForCategory = (category: string) => {
   switch (category.toLowerCase()) {
-    case 'source': return 'bg-blue-500/20 text-blue-400 border border-blue-500/20 shadow-[0_0_10px_rgba(59,130,246,0.1)]';
-    case 'strategy': return 'bg-purple-500/20 text-purple-400 border border-purple-500/20 shadow-[0_0_10px_rgba(168,85,247,0.1)]';
-    case 'sink': return 'bg-orange-500/20 text-orange-400 border border-orange-500/20 shadow-[0_0_10px_rgba(249,115,22,0.1)]';
     default: return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/20';
   }
 };

@@ -18,27 +18,27 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden font-sans">
+    <div className="w-full h-full flex flex-col bg-zinc-950 text-zinc-200 overflow-hidden font-sans">
       {/* Top Toolbar */}
-      <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-4 shrink-0 bg-white dark:bg-zinc-950">
+      <header className="h-14 border-b border-zinc-800 flex items-center justify-between px-4 shrink-0 bg-zinc-950">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
-            className="p-2 -ml-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 transition-colors"
+            className="p-2 -ml-2 rounded-full hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          <h1 className="text-base font-semibold text-zinc-200">
           </h1>
         </div>
 
         {/* Module Switcher */}
-        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg">
+        <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg">
           <button
             onClick={() => setCurrentModule('script')}
             className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${currentModule === 'script'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm'
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+              ? 'bg-zinc-800 text-zinc-200 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
               }`}
           >
             <Book size={16} />
@@ -47,8 +47,8 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
           <button
             onClick={() => setCurrentModule('character')}
             className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${currentModule === 'character'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm'
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+              ? 'bg-zinc-800 text-zinc-200 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
               }`}
           >
             <Users size={16} />
@@ -57,8 +57,8 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
           <button
             onClick={() => setCurrentModule('storyboard')}
             className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${currentModule === 'storyboard'
-              ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm'
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+              ? 'bg-zinc-800 text-zinc-200 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
               }`}
           >
             <Clapperboard size={16} />
@@ -73,7 +73,7 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-hidden relative bg-zinc-50 dark:bg-zinc-900">
+      <main className="flex-1 overflow-hidden relative bg-zinc-950">
         {currentModule === 'script' && (
           <ScriptModule
             content={displayData.script?.content || ''}

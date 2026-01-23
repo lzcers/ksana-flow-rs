@@ -73,7 +73,7 @@ export const TextFileNodeComponent = ({ id, type, data, selected, width, height 
                 {fileId ? (
                     <div className="flex flex-col items-center gap-1 w-full">
                         <div className="flex items-center gap-2 text-zinc-200">
-                            <FileText size={24} className="text-blue-500" />
+                            <FileText size={24} className="text-zinc-400" />
                             <span className="text-sm truncate max-w-[150px]" title={filename}>
                                 {filename}
                             </span>
@@ -83,7 +83,7 @@ export const TextFileNodeComponent = ({ id, type, data, selected, width, height 
                         </div>
                         <button
                             onClick={handleUploadClick}
-                            className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
+                            className="mt-2 text-xs text-zinc-400 hover:text-zinc-200 underline"
                             disabled={isUploading}
                         >
                             {isUploading ? 'Uploading...' : 'Change File'}
