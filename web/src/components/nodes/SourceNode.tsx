@@ -78,7 +78,7 @@ export const SourceNode = memo(({ id, type, data, selected, width, height }: Nod
           <div>
             <label className="text-[10px] text-zinc-500 font-bold block mb-1">Code</label>
             <input
-              className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+              className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
               value={code}
               onChange={handleCodeChange}
               onKeyDown={(e) => e.stopPropagation()}
@@ -88,7 +88,7 @@ export const SourceNode = memo(({ id, type, data, selected, width, height }: Nod
           <div>
             <label className="text-[10px] text-zinc-500 font-bold block mb-1">Product</label>
             <select
-              className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+              className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
               value={product}
               onChange={handleProductChange}
               onKeyDown={(e) => e.stopPropagation()}
@@ -104,7 +104,7 @@ export const SourceNode = memo(({ id, type, data, selected, width, height }: Nod
           <div>
             <label className="text-[10px] text-zinc-500 font-bold block mb-1">Start Time</label>
             <input
-              className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+              className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
               value={startTime}
               onChange={handleStartTimeChange}
               onKeyDown={(e) => e.stopPropagation()}
@@ -114,7 +114,7 @@ export const SourceNode = memo(({ id, type, data, selected, width, height }: Nod
           <div>
             <label className="text-[10px] text-zinc-500 font-bold block mb-1">End Time</label>
             <input
-              className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+              className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
               value={endTime}
               onChange={handleEndTimeChange}
               onKeyDown={(e) => e.stopPropagation()}

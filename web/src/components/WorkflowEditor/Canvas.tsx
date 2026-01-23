@@ -264,7 +264,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [setConnectionState]);
 
   return (
-    <main className="w-full h-full relative bg-zinc-950" onMouseMove={onMouseMove}>
+    <main className="w-full h-full relative bg-black" onMouseMove={onMouseMove}>
       <ReactFlow
         panOnDrag={spacePressed}
         selectionOnDrag={!spacePressed}
@@ -296,7 +296,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         minZoom={0.1}
         maxZoom={2}
       >
-        <Background color="#27272a" gap={24} size={1.5} />
+        <Background color="#52525b" bgColor='#000' gap={24} size={1.5} />
         <Controls
           showInteractive={false}
           className="!bg-zinc-900/80 !backdrop-blur-xl !border-white/10 !shadow-xl !fill-zinc-400 !rounded-xl !overflow-hidden !border"

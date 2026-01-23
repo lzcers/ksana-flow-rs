@@ -37,7 +37,7 @@ export const TimerNode = memo(({ id, type, data, selected, width, height }: Node
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">Cron Expression</label>
           <input
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300 font-mono"
+            className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300 font-mono"
             value={cronExpr}
             onChange={handleCronChange}
             onKeyDown={(e) => e.stopPropagation()}

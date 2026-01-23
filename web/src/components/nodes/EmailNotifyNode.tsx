@@ -70,7 +70,7 @@ export const EmailNotifyNode = memo(({ id, type, data, selected, width, height }
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">Subject</label>
           <input
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+            className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
             value={subject}
             onChange={handleSubjectChange}
             onKeyDown={(e) => e.stopPropagation()}
@@ -80,7 +80,7 @@ export const EmailNotifyNode = memo(({ id, type, data, selected, width, height }
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">Body</label>
           <textarea
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 resize-none outline-none nodrag text-zinc-300"
+            className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 resize-none outline-none nodrag text-zinc-300"
             rows={4}
             value={body}
             onChange={handleBodyChange}

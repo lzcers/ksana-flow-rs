@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Position, type NodeProps, useNodeConnections, useKeyPress } from '@xyflow/react';
+import { Position, type NodeProps, useNodeConnections } from '@xyflow/react';
 import { AutoScrollContainer, Incremark, ThemeProvider, useIncremark } from '@incremark/react';
 import { Eye, Pencil, Maximize2 } from 'lucide-react';
 import { NodeWrapper } from '../NodeWrapper';
@@ -15,7 +15,6 @@ const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export const TextNodeComponent = ({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, currentRunId, events$ } = useStore();
-  const spacePressed = useKeyPress('Space');
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -139,14 +138,6 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
     }
   }, [id, text, updateNodeData]); // Removed data.config
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (spacePressed) {
-      e.preventDefault();
-    } else {
-      e.stopPropagation();
-    }
-  }, [spacePressed]);
-
   const headerActions = (
     <div className="flex items-center gap-1">
       <button
@@ -198,7 +189,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
             onClose={() => setIsFullScreen(false)}
             title={isMarkdown ? "Markdown Preview" : "Text Content"}
           >
-            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
+            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black">
               {isMarkdown ? (
                 <ThemeProvider theme={theme}>
                   <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full">
@@ -207,7 +198,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
                 </ThemeProvider>
               ) : (
                 <textarea
-                  className="w-full h-full p-4 bg-zinc-950 resize-none focus:outline-none text-zinc-200 font-mono"
+                  className="w-full h-full p-4 bg-black resize-none focus:outline-none text-zinc-200 font-mono"
                   value={text}
                   onChange={onChange}
                   placeholder="Enter text here..."
@@ -220,9 +211,8 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
 
         {isMarkdown ? (
           <div
-            className="w-full flex-1 text-xs bg-zinc-950 border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
+            className="w-full flex-1 text-xs bg-black border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
             onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={handleMouseDown}
             onWheel={(e) => {
               e.stopPropagation();
             }}
@@ -235,14 +225,13 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
           </div>
         ) : (
           <textarea
-            className="w-full flex-1 p-2 text-xs bg-zinc-950 border border-zinc-800 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            className="w-full flex-1 p-2 text-xs bg-black border border-zinc-800 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
             value={text}
             onChange={onChange}
             onBlur={onBlur}
             placeholder="Enter text here..."
             onWheel={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={handleMouseDown}
           />
         )}
       </div>

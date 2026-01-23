@@ -45,7 +45,7 @@ export const TextMergeNodeComponent = ({ id, type, data, selected, width, height
           Separator
         </div>
         <input
-          className="w-full p-2 text-xs bg-zinc-950 border border-zinc-800 rounded nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+          className="w-full p-2 text-xs bg-black border border-zinc-800 rounded nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
           value={separator}
           onChange={onChange}
           onBlur={onBlur}

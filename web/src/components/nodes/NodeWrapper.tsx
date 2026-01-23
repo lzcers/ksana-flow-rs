@@ -93,7 +93,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Main Content Card */}
       <div
         className={cn(
-          "w-full h-full flex-1 bg-[#18181b] border transition-all duration-300 relative rounded-xl",
+          "w-full h-full flex-1 bg-zinc-950 border transition-all duration-300 relative rounded-xl",
           selected
             ? "border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20"
             : "border-zinc-800 hover:border-zinc-700 shadow-lg shadow-black/40",
@@ -146,7 +146,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
             position={position}
             id={`s-${position}`}
             className={cn(
-              "!w-3 !h-3 !bg-blue-500 !border-2 !border-[#18181b] !rounded-full transition-all duration-200 z-50",
+              "!w-3 !h-3 !bg-blue-500 !border-2 !border-zinc-950 !rounded-full transition-all duration-200 z-50",
               (!isConnecting || id === connectionSourceId) && (selected ? "opacity-100" : "opacity-0 group-hover:opacity-100")
             )}
             style={HANDLE_STYLES[position]}

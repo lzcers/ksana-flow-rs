@@ -54,7 +54,7 @@ export const BacktesterNode = memo(({ id, type, data, selected, width, height }:
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">Initial Money</label>
           <input
             type="number"
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+            className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
             value={initMoney}
             onChange={handleInitMoneyChange}
             onKeyDown={(e) => e.stopPropagation()}
@@ -65,7 +65,7 @@ export const BacktesterNode = memo(({ id, type, data, selected, width, height }:
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">Fee Rate</label>
           <input
             type="number"
-            className="w-full text-[10px] p-1.5 bg-zinc-950 border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
+            className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 outline-none nodrag text-zinc-300"
             value={feeRate}
             onChange={handleFeeRateChange}
             onKeyDown={(e) => e.stopPropagation()}

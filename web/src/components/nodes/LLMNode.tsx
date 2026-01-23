@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Position, type NodeProps, useKeyPress } from '@xyflow/react';
+import { Position, type NodeProps } from '@xyflow/react';
 import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
@@ -9,7 +9,6 @@ const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
 export const LLMNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
-  const spacePressed = useKeyPress('Space');
 
   const adjustHeight = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
@@ -134,13 +133,6 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
       }
     });
   }, [id, data.config, updateNodeData]);
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (spacePressed) {
-      e.preventDefault();
-    }
-  }, [spacePressed]);
-
   return (
     <NodeWrapper
       id={id}
@@ -158,7 +150,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
           <div className="flex-1">
             <label className="text-[10px] text-zinc-500 font-bold block mb-1">Model</label>
             <select
-              className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded px-1 py-1 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full text-xs bg-black border border-zinc-800 rounded px-1 py-1 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
               value={model}
               onChange={handleModelChange}
             >
@@ -172,7 +164,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
             <div className="flex items-center h-[26px]">
               <input
                 type="checkbox"
-                className="rounded border-zinc-800 bg-zinc-950 text-blue-500 focus:ring-blue-500 cursor-pointer"
+                className="rounded border-zinc-800 bg-black text-blue-500 focus:ring-blue-500 cursor-pointer"
                 checked={stream}
                 onChange={handleStreamChange}
               />
@@ -184,14 +176,13 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
           <textarea
             style={{ boxSizing: 'content-box' }}
             ref={systemInputRef}
-            className="w-full flex-1 box-sizing: content-box text-xs bg-zinc-950 border overflow-hidden max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            className="w-full flex-1 box-sizing: content-box text-xs bg-black border overflow-hidden max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
             rows={5}
             value={systemPrompt}
             onChange={handleSystemPromptChange}
             onCompositionStart={handleSystemCompositionStart}
             onCompositionEnd={handleSystemCompositionEnd}
             onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={handleMouseDown}
             placeholder="System prompt..."
           />
         </div>
@@ -200,14 +191,13 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
           <textarea
             style={{ boxSizing: 'content-box' }}
             ref={userInputRef}
-            className="w-full flex-1 text-xs bg-zinc-950 border overflow-x-hidden over max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            className="w-full flex-1 text-xs bg-black border overflow-x-hidden over max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
             rows={5}
             value={userPrompt}
             onChange={handleUserPromptChange}
             onCompositionStart={handleUserCompositionStart}
             onCompositionEnd={handleUserCompositionEnd}
             onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={handleMouseDown}
             placeholder="User prompt template..."
           />
         </div>
