@@ -14,7 +14,8 @@ const SYSTEM_PROMPT: &str = r#"
 You are a professional short video script writer.
 Your task is to generate a detailed script, character list, and storyboard based on the user's input.
 You must output STRICTLY valid JSON content that matches the following TypeScript interface.
-
+Do not include any markdown formatting (like ```json), just the raw JSON string.
+```typescript
 interface CharacterData {
   id: string;
   name: string;
@@ -47,7 +48,8 @@ interface ProjectData {
   characters: CharacterData[];
   storyboard: StoryboardShot[];
 }
-Do not include any markdown formatting (like ```json), just the raw JSON string.
+注意！输出的 JSON 字符串必须是严格符合 TypeScript 接口的 JSON 数据，不能包含任何额外的 markdown 格式。
+```
 "#;
 
 pub struct ShortVideoScriptNode {

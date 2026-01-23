@@ -49,23 +49,23 @@ export const StoryboardModule: React.FC<StoryboardModuleProps> = ({ shots, isNod
                 </td>
                 <td className="p-4 align-top">
                   <div className="space-y-2 text-xs">
-                    {shot.description.background && (
+                    {shot.description?.background && (
                       <p><span className="font-semibold text-zinc-500">背景：</span>{shot.description.background}</p>
                     )}
-                    {shot.description.relation && (
+                    {shot.description?.relation && (
                       <p><span className="font-semibold text-zinc-500">关系：</span>{shot.description.relation}</p>
                     )}
-                    {shot.description.composition && (
+                    {shot.description?.composition && (
                       <p><span className="font-semibold text-zinc-500">构图：</span>{shot.description.composition}</p>
                     )}
                   </div>
                 </td>
                 <td className="p-4 align-top">
                   <div className="space-y-2 text-xs">
-                    {shot.lines.narration && (
+                    {shot.lines?.narration && (
                       <p><span className="font-semibold text-zinc-500">旁白：</span>{shot.lines.narration}</p>
                     )}
-                    {shot.lines.dialogue && (
+                    {shot.lines?.dialogue && (
                       <p><span className="font-semibold text-zinc-500">台词：</span>{shot.lines.dialogue}</p>
                     )}
                   </div>

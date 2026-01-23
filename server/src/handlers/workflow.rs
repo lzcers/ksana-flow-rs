@@ -424,7 +424,6 @@ pub async fn run_node(
                         && !parent_node.data.outputs.is_null()
                     {
                         let mut val = parent_node.data.outputs.clone();
-                        info!("parent_node.data.outputs: {:?}", val);
                         // Try to find the edge to determine which output to use
                         let mut extracted = false;
                         if let Some(edge) = blueprint
@@ -447,11 +446,9 @@ pub async fn run_node(
                             if let Value::Object(map) = &val {
                                 if let Some(v) = map.get("output") {
                                     val = v.clone();
-                                    info!("Fallback extracted 'output': {:?}", val);
                                 } else if map.len() == 1 {
                                     if let Some(v) = map.values().next() {
                                         val = v.clone();
-                                        info!("Fallback extracted single value: {:?}", val);
                                     }
                                 }
                             }

@@ -211,7 +211,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
 
         {isMarkdown ? (
           <div
-            className="w-full flex-1 text-xs bg-black border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
+            className="w-full flex-1 p-4 text-xs bg-black border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
             onKeyDown={(e) => e.stopPropagation()}
             onWheel={(e) => {
               e.stopPropagation();
