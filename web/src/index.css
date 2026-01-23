@@ -19,6 +19,14 @@ body {
 }
 
 /* React Flow Custom Styles */
+.react-flow.ksana-flow--panning .react-flow__node,
+.react-flow.ksana-flow--panning .react-flow__node *,
+.react-flow.ksana-flow--panning .react-flow__nodes,
+.react-flow.ksana-flow--panning .react-flow__edges,
+.react-flow.ksana-flow--panning .react-flow__edge {
+  pointer-events: none !important;
+}
+
 .react-flow__edge-path {
   stroke: #52525b !important; /* zinc-600 */
   stroke-width: 2;

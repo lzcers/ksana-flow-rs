@@ -31,7 +31,6 @@ export interface StoryboardShot {
 }
 
 export interface ProjectData {
-  script: ScriptData;
   characters: CharacterData[];
   storyboard: StoryboardShot[];
 }

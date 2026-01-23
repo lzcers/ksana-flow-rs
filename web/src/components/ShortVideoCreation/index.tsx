@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Book, Users, Clapperboard } from 'lucide-react';
-import { ScriptModule } from './ScriptModule';
 import { CharacterModule } from './CharacterModule';
 import { StoryboardModule } from './StoryboardModule';
 import type { ModuleType, ShortVideoCreationProps } from './types';
@@ -8,12 +7,10 @@ import type { ModuleType, ShortVideoCreationProps } from './types';
 
 
 export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, onBack, isNodeCompleted }) => {
-  const [currentModule, setCurrentModule] = useState<ModuleType>('storyboard'); // Default to storyboard as per image
+  const [currentModule, setCurrentModule] = useState<ModuleType>('storyboard');
 
-  // Use passed data or fallback to mock data if empty
   const displayData = {
     storyboard: data?.storyboard || [],
-    script: data?.script || { content: '' },
     characters: data?.characters || [],
   };
 
@@ -34,16 +31,6 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
 
         {/* Module Switcher */}
         <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg">
-          <button
-            onClick={() => setCurrentModule('script')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${currentModule === 'script'
-              ? 'bg-zinc-800 text-zinc-200 shadow-sm'
-              : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-          >
-            <Book size={16} />
-            剧本
-          </button>
           <button
             onClick={() => setCurrentModule('character')}
             className={`px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-2 transition-colors ${currentModule === 'character'
@@ -74,16 +61,6 @@ export const ShortVideoCreation: React.FC<ShortVideoCreationProps> = ({ data, on
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden relative bg-zinc-950">
-        {currentModule === 'script' && (
-          <ScriptModule
-            content={displayData.script?.content || ''}
-            readOnly={true}
-            onChange={(content) => {
-              // In a real app, propagate this change up
-              console.log('Script changed:', content);
-            }}
-          />
-        )}
         {currentModule === 'character' && (
           <CharacterModule characters={displayData.characters || []} isNodeCompleted={isNodeCompleted} />
         )}

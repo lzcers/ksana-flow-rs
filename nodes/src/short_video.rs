@@ -15,10 +15,6 @@ You are a professional short video script writer.
 Your task is to generate a detailed script, character list, and storyboard based on the user's input.
 You must output STRICTLY valid JSON content that matches the following TypeScript interface.
 
-interface ScriptData {
-  content: string;
-}
-
 interface CharacterData {
   id: string;
   name: string;
@@ -48,7 +44,6 @@ interface StoryboardShot {
 }
 
 interface ProjectData {
-  script: ScriptData;
   characters: CharacterData[];
   storyboard: StoryboardShot[];
 }

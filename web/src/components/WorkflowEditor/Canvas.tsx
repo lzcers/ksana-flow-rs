@@ -269,6 +269,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         panOnDrag={spacePressed}
         selectionOnDrag={!spacePressed}
         panOnScroll={true}
+        className={spacePressed ? 'ksana-flow--panning' : undefined}
         nodes={nodes}
         edges={edges}
         onPaneContextMenu={onPaneContextMenu}
