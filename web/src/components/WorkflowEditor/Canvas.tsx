@@ -313,9 +313,9 @@ export const Canvas: React.FC<CanvasProps> = ({
             {workflowStatus === 'idle' ? (
               <button
                 onClick={onRun}
-                className="flex items-center gap-2 px-6 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/50 rounded-full text-sm font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:scale-105 transition-all backdrop-blur-sm"
+                className="flex items-center gap-2 px-6 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 hover:text-zinc-100 border border-zinc-700/50 rounded-full text-sm font-medium shadow-sm hover:shadow-md transition-all backdrop-blur-sm"
               >
-                <Play size={18} fill="currentColor" />
+                <Play size={18} fill="currentColor" className="opacity-80" />
                 Run Workflow
               </button>
             ) : (
@@ -323,7 +323,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 {workflowStatus === 'running' ? (
                   <button
                     onClick={onPause}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/40 rounded-full transition-all shadow-[0_0_10px_rgba(234,179,8,0.1)] hover:scale-105 backdrop-blur-sm"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-yellow-500/80 hover:text-yellow-400 border border-zinc-700/50 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
                     title="Pause"
                   >
                     <Pause size={18} fill="currentColor" />
@@ -332,7 +332,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 ) : (
                   <button
                     onClick={onResume}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 hover:border-green-500/40 rounded-full transition-all shadow-[0_0_10px_rgba(34,197,94,0.1)] hover:scale-105 backdrop-blur-sm"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-green-500/80 hover:text-green-400 border border-zinc-700/50 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
                     title="Resume"
                   >
                     <Play size={18} fill="currentColor" />
@@ -341,7 +341,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 )}
                 <button
                   onClick={onStop}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:border-red-500/40 rounded-full transition-all shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:scale-105 backdrop-blur-sm"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-red-500/80 hover:text-red-400 border border-zinc-700/50 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
                   title="Stop"
                 >
                   <Square size={18} fill="currentColor" />

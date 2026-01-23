@@ -227,8 +227,8 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
               className={cn(
                 "group relative flex items-center gap-2 px-2.5 h-7 rounded-lg transition-all cursor-pointer min-w-[120px] max-w-[180px] select-none border",
                 isActive
-                  ? "bg-zinc-800/80 border-white/10 text-zinc-100 shadow-lg shadow-black/20"
-                  : "bg-transparent border-transparent text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+                  ? "bg-zinc-800/80 border-zinc-700 text-zinc-200 shadow-sm"
+                  : "bg-transparent border-transparent text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300"
               )}
               onClick={() => {
                 if (!isActive) {
@@ -240,11 +240,11 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
             >
               {isRunning ? (
                 <div className="relative">
-                  <Loader2 size={12} className="shrink-0 text-blue-400 animate-spin" />
-                  <div className="absolute inset-0 bg-blue-500/30 blur-sm rounded-full animate-pulse"></div>
+                  <Loader2 size={12} className="shrink-0 text-zinc-400 animate-spin" />
+                  <div className="absolute inset-0 bg-zinc-500/20 blur-sm rounded-full animate-pulse"></div>
                 </div>
               ) : (
-                <FileText size={12} className={cn("shrink-0 transition-colors", isActive ? "text-blue-400" : "opacity-50 group-hover:opacity-70")} />
+                <FileText size={12} className={cn("shrink-0 transition-colors", isActive ? "text-zinc-400" : "opacity-50 group-hover:opacity-70")} />
               )}
 
               {isEditing && isActive ? (
@@ -252,7 +252,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   type="text"
                   value={editingName}
                   onChange={(e) => setEditingName(e.target.value)}
-                  className="w-full h-full px-1 text-[11px] bg-transparent border-b border-blue-500 focus:outline-none text-zinc-100 placeholder-zinc-600"
+                  className="w-full h-full px-1 text-[11px] bg-transparent border-b border-zinc-600 focus:outline-none text-zinc-200 placeholder-zinc-600"
                   autoFocus
                   onBlur={saveEditing}
                   onKeyDown={(e) => {
@@ -273,7 +273,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   onCloseTab(tab.id);
                 }}
                 className={cn(
-                  "p-0.5 rounded-full hover:bg-white/10 text-zinc-500 hover:text-zinc-200 transition-all",
+                  "p-0.5 rounded-full hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-200 transition-all",
                   isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 )}
               >
@@ -285,13 +285,13 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
       </div>
 
       {/* Global Actions */}
-      <div className="flex-none flex items-center px-2 border-l border-white/10 ml-1">
+      <div className="flex-none flex items-center px-2 border-l border-zinc-800 ml-1">
         <button
           onClick={handleSave}
-          className="group flex items-center justify-center w-7 h-7 rounded-lg text-zinc-400 hover:text-white hover:bg-blue-500 hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all duration-300"
+          className="group flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-all duration-300"
           title="Save (Ctrl+S)"
         >
-          <Save size={16} className="group-hover:scale-110 transition-transform" />
+          <Save size={16} className="group-hover:scale-105 transition-transform" />
         </button>
       </div>
 

@@ -78,7 +78,7 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
             placeholder="Search nodes..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full bg-zinc-800/50 border border-white/5 rounded-lg py-1.5 pl-8 pr-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/30 focus:bg-zinc-800 focus:ring-1 focus:ring-blue-500/20 transition-all"
+            className="w-full bg-zinc-800/50 border border-zinc-800 rounded-lg py-1.5 pl-8 pr-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-700 focus:bg-zinc-800 focus:ring-1 focus:ring-zinc-700/50 transition-all"
             onKeyDown={e => e.stopPropagation()}
           />
         </div>
