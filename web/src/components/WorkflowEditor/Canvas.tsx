@@ -264,7 +264,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   }, [setConnectionState]);
 
   return (
-    <main className="flex-1 relative bg-zinc-950" onMouseMove={onMouseMove}>
+    <main className="w-full h-full relative bg-zinc-950" onMouseMove={onMouseMove}>
       <ReactFlow
         panOnDrag={spacePressed}
         selectionOnDrag={!spacePressed}
@@ -297,34 +297,53 @@ export const Canvas: React.FC<CanvasProps> = ({
         maxZoom={2}
       >
         <Background color="#27272a" gap={24} size={1.5} />
-        <Controls showInteractive={false} className="!bg-zinc-900 !border-zinc-800 !shadow-sm !fill-zinc-400" />
+        <Controls
+          showInteractive={false}
+          className="!bg-zinc-900/80 !backdrop-blur-xl !border-white/10 !shadow-xl !fill-zinc-400 !rounded-xl !overflow-hidden !border"
+        />
 
         <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
-          <ZoomDisplay />
+          <div className="bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-lg p-1 shadow-lg">
+            <ZoomDisplay />
+          </div>
         </Panel>
 
-        <Panel position="bottom-center" className="mb-8">
-          <div className="flex items-center gap-2 bg-zinc-900/90 backdrop-blur border border-zinc-800 p-1.5 rounded-lg shadow-xl">
+        <Panel position="bottom-center" className="mb-12">
+          <div className="flex items-center gap-3">
             {workflowStatus === 'idle' ? (
-              <button onClick={onRun} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-sm font-medium transition-colors">
-                <Play size={16} fill="currentColor" />
+              <button
+                onClick={onRun}
+                className="flex items-center gap-2 px-6 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/50 rounded-full text-sm font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:scale-105 transition-all backdrop-blur-sm"
+              >
+                <Play size={18} fill="currentColor" />
                 Run Workflow
               </button>
             ) : (
               <>
                 {workflowStatus === 'running' ? (
-                  <button onClick={onPause} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-yellow-500 rounded-md transition-colors" title="Pause">
+                  <button
+                    onClick={onPause}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/40 rounded-full transition-all shadow-[0_0_10px_rgba(234,179,8,0.1)] hover:scale-105 backdrop-blur-sm"
+                    title="Pause"
+                  >
                     <Pause size={18} fill="currentColor" />
                     <span className="text-sm font-medium">Pause</span>
                   </button>
                 ) : (
-                  <button onClick={onResume} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-green-500 rounded-md transition-colors" title="Resume">
+                  <button
+                    onClick={onResume}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 hover:border-green-500/40 rounded-full transition-all shadow-[0_0_10px_rgba(34,197,94,0.1)] hover:scale-105 backdrop-blur-sm"
+                    title="Resume"
+                  >
                     <Play size={18} fill="currentColor" />
                     <span className="text-sm font-medium">Resume</span>
                   </button>
                 )}
-                <div className="w-px h-6 bg-zinc-800 mx-1"></div>
-                <button onClick={onStop} className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 text-red-500 rounded-md transition-colors" title="Stop">
+                <button
+                  onClick={onStop}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:border-red-500/40 rounded-full transition-all shadow-[0_0_10px_rgba(239,68,68,0.1)] hover:scale-105 backdrop-blur-sm"
+                  title="Stop"
+                >
                   <Square size={18} fill="currentColor" />
                   <span className="text-sm font-medium">Stop</span>
                 </button>

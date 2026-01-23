@@ -82,7 +82,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           {/* Run Button */}
           <button
             onClick={handleRun}
-            className="flex items-center justify-center w-7 h-7 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-full border border-zinc-700 shadow-lg hover:shadow-xl transition-all"
+            className="group/run flex items-center justify-center w-7 h-7 backdrop-blur-xl bg-white/5 hover:bg-blue-500/40 text-zinc-200 hover:text-white rounded-full border border-white/10 hover:border-blue-400/50 shadow-[0_4px_12px_rgba(0,0,0,0.3)] hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] hover:scale-110 active:scale-95 transition-all duration-300"
             title="Run Node"
           >
             <Play size={12} fill="currentColor" className="ml-0.5" />

@@ -121,8 +121,10 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             className={cn(
-              "flex items-center justify-center w-8 h-8 rounded hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors",
-              isDropdownOpen && "bg-zinc-800 text-zinc-100"
+              "flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-200",
+              isDropdownOpen
+                ? "bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                : "text-zinc-400 hover:text-zinc-100 hover:bg-white/5 hover:scale-105 active:scale-95"
             )}
             title="All Workflows"
           >
@@ -130,31 +132,35 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
           </button>
 
           {isDropdownOpen && (
-            <div className="absolute top-full left-0 mt-1 w-64 bg-zinc-900 border border-zinc-800 rounded-lg shadow-xl overflow-hidden py-1 max-h-[400px] overflow-y-auto z-50">
+            <div className="absolute top-full left-0 mt-2 w-56 bg-zinc-900/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden py-1 max-h-[320px] overflow-y-auto z-50 animate-in fade-in slide-in-from-top-1 duration-200">
               <button
                 onClick={() => {
                   onCreateNew();
                   setIsDropdownOpen(false);
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors border-b border-zinc-800/50"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5"
               >
-                <Plus size={12} />
+                <div className="w-5 h-5 rounded bg-blue-500/20 flex items-center justify-center text-blue-400">
+                  <Plus size={12} />
+                </div>
                 New Workflow
               </button>
-              
+
               <button
                 onClick={handleImportClick}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors border-b border-zinc-800/50"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5"
               >
-                <Upload size={12} />
+                <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center text-purple-400">
+                  <Upload size={12} />
+                </div>
                 Import Workflow
               </button>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
-                accept=".json" 
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept=".json"
               />
 
               <button
@@ -162,52 +168,56 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   onExportWorkflow();
                   setIsDropdownOpen(false);
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors border-b border-zinc-800/50"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-[11px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white transition-colors border-b border-white/5"
               >
-                <Download size={12} />
+                <div className="w-5 h-5 rounded bg-green-500/20 flex items-center justify-center text-green-400">
+                  <Download size={12} />
+                </div>
                 Export Workflow
               </button>
 
-              {workflows.map(wf => (
-                <div
-                  key={wf.id}
-                  className="group flex items-center justify-between px-3 py-2 hover:bg-zinc-800 cursor-pointer"
-                  onClick={() => {
-                    onLoadWorkflow(wf.id);
-                    setIsDropdownOpen(false);
-                  }}
-                >
-                  <span className={cn("text-xs truncate", currentWorkflowId === wf.id ? "text-blue-400" : "text-zinc-300")}>
-                    {wf.name}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm('Are you sure you want to delete this workflow?')) {
-                        onDeleteWorkflow(wf.id);
-                      }
+              <div className="px-1.5 py-1.5">
+                <div className="px-1.5 py-1 text-[9px] font-bold text-zinc-500 uppercase tracking-wider">Recent Workflows</div>
+                {workflows.map(wf => (
+                  <div
+                    key={wf.id}
+                    className="group flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                    onClick={() => {
+                      onLoadWorkflow(wf.id);
+                      setIsDropdownOpen(false);
                     }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-zinc-500 hover:text-red-400 transition-opacity"
                   >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-              {workflows.length === 0 && (
-                <div className="px-3 py-2 text-xs text-zinc-500 italic">No workflows found</div>
-              )}
+                    <span className={cn("text-[11px] truncate pl-0.5", currentWorkflowId === wf.id ? "text-blue-400 font-medium" : "text-zinc-400 group-hover:text-zinc-200")}>
+                      {wf.name}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm('Are you sure you want to delete this workflow?')) {
+                          onDeleteWorkflow(wf.id);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                ))}
+                {workflows.length === 0 && (
+                  <div className="px-2 py-1.5 text-[10px] text-zinc-600 italic text-center">No workflows found</div>
+                )}
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      <div className="w-px h-4 bg-zinc-800 mx-1"></div>
+      <div className="w-px h-6 bg-white/10 mx-2"></div>
 
       {/* Tabs List */}
-      <div className="flex-1 flex items-end h-full overflow-x-auto no-scrollbar gap-1 px-1">
+      <div className="flex-1 flex items-center h-full overflow-x-auto no-scrollbar gap-1 px-1">
         {tabs.map(tab => {
           const isActive = currentWorkflowId === tab.id;
-          // Use global status map if available, fallback to current status if active, otherwise idle
           const status = tab.id ? (workflowStatuses[tab.id] || 'idle') : 'idle';
           const isRunning = status === 'running';
 
@@ -215,10 +225,10 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
             <div
               key={tab.id ?? 'new'}
               className={cn(
-                "group relative flex items-center gap-2 px-3 h-8 rounded-t-md border-t border-x border-transparent transition-all cursor-pointer min-w-[120px] max-w-[200px] select-none",
+                "group relative flex items-center gap-2 px-2.5 h-7 rounded-lg transition-all cursor-pointer min-w-[120px] max-w-[180px] select-none border",
                 isActive
-                  ? "bg-zinc-800 border-zinc-700/50 text-zinc-100"
-                  : "text-zinc-500 hover:bg-zinc-800/30 hover:text-zinc-300"
+                  ? "bg-zinc-800/80 border-white/10 text-zinc-100 shadow-lg shadow-black/20"
+                  : "bg-transparent border-transparent text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
               )}
               onClick={() => {
                 if (!isActive) {
@@ -229,9 +239,12 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
               onDoubleClick={() => isActive && startEditing()}
             >
               {isRunning ? (
-                <Loader2 size={12} className="shrink-0 text-blue-400 animate-spin" />
+                <div className="relative">
+                  <Loader2 size={12} className="shrink-0 text-blue-400 animate-spin" />
+                  <div className="absolute inset-0 bg-blue-500/30 blur-sm rounded-full animate-pulse"></div>
+                </div>
               ) : (
-                <FileText size={12} className={cn("shrink-0", isActive ? "text-blue-400" : "opacity-50")} />
+                <FileText size={12} className={cn("shrink-0 transition-colors", isActive ? "text-blue-400" : "opacity-50 group-hover:opacity-70")} />
               )}
 
               {isEditing && isActive ? (
@@ -239,7 +252,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   type="text"
                   value={editingName}
                   onChange={(e) => setEditingName(e.target.value)}
-                  className="w-full h-5 px-1 text-xs bg-zinc-950 border border-blue-500/50 rounded focus:outline-none text-zinc-100"
+                  className="w-full h-full px-1 text-[11px] bg-transparent border-b border-blue-500 focus:outline-none text-zinc-100 placeholder-zinc-600"
                   autoFocus
                   onBlur={saveEditing}
                   onKeyDown={(e) => {
@@ -249,7 +262,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
-                <span className="truncate text-xs font-medium flex-1" title={tab.name}>
+                <span className="truncate text-[11px] font-medium flex-1" title={tab.name}>
                   {tab.name}
                 </span>
               )}
@@ -260,53 +273,61 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   onCloseTab(tab.id);
                 }}
                 className={cn(
-                  "p-0.5 rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-opacity",
+                  "p-0.5 rounded-full hover:bg-white/10 text-zinc-500 hover:text-zinc-200 transition-all",
                   isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 )}
               >
-                <X size={12} />
+                <X size={10} />
               </button>
-
-              {/* Active Indicator Line */}
-              {isActive && (
-                <div className={cn("absolute bottom-0 left-0 right-0 h-0.5", isRunning ? "bg-green-500 animate-pulse" : "bg-blue-500")}></div>
-              )}
             </div>
           );
         })}
       </div>
 
       {/* Global Actions */}
-      <div className="flex-none flex items-center px-2 border-l border-zinc-800 ml-1">
+      <div className="flex-none flex items-center px-2 border-l border-white/10 ml-1">
         <button
           onClick={handleSave}
-          className="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded transition-colors"
+          className="group flex items-center justify-center w-7 h-7 rounded-lg text-zinc-400 hover:text-white hover:bg-blue-500 hover:shadow-[0_0_15px_rgba(59,130,246,0.5)] transition-all duration-300"
           title="Save (Ctrl+S)"
         >
-          <Save size={14} />
+          <Save size={16} className="group-hover:scale-110 transition-transform" />
         </button>
       </div>
 
       {showSaveDialog && (
-        <div className="absolute top-10 right-4 mt-1 p-3 bg-zinc-800 rounded-lg border border-zinc-700 shadow-xl w-64 z-50">
-          <h3 className="text-xs font-bold text-zinc-400 uppercase mb-2">Save New Workflow</h3>
-          <input
-            type="text"
-            value={newWorkflowName}
-            onChange={(e) => setNewWorkflowName(e.target.value)}
-            placeholder="Workflow Name"
-            className="w-full px-2 py-1 text-sm bg-zinc-900 border border-zinc-700 text-zinc-100 rounded mb-2 focus:outline-none focus:border-blue-500"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') confirmSave();
-              if (e.key === 'Escape') setShowSaveDialog(false);
-            }}
-          />
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setShowSaveDialog(false)} className="text-xs text-zinc-500 hover:text-zinc-300">Cancel</button>
-            <button onClick={confirmSave} className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-500">Save</button>
+        <>
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-[1px] z-40" onClick={() => setShowSaveDialog(false)}></div>
+          <div className="absolute top-16 right-4 p-4 bg-zinc-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl w-72 z-50 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-xs font-bold text-zinc-400 uppercase mb-3 tracking-wider">Save New Workflow</h3>
+            <input
+              type="text"
+              value={newWorkflowName}
+              onChange={(e) => setNewWorkflowName(e.target.value)}
+              placeholder="Enter workflow name..."
+              className="w-full px-3 py-2 text-sm bg-black/40 border border-white/10 text-zinc-100 rounded-xl mb-4 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmSave();
+                if (e.key === 'Escape') setShowSaveDialog(false);
+              }}
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowSaveDialog(false)}
+                className="text-xs px-3 py-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSave}
+                className="text-xs px-3 py-1.5 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 shadow-lg shadow-blue-500/20 transition-all"
+              >
+                Save Workflow
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );

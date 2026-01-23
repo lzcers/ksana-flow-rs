@@ -193,27 +193,9 @@ function AppContent() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100">
-      {/* Top Menu Bar */}
-      <div className="h-10 border-b border-zinc-800 bg-zinc-900 px-3 flex items-center shrink-0">
-        <WorkflowHeader
-          workflows={workflows}
-          currentWorkflowId={currentWorkflowId}
-          workflowStatuses={workflowStatuses}
-          onLoadWorkflow={handleLoadWorkflow}
-          onSaveWorkflow={saveWorkflow}
-          onDeleteWorkflow={deleteWorkflow}
-          onRenameWorkflow={renameWorkflow}
-          onCreateNew={handleCreateNew}
-          onExportWorkflow={handleExportWorkflow}
-          onImportWorkflow={handleImportWorkflow}
-          tabs={openTabs}
-          onCloseTab={handleCloseTab}
-        />
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden relative">
+    <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100 selection:bg-blue-500/30">
+      {/* Main Content Area - Full Screen */}
+      <div className="absolute inset-0 z-0">
         <ReactFlowProvider>
           <Canvas
             nodes={state.nodes}
@@ -231,6 +213,24 @@ function AppContent() {
             onStop={stopWorkflow}
           />
         </ReactFlowProvider>
+      </div>
+
+      {/* Top Menu Bar - Floating Glass Panel */}
+      <div className="absolute top-3 left-4 right-4 z-50 h-10 px-2 rounded-xl border border-white/10 bg-zinc-900/80 backdrop-blur-xl shadow-xl shadow-black/40 flex items-center transition-all duration-300">
+        <WorkflowHeader
+          workflows={workflows}
+          currentWorkflowId={currentWorkflowId}
+          workflowStatuses={workflowStatuses}
+          onLoadWorkflow={handleLoadWorkflow}
+          onSaveWorkflow={saveWorkflow}
+          onDeleteWorkflow={deleteWorkflow}
+          onRenameWorkflow={renameWorkflow}
+          onCreateNew={handleCreateNew}
+          onExportWorkflow={handleExportWorkflow}
+          onImportWorkflow={handleImportWorkflow}
+          tabs={openTabs}
+          onCloseTab={handleCloseTab}
+        />
       </div>
     </div>
   );
