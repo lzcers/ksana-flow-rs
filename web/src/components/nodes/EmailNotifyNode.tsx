@@ -61,7 +61,9 @@ export const EmailNotifyNode = memo(({ id, type, data, selected, width, height }
       type={type}
       data={data}
       selected={selected}
-      style={{ width: width ?? 300, height: height ?? 'auto' }}
+      minWidth={300}
+      minHeight={180}
+      style={{ width, height }}
       targetHandles={TARGET_HANDLES}
     >
       <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">

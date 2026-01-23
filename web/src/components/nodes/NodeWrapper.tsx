@@ -39,13 +39,12 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   targetHandles = [],
   children,
   className,
-  style,
-  resizable = true,
   minWidth,
   minHeight,
+  style,
+  resizable = true,
   headerActions
 }) => {
-  const typeConfig = NODE_TYPES.find(t => t.type === type);
   const status = data.status || 'idle';
   const { runNode, updateNodeDimensions, isConnecting, connectionSourceId } = useStore();
 
@@ -53,125 +52,116 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
     e.stopPropagation();
     runNode(id);
   };
-
   return (
-    // Outer wrapper for selection margin
     <div
-      className={cn("relative group", resizable && "max-w-none w-full h-full")}
+      className={cn("relative group", resizable && "w-full h-full")}
       style={{
         minWidth: minWidth ?? 'fit-content',
         minHeight: minHeight ?? 'fit-content',
         ...style
       }}
     >
-      <div className="w-full h-full p-[5px]">
-        <div
-          className={cn(
-            "w-full h-full bg-zinc-900/95 border transition duration-300 relative",
-            selected
-              ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.5)] scale-[1.02] ring-1 ring-blue-500"
-              : "border-zinc-700 hover:border-zinc-500 shadow-lg shadow-black/20",
-            status === 'running' && "node-running",
-            className
-          )}
-          style={{
-            borderRadius: '8px',
-          }}
-        >
-          {resizable && (
-            <NodeResizeControl
-              minWidth={minWidth ?? 0}
-              minHeight={minHeight ?? 0}
-              position="bottom-right"
-              className={cn(
-                "!bg-transparent !border-none",
-                !selected && "opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-              )}
-              onResizeEnd={(_event, params) => {
-                updateNodeDimensions(id, params.width, params.height);
-              }}
-            >
-              <div className="absolute bottom-1 right-1 p-0.5">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-zinc-600 dark:text-zinc-400"
-                >
-                  <path d="M21 15L21 21L15 21" />
-                  <path d="M21 21L14 14" />
-                </svg>
-              </div>
-            </NodeResizeControl>
-          )}
+      {/* Header Info - Floating above the node */}
+      <div
+        className={cn(
+          "absolute -top-9 left-0 w-full flex items-center justify-between transition-all duration-300 z-10",
+          selected ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
+        )}
+      >
+        <div className="flex items-center gap-2">
+          {/* Dot Indicator */}
+          <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div>
+          {/* Title */}
+          <span className="text-sm font-bold text-zinc-200 tracking-wide drop-shadow-md">
+            {data.label}
+          </span>
+        </div>
 
-          {/* Target Handles */}
-          {targetHandles.map((position) => (
-            <Handle
-              key={`target-${position}`}
-              type="target"
-              position={position}
-              id={`t-${position}`}
-              className={cn(
-                "!w-3 !h-3 !bg-zinc-900 !border-2 !border-blue-500 !rounded-full transition-opacity duration-200 z-50",
-                isConnecting && id !== connectionSourceId ? "opacity-100" : "opacity-0 pointer-events-none"
-              )}
-              style={HANDLE_STYLES[position]}
-            />
-          ))}
+        <div className="flex items-center gap-2">
+          {headerActions}
+          {/* Run Button */}
+          <button
+            onClick={handleRun}
+            className="flex items-center justify-center w-7 h-7 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-full border border-zinc-700 shadow-lg hover:shadow-xl transition-all"
+            title="Run Node"
+          >
+            <Play size={12} fill="currentColor" className="ml-0.5" />
+          </button>
+        </div>
+      </div>
 
-          {/* Source Handles */}
-          {sourceHandles.map((position) => (
-            <Handle
-              key={`source-${position}`}
-              type="source"
-              position={position}
-              id={`s-${position}`}
-              className={cn(
-                "!w-3 !h-3 !bg-blue-500 !border-2 !border-white !rounded-full transition-opacity duration-200 z-50",
-                (!isConnecting || id === connectionSourceId) && (selected ? "opacity-100" : "opacity-0 group-hover:opacity-100")
-              )}
-              style={HANDLE_STYLES[position]}
-            />
-          ))}
-
-          <div className="p-2">
-            <div className="flex items-center gap-2">
-              <div className={cn("p-1 rounded-md bg-zinc-800 border border-zinc-700 text-zinc-400")}>
-                {React.createElement(typeConfig?.icon || Settings, { size: 12 })}
-              </div>
-              <span className="text-xs font-semibold text-zinc-200">
-                {data.label}
-              </span>
-              <div className="ml-auto flex items-center gap-2">
-                {headerActions}
-                {/* Run Button */}
-                <button
-                  onClick={handleRun}
-                  className={cn(
-                    "bg-blue-600 text-white rounded-full p-1 shadow-sm hover:bg-blue-500 transition-all opacity-0 group-hover:opacity-100",
-                    selected && "opacity-100"
-                  )}
-                  title="Run from this node"
-                >
-                  <Play size={10} fill="currentColor" />
-                </button>
-              </div>
-            </div>
-            {data.errorMessage && (
-              <div className="text-[10px] text-red-400 line-clamp-2 mt-1 bg-red-900/20 p-1 rounded border border-red-900/30">
-                {data.errorMessage}
-              </div>
+      {/* Main Content Card */}
+      <div
+        className={cn(
+          "w-full h-full flex-1 bg-[#18181b] border transition-all duration-300 relative rounded-xl",
+          selected
+            ? "border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20"
+            : "border-zinc-800 hover:border-zinc-700 shadow-lg shadow-black/40",
+          status === 'running' && "ring-1 ring-blue-500/50 border-blue-500/50",
+          className
+        )}
+      >
+        {/* Resize Control */}
+        {resizable && (
+          <NodeResizeControl
+            minWidth={minWidth ?? 100}
+            minHeight={minHeight ?? 50}
+            position="bottom-right"
+            className={cn(
+              "!bg-transparent !border-none z-50",
+              selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 transition-opacity duration-300"
             )}
-          </div>
+            onResizeEnd={(_event, params) => {
+              updateNodeDimensions(id, params.width, params.height);
+            }}
+          >
+            <div className="absolute -bottom-3 -right-3 p-2 cursor-nwse-resize group/resize">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-zinc-600 group-hover/resize:text-blue-500 transition-colors">
+                <path d="M 18 6 C 18 14 16 18 6 18" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            </div>
+          </NodeResizeControl>
+        )}
 
+        {/* Target Handles */}
+        {targetHandles.map((position) => (
+          <Handle
+            key={`target-${position}`}
+            type="target"
+            position={position}
+            id={`t-${position}`}
+            className={cn(
+              "!w-3 !h-3 !bg-[#18181b] !border-2 !border-zinc-600 !rounded-full transition-all duration-200 z-50",
+              isConnecting && id !== connectionSourceId ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            )}
+            style={HANDLE_STYLES[position]}
+          />
+        ))}
+
+        {/* Source Handles */}
+        {sourceHandles.map((position) => (
+          <Handle
+            key={`source-${position}`}
+            type="source"
+            position={position}
+            id={`s-${position}`}
+            className={cn(
+              "!w-3 !h-3 !bg-blue-500 !border-2 !border-[#18181b] !rounded-full transition-all duration-200 z-50",
+              (!isConnecting || id === connectionSourceId) && (selected ? "opacity-100" : "opacity-0 group-hover:opacity-100")
+            )}
+            style={HANDLE_STYLES[position]}
+          />
+        ))}
+
+        {/* Content Area */}
+        <div className="w-full h-full overflow-hidden" style={{ borderRadius: '12px' }}>
           {children}
+
+          {data.errorMessage && (
+            <div className="absolute bottom-3 left-3 right-8 text-[10px] text-red-400 bg-red-950/80 p-1.5 rounded-md border border-red-900/50 truncate backdrop-blur-sm">
+              {data.errorMessage}
+            </div>
+          )}
         </div>
       </div>
     </div>

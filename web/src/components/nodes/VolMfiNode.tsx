@@ -43,7 +43,9 @@ export const VolMfiNode = memo(({ id, type, data, selected, width, height }: Nod
       type={type}
       data={data}
       selected={selected}
-      style={{ width: width ?? 250, height: height ?? 'auto' }}
+      minWidth={250}
+      minHeight={140}
+      style={{ width, height }}
       targetHandles={TARGET_HANDLES}
       sourceHandles={SOURCE_HANDLES}
     >

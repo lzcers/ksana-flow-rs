@@ -141,7 +141,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
       selected={selected}
       minWidth={300}
       minHeight={400}
-      style={{ width: width !== 0 ? width : 300, height: height !== 0 ? height : 300 }}
+      style={{ width, height }}
       targetHandles={TARGET_HANDLES}
       sourceHandles={SOURCE_HANDLES}
     >

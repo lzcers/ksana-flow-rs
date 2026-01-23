@@ -22,15 +22,16 @@ export const TimerNode = memo(({ id, type, data, selected, width, height }: Node
       config: { ...data.config, cron_expr: newValue }
     });
   }, [id, data.config, updateNodeData]);
-
   return (
     <NodeWrapper
       id={id}
       type={type}
       data={data}
       selected={selected}
-      style={{ width: width ?? 250, height: height ?? 'auto' }}
+      minWidth={250}
+      minHeight={120}
       sourceHandles={SOURCE_HANDLES}
+      style={{ width, height }}
     >
       <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">
         <div>

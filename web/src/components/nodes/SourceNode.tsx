@@ -68,7 +68,9 @@ export const SourceNode = memo(({ id, type, data, selected, width, height }: Nod
       type={type}
       data={data}
       selected={selected}
-      style={{ width: width ?? 280, height: height ?? 'auto' }}
+      minWidth={280}
+      minHeight={140}
+      style={{ width, height }}
       sourceHandles={SOURCE_HANDLES}
     >
       <div className="px-3 pb-3 space-y-2 border-t border-zinc-800 pt-2">

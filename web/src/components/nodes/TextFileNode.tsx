@@ -7,7 +7,7 @@ import { type NodeData } from '../../model/types';
 
 const SOURCE_HANDLES = [Position.Right];
 
-export const TextFileNodeComponent = ({ id, type, data, selected }: NodeProps & { data: NodeData }) => {
+export const TextFileNodeComponent = ({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
     const { updateNodeData, uploadFile } = useStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -57,10 +57,11 @@ export const TextFileNodeComponent = ({ id, type, data, selected }: NodeProps & 
             selected={selected}
             className="flex flex-col"
             sourceHandles={SOURCE_HANDLES}
-            minWidth={300}
-            minHeight={250}
+            minWidth={280}
+            minHeight={120}
+            style={{ width, height }}
         >
-            <div className="p-4 flex flex-col items-center justify-center gap-3">
+            <div className="h-full p-4 flex flex-col items-center justify-center gap-3">
                 <input
                     type="file"
                     ref={fileInputRef}

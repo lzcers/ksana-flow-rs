@@ -31,7 +31,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
 
   const textRef = useRef(text);
   const isStreamingRef = useRef(data.upstreamIsStreaming || false);
-  
+
   // Use refs for data and connections to avoid dependency cycles in effects
   const dataRef = useRef(data);
   const connectionsRef = useRef(connections);
@@ -53,7 +53,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
     // We access dataRef.current to avoid re-triggering this effect when data.config changes
     // This prevents the "Maximum update depth exceeded" error caused by circular updates
     const currentData = dataRef.current;
-    
+
     if (currentData.upstreamIsStreaming && text !== currentData.config?.text) {
       const timeoutId = setTimeout(() => {
         // Double check ref in timeout
@@ -122,7 +122,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
     });
 
     return () => subscription.unsubscribe();
-  }, [events$, incremark, currentRunId, id, updateNodeData, isMarkdown]); 
+  }, [events$, incremark, currentRunId, id, updateNodeData, isMarkdown]);
   // Removed connections and data.config from dependencies
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -172,12 +172,12 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
       sourceHandles={SOURCE_HANDLES}
       targetHandles={TARGET_HANDLES}
       className="flex flex-col"
-      minWidth={200}
-      minHeight={150}
-      style={{ width: width ?? 240, height: height ?? 160 }}
+      minWidth={260}
+      minHeight={200}
+      style={{ width, height }}
       headerActions={headerActions}
     >
-      <div className="p-2 flex-1 flex flex-col min-h-0">
+      <div className="p-2 h-full flex flex-col">
         <div className="text-xs text-zinc-500 mb-1 flex items-center justify-between">
           <span>Text Content</span>
           <span className="text-[10px] opacity-50">{isMarkdown ? 'Markdown' : 'Raw'}</span>
@@ -189,7 +189,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
             onClose={() => setIsFullScreen(false)}
             title={isMarkdown ? "Markdown Preview" : "Text Content"}
           >
-            <div className="w-full h-full p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
+            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-950">
               {isMarkdown ? (
                 <ThemeProvider theme={theme}>
                   <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full">

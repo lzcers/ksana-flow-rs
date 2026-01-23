@@ -38,7 +38,7 @@ export const TextMergeNodeComponent = ({ id, type, data, selected, width, height
       className="flex flex-col"
       minWidth={180}
       minHeight={150}
-      style={{ width: width ?? 180, height: height ?? 100 }}
+      style={{ width, height }}
     >
       <div className="p-2 flex-1 flex flex-col min-h-0">
         <div className="text-xs text-zinc-500 mb-1">
