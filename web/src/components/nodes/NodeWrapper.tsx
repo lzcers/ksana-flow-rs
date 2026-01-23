@@ -131,7 +131,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
             position={position}
             id={`t-${position}`}
             className={cn(
-              "!w-3 !h-3 !bg-[#18181b] !border-2 !border-zinc-600 !rounded-full transition-all duration-200 z-50",
+              "!w-3.5 !h-3.5 !bg-zinc-950 !border-[1.5px] !border-zinc-500 hover:!border-blue-500 hover:!bg-zinc-900 !rounded-full transition-all duration-200 z-50",
               isConnecting && id !== connectionSourceId ? "opacity-100" : "opacity-0 group-hover:opacity-100"
             )}
             style={HANDLE_STYLES[position]}
@@ -146,7 +146,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
             position={position}
             id={`s-${position}`}
             className={cn(
-              "!w-3 !h-3 !bg-blue-500 !border-2 !border-zinc-950 !rounded-full transition-all duration-200 z-50",
+              "!w-3.5 !h-3.5 !bg-zinc-400 hover:!bg-blue-400 !border-[1.5px] !border-zinc-950 !rounded-full transition-all duration-200 z-50",
               (!isConnecting || id === connectionSourceId) && (selected ? "opacity-100" : "opacity-0 group-hover:opacity-100")
             )}
             style={HANDLE_STYLES[position]}
