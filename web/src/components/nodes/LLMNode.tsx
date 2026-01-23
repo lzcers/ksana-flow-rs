@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Position, type NodeProps } from '@xyflow/react';
+import { Position, type NodeProps, useKeyPress } from '@xyflow/react';
 import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { useStore } from '../../store';
@@ -9,6 +9,7 @@ const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
 export const LLMNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData } = useStore();
+  const spacePressed = useKeyPress('Space');
 
   const adjustHeight = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
@@ -133,6 +134,13 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
       }
     });
   }, [id, data.config, updateNodeData]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (spacePressed) {
+      e.preventDefault();
+    }
+  }, [spacePressed]);
+
   return (
     <NodeWrapper
       id={id}
@@ -183,6 +191,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
             onCompositionStart={handleSystemCompositionStart}
             onCompositionEnd={handleSystemCompositionEnd}
             onKeyDown={(e) => e.stopPropagation()}
+            onMouseDown={handleMouseDown}
             placeholder="System prompt..."
           />
         </div>
@@ -198,6 +207,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
             onCompositionStart={handleUserCompositionStart}
             onCompositionEnd={handleUserCompositionEnd}
             onKeyDown={(e) => e.stopPropagation()}
+            onMouseDown={handleMouseDown}
             placeholder="User prompt template..."
           />
         </div>

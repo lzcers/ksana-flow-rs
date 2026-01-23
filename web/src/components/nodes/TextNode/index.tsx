@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Position, type NodeProps, useNodeConnections } from '@xyflow/react';
+import { Position, type NodeProps, useNodeConnections, useKeyPress } from '@xyflow/react';
 import { AutoScrollContainer, Incremark, ThemeProvider, useIncremark } from '@incremark/react';
 import { Eye, Pencil, Maximize2 } from 'lucide-react';
 import { NodeWrapper } from '../NodeWrapper';
@@ -15,6 +15,7 @@ const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export const TextNodeComponent = ({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, currentRunId, events$ } = useStore();
+  const spacePressed = useKeyPress('Space');
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -138,6 +139,14 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
     }
   }, [id, text, updateNodeData]); // Removed data.config
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (spacePressed) {
+      e.preventDefault();
+    } else {
+      e.stopPropagation();
+    }
+  }, [spacePressed]);
+
   const headerActions = (
     <div className="flex items-center gap-1">
       <button
@@ -213,7 +222,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
           <div
             className="w-full flex-1 text-xs bg-zinc-950 border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
             onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={handleMouseDown}
             onWheel={(e) => {
               e.stopPropagation();
             }}
@@ -233,7 +242,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
             placeholder="Enter text here..."
             onWheel={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={handleMouseDown}
           />
         )}
       </div>

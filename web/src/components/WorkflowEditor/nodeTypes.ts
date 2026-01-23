@@ -11,5 +11,5 @@ export const NODE_TYPES: { type: NodeType; label: string; icon: any; color: stri
   { type: 'Backtester', label: 'Backtest', icon: Box, color: 'text-indigo-500 bg-indigo-50' },
   { type: 'EmailNotifyNode', label: 'EmailNotifyNode', icon: Mail, color: 'text-indigo-500 bg-indigo-50' },
   { type: 'TimerNode', label: 'TimerNode', icon: Timer, color: 'text-indigo-500 bg-indigo-50' },
-  { type: 'ShortVideoCreationNode', label: 'AI Video', icon: Clapperboard, color: 'text-rose-500 bg-rose-50' },
+  { type: 'ShortVideoScriptNode', label: 'AI Video', icon: Clapperboard, color: 'text-rose-500 bg-rose-50' },
 ];

@@ -174,8 +174,8 @@ export const ShortVideoNode = memo(({ id, type, data, selected, width, height }:
       targetHandles={TARGET_HANDLES}
       className="flex flex-col"
       minWidth={240}
-      minHeight={200}
-      style={{ width, height }}
+      minHeight={160}
+      resizable={false}
       headerActions={headerActions}
     >
       <div className="p-4 flex-1 flex flex-col items-center justify-center min-h-0 bg-zinc-950/50">
