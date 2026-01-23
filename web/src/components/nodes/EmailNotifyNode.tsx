@@ -80,7 +80,7 @@ export const EmailNotifyNode = memo(({ id, type, data, selected, width, height }
         <div>
           <label className="text-[10px] text-zinc-500 font-bold block mb-1">Body</label>
           <textarea
-            className="w-full text-[10px] p-1.5 bg-black border border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 resize-none outline-none nodrag text-zinc-300"
+            className="w-full text-[10px] p-1.5 bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border border-transparent focus:border-zinc-800 rounded focus:ring-1 focus:ring-purple-500/50 resize-none outline-none nodrag text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-600"
             rows={4}
             value={body}
             onChange={handleBodyChange}

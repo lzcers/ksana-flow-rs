@@ -296,7 +296,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         minZoom={0.1}
         maxZoom={2}
       >
-        <Background color="#52525b" bgColor='#000' gap={24} size={1.5} />
+        <Background color="#52525b" bgColor='#000' gap={24} size={1} />
         <Controls
           showInteractive={false}
           className="!bg-zinc-900/80 !backdrop-blur-xl !border-white/10 !shadow-xl !fill-zinc-400 !rounded-xl !overflow-hidden !border"

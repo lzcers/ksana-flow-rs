@@ -93,7 +93,7 @@ export const TextFileNodeComponent = ({ id, type, data, selected, width, height 
                     <button
                         onClick={handleUploadClick}
                         disabled={isUploading}
-                        className="flex items-center gap-2 px-3 py-2 bg-black hover:bg-zinc-900 rounded text-zinc-200 text-sm transition-colors border border-zinc-800"
+                        className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 hover:bg-zinc-700/80 rounded text-zinc-300 hover:text-zinc-100 text-sm transition-all border border-zinc-700/30 hover:border-zinc-600 shadow-sm"
                     >
                         <Upload size={16} />
                         {isUploading ? 'Uploading...' : 'Upload Text File'}

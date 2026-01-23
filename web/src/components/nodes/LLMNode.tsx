@@ -150,7 +150,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
           <div className="flex-1">
             <label className="text-[10px] text-zinc-500 font-bold block mb-1">Model</label>
             <select
-              className="w-full text-xs bg-black border border-zinc-800 rounded px-1 py-1 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border border-transparent focus:border-zinc-800 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors duration-200"
               value={model}
               onChange={handleModelChange}
             >
@@ -176,7 +176,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
           <textarea
             style={{ boxSizing: 'content-box' }}
             ref={systemInputRef}
-            className="w-full flex-1 box-sizing: content-box text-xs bg-black border overflow-hidden max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            className="w-full flex-1 box-sizing: content-box text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border overflow-hidden max-h-[200px] border-transparent focus:border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-600"
             rows={5}
             value={systemPrompt}
             onChange={handleSystemPromptChange}
@@ -191,7 +191,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
           <textarea
             style={{ boxSizing: 'content-box' }}
             ref={userInputRef}
-            className="w-full flex-1 text-xs bg-black border overflow-x-hidden over max-h-[200px] border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-200"
+            className="w-full flex-1 text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border overflow-x-hidden over max-h-[200px] border-transparent focus:border-zinc-800 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-600"
             rows={5}
             value={userPrompt}
             onChange={handleUserPromptChange}
