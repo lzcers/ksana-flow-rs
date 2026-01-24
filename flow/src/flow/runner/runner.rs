@@ -196,27 +196,23 @@ impl Runner {
                             }
                         }
                         None => {
-                            break;
+                            // 没有事件了，继续等待
                         }
                     }
                 }
             }
-
-            // 3. 检查终止条件
+            // 没有活跃任务，且事件队列为空，就意味着工作流执行完毕
             if self.exec_ctx.get_task_count() == 0
                 && rx.is_empty()
-                && *self.state_tx.borrow() == RunnerState::Running
+                && current_state == RunnerState::Running
             {
+                info!("Runner finished: All tasks completed.",);
+                self.update_runner_state(RunnerState::Terminated)?;
+                send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
                 break;
             }
         }
 
-        // 没有活跃任务就意味着工作流执行完毕
-        if self.exec_ctx.get_task_count() == 0 {
-            info!("Runner finished: All tasks completed.",);
-            self.update_runner_state(RunnerState::Terminated)?;
-            send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
-        }
         if let Some(e) = first_error {
             Err(e)
         } else {
@@ -234,12 +230,13 @@ impl Runner {
             // 任务返回流式结果则订阅并通知事件流开始
             TaskEvent::Stream(node_id, subscribe_fn) => {
                 info!(node_id = %node_id, "Received Stream");
-                let _sub = subscribe_fn(
+                let sub = subscribe_fn(
                     self.exec_ctx.get_task_tracker_guard(),
                     task_sender,
                     node_id.clone(),
                     self.ctx.clone(),
                 );
+                self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
                 send_flow_event(&self.event_sender, FlowEvent::NodeStreamStarted(node_id)).await;
             }
             // 任务的流式结果
@@ -263,6 +260,7 @@ impl Runner {
             }
             TaskEvent::Completed(node_id, output) => {
                 info!(node_id = %node_id, "Node tasks completed");
+                let _ = self.exec_ctx.remove_stream_subscription(&node_id);
                 let mut out_value = None;
                 if let Some(out) = output {
                     self.exec_ctx.set_output(node_id.clone(), out.clone());
@@ -287,12 +285,12 @@ impl Runner {
             }
             TaskEvent::Error(node_id, e) => {
                 error!(node_id = %node_id, error = %e, "Node execution failed");
+                let _ = self.exec_ctx.remove_stream_subscription(&node_id);
                 if first_error.is_none() {
                     *first_error = Some(e.clone());
                 }
                 self.exec_ctx.set_state(node_id.clone(), NodeState::Failed);
                 send_flow_event(&self.event_sender, FlowEvent::NodeError(node_id, e)).await;
-                // 同样不触发下游调度
             }
         }
         Ok(())

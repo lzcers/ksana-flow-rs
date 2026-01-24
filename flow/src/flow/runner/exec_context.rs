@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use super::task_guard::TaskTracker;
 use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard, sendable_any::SendableAny};
+use crate::observable::Subscription;
 use dashmap::DashMap;
 use tracing::info;
 
@@ -20,6 +21,7 @@ pub enum NodeState {
 pub struct ExecutionContext {
     node_states: DashMap<NodeId, NodeState>,
     node_outputs: DashMap<NodeId, Box<dyn SendableAny>>,
+    stream_subscriptions: DashMap<NodeId, Box<dyn Subscription>>,
     tracker: Arc<TaskTracker>,
 }
 
@@ -28,6 +30,7 @@ impl ExecutionContext {
         Self {
             node_states: DashMap::new(),
             node_outputs: DashMap::new(),
+            stream_subscriptions: DashMap::new(),
             // 任务跟踪器
             tracker: Arc::new(TaskTracker::new()),
         }
@@ -60,5 +63,13 @@ impl ExecutionContext {
         // SendableAny extends Send + Any + CloneBox.
         // So we can clone it.
         self.node_outputs.get(node_id).map(|v| v.clone())
+    }
+
+    pub fn set_stream_subscription(&self, node_id: NodeId, sub: Box<dyn Subscription>) {
+        let _ = self.stream_subscriptions.insert(node_id, sub);
+    }
+
+    pub fn remove_stream_subscription(&self, node_id: &str) -> Option<Box<dyn Subscription>> {
+        self.stream_subscriptions.remove(node_id).map(|(_, v)| v)
     }
 }

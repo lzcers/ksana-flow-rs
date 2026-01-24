@@ -909,3 +909,181 @@ async fn test_stream_node_emits_completed() {
     assert!(next_received, "Should receive stream message");
     assert!(completed_received, "Should receive NodeCompleted event");
 }
+
+#[tokio::test]
+async fn test_runner_keeps_stream_subscription_alive() {
+    use crate::flow::{FlowEvent, TaskEvent};
+    use crate::{Context, NodeInputs, NodeId, SendableAny, StreamSubscriptionFn, TaskGuard};
+    use crate::observable::Subscription;
+    use std::any::Any;
+    use tokio::sync::mpsc;
+
+    struct AbortOnDropSubscription {
+        abort: tokio::task::AbortHandle,
+    }
+
+    impl Drop for AbortOnDropSubscription {
+        fn drop(&mut self) {
+            self.abort.abort();
+        }
+    }
+
+    impl Subscription for AbortOnDropSubscription {
+        fn unsubscribe(self) {
+            self.abort.abort();
+        }
+    }
+
+    struct CancelableStream {
+        subscribe: StreamSubscriptionFn,
+    }
+
+    impl std::fmt::Debug for CancelableStream {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("CancelableStream").finish()
+        }
+    }
+
+    impl SendableAny for CancelableStream {
+        fn clone_box(&self) -> Box<dyn SendableAny> {
+            panic!("CancelableStream cannot be cloned. It should only be used once in the flow.");
+        }
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+        fn into_any(self: Box<Self>) -> Box<dyn Any> {
+            self
+        }
+        fn type_name(&self) -> &'static str {
+            std::any::type_name::<Self>()
+        }
+        fn is_stream(&self) -> bool {
+            true
+        }
+        fn into_stream_subscriber(
+            self: Box<Self>,
+        ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>> {
+            Ok(self.subscribe)
+        }
+    }
+
+    struct CancelStreamNode;
+    #[async_trait]
+    impl crate::Node for CancelStreamNode {
+        type Out = CancelableStream;
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+            let subscribe: StreamSubscriptionFn =
+                Box::new(move |guard: TaskGuard, tx: mpsc::Sender<TaskEvent>, node_id: NodeId, _| {
+                    let handle = tokio::spawn(async move {
+                        let _guard = guard;
+                        let _ = tx
+                            .send(TaskEvent::Next(
+                                node_id.clone(),
+                                Box::new("chunk".to_string()) as Box<dyn SendableAny>,
+                            ))
+                            .await;
+                        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                        let _ = tx.send(TaskEvent::Completed(node_id, None)).await;
+                    });
+                    let abort = handle.abort_handle();
+                    drop(handle);
+                    Box::new(AbortOnDropSubscription { abort }) as Box<dyn Subscription>
+                });
+
+            CancelableStream { subscribe }
+        }
+    }
+
+    let graph = crate::build_flow!(
+        nodes: [("stream", CancelStreamNode)],
+        edges: []
+    );
+
+    let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
+    runner.set_start_node("stream", &());
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(20);
+    runner.set_event_sender(tx);
+
+    let runner_task = tokio::spawn(async move { runner.run().await });
+
+    let mut completed_received = false;
+    let mut next_received = false;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            FlowEvent::NodeCompleted(id) if id == "stream" => {
+                completed_received = true;
+            }
+            FlowEvent::NodeStreamNextMessage(id, _) if id == "stream" => {
+                next_received = true;
+            }
+            FlowEvent::FlowFinished => break,
+            _ => {}
+        }
+    }
+
+    runner_task.await.unwrap().unwrap();
+
+    assert!(next_received, "Should receive stream message");
+    assert!(completed_received, "Should receive NodeCompleted event");
+}
+
+#[tokio::test]
+async fn test_parallel_stream_nodes_all_completed_before_flow_finished() {
+    use crate::flow::{FlowEvent, ReactiveStream};
+    use std::collections::HashSet;
+
+    struct StreamNode;
+    #[async_trait]
+    impl crate::Node for StreamNode {
+        type Out = ReactiveStream<String>;
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+            ReactiveStream::from_observable(vec!["A".to_string()])
+        }
+    }
+
+    let graph = crate::build_flow!(
+        nodes: [
+            ("s1", StreamNode),
+            ("s2", StreamNode),
+            ("s3", StreamNode),
+            ("s4", StreamNode),
+        ],
+        edges: []
+    );
+
+    let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
+    runner.set_start_node("s1", &());
+    runner.set_start_node("s2", &());
+    runner.set_start_node("s3", &());
+    runner.set_start_node("s4", &());
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    runner.set_event_sender(tx);
+
+    let runner_task = tokio::spawn(async move { runner.run().await });
+
+    let mut started = HashSet::new();
+    let mut completed = HashSet::new();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            FlowEvent::NodeStarted(id) => {
+                started.insert(id);
+            }
+            FlowEvent::NodeCompleted(id) => {
+                completed.insert(id);
+            }
+            FlowEvent::FlowFinished => break,
+            _ => {}
+        }
+    }
+
+    runner_task.await.unwrap().unwrap();
+
+    assert_eq!(started, completed, "All started nodes should complete before finish");
+}
