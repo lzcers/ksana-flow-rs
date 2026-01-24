@@ -23,7 +23,9 @@ impl TaskTracker {
     pub fn decrement(&self) {
         self.count.fetch_sub(1, Ordering::SeqCst);
     }
-
+    pub fn reset(&self) {
+        self.count.store(0, Ordering::SeqCst);
+    }
     pub fn count(&self) -> usize {
         self.count.load(Ordering::SeqCst)
     }
@@ -37,6 +39,9 @@ impl TaskGuard {
     pub fn new(tracker: Arc<TaskTracker>) -> Self {
         tracker.increment();
         Self { tracker }
+    }
+    pub fn default() -> Self {
+        Self::new(Arc::new(TaskTracker::new()))
     }
 }
 

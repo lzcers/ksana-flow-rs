@@ -2,12 +2,14 @@ mod db;
 mod handlers;
 mod registry;
 mod state;
+mod utils;
 
 use anyhow::Context;
 use axum::{
     Router,
     routing::{get, post},
 };
+use serde_json::Value;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::broadcast;
@@ -36,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let registry = create_registry();
-    let (tx, _rx) = broadcast::channel(100);
+    let (tx, _rx) = broadcast::channel::<(String, String, Value)>(100);
     let db = Db::new("ksana.db").context("Failed to initialize database")?;
 
     let app_state = AppState {

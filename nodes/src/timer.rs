@@ -71,6 +71,7 @@ mod tests {
     use super::*;
     use flow::NodeInputs;
     use flow::TaskEvent;
+    use flow::TaskGuard;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Instant;
@@ -88,7 +89,12 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         // Manually subscribe to the stream
-        (stream.subscribe)(tx, "test_node".to_string(), Arc::new(ctx));
+        (stream.subscribe)(
+            TaskGuard::default(),
+            tx,
+            "test_node".to_string(),
+            Arc::new(ctx),
+        );
 
         // Wait for the first event
         if let Some(event) = rx.recv().await {

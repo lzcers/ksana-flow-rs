@@ -11,8 +11,7 @@ use axum::{
     response::IntoResponse,
 };
 use flow::{
-    FlowEvent, NodeInputs, Runner, SendableAny,
-    context::{ExecutionContext, NodeState},
+    FlowEvent, NodeInputs, Runner, SendableAny, {ExecutionContext, NodeState},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -214,7 +213,11 @@ async fn start_execution(
                 }
             }
             // Broadcast
-            let _ = tx.send((workspace_id_clone.clone(), run_id_clone.clone(), event));
+            let _ = tx.send((
+                workspace_id_clone.clone(),
+                run_id_clone.clone(),
+                crate::utils::flow_event_to_value_lossy(&event),
+            ));
         }
     });
 
@@ -244,10 +247,12 @@ async fn start_execution(
 
         if let Err(e) = runner.run().await {
             tracing::error!("Flow execution error: {}", e);
+            let event =
+                crate::utils::flow_event_to_value_lossy(&FlowEvent::NodeError("runner".to_string(), e));
             let _ = state_clone.tx.send((
                 workspace_id_for_event.clone(),
                 run_id_for_event.clone(),
-                FlowEvent::NodeError("runner".to_string(), e),
+                event,
             ));
         }
 

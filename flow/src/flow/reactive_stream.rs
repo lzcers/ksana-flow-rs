@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     flow::{
+        TaskGuard,
         event::TaskEvent,
         graph::{Context, NodeId},
         sendable_any::SendableAny,
@@ -13,8 +14,10 @@ use crate::{
     reactive::observable::{Observable, Observer, Subscription},
 };
 
-pub type StreamSubscriptionFn =
-    Box<dyn FnOnce(mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription> + Send>;
+pub type StreamSubscriptionFn = Box<
+    dyn FnOnce(TaskGuard, mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription>
+        + Send,
+>;
 pub struct ReactiveStream<T = ()> {
     pub subscribe: StreamSubscriptionFn,
     _marker: std::marker::PhantomData<T>,
@@ -80,7 +83,7 @@ impl<T> ReactiveStream<T> {
         O: Observable<T, E> + Send + 'static,
     {
         Self {
-            subscribe: Box::new(move |tx, node_id, _ctx| {
+            subscribe: Box::new(move |guard: TaskGuard, tx, node_id, _ctx| {
                 let observer = RunnerObserver {
                     tx,
                     node_id,
@@ -88,6 +91,7 @@ impl<T> ReactiveStream<T> {
                     accumulator: None,
                 };
                 tokio::spawn(async move {
+                    let _guard = guard;
                     let _sub = observable.subscribe(observer).await;
                 });
                 Box::new(EmptySubscription)
@@ -104,7 +108,7 @@ impl<T> ReactiveStream<T> {
         F: Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send + 'static,
     {
         Self {
-            subscribe: Box::new(move |tx, node_id, _ctx| {
+            subscribe: Box::new(move |guard: TaskGuard, tx, node_id, _ctx| {
                 let observer = RunnerObserver {
                     tx,
                     node_id,
@@ -112,6 +116,7 @@ impl<T> ReactiveStream<T> {
                     accumulator: Some(Box::new(accumulator)),
                 };
                 tokio::spawn(async move {
+                    let _guard = guard;
                     let _sub = observable.subscribe(observer).await;
                 });
                 Box::new(EmptySubscription)

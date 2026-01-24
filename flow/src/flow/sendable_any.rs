@@ -16,36 +16,6 @@ pub trait SendableAny: Any + Send {
     ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>>;
 }
 
-pub fn try_downcast_to_value(any: &dyn SendableAny) -> Option<Value> {
-    let any = any.as_any();
-    if let Some(v) = any.downcast_ref::<String>() {
-        return Some(Value::String(v.clone()));
-    }
-    if let Some(v) = any.downcast_ref::<Value>() {
-        return Some(v.clone());
-    }
-    if let Some(v) = any.downcast_ref::<bool>() {
-        return Some(json!(v));
-    }
-    if let Some(v) = any.downcast_ref::<i32>() {
-        return Some(json!(v));
-    }
-    if let Some(v) = any.downcast_ref::<i64>() {
-        return Some(json!(v));
-    }
-    if let Some(v) = any.downcast_ref::<u64>() {
-        return Some(json!(v));
-    }
-    if let Some(v) = any.downcast_ref::<f64>() {
-        return Some(json!(v));
-    }
-    if let Some(()) = any.downcast_ref::<()>() {
-        return Some(json!(null));
-    }
-
-    None
-}
-
 // 为实现了 Clone  的 SendableAny 提供默认实现
 // 所有节点的输出应该是 SendableAny + Clone 的
 impl<T: Any + Send + Clone> SendableAny for T {

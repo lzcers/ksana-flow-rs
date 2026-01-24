@@ -119,8 +119,8 @@ impl Node for ShortVideoScriptNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::NodeInputs;
     use flow::{Context, TaskEvent};
+    use flow::{NodeInputs, TaskGuard};
     use rig::providers::deepseek::DEEPSEEK_CHAT;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -129,7 +129,7 @@ mod tests {
     async fn collect_output(stream: ReactiveStream<String>) -> String {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let ctx = Arc::new(Context::new());
-        let _sub = (stream.subscribe)(tx, "test".to_string(), ctx);
+        let _sub = (stream.subscribe)(TaskGuard::default(), tx, "test".to_string(), ctx);
 
         let mut output = String::new();
         while let Some(event) = rx.recv().await {

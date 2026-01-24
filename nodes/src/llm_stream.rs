@@ -169,8 +169,8 @@ impl Node for LLMStreamNode {
 
 #[cfg(test)]
 mod tests {
-    use flow::NodeInputs;
     use flow::{Context, TaskEvent};
+    use flow::{NodeInputs, TaskGuard};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::runtime::Runtime;
@@ -181,7 +181,8 @@ mod tests {
     async fn collect_output(stream: ReactiveStream<String>) -> String {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let ctx = Arc::new(Context::new());
-        let _sub = (stream.subscribe)(tx, "test".to_string(), ctx);
+        let guard = TaskGuard::default();
+        let _sub = (stream.subscribe)(guard, tx, "test".to_string(), ctx);
 
         let mut output = String::new();
         while let Some(event) = rx.recv().await {
@@ -334,7 +335,7 @@ mod tests {
 
             let (tx, mut rx) = tokio::sync::mpsc::channel(100);
             let ctx = Arc::new(Context::new());
-            let _sub = (stream.subscribe)(tx, "test".to_string(), ctx);
+            let _sub = (stream.subscribe)(TaskGuard::default(), tx, "test".to_string(), ctx);
 
             let mut full_output = String::new();
             let mut completed_payload = None;

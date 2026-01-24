@@ -44,7 +44,6 @@ impl Node for TextMergeNode {
 mod tests {
     use super::*;
     use flow::SendableAny;
-    use std::any::Any;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 

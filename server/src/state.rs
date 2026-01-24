@@ -1,6 +1,6 @@
 use crate::db::Db;
 use crate::registry::NodeRegistry;
-use flow::{Edge as FlowEdge, FlowEvent, Graph, RunnerHandle};
+use flow::{Edge as FlowEdge, Graph, RunnerHandle};
 use nodes::trade::K;
 use nodes::trade::backtester::BacktesterInput;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub struct AppState {
     // 持有 Runner 的句柄
     pub executions: Arc<RwLock<HashMap<String, ExecutionHandle>>>,
     // (workspace_id, run_id, event)
-    pub tx: broadcast::Sender<(String, String, FlowEvent)>,
+    pub tx: broadcast::Sender<(String, String, Value)>,
     pub db: Arc<Mutex<Db>>,
 }
 
@@ -58,7 +58,7 @@ impl GraphBlueprint {
 
             match registry.create_node(&node.type_name, config) {
                 Ok(n) => {
-                    new_graph.add_arc_node(&node.id, n);
+                    new_graph.add_arc_node(&node.id, n, None);
                     // Treat all nodes with no in-degree as start nodes
                     if !has_incoming_edges.contains(&node.id) {
                         start_nodes.push(node.id.clone());

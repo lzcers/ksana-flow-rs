@@ -1,20 +1,18 @@
-use super::context::{ExecutionContext, NodeState};
-use crate::{
-    flatten_sendable_any,
-    flow::{
-        event::{FlowEvent, TaskEvent},
-        graph::{AnyNode, Context, Graph, NodeId, NodeInputs},
-        runner::task_guard::{TaskGuard, TaskTracker},
-        sendable_any::{SendableAny, try_downcast_to_value},
-    },
+use super::exec_context::{ExecutionContext, NodeState};
+use super::executor::Executor;
+use super::utils::{flatten_sendable_any, send_flow_event};
+use crate::TriggerStrategy;
+use crate::flow::{
+    event::{FlowEvent, TaskEvent},
+    graph::{Context, Graph, NodeId, NodeInputs},
+    sendable_any::SendableAny,
 };
-use futures::FutureExt;
-use std::panic::AssertUnwindSafe;
+
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
 };
-use tokio::sync::{RwLock, mpsc, watch};
+use tokio::sync::{mpsc, watch};
 use tracing::{debug, error, info, trace};
 
 type TaskPayload = (Vec<NodeId>, NodeInputs);
@@ -61,9 +59,8 @@ pub struct Runner {
     graph: Graph,
     ctx: Arc<Context>,
     task_queue: VecDeque<TaskPayload>,
-    active_tasks: HashMap<NodeId, usize>,
-    tracker: Arc<TaskTracker>,
-    execution_ctx: ExecutionContext,
+    // 执行上下文，提供调度决策信息
+    exec_ctx: ExecutionContext,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
     // 外部事件发送通道
@@ -87,9 +84,7 @@ impl Runner {
                 graph,
                 ctx: Arc::new(Context::new()),
                 task_queue: VecDeque::new(),
-                active_tasks: HashMap::new(),
-                tracker: Arc::new(TaskTracker::new()),
-                execution_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
+                exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
                 event_sender: None,
                 cmd_rx,
                 state_tx,
@@ -117,16 +112,27 @@ impl Runner {
             .push_back((vec![node_id.to_owned()], inputs));
     }
 
+    fn update_runner_state(&self, state: RunnerState) -> Result<(), String> {
+        self.state_tx
+            .send(state)
+            .map_err(|_| "Failed to update runner state".to_owned())
+    }
+
     pub async fn run(&mut self) -> Result<(), String> {
         info!(nodes = ?self.graph.get_node_ids(), "Runner started");
+
+        if self.task_queue.is_empty() {
+            info!("No start node set, runner finished");
+            return Ok(());
+        }
         let init_state = *self.state_tx.borrow();
         if init_state == RunnerState::Initial {
             self.update_runner_state(RunnerState::Running)?;
         }
-
-        self.active_tasks.clear();
+        self.exec_ctx.reset_task_count(); // 重置任务计数器
         let (task_sender, mut rx) = mpsc::channel::<TaskEvent>(128);
-        // 使用计数器跟踪每个节点的活跃任务数
+        // run 只返回最错的报错信息, 如果有
+        let mut first_error = None;
 
         // 初始启动：将 task_queue 中的初始任务直接启动
         while let Some((node_ids, inputs)) = self.task_queue.pop_front() {
@@ -141,14 +147,6 @@ impl Runner {
             }
         }
 
-        if self.tracker.count() == 0 {
-            info!("Runner finished: No tasks started");
-            Self::send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
-            return Ok(());
-        }
-
-        let mut first_error = None;
-
         loop {
             let current_state = *self.state_tx.borrow();
 
@@ -162,22 +160,22 @@ impl Runner {
                     match cmd {
                         RunnerCommand::Pause => {
                             if current_state != RunnerState::Terminated {
-                                self.update_runner_state(RunnerState::Paused)?;
                                 info!("Runner paused");
-                                Self::send_flow_event(&self.event_sender, FlowEvent::FlowPaused).await;
+                                self.update_runner_state(RunnerState::Paused)?;
+                                send_flow_event(&self.event_sender, FlowEvent::FlowPaused).await;
                             }
                         }
                         RunnerCommand::Resume => {
                             if current_state == RunnerState::Paused {
-                                self.update_runner_state(RunnerState::Running)?;
                                 info!("Runner resumed");
-                                Self::send_flow_event(&self.event_sender, FlowEvent::FlowResumed).await;
+                                self.update_runner_state(RunnerState::Running)?;
+                                send_flow_event(&self.event_sender, FlowEvent::FlowResumed).await;
                             }
                         }
                         RunnerCommand::Stop => {
-                            self.update_runner_state(RunnerState::Terminated)?;
                             info!("Runner terminated by command");
-                            Self::send_flow_event(&self.event_sender, FlowEvent::FlowStopped).await;
+                            self.update_runner_state(RunnerState::Terminated)?;
+                            send_flow_event(&self.event_sender, FlowEvent::FlowStopped).await;
                             break;
                         }
                     }
@@ -205,20 +203,24 @@ impl Runner {
             }
 
             // 3. 检查终止条件
-            if self.tracker.count() == 0
-                && self.active_tasks.is_empty()
+            if self.exec_ctx.get_task_count() == 0
                 && *self.state_tx.borrow() == RunnerState::Running
             {
                 break;
             }
         }
-        info!("Runner finished: All tasks completed.",);
-        self.update_runner_state(RunnerState::Terminated)?;
-        Self::send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
-        if let Some(e) = first_error {
-            return Err(e);
+
+        // 没有活跃任务就意味着工作流执行完毕
+        if self.exec_ctx.get_task_count() == 0 {
+            info!("Runner finished: All tasks completed.",);
+            self.update_runner_state(RunnerState::Terminated)?;
+            send_flow_event(&self.event_sender, FlowEvent::FlowFinished).await;
         }
-        Ok(())
+        if let Some(e) = first_error {
+            Err(e)
+        } else {
+            Ok(())
+        }
     }
 
     async fn handle_task_event(
@@ -228,300 +230,90 @@ impl Runner {
         first_error: &mut Option<String>,
     ) -> Result<(), String> {
         match event {
+            // 任务返回流式结果则订阅并通知事件流开始
             TaskEvent::Stream(node_id, subscribe_fn) => {
                 info!(node_id = %node_id, "Received Stream");
-                let _sub = subscribe_fn(task_sender, node_id.clone(), self.ctx.clone());
-                Self::send_flow_event(&self.event_sender, FlowEvent::NodeStreamStarted(node_id))
-                    .await;
+                let _sub = subscribe_fn(
+                    self.exec_ctx.get_task_tracker_guard(),
+                    task_sender,
+                    node_id.clone(),
+                    self.ctx.clone(),
+                );
+                send_flow_event(&self.event_sender, FlowEvent::NodeStreamStarted(node_id)).await;
             }
+            // 任务的流式结果
             TaskEvent::Next(node_id, output) => {
                 trace!(
                     node_id = %node_id,
                     output_type = %output.as_ref().type_name(),
                     "Received Next event"
                 );
-                if let Some(val) = try_downcast_to_value(output.as_ref()) {
-                    Self::send_flow_event(
-                        &self.event_sender,
-                        FlowEvent::NodeStreamNextMessage(node_id.clone(), val),
-                    )
-                    .await;
-                }
-                // self.trigger_downstream(&node_id, output, task_sender)
-                //     .await?;
+
+                // 流式输出存储到 exec_ctx 中
+                self.exec_ctx.set_output(node_id.clone(), output.clone());
+                send_flow_event(
+                    &self.event_sender,
+                    FlowEvent::NodeStreamNextMessage(node_id.clone(), output.clone()),
+                )
+                .await;
+                // 触发下游节点调度
+                self.trigger_downstream(node_id, output, task_sender)
+                    .await?
             }
             TaskEvent::Completed(node_id, output) => {
                 trace!(node_id = %node_id, has_output = output.is_some(), "Received Completed event");
+                let mut out_value = None;
                 if let Some(out) = output {
-                    // Check if it's already a Box<dyn SendableAny> wrapper, and if so, unwrap it
-                    let out = flatten_sendable_any(out);
-
-                    // 尝试将输出转换为 Value 并发送到 Web 端
-                    if let Some(val) = try_downcast_to_value(out.as_ref()) {
-                        Self::send_flow_event(
-                            &self.event_sender,
-                            FlowEvent::NodeOutMessage(node_id.clone(), val),
-                        )
-                        .await;
-                    }
-                    Self::send_flow_event(
+                    self.exec_ctx.set_output(node_id.clone(), out.clone());
+                    send_flow_event(
                         &self.event_sender,
-                        FlowEvent::NodeCompleted(node_id.clone()),
+                        FlowEvent::NodeOutMessage(node_id.clone(), out.clone()),
                     )
                     .await;
-                    self.execution_ctx
-                        .set_state(node_id.clone(), NodeState::Completed);
-                    self.execution_ctx.set_output(node_id.clone(), out.clone());
-                    // Trigger downstream with dependency check
-                    let next_nodes = self.find_next_nodes(&node_id, &out)?;
-
-                    trace!(node_id = %node_id, next_nodes = ?next_nodes, "Triggering dependent nodes");
-
-                    for next_node_id in next_nodes {
-                        self.check_and_schedule(&next_node_id, task_sender.clone())
-                            .await?;
-                    }
-                } else {
-                    // 对于流式输出的 Completed，只发送 Completed 事件
-                    Self::send_flow_event(
-                        &self.event_sender,
-                        FlowEvent::NodeCompleted(node_id.clone()),
-                    )
-                    .await;
-                    self.execution_ctx
-                        .set_state(node_id.clone(), NodeState::Completed);
+                    out_value = Some(out);
                 }
-                info!(node_id = %node_id, "Node tasks completed");
-                self.update_active_tasks(&node_id);
+                self.exec_ctx
+                    .set_state(node_id.clone(), NodeState::Completed);
+                send_flow_event(
+                    &self.event_sender,
+                    FlowEvent::NodeCompleted(node_id.clone()),
+                )
+                .await;
+                // 如果有输出值，就触发下游调度，流式输出完成时没有值，就不触发下游调度了
+                if let Some(out) = out_value {
+                    self.trigger_downstream(node_id, out, task_sender).await?
+                }
             }
             TaskEvent::Error(node_id, e) => {
                 error!(node_id = %node_id, error = %e, "Node execution failed");
                 if first_error.is_none() {
                     *first_error = Some(e.clone());
                 }
-
-                self.execution_ctx
-                    .set_state(node_id.clone(), NodeState::Failed);
-
-                Self::send_flow_event(&self.event_sender, FlowEvent::NodeError(node_id.clone(), e))
-                    .await;
-                self.update_active_tasks(&node_id);
+                self.exec_ctx.set_state(node_id.clone(), NodeState::Failed);
+                send_flow_event(&self.event_sender, FlowEvent::NodeError(node_id, e)).await;
+                // 同样不触发下游调度
             }
         }
         Ok(())
     }
 
-    async fn check_and_schedule(
-        &mut self,
-        node_id: &str,
-        task_sender: mpsc::Sender<TaskEvent>,
-    ) -> Result<(), String> {
-        let parents = self.graph.get_parents(node_id);
-        trace!(node_id = %node_id, parents = ?parents, "Checking dependencies");
-
-        let mut inputs_map = HashMap::new();
-
-        for parent_id in &parents {
-            let state = self.execution_ctx.get_state(parent_id);
-            trace!(parent = %parent_id, state = ?state, "Parent state");
-            match state {
-                Some(NodeState::Completed) => {
-                    // Collect input from parent
-                    if let Some(output) = self.execution_ctx.get_output(parent_id) {
-                        inputs_map.insert(parent_id.clone(), output);
-                    }
-                }
-                Some(NodeState::Skipped) => {
-                    // Dependency met but no data
-                }
-                _ => {
-                    // Parent not ready (Pending, Running, Failed, or None)
-                    return Ok(());
-                }
-            }
-        }
-
-        // All parents ready
-        trace!(node_id = %node_id, "All dependencies met, scheduling");
-        let inputs = NodeInputs::new(inputs_map);
-
-        self.start_node(node_id.to_string(), inputs, task_sender)
-            .await?;
-        Ok(())
-    }
-
+    // 下游节点触发取决于两个条件：
+    // 1. 下游条件边返回 true
+    // 2. 满足下游节点的调度策略
     async fn trigger_downstream(
         &mut self,
-        from_node_id: &str,
+        from_node_id: String,
         output: Box<dyn SendableAny>,
         tx: mpsc::Sender<TaskEvent>,
     ) -> Result<(), String> {
-        let next_nodes = self.find_next_nodes(from_node_id, &output)?;
-        if !next_nodes.is_empty() {
-            debug!(
-                from = %from_node_id,
-                targets = ?next_nodes,
-                "Triggering downstream nodes"
-            );
-        }
+        // 找到所有满足条件的下游节点
+        let next_nodes = self.find_next_nodes(&from_node_id, &output)?;
+        trace!(node_id = %from_node_id, next_nodes = ?next_nodes, "Triggering dependent nodes");
         for next_node_id in next_nodes {
-            let mut inputs = HashMap::new();
-            inputs.insert(from_node_id.to_owned(), output.clone_box());
-
-            self.start_node(next_node_id, NodeInputs::new(inputs), tx.clone())
+            self.check_and_schedule(next_node_id, from_node_id.clone(), tx.clone())
                 .await?;
         }
         Ok(())
-    }
-
-    async fn start_node(
-        &mut self,
-        node_id: NodeId,
-        inputs: NodeInputs,
-        task_sender: mpsc::Sender<TaskEvent>,
-    ) -> Result<(), String> {
-        // 节点实例
-        let node_arc = self
-            .graph
-            .nodes
-            .get(&node_id)
-            .ok_or_else(|| format!("Runner start_node: Node '{}' not found", &node_id))?
-            .clone();
-        debug!(
-            node_id = %node_id,
-            total_active = self.tracker.count(),
-            "Starting node task"
-        );
-        // 节点运行上下文
-        let ctx = self.ctx.clone();
-        // 节点任务计数守卫
-        let guard = TaskGuard::new(self.tracker.clone());
-        *self.active_tasks.entry(node_id.clone()).or_insert(0) += 1;
-
-        Self::send_flow_event(&self.event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
-
-        let mut inputs_json = serde_json::Map::new();
-        for (key, val) in &inputs.inputs {
-            if let Some(v) = try_downcast_to_value(val.as_ref()) {
-                inputs_json.insert(key.clone(), v);
-            }
-        }
-
-        if !inputs_json.is_empty() {
-            Self::send_flow_event(
-                &self.event_sender,
-                FlowEvent::NodeInMessage(node_id.clone(), serde_json::Value::Object(inputs_json)),
-            )
-            .await;
-        }
-
-        Self::worker(node_id, node_arc, ctx, inputs, task_sender, guard);
-        Ok(())
-    }
-
-    async fn send_flow_event(sender: &Option<mpsc::Sender<FlowEvent>>, event: FlowEvent) {
-        if let Some(sender) = sender {
-            let _ = sender.send(event).await;
-        }
-    }
-
-    async fn send_task_event(sender: &mpsc::Sender<TaskEvent>, event: TaskEvent) {
-        let _ = sender.send(event).await;
-    }
-
-    fn update_runner_state(&self, state: RunnerState) -> Result<(), String> {
-        self.state_tx
-            .send(state)
-            .map_err(|_| "Failed to update runner state".to_owned())
-    }
-    //创建一个异步任务运行节点
-    fn worker(
-        node_id: String,
-        node: Arc<RwLock<dyn AnyNode>>,
-        ctx: Arc<Context>,
-        inputs: NodeInputs,
-        task_sender: mpsc::Sender<TaskEvent>,
-        _guard: TaskGuard,
-    ) {
-        tokio::spawn(async move {
-            let _keep_alive = _guard; // Force capture
-            let mut node = node.write().await;
-
-            info!(node_id = %node_id, "Node tasks start");
-            let result = AssertUnwindSafe(node.run(&ctx, inputs))
-                .catch_unwind()
-                .await;
-
-            let output: Result<Box<dyn SendableAny>, String> = match result {
-                Ok(res) => res,
-                Err(panic_err) => {
-                    let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
-                        format!("Panic: {}", s)
-                    } else if let Some(s) = panic_err.downcast_ref::<String>() {
-                        format!("Panic: {}", s)
-                    } else {
-                        "Panic: unknown error".to_string()
-                    };
-                    Err(msg)
-                }
-            };
-
-            debug!(node_id = %node_id, "Node logic executed");
-
-            match output {
-                Ok(out) => {
-                    // 如果节点输出是个响应式流，需要订阅它
-                    if out.as_ref().is_stream() {
-                        match out.into_stream_subscriber() {
-                            Ok(subscribe_fn) => {
-                                Self::send_task_event(
-                                    &task_sender,
-                                    TaskEvent::Stream(node_id.clone(), subscribe_fn),
-                                )
-                                .await;
-                            }
-                            Err(e) => {
-                                Self::send_task_event(
-                                    &task_sender,
-                                    TaskEvent::Error(
-                                        node_id,
-                                        format!(
-                                            "Failed to get stream subscriber: {}",
-                                            e.type_name()
-                                        ),
-                                    ),
-                                )
-                                .await;
-                            }
-                        }
-                    } else {
-                        Self::send_task_event(
-                            &task_sender,
-                            TaskEvent::Completed(node_id, Some(out)),
-                        )
-                        .await;
-                    }
-                }
-                Err(e) => {
-                    Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
-                }
-            }
-        });
-    }
-
-    fn update_active_tasks(&mut self, node_id: &str) {
-        if let Some(count) = self.active_tasks.get_mut(node_id) {
-            *count -= 1;
-            trace!(
-                node_id = %node_id,
-                count = count,
-                total = self.tracker.count(),
-                "Task count updated"
-            );
-            if *count == 0 {
-                self.active_tasks.remove(node_id);
-            }
-        }
     }
 
     fn find_next_nodes(
@@ -550,5 +342,92 @@ impl Runner {
             trace!(from = %from_node_id, "No outgoing edges found");
         }
         Ok(next_nodes)
+    }
+
+    async fn check_and_schedule(
+        &mut self,
+        node_id: String,
+        from_node_id: String,
+        task_sender: mpsc::Sender<TaskEvent>,
+    ) -> Result<(), String> {
+        match self.graph.get_trigger_strategy(&node_id) {
+            // 任意上游节点就绪即触发
+            TriggerStrategy::AnyUpstreamAvailable => {
+                trace!(node_id = %node_id, "Any dependency met, scheduling");
+                let mut inputs_map = HashMap::new();
+                if let Some(output) = self.exec_ctx.get_output(&from_node_id) {
+                    inputs_map.insert(from_node_id, output);
+                }
+                let inputs = NodeInputs::new(inputs_map);
+                self.start_node(node_id.to_string(), inputs, task_sender)
+                    .await
+            }
+            // 所有上游节点就绪才触发
+            TriggerStrategy::AllUpstreamReady => {
+                let mut inputs_map = HashMap::new();
+                let parents = self.graph.get_parents(&node_id);
+                trace!(node_id = %node_id, parents = ?parents, "Checking dependencies");
+                for parent_id in parents {
+                    let state = self.exec_ctx.get_state(&parent_id);
+                    trace!(parent = %parent_id, state = ?state, "Parent state");
+                    match state {
+                        Some(NodeState::Completed) => {
+                            // Collect input from parent
+                            if let Some(output) = self.exec_ctx.get_output(&parent_id) {
+                                inputs_map.insert(parent_id.clone(), output);
+                            }
+                        }
+                        Some(NodeState::Skipped) => {
+                            // Dependency met but no data
+                        }
+                        _ => {
+                            // Parent not ready (Pending, Running, Failed, or None)
+                            return Ok(());
+                        }
+                    }
+                }
+                trace!(node_id = %node_id, "All dependencies met, scheduling");
+                let inputs = NodeInputs::new(inputs_map);
+                self.start_node(node_id.to_string(), inputs, task_sender)
+                    .await
+            }
+        }
+    }
+
+    async fn start_node(
+        &mut self,
+        node_id: NodeId,
+        inputs: NodeInputs,
+        task_sender: mpsc::Sender<TaskEvent>,
+    ) -> Result<(), String> {
+        debug!(
+            node_id = %node_id,
+            total_active = self.exec_ctx.get_task_count(),
+            "Starting node task"
+        );
+        // 准备节点执行数据
+        // 节点实例
+        let node_arc = self
+            .graph
+            .nodes
+            .get(&node_id)
+            .ok_or_else(|| format!("Runner start_node: Node '{}' not found", &node_id))?
+            .clone();
+
+        // 节点运行上下文
+        let ctx = self.ctx.clone();
+        // 节点任务计数守卫
+        let guard = self.exec_ctx.get_task_tracker_guard();
+
+        send_flow_event(&self.event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
+        // 发送节点输入事件，通知外部，输入的数据不一定能序列化
+        send_flow_event(
+            &self.event_sender,
+            FlowEvent::NodeInMessage(node_id.clone(), inputs.clone()),
+        )
+        .await;
+        // 让执行器干活
+        Executor::exec(guard, node_id, node_arc, inputs, ctx, task_sender);
+        Ok(())
     }
 }

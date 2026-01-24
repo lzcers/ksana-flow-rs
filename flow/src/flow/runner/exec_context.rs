@@ -1,4 +1,7 @@
-use crate::flow::{graph::NodeId, sendable_any::SendableAny};
+use std::sync::Arc;
+
+use super::task_guard::TaskTracker;
+use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard, sendable_any::SendableAny};
 use dashmap::DashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,9 +14,12 @@ pub enum NodeState {
     Skipped,
 }
 
+// 执行上下文
+// 存储所有节点的执行状态，为调度器提供调度必要信息
 pub struct ExecutionContext {
-    pub node_states: DashMap<NodeId, NodeState>,
-    pub node_outputs: DashMap<NodeId, Box<dyn SendableAny>>,
+    node_states: DashMap<NodeId, NodeState>,
+    node_outputs: DashMap<NodeId, Box<dyn SendableAny>>,
+    tracker: Arc<TaskTracker>,
 }
 
 impl ExecutionContext {
@@ -21,9 +27,20 @@ impl ExecutionContext {
         Self {
             node_states: DashMap::new(),
             node_outputs: DashMap::new(),
+            // 任务跟踪器
+            tracker: Arc::new(TaskTracker::new()),
         }
     }
 
+    pub fn get_task_count(&self) -> usize {
+        self.tracker.count()
+    }
+    pub fn reset_task_count(&self) {
+        self.tracker.reset();
+    }
+    pub fn get_task_tracker_guard(&self) -> TaskGuard {
+        TaskGuard::new(self.tracker.clone())
+    }
     pub fn set_state(&self, node_id: NodeId, state: NodeState) {
         self.node_states.insert(node_id, state);
     }

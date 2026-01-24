@@ -8,6 +8,7 @@ use super::sendable_any::SendableAny;
 
 pub type NodeId = String;
 
+#[derive(Clone)]
 pub struct NodeInputs {
     pub inputs: HashMap<NodeId, Box<dyn SendableAny>>,
 }
@@ -41,6 +42,9 @@ impl NodeInputs {
 #[async_trait]
 pub trait Node {
     type Out: SendableAny;
+    fn get_trigger_strategy(&self) -> TriggerStrategy {
+        TriggerStrategy::AllUpstreamReady
+    }
     async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out;
 }
 
@@ -53,6 +57,19 @@ pub struct Edge<Out = ()> {
     pub condition: Option<EdgeCondition<Out>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TriggerStrategy {
+    /// 全量上游就绪才触发
+    AllUpstreamReady,
+    /// 任意上游有输入即触发
+    AnyUpstreamAvailable,
+}
+impl Default for TriggerStrategy {
+    fn default() -> Self {
+        TriggerStrategy::AllUpstreamReady
+    }
+}
+// 节点运行上下文
 // Context 内部是一个并发安全的结构，因此 Context 只要能 Clone 就行
 #[derive(Clone, Debug)]
 pub struct Context {
@@ -83,6 +100,9 @@ impl Context {
 pub trait AnyNode: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn get_trigger_strategy(&self) -> TriggerStrategy {
+        TriggerStrategy::AllUpstreamReady
+    }
     async fn run(
         &mut self,
         ctx: &Context,
@@ -99,7 +119,9 @@ impl<N: Node + Any + Send + Sync> AnyNode for N {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
-
+    fn get_trigger_strategy(&self) -> TriggerStrategy {
+        self.get_trigger_strategy()
+    }
     async fn run(
         &mut self,
         ctx: &Context,
@@ -144,6 +166,7 @@ pub struct Graph {
     pub nodes: HashMap<NodeId, Arc<RwLock<dyn AnyNode>>>,
     pub edges: HashMap<NodeId, Vec<Box<dyn AnyEdge>>>,
     pub incoming_nodes: HashMap<NodeId, Vec<NodeId>>,
+    pub node_trigger_strategy: HashMap<NodeId, TriggerStrategy>,
 }
 
 impl Graph {
@@ -152,11 +175,18 @@ impl Graph {
             nodes: HashMap::new(),
             edges: HashMap::new(),
             incoming_nodes: HashMap::new(),
+            node_trigger_strategy: HashMap::new(),
         }
     }
-
     pub fn get_node_ids(&self) -> Vec<String> {
         self.nodes.keys().cloned().collect()
+    }
+
+    pub fn get_trigger_strategy(&self, node_id: &str) -> TriggerStrategy {
+        self.node_trigger_strategy
+            .get(node_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn get_parents(&self, node_id: &str) -> Vec<String> {
@@ -167,10 +197,13 @@ impl Graph {
     }
 
     pub fn add_node<N: AnyNode>(&mut self, id: &str, node: N) {
+        let node_trigger_strategy = node.get_trigger_strategy();
         self.nodes.insert(
             id.to_owned(),
             Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>,
         );
+        self.node_trigger_strategy
+            .insert(id.to_owned(), node_trigger_strategy);
     }
 
     pub fn add_edge<Out: Any>(&mut self, edge: Edge<Out>) {
@@ -185,8 +218,15 @@ impl Graph {
             .push(Box::new(edge));
     }
 
-    pub fn add_arc_node(&mut self, id: &str, node: Arc<RwLock<dyn AnyNode>>) {
+    pub fn add_arc_node(
+        &mut self,
+        id: &str,
+        node: Arc<RwLock<dyn AnyNode>>,
+        trigger_strategy: Option<TriggerStrategy>,
+    ) {
         self.nodes.insert(id.to_owned(), node);
+        self.node_trigger_strategy
+            .insert(id.to_owned(), trigger_strategy.unwrap_or_default());
     }
 
     pub fn remove_node(&mut self, id: &str) {

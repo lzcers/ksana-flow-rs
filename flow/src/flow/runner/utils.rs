@@ -1,6 +1,7 @@
 use serde_json::Value;
+use tokio::sync::mpsc;
 
-use crate::SendableAny;
+use crate::{FlowEvent, SendableAny, TaskEvent};
 
 pub fn flatten_sendable_any(mut out: Box<dyn SendableAny>) -> Box<dyn SendableAny> {
     while out.as_any().is::<Box<dyn SendableAny>>() {
@@ -50,4 +51,14 @@ pub fn flatten_sendable_any(mut out: Box<dyn SendableAny>) -> Box<dyn SendableAn
         }
     }
     out
+}
+
+pub async fn send_flow_event(sender: &Option<mpsc::Sender<FlowEvent>>, event: FlowEvent) {
+    if let Some(sender) = sender {
+        let _ = sender.send(event).await;
+    }
+}
+
+pub async fn send_task_event(sender: &mpsc::Sender<TaskEvent>, event: TaskEvent) {
+    let _ = sender.send(event).await;
 }

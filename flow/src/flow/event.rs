@@ -1,17 +1,13 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use crate::{NodeId, NodeInputs, SendableAny, StreamSubscriptionFn};
 
-use crate::{NodeId, SendableAny, StreamSubscriptionFn};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FlowEvent {
     NodeStarted(String),
     NodeCompleted(String),
     NodeError(String, String),
-    NodeInMessage(String, Value),
-    NodeOutMessage(String, Value),
+    NodeInMessage(String, NodeInputs),
+    NodeOutMessage(String, Box<dyn SendableAny>),
     NodeStreamStarted(String),
-    NodeStreamNextMessage(String, Value),
+    NodeStreamNextMessage(String, Box<dyn SendableAny>),
     FlowPaused,
     FlowResumed,
     FlowStopped,

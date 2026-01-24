@@ -187,7 +187,7 @@ impl Db {
     }
 
     pub fn add_execution_event(&self, run_id: &str, event: &FlowEvent) -> Result<()> {
-        let event_json = serde_json::to_string(event)?;
+        let event_json = serde_json::to_string(&crate::utils::flow_event_to_value_lossy(event))?;
         self.conn.execute(
             "INSERT INTO execution_events (run_id, event) VALUES (?1, ?2)",
             params![run_id, event_json],
@@ -216,7 +216,7 @@ impl Db {
     pub fn get_latest_execution(
         &self,
         workflow_id: i64,
-    ) -> Result<Option<(String, String, Vec<FlowEvent>)>> {
+    ) -> Result<Option<(String, String, Vec<Value>)>> {
         // Get latest run_id
         let mut stmt = self.conn.prepare(
             "SELECT run_id, status FROM workflow_executions WHERE workflow_id = ?1 ORDER BY created_at DESC LIMIT 1"
@@ -234,8 +234,8 @@ impl Db {
             let event_rows =
                 event_stmt.query_map(params![run_id], |row| {
                     let event_str: String = row.get(0)?;
-                    Ok(serde_json::from_str::<FlowEvent>(&event_str)
-                        .unwrap_or(FlowEvent::FlowFinished)) // Fallback or handle error better?
+                    Ok(serde_json::from_str::<Value>(&event_str)
+                        .unwrap_or(Value::String("FlowFinished".to_string())))
                 })?;
 
             let mut events = Vec::new();
