@@ -261,7 +261,7 @@ impl Runner {
                     .await?
             }
             TaskEvent::Completed(node_id, output) => {
-                trace!(node_id = %node_id, has_output = output.is_some(), "Received Completed event");
+                info!(node_id = %node_id, "Node tasks completed");
                 let mut out_value = None;
                 if let Some(out) = output {
                     self.exec_ctx.set_output(node_id.clone(), out.clone());
@@ -364,12 +364,11 @@ impl Runner {
             }
             // 所有上游节点就绪才触发
             TriggerStrategy::AllUpstreamReady => {
+                trace!(node_id = %node_id, "All dependency met, scheduling");
                 let mut inputs_map = HashMap::new();
                 let parents = self.graph.get_parents(&node_id);
-                trace!(node_id = %node_id, parents = ?parents, "Checking dependencies");
                 for parent_id in parents {
                     let state = self.exec_ctx.get_state(&parent_id);
-                    trace!(parent = %parent_id, state = ?state, "Parent state");
                     match state {
                         Some(NodeState::Completed) => {
                             // Collect input from parent
@@ -386,7 +385,6 @@ impl Runner {
                         }
                     }
                 }
-                trace!(node_id = %node_id, "All dependencies met, scheduling");
                 let inputs = NodeInputs::new(inputs_map);
                 self.start_node(node_id.to_string(), inputs, task_sender)
                     .await

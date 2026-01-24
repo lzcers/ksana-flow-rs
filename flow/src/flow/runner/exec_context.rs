@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::task_guard::TaskTracker;
 use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard, sendable_any::SendableAny};
 use dashmap::DashMap;
+use tracing::info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeState {

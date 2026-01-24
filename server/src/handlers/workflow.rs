@@ -155,7 +155,7 @@ fn restore_value(v: Value) -> Box<dyn SendableAny> {
 async fn start_execution(
     state: AppState,
     graph: flow::Graph,
-    blueprint: GraphBlueprint,
+    init_execution_ctx: Option<ExecutionContext>,
     start_inputs: Vec<(String, NodeInputs)>,
     workflow_id: i64,
     workspace_id: String,
@@ -168,32 +168,8 @@ async fn start_execution(
         let _ = db.create_execution(&run_id, workflow_id);
     }
 
-    // Reconstruct ExecutionContext from blueprint
-    let execution_ctx = ExecutionContext::new();
-    for node in &blueprint.nodes {
-        if let Some(status) = &node.data.status {
-            let state = match status.as_str() {
-                "completed" => NodeState::Completed,
-                "failed" => NodeState::Failed,
-                "running" => NodeState::Running,
-                "skipped" => NodeState::Skipped,
-                "idle" => NodeState::Idle,
-                _ => NodeState::Pending,
-            };
-            execution_ctx.set_state(node.id.clone(), state);
-
-            if (state == NodeState::Completed || state == NodeState::Idle)
-                && !node.data.outputs.is_null()
-            {
-                let val = node.data.outputs.clone();
-                let output = restore_value(val);
-                execution_ctx.set_output(node.id.clone(), output);
-            }
-        }
-    }
-
     // Prepare Runner
-    let (mut runner, handle) = Runner::new(graph, Some(execution_ctx));
+    let (mut runner, handle) = Runner::new(graph, init_execution_ctx);
 
     // Setup bridge
     let tx = state.tx.clone();
@@ -247,8 +223,10 @@ async fn start_execution(
 
         if let Err(e) = runner.run().await {
             tracing::error!("Flow execution error: {}", e);
-            let event =
-                crate::utils::flow_event_to_value_lossy(&FlowEvent::NodeError("runner".to_string(), e));
+            let event = crate::utils::flow_event_to_value_lossy(&FlowEvent::NodeError(
+                "runner".to_string(),
+                e,
+            ));
             let _ = state_clone.tx.send((
                 workspace_id_for_event.clone(),
                 run_id_for_event.clone(),
@@ -302,16 +280,7 @@ pub async fn run_workflow(
         (graph, inputs)
     };
 
-    match start_execution(
-        state,
-        graph,
-        blueprint,
-        start_inputs,
-        workflow_id,
-        workspace_id,
-    )
-    .await
-    {
+    match start_execution(state, graph, None, start_inputs, workflow_id, workspace_id).await {
         Ok(run_id) => Json(json!({"status": "started", "run_id": run_id})),
         Err(e) => Json(json!({"error": e})),
     }
@@ -491,10 +460,33 @@ pub async fn run_node(
 
     let start_inputs = vec![(node_id.clone(), start_input)];
 
+    // Reconstruct ExecutionContext from blueprint
+    let execution_ctx = ExecutionContext::new();
+    for node in &blueprint.nodes {
+        if let Some(status) = &node.data.status {
+            let state = match status.as_str() {
+                "completed" => NodeState::Completed,
+                "failed" => NodeState::Failed,
+                "running" => NodeState::Running,
+                "skipped" => NodeState::Skipped,
+                "idle" => NodeState::Idle,
+                _ => NodeState::Pending,
+            };
+            execution_ctx.set_state(node.id.clone(), state);
+
+            if (state == NodeState::Completed || state == NodeState::Idle)
+                && !node.data.outputs.is_null()
+            {
+                let val = node.data.outputs.clone();
+                let output = restore_value(val);
+                execution_ctx.set_output(node.id.clone(), output);
+            }
+        }
+    }
     match start_execution(
         state,
         graph,
-        blueprint,
+        Some(execution_ctx),
         start_inputs,
         workflow_id,
         workspace_id,
