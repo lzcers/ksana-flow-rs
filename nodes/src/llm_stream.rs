@@ -14,6 +14,7 @@ use rig::{
     },
     streaming::{StreamedAssistantContent, StreamingPrompt},
 };
+use tracing::info;
 
 enum LLMStreamAgent {
     DeepSeek(Agent<CompletionModel>),
@@ -157,7 +158,7 @@ impl Node for LLMStreamNode {
         } else {
             self.user_prompt_template.clone()
         };
-
+        info!("prompt: {}", &prompt);
         let stream = self.llm.stream_prompt(&prompt).await;
         let react_stream = LLMStreamObservable { stream };
         ReactiveStream::from_observable_with_accumulator(react_stream, |chunks: Vec<String>| {

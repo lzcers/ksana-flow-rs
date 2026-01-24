@@ -46,7 +46,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     }
     const id = `${type}-${nextNum}`;
     const meta = nodeTypes.find(t => t.name === type);
-
     const newNode: Node = {
       id,
       type: type as any,

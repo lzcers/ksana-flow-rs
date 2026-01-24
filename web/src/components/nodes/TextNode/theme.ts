@@ -27,7 +27,7 @@ const customTheme: Partial<DesignTokens> = {
       inverse: '#09090b'
     },
     background: {
-      base: '#000000',
+      base: '#18181b',
       elevated: '#18181b',
       overlay: '#18181b'
     },

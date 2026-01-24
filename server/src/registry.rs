@@ -222,7 +222,7 @@ pub fn create_registry() -> NodeRegistry {
             category: "AI".to_string(),
             config: json!({
                 "system_prompt": "",
-                "user_prompt": "",
+                "user_prompt_template": "",
                 "model": "deepseek-chat",
                 "stream": false
             }),
@@ -231,21 +231,21 @@ pub fn create_registry() -> NodeRegistry {
         },
         |config: Value| {
             let system_prompt = config["system_prompt"].as_str();
-            let user_prompt = config["user_prompt"].as_str();
+            let user_prompt_template = config["user_prompt_template"].as_str();
             let model = config["model"].as_str().unwrap_or("deepseek-chat");
             let stream = config["stream"].as_bool().unwrap_or(false);
 
             if stream {
                 let node = LLMStreamNode::new(
                     system_prompt.unwrap_or(""),
-                    user_prompt.unwrap_or(""),
+                    user_prompt_template.unwrap_or(""),
                     model,
                 );
                 Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
             } else {
                 let node = LLMNode::new(
                     system_prompt.unwrap_or(""),
-                    user_prompt.unwrap_or(""),
+                    user_prompt_template.unwrap_or(""),
                     model,
                 );
                 Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
@@ -259,7 +259,7 @@ pub fn create_registry() -> NodeRegistry {
             category: "AI".to_string(),
             config: json!({
                 "system_prompt": "",
-                "user_prompt": "",
+                "user_prompt_template": "",
                 "model": "deepseek-chat"
             }),
             inputs: vec![InputType::String],
@@ -267,11 +267,11 @@ pub fn create_registry() -> NodeRegistry {
         },
         |config: Value| {
             let system_prompt = config["system_prompt"].as_str();
-            let user_prompt = config["user_prompt"].as_str();
+            let user_prompt_template = config["user_prompt_template"].as_str();
             let model = config["model"].as_str().unwrap_or("deepseek-chat");
             let node = LLMStreamNode::new(
                 system_prompt.unwrap_or(""),
-                user_prompt.unwrap_or(""),
+                user_prompt_template.unwrap_or(""),
                 model,
             );
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)

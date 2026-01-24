@@ -189,7 +189,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
             onClose={() => setIsFullScreen(false)}
             title={isMarkdown ? "Markdown Preview" : "Text Content"}
           >
-            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black justify-center items-center">
+            <div className="w-full h-full flex p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-zinc-900/70 justify-center items-center">
               {isMarkdown ? (
                 <ThemeProvider theme={theme}>
                   <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full w-full">
@@ -211,21 +211,21 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
 
         {isMarkdown ? (
           <div
-            className="w-full flex-1 p-4 text-xs bg-black border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
+            className="w-full flex-1 text-xs bg-zinc-900/60 border border-zinc-800 rounded shadow-inner overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar"
             onKeyDown={(e) => e.stopPropagation()}
             onWheel={(e) => {
               e.stopPropagation();
             }}
           >
             <ThemeProvider theme={theme}>
-              <AutoScrollContainer ref={scrollRef} enabled className="h-[300px]">
+              <AutoScrollContainer ref={scrollRef} enabled className="h-[300px] p-2">
                 <Incremark incremark={incremark} />
               </AutoScrollContainer>
             </ThemeProvider>
           </div>
         ) : (
           <textarea
-            className="w-full flex-1 p-2 text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-black border border-transparent focus:border-zinc-800 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500/50 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-600"
+            className="w-full flex-1 p-2 text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
             value={text}
             onChange={onChange}
             onBlur={onBlur}
