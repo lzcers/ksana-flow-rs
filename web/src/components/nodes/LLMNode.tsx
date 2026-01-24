@@ -39,6 +39,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [isSystemFullScreen, setIsSystemFullScreen] = useState(false);
 
   const incremark = useIncremark({
     math: { tex: true },
@@ -318,7 +319,16 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
                 </div>
               </div>
               <div className="col-span-12 flex flex-col flex-1">
-                <label className="text-[10px] text-zinc-500 font-bold block mb-1">System Prompt</label>
+                <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold mb-1">
+                  <span>System Prompt</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsSystemFullScreen(true); }}
+                    className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800"
+                    title="全屏编辑"
+                  >
+                    <Maximize2 size={12} />
+                  </button>
+                </div>
                 <textarea
                   style={{ boxSizing: 'content-box' }}
                   ref={systemInputRef}
@@ -333,6 +343,27 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
               </div>
             </div>
           </div>
+        )}
+        {isSystemFullScreen && (
+          <FullScreenModal
+            isOpen={isSystemFullScreen}
+            onClose={() => setIsSystemFullScreen(false)}
+            title={'System Prompt 编辑'}
+          >
+            <div className="w-full h-full flex flex-1 p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black justify-center items-center">
+              <textarea
+                className="flex flex-1 w-full h-full bg-black resize-none focus:outline-none text-zinc-200 font-mono"
+                style={{ boxSizing: 'content-box', height: "100%" }}
+                value={systemPrompt}
+                onChange={handleSystemPromptChange}
+                onCompositionStart={handleSystemCompositionStart}
+                onCompositionEnd={handleSystemCompositionEnd}
+                onKeyDown={(e) => e.stopPropagation()}
+                placeholder="System prompt..."
+                spellCheck={false}
+              />
+            </div>
+          </FullScreenModal>
         )}
         {isFullScreen && (
           <FullScreenModal

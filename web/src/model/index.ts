@@ -5,7 +5,6 @@ export * from './edgeOperator';
 export * from './utils';
 
 export const initialWorkflowState: WorkflowState = {
-
     nodes: [],
     edges: [],
     selectedNodeId: null,

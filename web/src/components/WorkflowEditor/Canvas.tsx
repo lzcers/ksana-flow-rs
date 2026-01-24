@@ -78,10 +78,14 @@ export const Canvas: React.FC<CanvasProps> = ({
   onStop,
 }) => {
   const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
-  const { setConnectionState, pasteNodes, deleteNode } = useStore();
+  const { setConnectionState, pasteNodes, deleteNode, saveWorkflow, undo, redo, pushHistory } = useStore();
 
   const spacePressed = useKeyPress('Space');
   const mousePositionRef = React.useRef({ x: 0, y: 0 });
+
+  const onNodeDragStart = React.useCallback(() => {
+    pushHistory();
+  }, [pushHistory]);
 
   const onMouseMove = React.useCallback((event: React.MouseEvent) => {
     mousePositionRef.current = { x: event.clientX, y: event.clientY };
@@ -91,6 +95,29 @@ export const Canvas: React.FC<CanvasProps> = ({
     const handleKeyDown = async (e: KeyboardEvent) => {
       const activeElement = document.activeElement;
       const isInputActive = activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+      // Undo: Ctrl+Z
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        if (isInputActive) return;
+        e.preventDefault();
+        undo();
+        return;
+      }
+
+      // Redo: Ctrl+Y or Ctrl+Shift+Z
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+        if (isInputActive) return;
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      // Save: Ctrl+S or Cmd+S
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        await saveWorkflow();
+        return;
+      }
 
       // Copy: Ctrl+C or Cmd+C
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
@@ -131,7 +158,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         await navigator.clipboard.writeText(JSON.stringify(data));
 
         // Delete selected nodes
-        selectedNodes.forEach(node => deleteNode(node.id));
+        onNodesChange(selectedNodes.map(n => ({ type: 'remove', id: n.id })));
       }
 
       // Paste: Ctrl+V or Cmd+V
@@ -175,7 +202,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [getNodes, getEdges, pasteNodes, screenToFlowPosition]);
+  }, [getNodes, getEdges, pasteNodes, screenToFlowPosition, saveWorkflow]);
 
   const [contextMenu, setContextMenu] = React.useState<{
     visible: boolean;
@@ -276,6 +303,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         onPaneClick={onPaneClick}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onConnectStart={onConnectStart}

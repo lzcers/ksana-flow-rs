@@ -67,6 +67,17 @@ export interface Canvas {
   isConnecting: boolean;
   connectionSourceId: string | null;
   setConnectionState: (connecting: boolean, sourceId?: string | null) => void;
+
+  // History
+  history: {
+    past: { nodes: Node[], edges: Edge[] }[];
+    future: { nodes: Node[], edges: Edge[] }[];
+  };
+  pushHistory: () => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
 // 处理执行相关的状态和操作

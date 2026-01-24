@@ -20,17 +20,91 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  isConnecting: false,
+  connectionSourceId: null,
+
+  history: { past: [], future: [] },
+
+  pushHistory: () => {
+    const { nodes, edges, history } = get();
+    // Limit history to 50 steps to prevent memory issues
+    const newPast = [...history.past, { nodes, edges }].slice(-50);
+    set({ history: { past: newPast, future: [] } });
+  },
+
+  undo: () => {
+    const { history } = get();
+    if (history.past.length === 0) return;
+
+    const previous = history.past[history.past.length - 1];
+    const newPast = history.past.slice(0, -1);
+
+    const { nodes, edges } = get();
+
+    set({
+      nodes: previous.nodes,
+      edges: previous.edges,
+      history: {
+        past: newPast,
+        future: [{ nodes, edges }, ...history.future]
+      }
+    });
+  },
+
+  redo: () => {
+    const { history } = get();
+    if (history.future.length === 0) return;
+
+    const next = history.future[0];
+    const newFuture = history.future.slice(1);
+
+    const { nodes, edges } = get();
+
+    set({
+      nodes: next.nodes,
+      edges: next.edges,
+      history: {
+        past: [...history.past, { nodes, edges }],
+        future: newFuture
+      }
+    });
+  },
+
+  canUndo: () => get().history.past.length > 0,
+  canRedo: () => get().history.future.length > 0,
 
   setNodes: (nodes) => set(state => ({ ...state, ...setNodes(state, nodes) })),
   setEdges: (edges) => set(state => ({ ...state, ...setEdges(state, edges) })),
-  pasteNodes: (nodes, edges) => set(state => ({ ...state, ...pasteNodes(state, nodes, edges) })),
 
-  onNodesChange: (changes: NodeChange[]) => set(state => ({ ...state, ...applyNodeChanges(state, changes) })),
-  onEdgesChange: (changes: EdgeChange[]) => set(state => ({ ...state, ...applyEdgeChanges(state, changes) })),
+  pasteNodes: (nodes, edges) => {
+    get().pushHistory();
+    set(state => ({ ...state, ...pasteNodes(state, nodes, edges) }));
+  },
 
-  onConnect: (connection: Connection) => set(state => ({ ...state, ...onConnect(state, connection) })),
+  onNodesChange: (changes: NodeChange[]) => {
+    // Snapshot on remove (e.g. Backspace key)
+    if (changes.some(c => c.type === 'remove')) {
+      get().pushHistory();
+    }
+    set(state => ({ ...state, ...applyNodeChanges(state, changes) }));
+  },
+
+  onEdgesChange: (changes: EdgeChange[]) => {
+    // Snapshot on remove (e.g. Backspace key or removing edge)
+    if (changes.some(c => c.type === 'remove')) {
+      get().pushHistory();
+    }
+    set(state => ({ ...state, ...applyEdgeChanges(state, changes) }));
+  },
+
+  onConnect: (connection: Connection) => {
+    get().pushHistory();
+    set(state => ({ ...state, ...onConnect(state, connection) }));
+  },
 
   addNode: (type: string, position: { x: number; y: number } = { x: 300, y: 200 }) => {
+    get().pushHistory();
+
     const { nodes, nodeTypes } = get();
     // Find all nodes of the same type and extract their numbers
     const sameTypeNodes = nodes.filter(n => n.id.startsWith(`${type}-`));
@@ -65,7 +139,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     });
   },
 
-  deleteNode: (id: string) => set(state => ({ ...state, ...removeNode(state, id) })),
+  deleteNode: (id: string) => {
+    get().pushHistory();
+    set(state => ({ ...state, ...removeNode(state, id) }));
+  },
 
   updateNodeData: (id: string, data: Record<string, any>) => set(state => ({ ...state, ...updateNodeData(state, id, data) })),
 
@@ -73,7 +150,5 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
 
   selectNode: (id: string | null) => set(state => ({ ...state, ...selectNode(state, id) })),
 
-  isConnecting: false,
-  connectionSourceId: null,
   setConnectionState: (connecting, sourceId = null) => set({ isConnecting: connecting, connectionSourceId: sourceId })
 });
