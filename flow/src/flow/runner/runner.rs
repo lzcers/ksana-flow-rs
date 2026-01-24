@@ -204,6 +204,7 @@ impl Runner {
 
             // 3. 检查终止条件
             if self.exec_ctx.get_task_count() == 0
+                && rx.is_empty()
                 && *self.state_tx.borrow() == RunnerState::Running
             {
                 break;
