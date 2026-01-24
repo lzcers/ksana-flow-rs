@@ -152,6 +152,56 @@ fn restore_value(v: Value) -> Box<dyn SendableAny> {
     }
 }
 
+fn extract_single_output_value(outputs: &Value) -> Value {
+    match outputs {
+        Value::Object(map) => {
+            if let Some(v) = map.get("output") {
+                v.clone()
+            } else if map.len() == 1 {
+                map.values().next().cloned().unwrap_or(Value::Null)
+            } else {
+                outputs.clone()
+            }
+        }
+        other => other.clone(),
+    }
+}
+
+fn reconstruct_execution_context_from_blueprint(
+    blueprint: &GraphBlueprint,
+    start_node_id: &str,
+) -> ExecutionContext {
+    let execution_ctx = ExecutionContext::new();
+    for node in &blueprint.nodes {
+        if let Some(status) = &node.data.status {
+            let state = if node.id == start_node_id {
+                NodeState::Pending
+            } else {
+                match status.as_str() {
+                    "completed" => NodeState::Completed,
+                    "failed" => NodeState::Failed,
+                    "running" => NodeState::Running,
+                    "skipped" => NodeState::Skipped,
+                    "idle" => NodeState::Idle,
+                    _ => NodeState::Pending,
+                }
+            };
+
+            execution_ctx.set_state(node.id.clone(), state);
+
+            if node.id != start_node_id
+                && (state == NodeState::Completed || state == NodeState::Idle)
+                && !node.data.outputs.is_null()
+            {
+                let val = extract_single_output_value(&node.data.outputs);
+                let output = restore_value(val);
+                execution_ctx.set_output(node.id.clone(), output);
+            }
+        }
+    }
+    execution_ctx
+}
+
 async fn start_execution(
     state: AppState,
     graph: flow::Graph,
@@ -417,15 +467,7 @@ pub async fn run_node(
                         }
 
                         if !extracted {
-                            if let Value::Object(map) = &val {
-                                if let Some(v) = map.get("output") {
-                                    val = v.clone();
-                                } else if map.len() == 1 {
-                                    if let Some(v) = map.values().next() {
-                                        val = v.clone();
-                                    }
-                                }
-                            }
+                            val = extract_single_output_value(&val);
                         }
 
                         let output = restore_value(val);
@@ -461,28 +503,7 @@ pub async fn run_node(
     let start_inputs = vec![(node_id.clone(), start_input)];
 
     // Reconstruct ExecutionContext from blueprint
-    let execution_ctx = ExecutionContext::new();
-    for node in &blueprint.nodes {
-        if let Some(status) = &node.data.status {
-            let state = match status.as_str() {
-                "completed" => NodeState::Completed,
-                "failed" => NodeState::Failed,
-                "running" => NodeState::Running,
-                "skipped" => NodeState::Skipped,
-                "idle" => NodeState::Idle,
-                _ => NodeState::Pending,
-            };
-            execution_ctx.set_state(node.id.clone(), state);
-
-            if (state == NodeState::Completed || state == NodeState::Idle)
-                && !node.data.outputs.is_null()
-            {
-                let val = node.data.outputs.clone();
-                let output = restore_value(val);
-                execution_ctx.set_output(node.id.clone(), output);
-            }
-        }
-    }
+    let execution_ctx = reconstruct_execution_context_from_blueprint(&blueprint, &node_id);
     match start_execution(
         state,
         graph,
@@ -524,5 +545,96 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, workspace_id: Str
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        extract_single_output_value, reconstruct_execution_context_from_blueprint, restore_value,
+    };
+    use crate::state::{GraphBlueprint, Node, NodeData, Position};
+    use flow::{NodeState, SendableAny};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn extract_single_output_prefers_output_key() {
+        let outputs = json!({"output": "x", "other": "y"});
+        assert_eq!(extract_single_output_value(&outputs), json!("x"));
+    }
+
+    #[test]
+    fn extract_single_output_uses_single_key_value() {
+        let outputs = json!({"foo": 123});
+        assert_eq!(extract_single_output_value(&outputs), json!(123));
+    }
+
+    #[test]
+    fn extract_single_output_keeps_multi_key_object_without_output() {
+        let outputs = json!({"a": 1, "b": 2});
+        assert_eq!(extract_single_output_value(&outputs), outputs);
+    }
+
+    #[test]
+    fn restore_value_string_becomes_string() {
+        let any = restore_value(json!("hello"));
+        let inner: &dyn SendableAny = &*any;
+        assert_eq!(
+            inner.as_any().downcast_ref::<String>(),
+            Some(&"hello".to_string())
+        );
+    }
+
+    #[test]
+    fn restore_value_null_becomes_unit() {
+        let any = restore_value(Value::Null);
+        let inner: &dyn SendableAny = &*any;
+        assert!(inner.as_any().downcast_ref::<()>().is_some());
+    }
+
+    #[test]
+    fn restore_value_number_kept_as_json_value() {
+        let any = restore_value(json!(123));
+        let inner: &dyn SendableAny = &*any;
+        assert_eq!(inner.as_any().downcast_ref::<Value>(), Some(&json!(123)));
+    }
+
+    #[test]
+    fn reconstruct_execution_context_resets_start_node_state_and_output() {
+        let blueprint = GraphBlueprint {
+            nodes: vec![
+                Node {
+                    id: "a".to_string(),
+                    type_name: "TextNode".to_string(),
+                    data: NodeData {
+                        status: Some("completed".to_string()),
+                        outputs: json!({"output": "cached-a"}),
+                        ..Default::default()
+                    },
+                    position: Position { x: 0.0, y: 0.0 },
+                    width: None,
+                    height: None,
+                },
+                Node {
+                    id: "b".to_string(),
+                    type_name: "TextNode".to_string(),
+                    data: NodeData {
+                        status: Some("completed".to_string()),
+                        outputs: json!({"output": "cached-b"}),
+                        ..Default::default()
+                    },
+                    position: Position { x: 0.0, y: 0.0 },
+                    width: None,
+                    height: None,
+                },
+            ],
+            edges: vec![],
+        };
+
+        let ctx = reconstruct_execution_context_from_blueprint(&blueprint, "b");
+        assert_eq!(ctx.get_state("a"), Some(NodeState::Completed));
+        assert_eq!(ctx.get_state("b"), Some(NodeState::Pending));
+        assert!(ctx.get_output("b").is_none());
+        assert!(ctx.get_output("a").is_some());
     }
 }
