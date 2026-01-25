@@ -49,8 +49,8 @@ pub fn build_payload(
         messages.push(json!({
             "role": "user",
             "content": [
-                { "type": "text", "text": prompt },
                 { "type": "image_url", "image_url": { "url": data_url } }
+                ,{ "type": "text", "text": prompt }
             ]
         }));
     } else {
@@ -64,6 +64,7 @@ pub fn build_payload(
         "model": model,
         "messages": messages,
         "modalities": ["image", "text"],
+        "stream": false,
         "image_config": {
             "aspect_ratio": aspect_ratio,
             "image_size": image_size
@@ -87,7 +88,10 @@ pub async fn send_openrouter_chat_completions(
         req = req.header("X-Title", title);
     }
 
-    let resp = req.send().await.map_err(|e| format!("OpenRouter request failed: {}", e))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("OpenRouter request failed: {}", e))?;
     let status = resp.status();
     let resp_json: Value = resp
         .json()
@@ -102,16 +106,65 @@ pub async fn send_openrouter_chat_completions(
 }
 
 pub fn extract_first_image_data_url(response: &Value) -> Option<String> {
-    response
-        .get("choices")?
-        .get(0)?
-        .get("message")?
-        .get("images")?
-        .get(0)?
-        .get("image_url")?
-        .get("url")?
-        .as_str()
-        .map(|s| s.to_string())
+    let message = response.get("choices")?.get(0)?.get("message")?;
+
+    if let Some(url) = message
+        .get("images")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("image_url"))
+        .and_then(|v| v.get("url"))
+        .and_then(|v| v.as_str())
+    {
+        return Some(url.to_string());
+    }
+
+    match message.get("content") {
+        Some(Value::String(s)) => {
+            if s.trim_start().starts_with("data:image/") {
+                return Some(s.to_string());
+            }
+        }
+        Some(Value::Array(parts)) => {
+            for part in parts {
+                let Some(part_type) = part.get("type").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                if part_type == "image_url" {
+                    if let Some(url) = part
+                        .get("image_url")
+                        .and_then(|v| v.get("url"))
+                        .and_then(|v| v.as_str())
+                    {
+                        return Some(url.to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    None
+}
+
+pub fn extract_model_error(response: &Value) -> Option<String> {
+    response.get("error").map(|v| v.to_string())
+}
+
+pub fn response_debug_excerpt(response: &Value) -> String {
+    let excerpt = response
+        .get("choices")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("message"))
+        .cloned()
+        .unwrap_or_else(|| response.clone());
+
+    let s = serde_json::to_string(&excerpt).unwrap_or_else(|_| excerpt.to_string());
+    const MAX: usize = 2000;
+    if s.len() <= MAX {
+        s
+    } else {
+        format!("{}...(truncated)", &s[..MAX])
+    }
 }
 
 pub fn parse_data_url_to_bytes(data_url: &str) -> Result<(String, Vec<u8>), String> {
@@ -131,7 +184,10 @@ pub fn parse_data_url_to_bytes(data_url: &str) -> Result<(String, Vec<u8>), Stri
     Ok((mime_type, bytes))
 }
 
-pub fn load_uploaded_image_data_url(file_id: &str, space_id: &str) -> Result<Option<String>, String> {
+pub fn load_uploaded_image_data_url(
+    file_id: &str,
+    space_id: &str,
+) -> Result<Option<String>, String> {
     let config = get_config().map_err(|e| format!("Error loading config: {}", e))?;
     let conn = Connection::open(&config.source.data_db_uri)
         .map_err(|e| format!("Error opening DB: {}", e))?;
@@ -142,8 +198,10 @@ pub fn load_uploaded_image_data_url(file_id: &str, space_id: &str) -> Result<Opt
         )
         .map_err(|e| format!("Error preparing statement: {}", e))?;
 
-    let row: Result<(String, String, Option<Vec<u8>>), _> =
-        stmt.query_row(params![file_id, space_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)));
+    let row: Result<(String, String, Option<Vec<u8>>), _> = stmt
+        .query_row(params![file_id, space_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        });
 
     let (mime_type, content_text, content_blob) = match row {
         Ok(v) => v,
@@ -187,4 +245,3 @@ pub fn save_ai_media_to_db(
 
     Ok(())
 }
-

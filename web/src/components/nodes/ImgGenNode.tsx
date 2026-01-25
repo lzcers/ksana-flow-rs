@@ -13,6 +13,7 @@ type ImgGenOutput = {
   media_id?: string;
   data_url?: string;
   mime_type?: string;
+  space_id?: string;
 };
 
 function parseImgGenOutput(value: unknown): { imageSrc?: string; mediaId?: string } {
@@ -23,6 +24,9 @@ function parseImgGenOutput(value: unknown): { imageSrc?: string; mediaId?: strin
       const obj = JSON.parse(s) as ImgGenOutput;
       if (typeof obj?.data_url === 'string' && obj.data_url.startsWith('data:image/')) {
         return { imageSrc: obj.data_url, mediaId: obj.media_id };
+      }
+      if (typeof obj?.media_id === 'string' && obj.media_id.length > 0) {
+        return { mediaId: obj.media_id };
       }
     } catch {
       return {};
@@ -35,17 +39,20 @@ function parseImgGenOutput(value: unknown): { imageSrc?: string; mediaId?: strin
     if (typeof obj?.data_url === 'string' && obj.data_url.startsWith('data:image/')) {
       return { imageSrc: obj.data_url, mediaId: obj.media_id };
     }
+    if (typeof obj?.media_id === 'string' && obj.media_id.length > 0) {
+      return { mediaId: obj.media_id };
+    }
   }
 
   return {};
 }
 
 export const ImgGenNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, events$, currentRunId } = useStore();
+  const { updateNodeData, events$, currentRunId, currentSpaceId } = useStore();
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [promptText, setPromptText] = useState<string>(data.config?.user_prompt_template || '');
-  const [model, setModel] = useState<string>(data.config?.model || 'google/gemini-3-pro-image-preview');
+  const [model, setModel] = useState<string>(data.config?.model);
   const [aspectRatio, setAspectRatio] = useState<string>(data.config?.aspect_ratio || '1:1');
   const [imageSize, setImageSize] = useState<string>(data.config?.image_size || '1K');
   const [inputImageFileId, setInputImageFileId] = useState<string>(data.config?.input_image_file_id || '');
@@ -58,9 +65,24 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
   }, []);
 
   const [imageSrc, setImageSrc] = useState<string | undefined>(initialParsed.imageSrc);
+  const [mediaId, setMediaId] = useState<string | undefined>(initialParsed.mediaId);
+  const objectUrlRef = useRef<string | null>(null);
 
   const isComposing = useRef(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  const apiBase = useMemo(() => {
+    return import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (document.activeElement !== promptRef.current) {
@@ -69,7 +91,7 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
   }, [data.config?.user_prompt_template]);
 
   useEffect(() => {
-    setModel(data.config?.model || 'google/gemini-3-pro-image-preview');
+    setModel(data.config?.model);
     setAspectRatio(data.config?.aspect_ratio || '1:1');
     setImageSize(data.config?.image_size || '1K');
     setInputImageFileId(data.config?.input_image_file_id || '');
@@ -93,6 +115,7 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
       if (event.NodeStarted) {
         if (event.NodeStarted === id) {
           setImageSrc(undefined);
+          setMediaId(undefined);
           setOutputRaw('');
           updateNodeData(id, { config: { ...data.config, output: '' } });
         }
@@ -104,11 +127,33 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
           updateNodeData(id, { config: { ...data.config, output: nextRaw } });
           const parsed = parseImgGenOutput(nextRaw);
           setImageSrc(parsed.imageSrc);
+          setMediaId(parsed.mediaId);
         }
       }
     });
     return () => subscription.unsubscribe();
   }, [events$, currentRunId, id, updateNodeData, data.config]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (imageSrc) return;
+      if (!mediaId) return;
+      if (!currentSpaceId) return;
+
+      try {
+        const res = await fetch(`${apiBase}/ai_media/${mediaId}?space_id=${currentSpaceId}`);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        const nextUrl = URL.createObjectURL(blob);
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = nextUrl;
+        setImageSrc(nextUrl);
+      } catch {
+        return;
+      }
+    };
+    run();
+  }, [apiBase, currentSpaceId, imageSrc, mediaId]);
 
   const onPromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const next = e.target.value;
@@ -236,6 +281,16 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
                   </select>
                 </div>
               </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-zinc-500 font-bold">Input Image File ID (optional)</span>
+                <input
+                  value={inputImageFileId}
+                  onChange={onInputImageFileIdChange}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  className="w-full text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-2 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
+                  placeholder="uploaded_files.id"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -285,4 +340,3 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
 });
 
 ImgGenNode.displayName = 'ImgGenNode';
-

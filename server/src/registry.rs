@@ -286,7 +286,7 @@ pub fn create_registry() -> NodeRegistry {
             category: "AI".to_string(),
             config: json!({
                 "system_prompt": "",
-                "user_prompt_template": "{input}",
+                "user_prompt_template": "",
                 "model": "google/gemini-3-pro-image-preview",
                 "aspect_ratio": "1:1",
                 "image_size": "1K",
@@ -297,7 +297,7 @@ pub fn create_registry() -> NodeRegistry {
         },
         |config: Value| {
             let system_prompt = config["system_prompt"].as_str().unwrap_or("");
-            let user_prompt_template = config["user_prompt_template"].as_str().unwrap_or("{input}");
+            let user_prompt_template = config["user_prompt_template"].as_str().unwrap_or("");
             let model = config["model"]
                 .as_str()
                 .unwrap_or("google/gemini-3-pro-image-preview");
