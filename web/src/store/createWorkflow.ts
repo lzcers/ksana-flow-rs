@@ -324,7 +324,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         apply(updateNodeStatus(nextState, id, 'error', error));
         apply(updateNodeData(nextState, id, { isOutputStream: false }));
       } else if (event.WorkflowFinished || event.WorkflowStopped) {
-        apply(resetWorkflowExecutionState(nextState));
+        // apply(resetWorkflowExecutionState(nextState));
       }
 
       return nextState;

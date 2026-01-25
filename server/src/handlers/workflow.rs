@@ -1,6 +1,7 @@
 use crate::{
     registry,
     state::{AppState, ExecutionHandle, GraphBlueprint},
+    utils,
 };
 use axum::{
     Json,
@@ -167,37 +168,29 @@ fn extract_single_output_value(outputs: &Value) -> Value {
     }
 }
 
-fn reconstruct_execution_context_from_blueprint(
-    blueprint: &GraphBlueprint,
-    start_node_id: &str,
-) -> ExecutionContext {
+fn reconstruct_execution_context_from_blueprint(blueprint: &GraphBlueprint) -> ExecutionContext {
     let execution_ctx = ExecutionContext::new();
     for node in &blueprint.nodes {
-        if let Some(status) = &node.data.status {
-            let state = if node.id == start_node_id {
-                NodeState::Pending
-            } else {
-                match status.as_str() {
-                    "completed" => NodeState::Completed,
-                    "failed" => NodeState::Failed,
-                    "running" => NodeState::Running,
-                    "skipped" => NodeState::Skipped,
-                    "idle" => NodeState::Idle,
-                    _ => NodeState::Pending,
-                }
-            };
-
-            execution_ctx.set_state(node.id.clone(), state);
-
-            if node.id != start_node_id
-                && (state == NodeState::Completed || state == NodeState::Idle)
-                && !node.data.outputs.is_null()
-            {
-                let val = extract_single_output_value(&node.data.outputs);
-                let output = restore_value(val);
-                execution_ctx.set_output(node.id.clone(), output);
+        let node_status = if let Some(status) = &node.data.status {
+            match status.as_str() {
+                "completed" => NodeState::Completed,
+                "failed" => NodeState::Failed,
+                "running" => NodeState::Running,
+                "skipped" => NodeState::Skipped,
+                "idle" => NodeState::Idle,
+                _ => NodeState::Pending,
             }
-        }
+        } else {
+            NodeState::Idle
+        };
+
+        // 节点状态恢复
+        execution_ctx.set_state(node.id.clone(), node_status);
+        // 节点输出恢复
+        // 不一定完整，只能重建出能够序列化的输出
+        let val = extract_single_output_value(&node.data.outputs);
+        let output = restore_value(val);
+        execution_ctx.set_output(node.id.clone(), output);
     }
     execution_ctx
 }
@@ -242,7 +235,7 @@ async fn start_execution(
             let _ = tx.send((
                 workspace_id_clone.clone(),
                 run_id_clone.clone(),
-                crate::utils::flow_event_to_value_lossy(&event),
+                utils::flow_event_to_value_lossy(&event),
             ));
         }
     });
@@ -253,8 +246,8 @@ async fn start_execution(
         executions.insert(
             run_id.clone(),
             ExecutionHandle {
-                runner_handle: handle.clone(),
                 workflow_id,
+                runner_handle: handle.clone(),
                 workspace_id: workspace_id.clone(),
             },
         );
@@ -314,6 +307,7 @@ pub async fn run_workflow(
         };
 
         let mut inputs = Vec::new();
+        // 从蓝图中构建节点的初始输入
         for node_id in &start_nodes {
             if let Some(node) = blueprint.nodes.iter().find(|n| n.id == *node_id) {
                 let default_val = if let Some(meta) = registry.get_node_metadata(&node.type_name) {
@@ -332,6 +326,82 @@ pub async fn run_workflow(
 
     match start_execution(state, graph, None, start_inputs, workflow_id, workspace_id).await {
         Ok(run_id) => Json(json!({"status": "started", "run_id": run_id})),
+        Err(e) => Json(json!({"error": e})),
+    }
+}
+
+pub async fn run_node(
+    State(state): State<AppState>,
+    Json(payload): Json<RunNodeRequest>,
+) -> impl IntoResponse {
+    let workspace_id = payload.space_id;
+    let workflow_id = payload.workflow_id;
+    let blueprint = payload.blueprint;
+    let node_id = payload.node_id;
+
+    let (graph, execution_ctx, node_inputs) = {
+        let registry = &state.registry;
+
+        // 实例化蓝图
+        let (graph, _) = match blueprint.instantiate(registry) {
+            Ok(v) => v,
+            Err(e) => return Json(json!({"error": e})),
+        };
+
+        // 执行上下文重建
+        // Reconstruct ExecutionContext from blueprint
+        let execution_ctx = reconstruct_execution_context_from_blueprint(&blueprint);
+
+        // 重置当前节点状态
+        execution_ctx.set_state(node_id.clone(), NodeState::Idle);
+
+        // 提取所有父节点的输出构建当前节点输入
+        let mut node_inputs = HashMap::new();
+        for parent_id in graph.get_parents(&node_id) {
+            let state = execution_ctx.get_state(&parent_id);
+            match state {
+                Some(NodeState::Completed) => {
+                    if let Some(output) = execution_ctx.get_output(&parent_id) {
+                        info!(
+                            "parent node {} output {:?}",
+                            parent_id,
+                            utils::try_downcast_to_value(&output)
+                        );
+                        node_inputs.insert(parent_id.clone(), output);
+                    }
+                }
+                _ => {
+                    // 父节点未完成，理论上不应该允许从父节点未运行成功的地方开始执行
+                    return Json(json!({
+                        "error": format!("Parent node '{}' has not completed successfully", parent_id)
+                    }));
+                }
+            }
+        }
+        (graph, execution_ctx, NodeInputs::new(node_inputs))
+    };
+
+    if !graph.nodes.contains_key(&node_id) {
+        return Json(json!({
+            "error": format!("Node '{}' not found in blueprint", node_id)
+        }));
+    }
+
+    match start_execution(
+        state,
+        graph,
+        Some(execution_ctx),
+        vec![(node_id.clone(), node_inputs)],
+        workflow_id,
+        workspace_id,
+    )
+    .await
+    {
+        Ok(run_id) => Json(json!({
+            "status": "started",
+            "run_id": run_id,
+            "start_node": node_id
+        })),
         Err(e) => Json(json!({"error": e})),
     }
 }
@@ -414,115 +484,6 @@ pub async fn stop_workflow(
     }
 }
 
-pub async fn run_node(
-    State(state): State<AppState>,
-    Json(payload): Json<RunNodeRequest>,
-) -> impl IntoResponse {
-    let workspace_id = payload.space_id;
-    let workflow_id = payload.workflow_id;
-    let blueprint = payload.blueprint;
-    let node_id = payload.node_id;
-
-    let (graph, start_input) = {
-        let registry = &state.registry;
-
-        let (graph, _) = match blueprint.instantiate(registry) {
-            Ok(v) => v,
-            Err(e) => return Json(json!({"error": e})),
-        };
-
-        // Construct inputs from parents if available
-        let mut inputs_map = HashMap::new();
-        let parents = graph.get_parents(&node_id);
-
-        for parent_id in parents {
-            if let Some(parent_node) = blueprint.nodes.iter().find(|n| n.id == parent_id) {
-                if let Some(status) = &parent_node.data.status {
-                    let state = match status.as_str() {
-                        "completed" => NodeState::Completed,
-                        "idle" => NodeState::Idle,
-                        _ => NodeState::Pending,
-                    };
-
-                    if (state == NodeState::Completed || state == NodeState::Idle)
-                        && !parent_node.data.outputs.is_null()
-                    {
-                        let mut val = parent_node.data.outputs.clone();
-                        // Try to find the edge to determine which output to use
-                        let mut extracted = false;
-                        if let Some(edge) = blueprint
-                            .edges
-                            .iter()
-                            .find(|e| e.source == parent_id && e.target == node_id)
-                        {
-                            if let Some(handle) = &edge.source_handle {
-                                if let Value::Object(map) = &val {
-                                    if let Some(v) = map.get(handle) {
-                                        val = v.clone();
-                                        info!("Extracted value via handle {}: {:?}", handle, val);
-                                        extracted = true;
-                                    }
-                                }
-                            }
-                        }
-
-                        if !extracted {
-                            val = extract_single_output_value(&val);
-                        }
-
-                        let output = restore_value(val);
-                        inputs_map.insert(parent_id, output);
-                    }
-                }
-            }
-        }
-
-        // If no parent inputs, use default value (legacy behavior)
-        if inputs_map.is_empty() {
-            let default_val = if let Some(node) = blueprint.nodes.iter().find(|n| n.id == node_id) {
-                if let Some(meta) = registry.get_node_metadata(&node.type_name) {
-                    crate::registry::create_default_value(&meta.inputs)
-                } else {
-                    Box::new(()) as Box<dyn SendableAny>
-                }
-            } else {
-                Box::new(()) as Box<dyn SendableAny>
-            };
-            inputs_map.insert("external_start".to_owned(), default_val);
-        }
-
-        (graph, NodeInputs::new(inputs_map))
-    };
-
-    if !graph.nodes.contains_key(&node_id) {
-        return Json(json!({
-            "error": format!("Node '{}' not found in blueprint", node_id)
-        }));
-    }
-
-    let start_inputs = vec![(node_id.clone(), start_input)];
-
-    // Reconstruct ExecutionContext from blueprint
-    let execution_ctx = reconstruct_execution_context_from_blueprint(&blueprint, &node_id);
-    match start_execution(
-        state,
-        graph,
-        Some(execution_ctx),
-        start_inputs,
-        workflow_id,
-        workspace_id,
-    )
-    .await
-    {
-        Ok(run_id) => Json(json!({
-            "status": "started",
-            "run_id": run_id,
-            "start_node": node_id
-        })),
-        Err(e) => Json(json!({"error": e})),
-    }
-}
-
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<WsParams>,
@@ -600,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn reconstruct_execution_context_resets_start_node_state_and_output() {
+    fn reconstruct_execution_contextut() {
         let blueprint = GraphBlueprint {
             nodes: vec![
                 Node {
@@ -631,10 +592,10 @@ mod tests {
             edges: vec![],
         };
 
-        let ctx = reconstruct_execution_context_from_blueprint(&blueprint, "b");
+        let ctx = reconstruct_execution_context_from_blueprint(&blueprint);
         assert_eq!(ctx.get_state("a"), Some(NodeState::Completed));
-        assert_eq!(ctx.get_state("b"), Some(NodeState::Pending));
-        assert!(ctx.get_output("b").is_none());
+        assert_eq!(ctx.get_state("b"), Some(NodeState::Completed));
+        assert!(ctx.get_output("b").is_some());
         assert!(ctx.get_output("a").is_some());
     }
 }

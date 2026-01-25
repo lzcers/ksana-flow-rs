@@ -116,10 +116,10 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
             apply(updateNodeData(nextState, id, { isOutputStream: false }));
           }
         } else if ('FlowFinished' === msg || msg === 'FlowStopped') {
-          const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
-          nodesToUpdate.forEach(node => {
-            apply(updateNodeStatus(nextState, node.id, 'completed'));
-          });
+          // const nodesToUpdate = nextState.nodes.filter(n => n.data.status === 'running');
+          // nodesToUpdate.forEach(node => {
+          //   apply(updateNodeStatus(nextState, node.id, 'completed'));
+          // });
         }
       }
 
@@ -180,8 +180,8 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     };
 
     try {
-      setWorkflowStatus('running');
       set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
+      setWorkflowStatus('running');
 
       const res = await api.runWorkflow(currentSpaceId, blueprint, currentWorkflowId || -1);
       if (res && res.error) {
@@ -261,8 +261,6 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     };
 
     try {
-      set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
-
       const res = await api.runNode(currentSpaceId, blueprint, nodeId, currentWorkflowId || -1);
       if (res && res.error) {
         throw new Error(res.error);

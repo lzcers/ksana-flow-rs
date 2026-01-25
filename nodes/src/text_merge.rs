@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use flow::{Context, Node, NodeInputs};
 use std::collections::BTreeMap;
+use tracing::info;
 
 /// 将多个文本输入合并为一个字符串输出。
 ///
@@ -30,11 +31,15 @@ impl Node for TextMergeNode {
     async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
         // 使用 BTreeMap 来按 NodeId 排序，确保合并顺序确定
         let sorted_inputs: BTreeMap<_, _> = inputs.inputs.iter().collect();
-
         let parts: Vec<&str> = sorted_inputs
             .values()
             .filter_map(|any| any.as_any().downcast_ref::<String>().map(|s| s.as_str()))
             .collect();
+        info!(
+            "sorted_inputs: {:?} input keys {:?}",
+            parts,
+            sorted_inputs.keys()
+        );
 
         parts.join(&self.separator)
     }
