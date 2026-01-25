@@ -18,9 +18,9 @@ use tracing::info;
 
 use crate::db::Db;
 use crate::handlers::{
-    create_workflow, delete_workflow, get_nodes, get_workflow, get_workflow_status, list_workflows,
-    pause_workflow, resume_workflow, run_node, run_workflow, stop_workflow, update_workflow,
-    upload_file, ws_handler,
+    create_workflow, delete_workflow, get_ai_media, get_file, get_nodes, get_workflow,
+    get_workflow_status, list_workflows, pause_workflow, resume_workflow, run_node, run_workflow,
+    stop_workflow, update_workflow, upload_file, ws_handler,
 };
 use crate::registry::create_registry;
 use crate::state::AppState;
@@ -64,6 +64,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/workflow/{id}/stop", post(stop_workflow))
         .route("/api/nodes", get(get_nodes))
         .route("/api/upload", post(upload_file))
+        .route("/api/files/{id}", get(get_file))
+        .route("/api/ai_media/{id}", get(get_ai_media))
         .route("/ws", get(ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(app_state);

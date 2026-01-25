@@ -294,7 +294,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
                 <X size={12} />
               </button>
             </div>
-            <div className="p-3 grid grid-cols-12 gap-2 flex-1 overflow-auto  grid-rows-[auto_1fr] min-auto custom-scrollbar">
+            <div className="p-3 grid grid-cols-12 gap-2 flex-1 overflow-auto grid-rows-[auto_1fr] min-auto custom-scrollbar">
               <div className="col-span-12 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-zinc-500 font-bold">Model</span>

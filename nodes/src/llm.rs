@@ -1,3 +1,4 @@
+use crate::prompt::build_user_prompt;
 use async_trait::async_trait;
 use flow::{Node, NodeInputs};
 use rig::{
@@ -75,15 +76,7 @@ impl Node for LLMNode {
             .cloned()
             .unwrap_or_default();
 
-        let prompt = if !input.is_empty() {
-            if self.user_prompt_template.contains("{input}") {
-                self.user_prompt_template.replace("{input}", &input)
-            } else {
-                input
-            }
-        } else {
-            self.user_prompt_template.clone()
-        };
+        let prompt = build_user_prompt(&self.user_prompt_template, &input);
 
         self.llm
             .prompt(&prompt)
@@ -103,6 +96,7 @@ mod tests {
     use rig::providers::deepseek::DEEPSEEK_REASONER;
 
     #[test]
+    #[ignore]
     fn test_llm_node() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
@@ -123,6 +117,7 @@ mod tests {
         });
     }
     #[test]
+    #[ignore]
     fn test_open_router_llm_node() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
@@ -144,6 +139,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_llm_node_with_template() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");

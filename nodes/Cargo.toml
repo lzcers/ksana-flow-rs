@@ -24,3 +24,5 @@ toml = "0.8.20"
 cron = "0.15.0"
 lettre = "0.11.15"
 futures = "0.3"
+base64 = "0.22.1"
+uuid = { version = "1.0", features = ["v4"] }

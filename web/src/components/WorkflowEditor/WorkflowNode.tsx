@@ -11,6 +11,7 @@ import { BacktesterNode } from '../nodes/BacktesterNode';
 import { SourceNode } from '../nodes/SourceNode';
 import { VolMfiNode } from '../nodes/VolMfiNode';
 import { ShortVideoNode } from '../nodes/ShortVideoNode';
+import { ImgGenNode } from '../nodes/ImgGenNode';
 
 export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
   const { type } = props;
@@ -36,6 +37,8 @@ export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {
       return <VolMfiNode {...props} />;
     case 'ShortVideoScriptNode':
       return <ShortVideoNode {...props} />;
+    case 'ImgGenNode':
+      return <ImgGenNode {...props} />;
     default:
       return null;
   }

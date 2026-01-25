@@ -1,8 +1,8 @@
 use chrono::{Local, NaiveDateTime};
 use flow::{AnyNode, SendableAny};
 use nodes::{
-    EmailNotifyNode, LLMNode, LLMStreamNode, ShortVideoScriptNode, TextFileNode, TextMergeNode,
-    TextNode, TimerNode,
+    EmailNotifyNode, ImgGenNode, LLMNode, LLMStreamNode, ShortVideoScriptNode, TextFileNode,
+    TextMergeNode, TextNode, TimerNode,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -224,7 +224,7 @@ pub fn create_registry() -> NodeRegistry {
                 "system_prompt": "",
                 "user_prompt_template": "",
                 "model": "deepseek-chat",
-                "stream": false
+                "stream": true
             }),
             inputs: vec![InputType::String],
             outputs: vec![],
@@ -260,7 +260,8 @@ pub fn create_registry() -> NodeRegistry {
             config: json!({
                 "system_prompt": "",
                 "user_prompt_template": "",
-                "model": "deepseek-chat"
+                "model": "deepseek-chat",
+                "stream": true
             }),
             inputs: vec![InputType::String],
             outputs: vec![],
@@ -273,6 +274,48 @@ pub fn create_registry() -> NodeRegistry {
                 system_prompt.unwrap_or(""),
                 user_prompt_template.unwrap_or(""),
                 model,
+            );
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "ImgGenNode".to_string(),
+            description: "Generate image with OpenRouter".to_string(),
+            category: "AI".to_string(),
+            config: json!({
+                "system_prompt": "",
+                "user_prompt_template": "{input}",
+                "model": "google/gemini-3-pro-image-preview",
+                "aspect_ratio": "1:1",
+                "image_size": "1K",
+                "input_image_file_id": ""
+            }),
+            inputs: vec![InputType::String],
+            outputs: vec![InputType::String],
+        },
+        |config: Value| {
+            let system_prompt = config["system_prompt"].as_str().unwrap_or("");
+            let user_prompt_template = config["user_prompt_template"].as_str().unwrap_or("{input}");
+            let model = config["model"]
+                .as_str()
+                .unwrap_or("google/gemini-3-pro-image-preview");
+            let aspect_ratio = config["aspect_ratio"].as_str().unwrap_or("1:1");
+            let image_size = config["image_size"].as_str().unwrap_or("1K");
+            let input_image_file_id = config["input_image_file_id"]
+                .as_str()
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
+
+            let node = ImgGenNode::new(
+                system_prompt,
+                user_prompt_template,
+                model,
+                aspect_ratio,
+                image_size,
+                input_image_file_id,
+                None,
             );
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },

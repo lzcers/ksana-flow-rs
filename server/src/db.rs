@@ -57,9 +57,25 @@ impl Db {
             [],
         )?;
 
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ai_media (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                data BLOB NOT NULL,
+                prompt TEXT NOT NULL,
+                model TEXT NOT NULL,
+                workspace_id TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
         // Migration: Ensure workspace_id column exists and default data to 'ksana'
         Self::migrate_workspace_column(&conn, "workflows")?;
         Self::migrate_workspace_column(&conn, "uploaded_files")?;
+        Self::migrate_uploaded_files_blob_column(&conn)?;
 
         Ok(Self { conn })
     }
@@ -95,6 +111,28 @@ impl Db {
         Ok(())
     }
 
+    fn migrate_uploaded_files_blob_column(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(uploaded_files)")?;
+        let rows = stmt.query_map([], |row| {
+            let name: String = row.get(1)?;
+            Ok(name)
+        })?;
+
+        let mut has_content_blob = false;
+        for row in rows {
+            if row? == "content_blob" {
+                has_content_blob = true;
+                break;
+            }
+        }
+
+        if !has_content_blob {
+            conn.execute("ALTER TABLE uploaded_files ADD COLUMN content_blob BLOB", [])?;
+        }
+
+        Ok(())
+    }
+
     pub fn save_file(
         &self,
         id: &str,
@@ -115,6 +153,74 @@ impl Db {
         let mut stmt = self
             .conn
             .prepare("SELECT filename, content FROM uploaded_files WHERE id = ?1 AND workspace_id = ?2")?;
+        let mut rows = stmt.query(params![id, workspace_id])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some((row.get(0)?, row.get(1)?)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn save_file_bytes(
+        &self,
+        id: &str,
+        filename: &str,
+        content_bytes: &[u8],
+        size: i64,
+        mime_type: &str,
+        workspace_id: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO uploaded_files (id, filename, content, content_blob, size, mime_type, workspace_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, filename, "", content_bytes, size, mime_type, workspace_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_file_data(
+        &self,
+        id: &str,
+        workspace_id: &str,
+    ) -> Result<Option<(String, String, String, Option<Vec<u8>>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT filename, mime_type, content, content_blob FROM uploaded_files WHERE id = ?1 AND workspace_id = ?2",
+        )?;
+        let mut rows = stmt.query(params![id, workspace_id])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn save_ai_media(
+        &self,
+        id: &str,
+        kind: &str,
+        mime_type: &str,
+        data: &[u8],
+        size: i64,
+        prompt: &str,
+        model: &str,
+        workspace_id: &str,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO ai_media (id, kind, mime_type, size, data, prompt, model, workspace_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, kind, mime_type, size, data, prompt, model, workspace_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_ai_media(
+        &self,
+        id: &str,
+        workspace_id: &str,
+    ) -> Result<Option<(String, Vec<u8>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT mime_type, data FROM ai_media WHERE id = ?1 AND workspace_id = ?2",
+        )?;
         let mut rows = stmt.query(params![id, workspace_id])?;
 
         if let Some(row) = rows.next()? {

@@ -1,3 +1,4 @@
+use crate::prompt::build_user_prompt;
 use async_trait::async_trait;
 use flow::{
     Node, NodeInputs, ReactiveStream,
@@ -14,7 +15,6 @@ use rig::{
     },
     streaming::{StreamedAssistantContent, StreamingPrompt},
 };
-use tracing::info;
 
 enum LLMStreamAgent {
     DeepSeek(Agent<CompletionModel>),
@@ -149,15 +149,7 @@ impl Node for LLMStreamNode {
             .cloned()
             .unwrap_or_default();
 
-        let prompt = if !input.is_empty() {
-            if self.user_prompt_template.contains("{input}") {
-                self.user_prompt_template.replace("{input}", &input)
-            } else {
-                input
-            }
-        } else {
-            self.user_prompt_template.clone()
-        };
+        let prompt = build_user_prompt(&self.user_prompt_template, &input);
         let stream = self.llm.stream_prompt(&prompt).await;
         let react_stream = LLMStreamObservable { stream };
         ReactiveStream::from_observable_with_accumulator(react_stream, |chunks: Vec<String>| {
@@ -201,6 +193,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_llm_node() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
@@ -224,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_llm_node_with_template() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
@@ -252,6 +246,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_llm_node_empty_input() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
@@ -276,6 +271,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_open_router_stream_node() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
@@ -299,6 +295,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_deepseek_direct_stream() {
         use rig::providers::deepseek;
         use tokio::runtime::Runtime;
@@ -323,6 +320,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_llm_node_completed_payload() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");

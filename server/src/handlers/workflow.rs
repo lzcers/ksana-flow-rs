@@ -362,11 +362,6 @@ pub async fn run_node(
             match state {
                 Some(NodeState::Completed) => {
                     if let Some(output) = execution_ctx.get_output(&parent_id) {
-                        info!(
-                            "parent node {} output {:?}",
-                            parent_id,
-                            utils::try_downcast_to_value(&output)
-                        );
                         node_inputs.insert(parent_id.clone(), output);
                     }
                 }

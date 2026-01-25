@@ -1,4 +1,6 @@
 mod config;
+mod img_gen_node;
+mod prompt;
 mod llm;
 mod llm_stream;
 mod notify;
@@ -9,6 +11,7 @@ mod text_merge;
 mod timer;
 pub mod trade;
 mod var;
+pub use img_gen_node::*;
 pub use llm::*;
 pub use llm_stream::*;
 pub use notify::*;
