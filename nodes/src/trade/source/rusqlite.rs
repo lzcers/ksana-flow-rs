@@ -14,10 +14,14 @@ impl SqliteSource {
     pub fn new() -> Result<Self> {
         let config = get_config()?;
         let db_url = config.source.db_uri;
-        let conn = Connection::open(&db_url)?;
-        return Ok(SqliteSource {
+        Self::new_with_db_uri(&db_url)
+    }
+
+    pub fn new_with_db_uri(db_uri: &str) -> Result<Self> {
+        let conn = Connection::open(db_uri)?;
+        Ok(SqliteSource {
             conn: Mutex::new(conn),
-        });
+        })
     }
     pub fn init(&self) -> Result<()> {
         // 创建股票基础信息表
@@ -216,7 +220,7 @@ mod tests {
     use super::*;
 
     fn init() -> Result<SqliteSource> {
-        let sqlite = SqliteSource::new()?;
+        let sqlite = SqliteSource::new_with_db_uri(":memory:")?;
         sqlite.init()?;
         Ok(sqlite)
     }
@@ -231,6 +235,16 @@ mod tests {
     #[test]
     fn test_has_daily_base_data_true() -> Result<()> {
         let source: SqliteSource = init()?;
+        source.insert_daily_stock_base_data(&K {
+            code: "399300.SZ".to_string(),
+            timestamp: 20240901,
+            open: 1.0,
+            high: 2.0,
+            low: 0.5,
+            close: 1.5,
+            volume: 100.0,
+            amount: 200.0,
+        })?;
         let r = source.has_daily_stock_data("399300.SZ", None)?;
         assert_eq!(true, r);
         Ok(())

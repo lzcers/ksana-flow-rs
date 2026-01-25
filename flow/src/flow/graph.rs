@@ -13,6 +13,17 @@ pub struct NodeInputs {
     pub inputs: HashMap<NodeId, Box<dyn SendableAny>>,
 }
 
+fn unwrap_sendable_any(mut any: &dyn SendableAny) -> &dyn SendableAny {
+    loop {
+        let erased = any.as_any();
+        if let Some(inner_box) = erased.downcast_ref::<Box<dyn SendableAny>>() {
+            any = &**inner_box;
+            continue;
+        }
+        return any;
+    }
+}
+
 impl NodeInputs {
     pub fn new(inputs: HashMap<NodeId, Box<dyn SendableAny>>) -> Self {
         Self { inputs }
@@ -36,6 +47,16 @@ impl NodeInputs {
 
     pub fn get_any(&self) -> Option<&Box<dyn SendableAny>> {
         self.inputs.values().next()
+    }
+
+    pub fn get_unwrapped(&self, key: &str) -> Option<&dyn SendableAny> {
+        self.inputs.get(key).map(|any| unwrap_sendable_any(&**any))
+    }
+
+    pub fn iter_unwrapped(&self) -> impl Iterator<Item = (&NodeId, &dyn SendableAny)> + '_ {
+        self.inputs
+            .iter()
+            .map(|(k, v)| (k, unwrap_sendable_any(&**v)))
     }
 }
 

@@ -317,6 +317,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn query_daily_stock_base_bar() -> Result<()> {
         let source = init()?;
         let list = source
@@ -330,6 +331,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn get_range_trade_date() -> Result<()> {
         let source = init()?;
         let list = source

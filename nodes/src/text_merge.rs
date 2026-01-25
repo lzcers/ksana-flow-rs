@@ -1,7 +1,6 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs};
-use std::collections::BTreeMap;
-use tracing::info;
+use flow::{Context, Node, NodeInputs, SendableAny};
+use serde_json::Value;
 
 /// 将多个文本输入合并为一个字符串输出。
 ///
@@ -9,6 +8,62 @@ use tracing::info;
 /// 合并顺序按照输入节点的 ID 字母顺序排列。
 pub struct TextMergeNode {
     separator: String,
+}
+
+fn unescape_separator(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut chars = input.chars();
+
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+
+        let Some(escaped) = chars.next() else {
+            out.push('\\');
+            break;
+        };
+
+        match escaped {
+            'n' => out.push('\n'),
+            'r' => out.push('\r'),
+            't' => out.push('\t'),
+            '0' => out.push('\0'),
+            '\\' => out.push('\\'),
+            '"' => out.push('"'),
+            '\'' => out.push('\''),
+            'u' => {
+                let mut hex = String::with_capacity(4);
+                for _ in 0..4 {
+                    if let Some(h) = chars.next() {
+                        hex.push(h);
+                    } else {
+                        break;
+                    }
+                }
+
+                if hex.len() == 4 {
+                    if let Ok(code) = u32::from_str_radix(&hex, 16) {
+                        if let Some(c) = char::from_u32(code) {
+                            out.push(c);
+                            continue;
+                        }
+                    }
+                }
+
+                out.push('\\');
+                out.push('u');
+                out.push_str(&hex);
+            }
+            other => {
+                out.push('\\');
+                out.push(other);
+            }
+        }
+    }
+
+    out
 }
 
 impl TextMergeNode {
@@ -19,7 +74,10 @@ impl TextMergeNode {
     /// * `separator` - 可选的分隔符。如果为 None，则默认为空字符串。
     pub fn new(separator: Option<String>) -> Self {
         Self {
-            separator: separator.unwrap_or_default(),
+            separator: separator
+                .as_deref()
+                .map(unescape_separator)
+                .unwrap_or_default(),
         }
     }
 }
@@ -29,18 +87,32 @@ impl Node for TextMergeNode {
     type Out = String;
 
     async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-        // 使用 BTreeMap 来按 NodeId 排序，确保合并顺序确定
-        let sorted_inputs: BTreeMap<_, _> = inputs.inputs.iter().collect();
-        let parts: Vec<&str> = sorted_inputs
-            .values()
-            .filter_map(|any| any.as_any().downcast_ref::<String>().map(|s| s.as_str()))
-            .collect();
-        info!(
-            "sorted_inputs: {:?} input keys {:?}",
-            parts,
-            sorted_inputs.keys()
-        );
+        fn extract_text<'a>(any: &'a dyn SendableAny) -> Option<&'a str> {
+            let erased = any.as_any();
+            if let Some(s) = erased.downcast_ref::<String>() {
+                return Some(s.as_str());
+            }
+            if let Some(v) = erased.downcast_ref::<Value>() {
+                match v {
+                    Value::String(s) => return Some(s.as_str()),
+                    Value::Object(map) => {
+                        if let Some(Value::String(s)) = map.get("output") {
+                            return Some(s.as_str());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
 
+        let mut entries: Vec<_> = inputs.iter_unwrapped().collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+        let parts: Vec<&str> = entries
+            .iter()
+            .filter_map(|(_, any)| extract_text(*any))
+            .collect();
         parts.join(&self.separator)
     }
 }
@@ -49,6 +121,7 @@ impl Node for TextMergeNode {
 mod tests {
     use super::*;
     use flow::SendableAny;
+    use serde_json::json;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -117,6 +190,64 @@ mod tests {
             let output = node.run(&ctx, inputs).await;
 
             assert_eq!(output, "Hello World");
+        });
+    }
+
+    #[test]
+    fn test_text_merge_node_recursive_box() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = TextMergeNode::new(Some(" ".to_string()));
+
+            let inner: Box<dyn SendableAny> = Box::new("Hello".to_string());
+            let wrapped: Box<dyn SendableAny> = Box::new(inner);
+
+            let mut inputs_map = HashMap::new();
+            inputs_map.insert("a".to_string(), wrapped);
+            inputs_map.insert(
+                "b".to_string(),
+                Box::new("World".to_string()) as Box<dyn SendableAny>,
+            );
+
+            let output = node.run(&ctx, NodeInputs::new(inputs_map)).await;
+            assert_eq!(output, "Hello World");
+        });
+    }
+
+    #[test]
+    fn test_text_merge_node_json_string_variants() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = TextMergeNode::new(Some(" ".to_string()));
+
+            let mut inputs_map = HashMap::new();
+            inputs_map.insert(
+                "a".to_string(),
+                Box::new(json!("Hello")) as Box<dyn SendableAny>,
+            );
+            inputs_map.insert(
+                "b".to_string(),
+                Box::new(json!({ "output": "World" })) as Box<dyn SendableAny>,
+            );
+
+            let output = node.run(&ctx, NodeInputs::new(inputs_map)).await;
+            assert_eq!(output, "Hello World");
+        });
+    }
+
+    #[test]
+    fn test_text_merge_node_separator_escape_newline() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = TextMergeNode::new(Some("\\n".to_string()));
+
+            let inputs = create_inputs(vec![("a", "Hello"), ("b", "World")]);
+            let output = node.run(&ctx, inputs).await;
+
+            assert_eq!(output, "Hello\nWorld");
         });
     }
 }
