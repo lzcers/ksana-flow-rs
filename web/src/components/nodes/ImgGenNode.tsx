@@ -3,11 +3,15 @@ import { Position, type NodeProps } from '@xyflow/react';
 import { Settings, X } from 'lucide-react';
 import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
+import { FullScreenModal } from '../ui/FullScreenModal';
 import { useStore } from '../../store';
 import './index.css';
 
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
+
+const IMG_GEN_MIN_WIDTH = 270;
+const IMG_GEN_MIN_HEIGHT = 480;
 
 type ImgGenOutput = {
   media_id?: string;
@@ -15,6 +19,67 @@ type ImgGenOutput = {
   mime_type?: string;
   space_id?: string;
 };
+
+function parseAspectRatio(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const s = value.trim();
+  if (!s) return undefined;
+
+  const sep = s.includes(':') ? ':' : s.includes('/') ? '/' : null;
+  if (!sep) return undefined;
+  const [wRaw, hRaw] = s.split(sep).map(p => p.trim());
+  const w = Number(wRaw);
+  const h = Number(hRaw);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return undefined;
+  return w / h;
+}
+
+function fitToAspectRatio(
+  width: number,
+  height: number,
+  ratio: number,
+  minWidth: number,
+  minHeight: number
+): { width: number; height: number } {
+  const baseW = Math.max(width, minWidth);
+  const baseH = Math.max(height, minHeight);
+
+  const cand1 = (() => {
+    let h = baseH;
+    let w = h * ratio;
+    if (w < minWidth) {
+      w = minWidth;
+      h = w / ratio;
+    }
+    if (h < minHeight) {
+      h = minHeight;
+      w = h * ratio;
+    }
+    return { width: w, height: h };
+  })();
+
+  const cand2 = (() => {
+    let w = baseW;
+    let h = w / ratio;
+    if (h < minHeight) {
+      h = minHeight;
+      w = h * ratio;
+    }
+    if (w < minWidth) {
+      w = minWidth;
+      h = w / ratio;
+    }
+    return { width: w, height: h };
+  })();
+
+  const d1 = Math.hypot(cand1.width - baseW, cand1.height - baseH);
+  const d2 = Math.hypot(cand2.width - baseW, cand2.height - baseH);
+  const picked = d1 <= d2 ? cand1 : cand2;
+
+  const nextW = Math.round(picked.width);
+  const nextH = Math.round(picked.height);
+  return { width: nextW, height: nextH };
+}
 
 function parseImgGenOutput(value: unknown): { imageSrc?: string; mediaId?: string } {
   if (typeof value === 'string') {
@@ -48,9 +113,10 @@ function parseImgGenOutput(value: unknown): { imageSrc?: string; mediaId?: strin
 }
 
 export const ImgGenNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, events$, currentRunId, currentSpaceId } = useStore();
+  const { updateNodeData, updateNodeDimensions, events$, currentRunId, currentSpaceId } = useStore();
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [promptText, setPromptText] = useState<string>(data.config?.user_prompt_template || '');
   const [model, setModel] = useState<string>(data.config?.model);
   const [aspectRatio, setAspectRatio] = useState<string>(data.config?.aspect_ratio || '1:1');
@@ -74,6 +140,23 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
   const apiBase = useMemo(() => {
     return import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
   }, []);
+
+  const parsedAspectRatio = useMemo(() => parseAspectRatio(aspectRatio), [aspectRatio]);
+  const lastAppliedAspectRatioRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (!parsedAspectRatio) return;
+    if (lastAppliedAspectRatioRef.current === aspectRatio) return;
+    lastAppliedAspectRatioRef.current = aspectRatio;
+
+    const baseW = typeof width === 'number' ? width : IMG_GEN_MIN_WIDTH;
+    const baseH = typeof height === 'number' ? height : IMG_GEN_MIN_HEIGHT;
+    const next = fitToAspectRatio(baseW, baseH, parsedAspectRatio, IMG_GEN_MIN_WIDTH, IMG_GEN_MIN_HEIGHT);
+
+    if (Math.abs(next.width - baseW) < 1 && Math.abs(next.height - baseH) < 1) return;
+    updateNodeDimensions(id, next.width, next.height);
+  }, [aspectRatio, id, parsedAspectRatio, selected, updateNodeDimensions, height, width]);
 
   useEffect(() => {
     return () => {
@@ -197,6 +280,17 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
     updateNodeData(id, { config: { ...data.config, input_image_file_id: v } });
   }, [id, data.config, updateNodeData]);
 
+  const onOpenPreview = useCallback((e: React.MouseEvent) => {
+    const target = e.target as unknown;
+    if (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLButtonElement) {
+      return;
+    }
+    if (!imageSrc) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsPreviewOpen(true);
+  }, [imageSrc]);
+
   const headerActions = (
     <div className="relative flex items-center gap-1">
       <button
@@ -213,129 +307,165 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
   );
 
   return (
-    <NodeWrapper
-      id={id}
-      type={type}
-      data={data}
-      selected={selected}
-      minWidth={300}
-      minHeight={360}
-      style={{ width, height }}
-      targetHandles={TARGET_HANDLES}
-      sourceHandles={SOURCE_HANDLES}
-      headerActions={headerActions}
-    >
-      <div className="flex flex-col h-full relative">
-        {isConfigOpen && (
-          <div className="absolute inset-0 z-50 bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-xl shadow-2xl flex flex-col">
-            <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
-              <div className="flex items-center gap-2 text-[10px] text-zinc-400">
-                <span>图像生成设置</span>
-              </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); setIsConfigOpen(false); }}
-                className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800"
-                title="关闭"
-              >
-                <X size={12} />
-              </button>
-            </div>
-            <div className="p-3 flex flex-col gap-2 flex-1 overflow-auto custom-scrollbar">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] w-10 text-zinc-500 font-bold">Model</span>
-                  <select
-                    className="min-w-[200px] text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200"
-                    value={model}
-                    onChange={onModelChange}
-                  >
-                    <option value="google/gemini-3-pro-image-preview">Gemini 3 Pro Image Preview</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] w-10 text-zinc-500 font-bold">Aspect</span>
-                  <select
-                    className="min-w-[120px] text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200"
-                    value={aspectRatio}
-                    onChange={onAspectRatioChange}
-                  >
-                    <option value="1:1">1:1</option>
-                    <option value="16:9">16:9</option>
-                    <option value="9:16">9:16</option>
-                    <option value="4:3">4:3</option>
-                    <option value="3:4">3:4</option>
-                  </select>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] w-10 text-zinc-500 font-bold">Size</span>
-                  <select
-                    className="min-w-[90px] text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200"
-                    value={imageSize}
-                    onChange={onImageSizeChange}
-                  >
-                    <option value="1K">1K</option>
-                    <option value="2K">2K</option>
-                    <option value="4K">4K</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-zinc-500 font-bold">Input Image File ID (optional)</span>
-                <input
-                  value={inputImageFileId}
-                  onChange={onInputImageFileIdChange}
-                  onKeyDown={(e) => e.stopPropagation()}
-                  className="w-full text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-2 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
-                  placeholder="uploaded_files.id"
-                />
-              </div>
-            </div>
+    <>
+      <FullScreenModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        title="图像预览"
+        className="bg-black"
+      >
+        {imageSrc && (
+          <div className="absolute inset-0 p-6">
+            <img
+              src={imageSrc}
+              alt="preview"
+              className="w-full h-full object-contain select-none"
+              draggable={false}
+            />
           </div>
         )}
+      </FullScreenModal>
 
-        <div className="flex flex-col flex-1 p-3 bg-zinc-950/50 border-b border-zinc-800 overflow-hidden">
-          <div className="text-[10px] text-zinc-500 font-bold mb-1 flex items-center justify-between">
-            <span>图像输出</span>
-            <span className="text-[10px] opacity-50">{data.status === 'running' ? 'Generating' : imageSrc ? 'Ready' : 'Empty'}</span>
-          </div>
-          <div className="flex-1 bg-black/40 border border-zinc-800 rounded-md overflow-hidden flex items-center justify-center">
+      <NodeWrapper
+        id={id}
+        type={type}
+        data={data}
+        selected={selected}
+        minWidth={IMG_GEN_MIN_WIDTH}
+        minHeight={IMG_GEN_MIN_HEIGHT}
+        keepAspectRatio={Boolean(parsedAspectRatio)}
+        style={{ width, height }}
+        targetHandles={TARGET_HANDLES}
+        sourceHandles={SOURCE_HANDLES}
+        headerActions={headerActions}
+      >
+        <div className="flex flex-col h-full relative group/imggen">
+          {isConfigOpen && (
+            <div className="absolute inset-0 z-50 bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-xl shadow-2xl flex flex-col">
+              <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
+                <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+                  <span>图像生成设置</span>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsConfigOpen(false); }}
+                  className="text-zinc-400 hover:text-zinc-200 p-1 rounded hover:bg-zinc-800"
+                  title="关闭"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="p-3 flex flex-col gap-2 flex-1 overflow-auto custom-scrollbar">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] w-10 text-zinc-500 font-bold">Model</span>
+                    <select
+                      className="min-w-[200px] text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200"
+                      value={model}
+                      onChange={onModelChange}
+                    >
+                      <option value="black-forest-labs/flux.2-klein-4b">black-forest-labs/flux.2-klein-4b</option>
+                      <option value="google/gemini-3-pro-image-preview">Gemini 3 Pro Image Preview</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] w-10 text-zinc-500 font-bold">Aspect</span>
+                    <select
+                      className="min-w-[120px] text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200"
+                      value={aspectRatio}
+                      onChange={onAspectRatioChange}
+                    >
+                      <option value="1:1">1:1</option>
+                      <option value="16:9">16:9</option>
+                      <option value="9:16">9:16</option>
+                      <option value="4:3">4:3</option>
+                      <option value="3:4">3:4</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] w-10 text-zinc-500 font-bold">Size</span>
+                    <select
+                      className="min-w-[90px] text-xs bg-zinc-800/50 hover:bg-zinc-800/80 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-1 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200"
+                      value={imageSize}
+                      onChange={onImageSizeChange}
+                    >
+                      <option value="1K">1K</option>
+                      <option value="2K">2K</option>
+                      <option value="4K">4K</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] text-zinc-500 font-bold">Input Image File ID (optional)</span>
+                  <input
+                    value={inputImageFileId}
+                    onChange={onInputImageFileIdChange}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    className="w-full text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded px-2 py-1 text-zinc-300 focus:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
+                    placeholder="uploaded_files.id"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div
+            className={`relative flex-1 overflow-hidden bg-black/40 nodrag ${imageSrc ? 'cursor-zoom-in' : 'cursor-default'}`}
+            onDoubleClick={onOpenPreview}
+            title={imageSrc ? '双击全屏预览' : undefined}
+          >
             {imageSrc ? (
               <img
                 src={imageSrc}
                 alt="generated"
-                className="w-full h-full object-contain"
+                className="absolute inset-0 w-full h-full object-cover select-none"
                 draggable={false}
               />
             ) : (
-              <div className="text-xs text-zinc-500 px-3 text-center">
-                {data.status === 'running' ? '正在生成图像…' : '暂无图像输出'}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-xs text-zinc-400 px-3 text-center">
+                  {data.status === 'running' ? '正在生成图像…' : '暂无图像输出'}
+                </div>
               </div>
             )}
-          </div>
-        </div>
 
-        <div className="p-2 space-y-2">
-          <div className='mb-0'>
-            <label className="text-[10px] text-zinc-500 font-bold block mb-1">Prompt</label>
-            <textarea
-              ref={promptRef}
-              className="w-full flex-1 text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
-              rows={5}
-              value={promptText}
-              onChange={onPromptChange}
-              onCompositionStart={onPromptCompositionStart}
-              onCompositionEnd={onPromptCompositionEnd}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="输入你想生成的图像描述…"
-              spellCheck={false}
-            />
+            <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/70 via-black/30 to-transparent pointer-events-none" />
+            <div className="absolute top-2 left-2 right-2 flex items-center justify-between gap-2 pointer-events-none">
+              <div className="px-2 py-1 rounded-md bg-black/40 backdrop-blur border border-zinc-800/60 text-[10px] text-zinc-200/90 font-bold">
+                图像输出
+              </div>
+              <div className="px-2 py-1 rounded-md bg-black/40 backdrop-blur border border-zinc-800/60 text-[10px] text-zinc-300/80">
+                {data.status === 'running' ? 'Generating' : imageSrc ? 'Completed' : 'Empty'}
+              </div>
+            </div>
+
+            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover/imggen:opacity-100 group-focus-within/imggen:opacity-100 transition-opacity pointer-events-none" />
+            <div className="absolute left-2 right-2 bottom-2 opacity-0 group-hover/imggen:opacity-100 group-focus-within/imggen:opacity-100 transition-opacity pointer-events-none group-hover/imggen:pointer-events-auto group-focus-within/imggen:pointer-events-auto">
+              <div className="p-2 rounded-lg bg-black/60 backdrop-blur-md border border-zinc-800/70 shadow-lg shadow-black/40 cursor-auto">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className="text-[10px] text-zinc-400 font-bold">Prompt</label>
+                  <span className="text-[10px] text-zinc-500 font-bold">{aspectRatio}</span>
+                </div>
+                <textarea
+                  ref={promptRef}
+                  className="w-full text-xs bg-zinc-950/60 hover:bg-zinc-950/70 focus:bg-zinc-950 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-black text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
+                  rows={3}
+                  value={promptText}
+                  onChange={onPromptChange}
+                  onCompositionStart={onPromptCompositionStart}
+                  onCompositionEnd={onPromptCompositionEnd}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="输入你想生成的图像描述…"
+                  spellCheck={false}
+                />
+                <input type="hidden" value={outputRaw} readOnly />
+              </div>
+            </div>
           </div>
-          <input type="hidden" value={outputRaw} readOnly />
         </div>
-      </div>
-    </NodeWrapper>
+      </NodeWrapper>
+    </>
   );
 });
 

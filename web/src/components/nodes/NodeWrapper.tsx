@@ -1,7 +1,6 @@
 import React from 'react';
 import { Handle, Position, NodeResizeControl } from '@xyflow/react';
-import { Settings, Play } from 'lucide-react';
-import { NODE_TYPES } from '../WorkflowEditor/nodeTypes';
+import { Play } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { NodeData } from '../../model/types';
 import { useStore } from '../../store';
@@ -20,6 +19,7 @@ interface NodeWrapperProps {
   resizable?: boolean;
   minWidth?: number;
   minHeight?: number;
+  keepAspectRatio?: boolean;
   headerActions?: React.ReactNode;
 }
 
@@ -32,7 +32,6 @@ const HANDLE_STYLES: Record<Position, React.CSSProperties> = {
 
 export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   id,
-  type,
   data,
   selected,
   sourceHandles = [],
@@ -41,6 +40,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   className,
   minWidth,
   minHeight,
+  keepAspectRatio = false,
   style,
   resizable = true,
   headerActions
@@ -158,6 +158,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           <NodeResizeControl
             minWidth={minWidth ?? 100}
             minHeight={minHeight ?? 50}
+            keepAspectRatio={keepAspectRatio}
             position="bottom-right"
             className={cn(
               "bg-transparent! border-none! z-50",

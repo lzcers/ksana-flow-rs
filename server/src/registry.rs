@@ -287,7 +287,7 @@ pub fn create_registry() -> NodeRegistry {
             config: json!({
                 "system_prompt": "",
                 "user_prompt_template": "",
-                "model": "google/gemini-3-pro-image-preview",
+                "model": "black-forest-labs/flux.2-klein-4b",
                 "aspect_ratio": "1:1",
                 "image_size": "1K",
                 "input_image_file_id": ""
@@ -300,7 +300,7 @@ pub fn create_registry() -> NodeRegistry {
             let user_prompt_template = config["user_prompt_template"].as_str().unwrap_or("");
             let model = config["model"]
                 .as_str()
-                .unwrap_or("google/gemini-3-pro-image-preview");
+                .unwrap_or("black-forest-labs/flux.2-klein-4b");
             let aspect_ratio = config["aspect_ratio"].as_str().unwrap_or("1:1");
             let image_size = config["image_size"].as_str().unwrap_or("1K");
             let input_image_file_id = config["input_image_file_id"]

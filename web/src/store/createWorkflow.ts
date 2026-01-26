@@ -2,7 +2,7 @@ import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
-import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput, resetWorkflowExecutionState } from '../model';
+import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput } from '../model';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Book, Users, Clapperboard } from 'lucide-react';
+import { ArrowLeft, Users, Clapperboard } from 'lucide-react';
 import { CharacterModule } from './CharacterModule';
 import { StoryboardModule } from './StoryboardModule';
 import type { ModuleType, ShortVideoCreationProps } from './types';

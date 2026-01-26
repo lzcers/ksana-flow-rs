@@ -13,7 +13,7 @@ import './index.css';
 const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left];
 
-export const ShortVideoNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
+export const ShortVideoNode = memo(({ id, type, data, selected }: NodeProps & { data: NodeData }) => {
   const { updateNodeData, events$, currentRunId } = useStore();
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [projectData, setProjectData] = useState<ProjectData | null>(data.config?.projectData || null);

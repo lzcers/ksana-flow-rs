@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-
 import { useWorkflow } from './hooks/useWorkflow';
 import { useAppInit } from './hooks/useAppInit';
 import { Canvas } from './components/WorkflowEditor/Canvas';
-import { PropertyPanel } from './components/WorkflowEditor/PropertyPanel';
 import { WorkflowHeader } from './components/WorkflowEditor/WorkflowHeader';
 import { ReactFlowProvider } from '@xyflow/react';
 import { ToastContainer } from './components/ui/ToastContainer';

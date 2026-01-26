@@ -22,6 +22,7 @@ export interface Workflow {
 
 export const fetchNodes = async (spaceId: string): Promise<NodeMetadata[]> => {
     // spaceId is no longer required by the backend for getting nodes
+    void spaceId;
     const res = await fetch(`${API_BASE}/nodes`);
     return res.json();
 };

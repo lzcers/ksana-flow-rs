@@ -58,7 +58,7 @@ impl Node for ImgGenNode {
         let Some(api_key) = &self.api_key else {
             return "Missing OPENROUTER_API_KEY".to_string();
         };
-
+        info!("ImgGenNode: model={}", self.model);
         let space_id = inputs
             .get::<String>("space_id")
             .cloned()

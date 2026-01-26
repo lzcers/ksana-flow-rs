@@ -78,7 +78,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onStop,
 }) => {
   const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
-  const { setConnectionState, pasteNodes, deleteNode, saveWorkflow, undo, redo, pushHistory } = useStore();
+  const { setConnectionState, pasteNodes, saveWorkflow, undo, redo, pushHistory } = useStore();
 
   const spacePressed = useKeyPress('Space');
   const mousePositionRef = React.useRef({ x: 0, y: 0 });
