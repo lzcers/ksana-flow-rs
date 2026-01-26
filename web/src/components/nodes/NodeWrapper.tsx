@@ -88,7 +88,6 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
       <div
         className={cn(
           "absolute -top-9 left-0 w-full h-9 flex items-center justify-between transition-all duration-300 z-10",
-          selected ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
         )}
       >
         <div className="flex items-center gap-2">
@@ -129,7 +128,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className={cn("flex items-center gap-2", selected ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto")}>
           {headerActions}
           {/* Run Button */}
           <button
@@ -145,11 +144,12 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
       {/* Main Content Card */}
       <div
         className={cn(
-          "w-full h-full flex-1 bg-zinc-900 border transition-all duration-300 relative rounded-xl",
-          selected
-            ? "border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20"
-            : "border-zinc-800 hover:border-zinc-700 shadow-lg shadow-black/40",
-          status === 'running' && "ring-1 ring-blue-500/50 border-blue-500/50",
+          "w-full h-full flex-1 bg-zinc-900 border duration-300 relative rounded-xl",
+          status === 'running'
+            ? "node-running"
+            : selected
+              ? "border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.15)] ring-1 ring-blue-500/20"
+              : "border-zinc-800 hover:border-zinc-700 shadow-lg shadow-black/40",
           className
         )}
       >

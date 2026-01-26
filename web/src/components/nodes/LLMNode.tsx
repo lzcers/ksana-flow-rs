@@ -281,7 +281,8 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
     >
       <div className="flex flex-col h-full relative">
         {isConfigOpen && (
-          <div className="absolute inset-0 z-50 bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-xl shadow-2xl flex flex-col">
+          <div className="absolute inset-0 z-50 bg-zinc-900/95 backdrop-blur-xl border border-zinc-800 rounded-xl shadow-2xl flex flex-col"
+          >
             <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
               <div className="flex items-center gap-2 text-[10px] text-zinc-400">
                 <span>LLM 设置</span>
@@ -330,14 +331,15 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
                   </button>
                 </div>
                 <textarea
-                  style={{ boxSizing: 'content-box' }}
+                  style={{ boxSizing: 'content-box', height: "100%" }}
                   ref={systemInputRef}
-                  className="flex-1 text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
+                  className="flex-1 text-xs nowheel bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
                   value={systemPrompt}
                   onChange={handleSystemPromptChange}
                   onCompositionStart={handleSystemCompositionStart}
                   onCompositionEnd={handleSystemCompositionEnd}
                   onKeyDown={(e) => e.stopPropagation()}
+                  onWheel={(e) => e.stopPropagation()}
                   placeholder="System prompt..."
                 />
               </div>
@@ -350,15 +352,16 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
             onClose={() => setIsSystemFullScreen(false)}
             title={'System Prompt 编辑'}
           >
-            <div className="w-full h-full flex flex-1 p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black justify-center items-center">
+            <div className="w-full h-full flex flex-1 flex-col p-4 text-zinc-200 text-sm overflow-auto custom-scrollbar bg-black">
               <textarea
-                className="flex flex-1 w-full h-full bg-black resize-none focus:outline-none text-zinc-200 font-mono"
+                className="flex flex-1 bg-black resize-none focus:outline-none text-zinc-200 font-mono"
                 style={{ boxSizing: 'content-box', height: "100%" }}
                 value={systemPrompt}
                 onChange={handleSystemPromptChange}
                 onCompositionStart={handleSystemCompositionStart}
                 onCompositionEnd={handleSystemCompositionEnd}
                 onKeyDown={(e) => e.stopPropagation()}
+                onWheel={(e) => e.stopPropagation()}
                 placeholder="System prompt..."
                 spellCheck={false}
               />
@@ -384,6 +387,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
                   value={outputText}
                   onChange={onOutputChange}
                   onBlur={onOutputBlur}
+                  onWheel={(e) => e.stopPropagation()}
                   placeholder="LLM 输出内容..."
                   spellCheck={false}
                 />
@@ -435,6 +439,7 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
               onCompositionStart={handleUserCompositionStart}
               onCompositionEnd={handleUserCompositionEnd}
               onKeyDown={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
               placeholder="User prompt template..."
             />
           </div>
