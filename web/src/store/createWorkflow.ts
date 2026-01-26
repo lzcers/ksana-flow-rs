@@ -83,7 +83,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           if (statusRes.events && Array.isArray(statusRes.events)) {
 
             statusRes.events.forEach((event: any) => {
-              const { applyExecutionEvent } = get() as any;
+              const { applyExecutionEvent } = get();
               if (applyExecutionEvent) {
                 applyExecutionEvent(event);
               }
@@ -292,15 +292,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       } else if (event.NodeStreamStarted) {
         const id = event.NodeStreamStarted;
         apply(updateNodeData(nextState, id, { isOutputStream: true }));
-      } else if (event.NodeStreamNextMessage) {
-        const [id, value] = event.NodeStreamNextMessage;
-        apply(updateNodeData(nextState, id, { lastMessage: value }));
-        // Propagate to downstream nodes
-        const outEdges = nextState.edges.filter(e => e.source === id);
-        outEdges.forEach(edge => {
-          apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
-        });
-      } else if (event.NodeInMessage) {
+      }
+      else if (event.NodeInMessage) {
         const [id, value] = event.NodeInMessage;
         apply(updateNodeData(nextState, id, { lastMessage: value }));
         if (typeof value === 'object' && value !== null) {
@@ -323,10 +316,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         const [id, error] = event.NodeError;
         apply(updateNodeStatus(nextState, id, 'error', error));
         apply(updateNodeData(nextState, id, { isOutputStream: false }));
-      } else if (event.WorkflowFinished || event.WorkflowStopped) {
-        // apply(resetWorkflowExecutionState(nextState));
       }
-
       return nextState;
     });
   }

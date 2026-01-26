@@ -321,7 +321,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           stroke: '#3b82f6',
           strokeWidth: 2,
         }}
-        onlyRenderVisibleElements={true}
+        onlyRenderVisibleElements={false}
         minZoom={0.1}
         maxZoom={2}
       >

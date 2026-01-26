@@ -14,7 +14,7 @@ const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left];
 
 export const ShortVideoNode = memo(({ id, type, data, selected }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, events$, currentRunId } = useStore();
+  const { updateNodeData, eventsForNode$ } = useStore();
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [projectData, setProjectData] = useState<ProjectData | null>(data.config?.projectData || null);
 
@@ -68,12 +68,11 @@ export const ShortVideoNode = memo(({ id, type, data, selected }: NodeProps & { 
   };
 
   useEffect(() => {
-    if (!events$) return;
+    const stream$ = eventsForNode$?.(id);
+    if (!stream$) return;
 
-    const subscription = events$.subscribe((wrapper: any) => {
-      const { event, runId } = wrapper;
-      // Filter by runId if available to avoid stale events
-      if (currentRunId && runId !== currentRunId) return;
+    const subscription = stream$.subscribe((wrapper: any) => {
+      const { event } = wrapper;
 
       if (event.NodeStarted) {
         if (event.NodeStarted === id) {
@@ -132,7 +131,7 @@ export const ShortVideoNode = memo(({ id, type, data, selected }: NodeProps & { 
     });
 
     return () => subscription.unsubscribe();
-  }, [events$, currentRunId, id, updateNodeData, data.config]);
+  }, [eventsForNode$, id, updateNodeData, data.config]);
 
   // Handle initial data load (if page refreshed or loaded with existing data)
   useEffect(() => {

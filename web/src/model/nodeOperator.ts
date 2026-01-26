@@ -48,6 +48,7 @@ export const updateNodeData = (
     if (node) {
       node.data = { ...node.data, ...data };
     }
+    syncEdgeHighlighting(draft);
   });
 };
 
@@ -85,6 +86,7 @@ export const updateNodeStatus = (
         }
       }
     }
+    syncEdgeHighlighting(draft);
   });
 };
 
@@ -145,7 +147,7 @@ export const resetWorkflowExecutionState = (state: WorkflowState): WorkflowState
 };
 
 const syncEdgeHighlighting = (draft: WorkflowState) => {
-  const selectedNodeIds = new Set(draft.nodes.filter(n => n.selected).map(n => n.id));
+  const selectedNodeIds = new Set(draft.nodes.filter(n => n.selected || n.data.status === 'running').map(n => n.id));
 
   draft.edges.forEach(edge => {
     if (selectedNodeIds.has(edge.source)) {
@@ -182,7 +184,6 @@ export const applyNodeChanges = (
         }
       }
     });
-
     syncEdgeHighlighting(draft);
   });
 };

@@ -97,6 +97,8 @@ export interface Execution {
   initializeWebSocket: () => () => void;
   handleWebSocketMessage: (message: WebSocketFlowMessage) => void;
   events$: Observable<WebSocketFlowMessage>;
+  eventsForCurrentRun$: Observable<WebSocketFlowMessage>;
+  eventsForNode$: (nodeId: string) => Observable<WebSocketFlowMessage>;
 }
 
 export interface ToastItem {

@@ -2,19 +2,19 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Position, type NodeProps } from '@xyflow/react';
 import { Settings, X, Eye, Pencil, Maximize2 } from 'lucide-react';
 import { AutoScrollContainer, Incremark, ThemeProvider, useIncremark } from '@incremark/react';
-import { FullScreenModal } from '../ui/FullScreenModal';
-import { theme } from './TextNode/theme';
+import { FullScreenModal } from '../../ui/FullScreenModal';
+import { theme } from '../TextNode/theme';
+import type { NodeData } from '../../../model/types';
+import { NodeWrapper } from '../NodeWrapper';
+import { useStore } from '../../../store';
 import '@incremark/theme/styles.css';
 import './index.css';
-import type { NodeData } from '../../model/types';
-import { NodeWrapper } from './NodeWrapper';
-import { useStore } from '../../store';
 
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
 export const LLMNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, events$, currentRunId } = useStore();
+  const { updateNodeData, eventsForNode$ } = useStore();
 
   const adjustHeight = (el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
@@ -32,12 +32,12 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
   const [systemPrompt, setSystemPrompt] = useState(data.config?.system_prompt || '');
   const [userPrompt, setUserPrompt] = useState(data.config?.user_prompt_template || '');
   const [model, setModel] = useState(data.config?.model || 'deepseek-chat');
-  const [stream, setStream] = useState(data.config?.stream || true);
+  const [stream, setStream] = useState(data.config?.stream ?? true);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [outputText, setOutputText] = useState<string>('');
   const isStreamingRef = useRef(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [isMarkdown, setIsMarkdown] = useState(false);
+  const [isMarkdown, setIsMarkdown] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isSystemFullScreen, setIsSystemFullScreen] = useState(false);
 
@@ -45,6 +45,49 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
     math: { tex: true },
     gfm: true,
   });
+  const incremarkRef = useRef(incremark);
+  useEffect(() => {
+    incremarkRef.current = incremark;
+  }, [incremark]);
+
+  const dataConfigRef = useRef(data.config);
+  useEffect(() => {
+    dataConfigRef.current = data.config;
+  }, [data.config]);
+
+  const isMarkdownRef = useRef(isMarkdown);
+  useEffect(() => {
+    isMarkdownRef.current = isMarkdown;
+  }, [isMarkdown]);
+
+  const pendingChunkRef = useRef('');
+  const flushRafIdRef = useRef<number | null>(null);
+
+  const cancelFlush = useCallback(() => {
+    if (flushRafIdRef.current !== null) {
+      window.cancelAnimationFrame(flushRafIdRef.current);
+      flushRafIdRef.current = null;
+    }
+    pendingChunkRef.current = '';
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushRafIdRef.current !== null) return;
+    flushRafIdRef.current = window.requestAnimationFrame(() => {
+      flushRafIdRef.current = null;
+      const chunk = pendingChunkRef.current;
+      if (!chunk) return;
+      pendingChunkRef.current = '';
+      if (isMarkdownRef.current) {
+        incremarkRef.current.append(chunk);
+      }
+      setOutputText((prev) => prev + chunk);
+    });
+  }, []);
+
+  const updateConfig = useCallback((patch: Record<string, unknown>) => {
+    updateNodeData(id, { config: { ...(dataConfigRef.current ?? {}), ...patch } });
+  }, [id, updateNodeData]);
 
   const isComposingSystem = useRef(false);
   const isComposingUser = useRef(false);
@@ -72,16 +115,36 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
 
   useEffect(() => {
     setModel(data.config?.model || 'deepseek-chat');
-    setStream(data.config?.stream || false);
+    setStream(data.config?.stream ?? true);
   }, [data.config?.model, data.config?.stream]);
 
   useEffect(() => {
+    if (isStreamingRef.current) return;
+
+    let nextText: string | null = null;
     if (typeof data.config?.output === 'string') {
-      setOutputText(data.config.output);
-    } else if (typeof data.lastMessage === 'string' && !isStreamingRef.current) {
-      setOutputText(data.lastMessage);
+      nextText = data.config.output;
+    } else if (typeof data.outputs?.output === 'string') {
+      nextText = data.outputs.output;
+    } else if (typeof data.lastMessage === 'string') {
+      nextText = data.lastMessage;
     }
-  }, []);
+
+    if (nextText === null) return;
+    setOutputText((prev) => (prev === nextText ? prev : nextText));
+
+    if (isMarkdownRef.current && incremarkRef.current.markdown !== nextText) {
+      incremarkRef.current.render(nextText);
+    }
+  }, [data.config?.output, data.outputs?.output, data.lastMessage]);
+
+  useEffect(() => {
+    if (!isMarkdown) return;
+    if (isStreamingRef.current) return;
+    if (incremarkRef.current.markdown !== outputText) {
+      incremarkRef.current.render(outputText);
+    }
+  }, [isMarkdown, outputText]);
 
   useEffect(() => {
     if (!isConfigOpen) return;
@@ -95,14 +158,14 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
   const handleModelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const newModel = e.target.value;
     setModel(newModel);
-    updateNodeData(id, { config: { ...data.config, model: newModel } });
-  }, [id, data.config, updateNodeData]);
+    updateConfig({ model: newModel });
+  }, [updateConfig]);
 
   const handleStreamChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newStream = e.target.checked;
     setStream(newStream);
-    updateNodeData(id, { config: { ...data.config, stream: newStream } });
-  }, [id, data.config, updateNodeData]);
+    updateConfig({ stream: newStream });
+  }, [updateConfig]);
 
   // System Prompt Handlers
   const handleSystemPromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -112,14 +175,9 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
     adjustHeight(e.target);
 
     if (!isComposingSystem.current) {
-      updateNodeData(id, {
-        config: {
-          ...data.config,
-          system_prompt: newValue
-        }
-      });
+      updateConfig({ system_prompt: newValue });
     }
-  }, [id, data.config, updateNodeData]);
+  }, [updateConfig]);
 
   const handleSystemCompositionStart = () => {
     isComposingSystem.current = true;
@@ -129,13 +187,8 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
     isComposingSystem.current = false;
     const newValue = e.currentTarget.value;
     // Ensure we trigger an update when composition ends
-    updateNodeData(id, {
-      config: {
-        ...data.config,
-        system_prompt: newValue
-      }
-    });
-  }, [id, data.config, updateNodeData]);
+    updateConfig({ system_prompt: newValue });
+  }, [updateConfig]);
 
   // User Prompt Handlers
   const handleUserPromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -145,14 +198,9 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
     adjustHeight(e.target);
 
     if (!isComposingUser.current) {
-      updateNodeData(id, {
-        config: {
-          ...data.config,
-          user_prompt_template: newValue
-        }
-      });
+      updateConfig({ user_prompt_template: newValue });
     }
-  }, [id, data.config, updateNodeData]);
+  }, [updateConfig]);
 
   const handleUserCompositionStart = () => {
     isComposingUser.current = true;
@@ -161,56 +209,71 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
   const handleUserCompositionEnd = useCallback((e: React.CompositionEvent<HTMLTextAreaElement>) => {
     isComposingUser.current = false;
     const newValue = e.currentTarget.value;
-    updateNodeData(id, {
-      config: {
-        ...data.config,
-        user_prompt_template: newValue
-      }
-    });
-  }, [id, data.config, updateNodeData]);
+    updateConfig({ user_prompt_template: newValue });
+  }, [updateConfig]);
 
   useEffect(() => {
-    if (!events$) return;
-    const subscription = events$.subscribe((wrapper: any) => {
-      const { event, runId } = wrapper;
-      if (currentRunId && runId !== currentRunId) return;
+    const stream$ = eventsForNode$?.(id);
+    if (!stream$) return;
+    const subscription = stream$.subscribe((wrapper: any) => {
+      const { event } = wrapper;
       if (event.NodeStarted) {
         if (event.NodeStarted === id) {
+          cancelFlush();
           isStreamingRef.current = false;
           setIsStreaming(false);
         }
       } else if (event.NodeStreamStarted) {
         if (event.NodeStreamStarted === id) {
+          cancelFlush();
           isStreamingRef.current = true;
           setIsStreaming(true);
           setOutputText('');
-          updateNodeData(id, { config: { ...data.config, output: '' } });
+          updateConfig({ output: '' });
+          isMarkdownRef.current = true;
           setIsMarkdown(true);
-          incremark.reset();
+          incremarkRef.current.reset();
         }
       } else if (event.NodeStreamNextMessage) {
         const [nodeId, value] = event.NodeStreamNextMessage;
         if (nodeId === id && isStreamingRef.current) {
           if (typeof value === 'string') {
-            incremark.append(value);
-            setOutputText(prev => prev + value);
+            pendingChunkRef.current += value;
+            scheduleFlush();
           }
+        }
+      } else if (event.NodeError) {
+        const [nodeId] = event.NodeError;
+        if (nodeId === id) {
+          cancelFlush();
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+        }
+      } else if (event.NodeCompleted) {
+        if (event.NodeCompleted === id) {
+          cancelFlush();
+          isStreamingRef.current = false;
+          setIsStreaming(false);
         }
       } else if (event.NodeOutMessage) {
         const [nodeId, value] = event.NodeOutMessage;
         if (nodeId === id) {
+          cancelFlush();
           if (!isStreamingRef.current) {
             if (typeof value === 'string') {
               setOutputText(value);
-              updateNodeData(id, { config: { ...data.config, output: value } });
-              if (isMarkdown) {
-                incremark.render(value);
+              updateConfig({ output: value });
+              if (isMarkdownRef.current) {
+                incremarkRef.current.render(value);
               }
             }
           } else {
             if (typeof value === 'string') {
               setOutputText(value);
-              updateNodeData(id, { config: { ...data.config, output: value } });
+              updateConfig({ output: value });
+              if (isMarkdownRef.current) {
+                incremarkRef.current.render(value);
+              }
             }
             isStreamingRef.current = false;
             setIsStreaming(false);
@@ -218,19 +281,23 @@ export const LLMNode = memo(({ id, type, data, selected, width, height }: NodePr
         }
       }
     });
-    return () => subscription.unsubscribe();
-  }, [events$, currentRunId, id, updateNodeData, data.config, incremark, isMarkdown]);
+    return () => {
+      cancelFlush();
+      subscription.unsubscribe();
+    };
+  }, [eventsForNode$, id, updateConfig, cancelFlush, scheduleFlush]);
 
   const onOutputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setOutputText(e.target.value);
   }, []);
 
+
   const onOutputBlur = useCallback(() => {
-    updateNodeData(id, { config: { ...data.config, output: outputText } });
-    if (isMarkdown) {
-      incremark.render(outputText);
+    updateConfig({ output: outputText });
+    if (isMarkdownRef.current) {
+      incremarkRef.current.render(outputText);
     }
-  }, [id, data.config, outputText, updateNodeData, incremark, isMarkdown]);
+  }, [outputText, updateConfig]);
 
   const headerActions = (
     <div className="relative flex items-center gap-1">

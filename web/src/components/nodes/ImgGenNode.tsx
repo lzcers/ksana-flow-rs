@@ -5,7 +5,6 @@ import type { NodeData } from '../../model/types';
 import { NodeWrapper } from './NodeWrapper';
 import { FullScreenModal } from '../ui/FullScreenModal';
 import { useStore } from '../../store';
-import './index.css';
 
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
@@ -113,7 +112,7 @@ function parseImgGenOutput(value: unknown): { imageSrc?: string; mediaId?: strin
 }
 
 export const ImgGenNode = memo(({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, updateNodeDimensions, events$, currentRunId, currentSpaceId } = useStore();
+  const { updateNodeData, updateNodeDimensions, eventsForNode$, currentSpaceId } = useStore();
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -190,10 +189,10 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
   }, [isConfigOpen]);
 
   useEffect(() => {
-    if (!events$) return;
-    const subscription = events$.subscribe((wrapper: any) => {
-      const { event, runId } = wrapper;
-      if (currentRunId && runId !== currentRunId) return;
+    const stream$ = eventsForNode$?.(id);
+    if (!stream$) return;
+    const subscription = stream$.subscribe((wrapper: any) => {
+      const { event } = wrapper;
 
       if (event.NodeStarted) {
         if (event.NodeStarted === id) {
@@ -215,7 +214,7 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
       }
     });
     return () => subscription.unsubscribe();
-  }, [events$, currentRunId, id, updateNodeData, data.config]);
+  }, [eventsForNode$, id, updateNodeData, data.config]);
 
   useEffect(() => {
     const run = async () => {

@@ -14,7 +14,7 @@ const SOURCE_HANDLES = [Position.Right];
 const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export const TextNodeComponent = ({ id, type, data, selected, width, height }: NodeProps & { data: NodeData }) => {
-  const { updateNodeData, currentRunId, events$ } = useStore();
+  const { updateNodeData, eventsForCurrentRun$, events$ } = useStore();
   const [text, setText] = useState<string>(data.config?.text || '');
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -25,6 +25,11 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
     gfm: true,
   });
 
+  const incremarkRef = useRef(incremark);
+  useEffect(() => {
+    incremarkRef.current = incremark;
+  }, [incremark]);
+
   const connections = useNodeConnections({
     handleType: 'target',
   });
@@ -32,14 +37,22 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
   const textRef = useRef(text);
   const isStreamingRef = useRef(data.upstreamIsStreaming || false);
 
-  // Use refs for data and connections to avoid dependency cycles in effects
   const dataRef = useRef(data);
   const connectionsRef = useRef(connections);
+  const isMarkdownRef = useRef(isMarkdown);
 
   useEffect(() => {
     dataRef.current = data;
     connectionsRef.current = connections;
   }, [data, connections]);
+
+  useEffect(() => {
+    isMarkdownRef.current = isMarkdown;
+  }, [isMarkdown]);
+
+  const updateConfig = useCallback((patch: Record<string, unknown>) => {
+    updateNodeData(id, { config: { ...(dataRef.current.config ?? {}), ...patch } });
+  }, [id, updateNodeData]);
 
   useEffect(() => {
     textRef.current = text;
@@ -50,36 +63,30 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
   }, [data.upstreamIsStreaming]);
 
   useEffect(() => {
-    // We access dataRef.current to avoid re-triggering this effect when data.config changes
-    // This prevents the "Maximum update depth exceeded" error caused by circular updates
     const currentData = dataRef.current;
 
     if (currentData.upstreamIsStreaming && text !== currentData.config?.text) {
       const timeoutId = setTimeout(() => {
-        // Double check ref in timeout
-        const freshData = dataRef.current;
-        updateNodeData(id, { config: { ...freshData.config, text } });
+        updateConfig({ text });
       }, 200);
       return () => clearTimeout(timeoutId);
     }
-  }, [text, id, updateNodeData]); // Removed data.config, data.upstreamIsStreaming from deps
+  }, [text, updateConfig]);
 
   useEffect(() => {
-    if (!data.upstreamIsStreaming && isMarkdown && text !== incremark.markdown) {
-      incremark.render(text);
+    if (!data.upstreamIsStreaming && isMarkdown && text !== incremarkRef.current.markdown) {
+      incremarkRef.current.render(text);
     }
-  }, [text, isMarkdown, data.upstreamIsStreaming, incremark]);
+  }, [text, isMarkdown, data.upstreamIsStreaming]);
 
   useEffect(() => {
-    if (!events$) return;
+    const stream$ = eventsForCurrentRun$ || events$;
+    if (!stream$) return;
 
-    const subscription = events$.subscribe((wrapper: any) => {
-      const { event, runId } = wrapper;
-      // Filter by runId if available to avoid stale events
-      if (currentRunId && runId !== currentRunId) return;
+    const subscription = stream$.subscribe((wrapper: any) => {
+      const { event } = wrapper;
 
       const currentConnections = connectionsRef.current;
-      const currentData = dataRef.current;
 
       const upstreamNodeIds = currentConnections.map(conn => conn.source);
       const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
@@ -95,15 +102,14 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
           isStreamingRef.current = true;
           setText('');
           setIsMarkdown(true);
-          incremark.reset();
-          // Clear data in store immediately
-          updateNodeData(id, { config: { ...currentData.config, text: '' } });
+          incremarkRef.current.reset();
+          updateConfig({ text: '' });
         }
       } else if (event.NodeStreamNextMessage) {
         const [nodeId, value] = event.NodeStreamNextMessage;
         if (isUpstream(nodeId) && isStreamingRef.current) {
           if (typeof value === 'string') {
-            incremark.append(value);
+            incremarkRef.current.append(value);
             setText(prev => prev + value);
           }
         }
@@ -112,9 +118,9 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
         if (isUpstream(nodeId) && !isStreamingRef.current) {
           if (typeof value === 'string') {
             setText(value);
-            updateNodeData(id, { config: { ...currentData.config, text: value } });
-            if (isMarkdown) {
-              incremark.render(value);
+            updateConfig({ text: value });
+            if (isMarkdownRef.current) {
+              incremarkRef.current.render(value);
             }
           }
         }
@@ -122,8 +128,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
     });
 
     return () => subscription.unsubscribe();
-  }, [events$, incremark, currentRunId, id, updateNodeData, isMarkdown]);
-  // Removed connections and data.config from dependencies
+  }, [eventsForCurrentRun$, events$, updateConfig]);
 
   const onChange = useCallback((evt: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(evt.target.value);
@@ -132,11 +137,9 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
   const onBlur = useCallback(() => {
     const currentData = dataRef.current;
     if (text !== currentData.config?.text) {
-      updateNodeData(id, {
-        config: { ...currentData.config, text }
-      });
+      updateConfig({ text });
     }
-  }, [id, text, updateNodeData]); // Removed data.config
+  }, [text, updateConfig]);
 
   const headerActions = (
     <div className="flex items-center gap-1">
@@ -153,7 +156,7 @@ export const TextNodeComponent = ({ id, type, data, selected, width, height }: N
       <button
         onClick={(e) => {
           e.stopPropagation();
-          setIsMarkdown(!isMarkdown);
+          setIsMarkdown(v => !v);
         }}
         className="text-zinc-400 hover:text-zinc-200 transition-colors p-1 rounded hover:bg-zinc-800"
         title={isMarkdown ? "Switch to Edit Mode" : "Switch to Markdown Preview"}
