@@ -46,7 +46,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   headerActions
 }) => {
   const status = data.status || 'idle';
-  const { runNode, updateNodeDimensions, isConnecting, connectionSourceId, updateNodeData } = useStore();
+  const { runNode, updateNodeDimensions, isConnecting, connectionSourceId, workflowStatus, updateNodeData } = useStore();
 
   const [editingLabel, setEditingLabel] = React.useState(false);
   const [labelDraft, setLabelDraft] = React.useState<string>(data.label || '');
@@ -131,13 +131,14 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
         <div className={cn("flex items-center gap-2", selected ? "opacity-100 pointer-events-auto" : "opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto")}>
           {headerActions}
           {/* Run Button */}
-          <button
-            onClick={handleRun}
-            className="group/run flex items-center justify-center w-7 h-7 backdrop-blur-xl bg-zinc-800/50 hover:bg-zinc-700/80 text-zinc-400 hover:text-zinc-200 rounded-full border border-zinc-700/30 hover:border-zinc-600 shadow-sm hover:shadow-md transition-all duration-300"
-            title="Run Node"
-          >
-            <Play size={12} fill="currentColor" className="ml-0.5 opacity-80" />
-          </button>
+          {workflowStatus === 'idle' &&
+            <button
+              onClick={handleRun}
+              className="group/run flex items-center justify-center w-7 h-7 backdrop-blur-xl bg-zinc-800/50 hover:bg-zinc-700/80 text-zinc-400 hover:text-zinc-200 rounded-full border border-zinc-700/30 hover:border-zinc-600 shadow-sm hover:shadow-md transition-all duration-300"
+              title="Run Node"
+            >
+              <Play size={12} fill="currentColor" className="ml-0.5 opacity-80" />
+            </button>}
         </div>
       </div>
 
