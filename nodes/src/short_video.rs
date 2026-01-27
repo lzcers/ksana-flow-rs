@@ -1,4 +1,4 @@
-use crate::llm_stream::LLMStreamObservable;
+use crate::llm::LLMStreamObservable;
 use async_trait::async_trait;
 use flow::{Node, NodeInputs, ReactiveStream};
 use futures::StreamExt;
@@ -168,7 +168,14 @@ mod tests {
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
             // Basic JSON check
-            assert!(output.trim().starts_with("{") || output.trim().starts_with("["));
+            let mut s = output.trim_start();
+            if let Some(rest) = s.strip_prefix("```json") {
+                s = rest;
+            } else if let Some(rest) = s.strip_prefix("```") {
+                s = rest;
+            }
+            s = s.trim_start();
+            assert!(s.starts_with("{") || s.starts_with("["));
         });
     }
 }
