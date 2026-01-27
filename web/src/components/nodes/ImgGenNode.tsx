@@ -448,7 +448,7 @@ export const ImgGenNode = memo(({ id, type, data, selected, width, height }: Nod
                 </div>
                 <textarea
                   ref={promptRef}
-                  className="w-full text-xs bg-zinc-950/60 hover:bg-zinc-950/70 focus:bg-zinc-950 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-black text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
+                  className="w-full text-xs nodrag nowheel bg-zinc-950/60 hover:bg-zinc-950/70 focus:bg-zinc-950 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-black text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner"
                   rows={3}
                   value={promptText}
                   onChange={onPromptChange}
