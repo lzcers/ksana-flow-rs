@@ -1,57 +1,11 @@
 use crate::prompt::build_user_prompt;
+use super::{agent::LlmAgent, input::extract_input_string};
 use async_trait::async_trait;
 use flow::{
     Node, NodeInputs, ReactiveStream,
     observable::{Observable, Observer, VecSubscription},
 };
-use futures::stream::{BoxStream, StreamExt};
-use rig::{
-    agent::{Agent, MultiTurnStreamItem},
-    client::{CompletionClient, ProviderClient},
-    message::{Reasoning, Text},
-    providers::{
-        deepseek::{self, CompletionModel},
-        openrouter::{self, CompletionModel as OpenRouterCompletionModel},
-    },
-    streaming::{StreamedAssistantContent, StreamingPrompt},
-};
-
-enum LLMStreamAgent {
-    DeepSeek(Agent<CompletionModel>),
-    OpenRouter(Agent<OpenRouterCompletionModel>),
-}
-
-impl LLMStreamAgent {
-    async fn stream_prompt(&self, prompt: &str) -> BoxStream<'static, Result<String, String>> {
-        match self {
-            LLMStreamAgent::DeepSeek(agent) => agent
-                .stream_prompt(prompt)
-                .await
-                .map(|res| process_stream_result(res))
-                .boxed(),
-            LLMStreamAgent::OpenRouter(agent) => agent
-                .stream_prompt(prompt)
-                .await
-                .map(|res| process_stream_result(res))
-                .boxed(),
-        }
-    }
-}
-
-fn process_stream_result<T, E: ToString>(
-    res: Result<MultiTurnStreamItem<T>, E>,
-) -> Result<String, String> {
-    match res {
-        Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(Text {
-            text,
-        }))) => Ok(text),
-        Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Reasoning(
-            Reasoning { reasoning, .. },
-        ))) => Ok(reasoning.join("\n")),
-        Ok(_) => Ok(String::new()),
-        Err(e) => Err(e.to_string()),
-    }
-}
+use futures::stream::StreamExt;
 
 pub struct LLMStreamObservable<S> {
     pub stream: S,
@@ -82,7 +36,7 @@ where
 }
 
 pub struct LLMStreamNode {
-    llm: LLMStreamAgent,
+    llm: LlmAgent,
     #[allow(dead_code)]
     model: String,
     #[allow(dead_code)]
@@ -92,25 +46,7 @@ pub struct LLMStreamNode {
 
 impl LLMStreamNode {
     pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
-        dotenv::dotenv().ok();
-
-        let use_openrouter = model.contains('/');
-
-        let llm = if use_openrouter {
-            let client = openrouter::Client::from_env();
-            let mut builder = client.agent(model);
-            if !sys_prompt.is_empty() {
-                builder = builder.preamble(sys_prompt);
-            }
-            LLMStreamAgent::OpenRouter(builder.build())
-        } else {
-            let client = deepseek::Client::from_env();
-            let mut builder = client.agent(model);
-            if !sys_prompt.is_empty() {
-                builder = builder.preamble(sys_prompt);
-            }
-            LLMStreamAgent::DeepSeek(builder.build())
-        };
+        let llm = LlmAgent::new(sys_prompt, model);
 
         Self {
             llm,
@@ -126,29 +62,7 @@ impl Node for LLMStreamNode {
     type Out = ReactiveStream<String>;
 
     async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
-        let input = inputs
-            .get::<String>("input")
-            .or_else(|| inputs.get::<String>("external_start"))
-            .or_else(|| inputs.get::<String>("output"))
-            // If get failed, try to get from any input and cast to String using new helper
-            .or_else(|| {
-                inputs.get_any().and_then(|any| {
-                    let inner: &dyn flow::SendableAny = &**any;
-                    if let Some(v) = inner.as_any().downcast_ref::<String>() {
-                        Some(v)
-                    } else if let Some(inner_box) =
-                        inner.as_any().downcast_ref::<Box<dyn flow::SendableAny>>()
-                    {
-                        let inner_inner: &dyn flow::SendableAny = &**inner_box;
-                        inner_inner.as_any().downcast_ref::<String>()
-                    } else {
-                        None
-                    }
-                })
-            })
-            .cloned()
-            .unwrap_or_default();
-
+        let input = extract_input_string(&inputs);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
         let stream = self.llm.stream_prompt(&prompt).await;
         let react_stream = LLMStreamObservable { stream };
@@ -297,7 +211,10 @@ mod tests {
     #[test]
     #[ignore]
     fn test_deepseek_direct_stream() {
+        use rig::client::CompletionClient;
+        use rig::client::ProviderClient;
         use rig::providers::deepseek;
+        use rig::streaming::StreamingPrompt;
         use tokio::runtime::Runtime;
 
         dotenv::dotenv().ok();

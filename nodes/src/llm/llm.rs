@@ -1,32 +1,10 @@
 use crate::prompt::build_user_prompt;
+use super::{agent::LlmAgent, input::extract_input_string};
 use async_trait::async_trait;
 use flow::{Node, NodeInputs};
-use rig::{
-    agent::Agent,
-    client::{CompletionClient, ProviderClient},
-    completion::Prompt,
-    providers::{
-        deepseek::{self, CompletionModel},
-        openrouter::{self, CompletionModel as OpenRouterCompletionModel},
-    },
-};
-
-enum LLMAgent {
-    DeepSeek(Agent<CompletionModel>),
-    OpenRouter(Agent<OpenRouterCompletionModel>),
-}
-
-impl LLMAgent {
-    async fn prompt(&self, prompt: &str) -> Result<String, String> {
-        match self {
-            LLMAgent::DeepSeek(agent) => agent.prompt(prompt).await.map_err(|e| e.to_string()),
-            LLMAgent::OpenRouter(agent) => agent.prompt(prompt).await.map_err(|e| e.to_string()),
-        }
-    }
-}
 
 pub struct LLMNode {
-    llm: LLMAgent,
+    llm: LlmAgent,
     #[allow(dead_code)]
     model: String,
     #[allow(dead_code)]
@@ -36,25 +14,7 @@ pub struct LLMNode {
 
 impl LLMNode {
     pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
-        dotenv::dotenv().ok();
-
-        let use_openrouter = model.contains('/');
-
-        let llm = if use_openrouter {
-            let client = openrouter::Client::from_env();
-            let mut builder = client.agent(model);
-            if !sys_prompt.is_empty() {
-                builder = builder.preamble(sys_prompt);
-            }
-            LLMAgent::OpenRouter(builder.build())
-        } else {
-            let client = deepseek::Client::from_env();
-            let mut builder = client.agent(model);
-            if !sys_prompt.is_empty() {
-                builder = builder.preamble(sys_prompt);
-            }
-            LLMAgent::DeepSeek(builder.build())
-        };
+        let llm = LlmAgent::new(sys_prompt, model);
 
         Self {
             llm,
@@ -70,12 +30,7 @@ impl Node for LLMNode {
     type Out = String;
 
     async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
-        let input = inputs
-            .get_any()
-            .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
-            .cloned()
-            .unwrap_or_default();
-
+        let input = extract_input_string(&inputs);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
 
         self.llm

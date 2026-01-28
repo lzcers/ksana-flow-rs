@@ -1,8 +1,8 @@
 use chrono::{Local, NaiveDateTime};
 use flow::{AnyNode, SendableAny};
 use nodes::{
-    EmailNotifyNode, ImgGenNode, LLMNode, LLMStreamNode, ShortVideoScriptNode, TextFileNode,
-    TextMergeNode, TextNode, TimerNode,
+    EmailNotifyNode, ImgGenNode, ShortVideoScriptNode, TextFileNode, TextMergeNode, TextNode,
+    TimerNode, create_llm_any_node,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -234,22 +234,12 @@ pub fn create_registry() -> NodeRegistry {
             let user_prompt_template = config["user_prompt_template"].as_str();
             let model = config["model"].as_str().unwrap_or("deepseek-chat");
             let stream = config["stream"].as_bool().unwrap_or(false);
-
-            if stream {
-                let node = LLMStreamNode::new(
-                    system_prompt.unwrap_or(""),
-                    user_prompt_template.unwrap_or(""),
-                    model,
-                );
-                Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-            } else {
-                let node = LLMNode::new(
-                    system_prompt.unwrap_or(""),
-                    user_prompt_template.unwrap_or(""),
-                    model,
-                );
-                Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-            }
+            Ok(create_llm_any_node(
+                system_prompt.unwrap_or(""),
+                user_prompt_template.unwrap_or(""),
+                model,
+                stream,
+            ))
         },
     );
     registry.register(
@@ -270,12 +260,12 @@ pub fn create_registry() -> NodeRegistry {
             let system_prompt = config["system_prompt"].as_str();
             let user_prompt_template = config["user_prompt_template"].as_str();
             let model = config["model"].as_str().unwrap_or("deepseek-chat");
-            let node = LLMStreamNode::new(
+            Ok(create_llm_any_node(
                 system_prompt.unwrap_or(""),
                 user_prompt_template.unwrap_or(""),
                 model,
-            );
-            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+                true,
+            ))
         },
     );
 
