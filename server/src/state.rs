@@ -1,8 +1,6 @@
 use crate::db::Db;
 use crate::registry::NodeRegistry;
 use flow::{Edge as FlowEdge, Graph, RunnerHandle};
-use nodes::trade::K;
-use nodes::trade::backtester::BacktesterInput;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -80,42 +78,42 @@ impl GraphBlueprint {
             if let Some(source_node) = source_node {
                 let type_name = &source_node.type_name;
                 match type_name.as_str() {
-                    "ReactiveSourceNode" => new_graph.add_edge(FlowEdge::<K> {
+                    "ReactiveSourceNode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "VOLMFINode" => new_graph.add_edge(FlowEdge::<BacktesterInput> {
+                    "VOLMFINode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "Backtester" => new_graph.add_edge(FlowEdge::<()> {
+                    "Backtester" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "TextNode" => new_graph.add_edge(FlowEdge::<String> {
+                    "TextNode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "LLMNode" => new_graph.add_edge(FlowEdge::<String> {
+                    "LLMNode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "TextFileNode" => new_graph.add_edge(FlowEdge::<String> {
+                    "TextFileNode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "StreamLLMNode" => new_graph.add_edge(FlowEdge::<String> {
+                    "StreamLLMNode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,
                     }),
-                    "TextMergeNode" => new_graph.add_edge(FlowEdge::<String> {
+                    "TextMergeNode" => new_graph.add_edge(FlowEdge {
                         from: edge.source.clone(),
                         to: edge.target.clone(),
                         condition: None,

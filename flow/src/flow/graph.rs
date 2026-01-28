@@ -48,13 +48,13 @@ pub trait Node {
     async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload;
 }
 
-pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send>;
+pub type EdgeCondition = Box<dyn Fn(&Context, &dyn Any) -> bool + Send>;
 
 // 条件边接收一个节点传出的输出引用，根据条件判断是否继续执行下一个节点
-pub struct Edge<Out = ()> {
+pub struct Edge {
     pub from: String,
     pub to: String,
-    pub condition: Option<EdgeCondition<Out>>,
+    pub condition: Option<EdgeCondition>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -131,7 +131,7 @@ pub trait AnyEdge: Any + Send {
     fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool;
 }
 
-impl<Out: Any> AnyEdge for Edge<Out> {
+impl AnyEdge for Edge {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -145,11 +145,9 @@ impl<Out: Any> AnyEdge for Edge<Out> {
     }
 
     fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool {
-        let output = (output as &dyn Any).downcast_ref::<Out>();
-        match (&self.condition, output) {
-            (Some(condition), Some(out)) => condition(ctx, out),
-            (None, _) => true,
-            _ => false,
+        match &self.condition {
+            Some(condition) => condition(ctx, output),
+            None => true,
         }
     }
 }
@@ -198,7 +196,7 @@ impl Graph {
             .insert(id.to_owned(), node_trigger_strategy);
     }
 
-    pub fn add_edge<Out: Any>(&mut self, edge: Edge<Out>) {
+    pub fn add_edge(&mut self, edge: Edge) {
         self.incoming_nodes
             .entry(edge.to.clone())
             .or_insert_with(Vec::new)
@@ -290,8 +288,7 @@ mod tests {
 
     #[test]
     fn test_edge_type_mismatch_unconditional() {
-        // Create an edge expecting i32
-        let edge: Edge<i32> = Edge {
+        let edge = Edge {
             from: "a".to_string(),
             to: "b".to_string(),
             condition: None,
@@ -308,11 +305,12 @@ mod tests {
 
     #[test]
     fn test_edge_type_mismatch_conditional() {
-        // Create an edge expecting i32 with condition
-        let edge: Edge<i32> = Edge {
+        let edge = Edge {
             from: "a".to_string(),
             to: "b".to_string(),
-            condition: Some(Box::new(|_, val| *val > 0)),
+            condition: Some(Box::new(|_, any| {
+                any.downcast_ref::<i32>().map(|v| *v > 0).unwrap_or(false)
+            })),
         };
         let ctx = Context::new();
 
@@ -320,7 +318,7 @@ mod tests {
         let output = "hello".to_string();
         let any_output: &dyn Any = &output;
 
-        // Check condition - should be false because type mismatch makes output None, matching _ => false
+        // Check condition - should be false because type mismatch
         assert!(!edge.check_condition(&ctx, any_output));
     }
 }

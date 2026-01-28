@@ -21,7 +21,7 @@ impl GraphBuilder {
     }
 
     pub fn add_edge(mut self, from: impl Into<String>, to: impl Into<String>) -> Self {
-        self.graph.add_edge(Edge::<()> {
+        self.graph.add_edge(Edge {
             from: from.into(),
             to: to.into(),
             condition: None,
@@ -35,10 +35,15 @@ impl GraphBuilder {
         to: impl Into<String>,
         condition: impl Fn(&Context, &Out) -> bool + Send + 'static,
     ) -> Self {
+        let condition = Box::new(move |ctx: &Context, any: &dyn Any| {
+            any.downcast_ref::<Out>()
+                .map(|out| condition(ctx, out))
+                .unwrap_or(false)
+        });
         let edge = Edge {
             from: from.into(),
             to: to.into(),
-            condition: Some(Box::new(condition)),
+            condition: Some(condition),
         };
         self.graph.add_edge(edge);
         self
