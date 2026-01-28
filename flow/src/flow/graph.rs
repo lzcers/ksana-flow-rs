@@ -4,68 +4,48 @@ use serde_json::Value;
 use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
-use super::sendable_any::SendableAny;
+use super::output_payload::OutputPayload;
 
 pub type NodeId = String;
 
 #[derive(Clone)]
 pub struct NodeInputs {
-    pub inputs: HashMap<NodeId, Box<dyn SendableAny>>,
-}
-
-fn unwrap_sendable_any(mut any: &dyn SendableAny) -> &dyn SendableAny {
-    loop {
-        let erased = any.as_any();
-        if let Some(inner_box) = erased.downcast_ref::<Box<dyn SendableAny>>() {
-            any = &**inner_box;
-            continue;
-        }
-        return any;
-    }
+    pub inputs: HashMap<NodeId, OutputPayload>,
 }
 
 impl NodeInputs {
-    pub fn new(inputs: HashMap<NodeId, Box<dyn SendableAny>>) -> Self {
+    pub fn new(inputs: HashMap<NodeId, OutputPayload>) -> Self {
         Self { inputs }
     }
 
     pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
-        self.inputs.get(key).and_then(|any| {
-            let inner: &dyn SendableAny = &**any;
-            // First try direct downcast
-            if let Some(v) = inner.as_any().downcast_ref::<T>() {
-                return Some(v);
-            }
-            // If failed, check if it's a Box<dyn SendableAny> and unwrap
-            if let Some(inner_box) = inner.as_any().downcast_ref::<Box<dyn SendableAny>>() {
-                let inner_inner: &dyn SendableAny = &**inner_box;
-                return inner_inner.as_any().downcast_ref::<T>();
-            }
-            None
-        })
+        self.inputs
+            .get(key)
+            .and_then(|p| p.as_any())
+            .and_then(|any| any.downcast_ref::<T>())
     }
 
-    pub fn get_any(&self) -> Option<&Box<dyn SendableAny>> {
+    pub fn get_any(&self) -> Option<&OutputPayload> {
         self.inputs.values().next()
     }
 
-    pub fn get_unwrapped(&self, key: &str) -> Option<&dyn SendableAny> {
-        self.inputs.get(key).map(|any| unwrap_sendable_any(&**any))
+    pub fn get_payload(&self, key: &str) -> Option<&OutputPayload> {
+        self.inputs.get(key)
     }
 
-    pub fn iter_unwrapped(&self) -> impl Iterator<Item = (&NodeId, &dyn SendableAny)> + '_ {
-        self.inputs
-            .iter()
-            .map(|(k, v)| (k, unwrap_sendable_any(&**v)))
+    pub fn iter_any(&self) -> impl Iterator<Item = (&NodeId, &dyn Any)> + '_ {
+        self.inputs.iter().filter_map(|(k, v)| {
+            let any = v.as_any()?;
+            Some((k, any))
+        })
     }
 }
 
 #[async_trait]
 pub trait Node {
-    type Out: SendableAny;
     const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
 
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out;
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload;
 }
 
 pub type EdgeCondition<Out> = Box<dyn Fn(&Context, &Out) -> bool + Send>;
@@ -124,11 +104,7 @@ pub trait AnyNode: Any + Send + Sync {
         TriggerStrategy::AllUpstreamReady
     }
     fn as_any_mut(&mut self) -> &mut dyn Any;
-    async fn run(
-        &mut self,
-        ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String>;
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String>;
 }
 
 #[async_trait]
@@ -143,13 +119,8 @@ impl<N: Node + Any + Send + Sync> AnyNode for N {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
-    async fn run(
-        &mut self,
-        ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        let result = self.run(ctx, inputs).await;
-        Ok(Box::new(result))
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
+        Ok(self.run(ctx, inputs).await)
     }
 }
 
@@ -291,10 +262,11 @@ mod tests {
 
     #[async_trait]
     impl Node for StrategyNode {
-        type Out = ();
         const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AnyUpstreamAvailable;
 
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {}
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::shared(())
+        }
     }
 
     #[test]

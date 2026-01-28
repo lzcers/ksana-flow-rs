@@ -1,6 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs};
+use flow::{Context, Node, NodeInputs, OutputPayload};
 use lettre::{
     Message, SmtpTransport, Transport,
     transport::smtp::authentication::{Credentials, Mechanism},
@@ -58,12 +58,11 @@ impl EmailNotifyNode {
 
 #[async_trait]
 impl Node for EmailNotifyNode {
-    type Out = ();
-
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
         if let Err(e) = email_notify(&self.subject, &self.body) {
             error!("EmailNotifyNode failed to send email: {:?}", e);
         }
+        OutputPayload::cloned(())
     }
 }
 

@@ -1,13 +1,13 @@
-use crate::{NodeId, NodeInputs, SendableAny, StreamSubscriptionFn};
+use crate::{NodeId, NodeInputs, OutputPayload, StreamSubscriptionFn};
 
 pub enum FlowEvent {
     NodeStarted(String),
     NodeCompleted(String),
     NodeError(String, String),
     NodeInMessage(String, NodeInputs),
-    NodeOutMessage(String, Box<dyn SendableAny>),
+    NodeOutMessage(String, OutputPayload),
     NodeStreamStarted(String),
-    NodeStreamNextMessage(String, Box<dyn SendableAny>),
+    NodeStreamNextMessage(String, OutputPayload),
     FlowPaused,
     FlowResumed,
     FlowStopped,
@@ -15,8 +15,8 @@ pub enum FlowEvent {
 }
 
 pub enum TaskEvent {
-    Next(NodeId, Box<dyn SendableAny>),
-    Completed(NodeId, Option<Box<dyn SendableAny>>),
+    Next(NodeId, OutputPayload),
+    Completed(NodeId, Option<OutputPayload>),
     Error(NodeId, String),
     Stream(NodeId, StreamSubscriptionFn),
 }

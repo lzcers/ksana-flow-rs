@@ -12,7 +12,7 @@ pub(crate) fn extract_input_string(inputs: &NodeInputs) -> String {
     }
 
     inputs
-        .iter_unwrapped()
-        .find_map(|(_, any)| any.as_any().downcast_ref::<String>().cloned())
+        .iter_any()
+        .find_map(|(_, any)| any.downcast_ref::<String>().cloned())
         .unwrap_or_default()
 }

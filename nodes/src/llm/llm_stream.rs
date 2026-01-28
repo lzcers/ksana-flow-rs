@@ -1,8 +1,8 @@
-use crate::prompt::build_user_prompt;
 use super::{agent::LlmAgent, input::extract_input_string};
+use crate::prompt::build_user_prompt;
 use async_trait::async_trait;
 use flow::{
-    Node, NodeInputs, ReactiveStream,
+    Node, NodeInputs, OutputPayload, ReactiveStream, StreamSubscriptionFn,
     observable::{Observable, Observer, VecSubscription},
 };
 use futures::stream::StreamExt;
@@ -59,22 +59,25 @@ impl LLMStreamNode {
 
 #[async_trait]
 impl Node for LLMStreamNode {
-    type Out = ReactiveStream<String>;
-
-    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> OutputPayload {
         let input = extract_input_string(&inputs);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
         let stream = self.llm.stream_prompt(&prompt).await;
         let react_stream = LLMStreamObservable { stream };
-        ReactiveStream::from_observable_with_accumulator(react_stream, |chunks: Vec<String>| {
-            let full_text = chunks.join("");
-            Some(Box::new(full_text))
-        })
+        let stream = ReactiveStream::from_observable_with_accumulator(
+            react_stream,
+            |chunks: Vec<String>| {
+                let full_text = chunks.join("");
+                Some(OutputPayload::cloned(full_text))
+            },
+        );
+        OutputPayload::stream(stream.subscribe)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use flow::OutputPayload;
     use flow::{Context, TaskEvent};
     use flow::{NodeInputs, TaskGuard};
     use std::collections::HashMap;
@@ -84,18 +87,20 @@ mod tests {
     use super::*;
     use rig::providers::deepseek::DEEPSEEK_CHAT;
 
-    async fn collect_output(stream: ReactiveStream<String>) -> String {
+    async fn collect_output(subscribe: StreamSubscriptionFn) -> String {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let ctx = Arc::new(Context::new());
         let guard = TaskGuard::default();
-        let _sub = (stream.subscribe)(guard, tx, "test".to_string(), ctx);
+        let _sub = subscribe(guard, tx, "test".to_string(), ctx);
 
         let mut output = String::new();
         while let Some(event) = rx.recv().await {
             match event {
                 TaskEvent::Next(_, val) => {
-                    if let Some(s) = val.as_any().downcast_ref::<String>() {
-                        output.push_str(s);
+                    if let Some(any) = val.as_any() {
+                        if let Some(s) = any.downcast_ref::<String>() {
+                            output.push_str(s);
+                        }
                     }
                 }
                 TaskEvent::Completed(_, _) => break,
@@ -118,13 +123,13 @@ mod tests {
             eprintln!("input: {}", &input);
 
             let mut inputs = HashMap::new();
-            inputs.insert(
-                "test".to_string(),
-                Box::new(input) as Box<dyn flow::SendableAny>,
-            );
+            inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
-            let output = collect_output(stream).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let OutputPayload::Stream(subscribe) = payload else {
+                panic!("Expected stream payload");
+            };
+            let output = collect_output(subscribe).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -147,13 +152,13 @@ mod tests {
             eprintln!("input: {}", &input);
 
             let mut inputs = HashMap::new();
-            inputs.insert(
-                "test".to_string(),
-                Box::new(input) as Box<dyn flow::SendableAny>,
-            );
+            inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
-            let output = collect_output(stream).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let OutputPayload::Stream(subscribe) = payload else {
+                panic!("Expected stream payload");
+            };
+            let output = collect_output(subscribe).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -172,13 +177,13 @@ mod tests {
             eprintln!("input: {}", &input);
 
             let mut inputs = HashMap::new();
-            inputs.insert(
-                "test".to_string(),
-                Box::new(input) as Box<dyn flow::SendableAny>,
-            );
+            inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
-            let output = collect_output(stream).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let OutputPayload::Stream(subscribe) = payload else {
+                panic!("Expected stream payload");
+            };
+            let output = collect_output(subscribe).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -196,13 +201,13 @@ mod tests {
             eprintln!("input: {}", &input);
 
             let mut inputs = HashMap::new();
-            inputs.insert(
-                "test".to_string(),
-                Box::new(input) as Box<dyn flow::SendableAny>,
-            );
+            inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
-            let output = collect_output(stream).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let OutputPayload::Stream(subscribe) = payload else {
+                panic!("Expected stream payload");
+            };
+            let output = collect_output(subscribe).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -246,11 +251,14 @@ mod tests {
             let mut node = LLMStreamNode::new("", "Say hello", DEEPSEEK_CHAT);
 
             let inputs = HashMap::new();
-            let stream = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let OutputPayload::Stream(subscribe) = payload else {
+                panic!("Expected stream payload");
+            };
 
             let (tx, mut rx) = tokio::sync::mpsc::channel(100);
             let ctx = Arc::new(Context::new());
-            let _sub = (stream.subscribe)(TaskGuard::default(), tx, "test".to_string(), ctx);
+            let _sub = subscribe(TaskGuard::default(), tx, "test".to_string(), ctx);
 
             let mut full_output = String::new();
             let mut completed_payload = None;
@@ -258,8 +266,10 @@ mod tests {
             while let Some(event) = rx.recv().await {
                 match event {
                     TaskEvent::Next(_, val) => {
-                        if let Some(s) = val.as_any().downcast_ref::<String>() {
-                            full_output.push_str(s);
+                        if let Some(any) = val.as_any() {
+                            if let Some(s) = any.downcast_ref::<String>() {
+                                full_output.push_str(s);
+                            }
                         }
                     }
                     TaskEvent::Completed(_, output) => {
@@ -281,7 +291,7 @@ mod tests {
             let payload_str = completed_payload
                 .unwrap()
                 .as_any()
-                .downcast_ref::<String>()
+                .and_then(|a| a.downcast_ref::<String>())
                 .expect("Payload should be string")
                 .clone();
 

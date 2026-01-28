@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs};
+use flow::{Context, Node, NodeInputs, OutputPayload};
 use serde_json::Value;
 
 use crate::text_split::{split_text, TextSplitConfig};
@@ -16,9 +16,7 @@ impl TextSplitNode {
 
 #[async_trait]
 impl Node for TextSplitNode {
-    type Out = Value;
-
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
         let mut config = self.config.clone();
         if let Some(cfg) = inputs.get::<TextSplitConfig>("config") {
             config = cfg.clone();
@@ -35,13 +33,14 @@ impl Node for TextSplitNode {
             .cloned()
             .or_else(|| {
                 inputs
-                    .iter_unwrapped()
-                    .find_map(|(_, any)| any.as_any().downcast_ref::<String>().cloned())
+                    .iter_any()
+                    .find_map(|(_, any)| any.downcast_ref::<String>().cloned())
             })
             .unwrap_or_default();
 
         let result = split_text(&input_text, &config);
-        serde_json::to_value(result).unwrap_or_else(|_| Value::Null)
+        let out = serde_json::to_value(result).unwrap_or_else(|_| Value::Null);
+        OutputPayload::cloned(out)
     }
 }
 
@@ -49,7 +48,7 @@ impl Node for TextSplitNode {
 mod tests {
     use super::*;
     use crate::text_split::{LineNumberInjectionConfig, TextSplitMode};
-    use flow::SendableAny;
+    use flow::OutputPayload;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -73,9 +72,17 @@ mod tests {
             };
             let mut node = TextSplitNode::new(config);
 
-            let mut map: HashMap<String, Box<dyn SendableAny>> = HashMap::new();
-            map.insert("external_start".to_string(), Box::new("a\nb\nc\n".to_string()));
-            let out = node.run(&ctx, NodeInputs::new(map)).await;
+            let mut map: HashMap<String, OutputPayload> = HashMap::new();
+            map.insert(
+                "external_start".to_string(),
+                OutputPayload::cloned("a\nb\nc\n".to_string()),
+            );
+            let payload = node.run(&ctx, NodeInputs::new(map)).await;
+            let out = payload
+                .as_any()
+                .and_then(|a| a.downcast_ref::<Value>())
+                .cloned()
+                .unwrap_or(Value::Null);
 
             let segments = out
                 .get("segments")

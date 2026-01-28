@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use super::task_guard::TaskTracker;
-use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard, sendable_any::SendableAny};
+use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard};
+use crate::OutputPayload;
 use crate::observable::Subscription;
 use dashmap::DashMap;
-use tracing::info;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeState {
@@ -20,7 +20,7 @@ pub enum NodeState {
 // 存储所有节点的执行状态，为调度器提供调度必要信息
 pub struct ExecutionContext {
     node_states: DashMap<NodeId, NodeState>,
-    node_outputs: DashMap<NodeId, Box<dyn SendableAny>>,
+    node_outputs: DashMap<NodeId, OutputPayload>,
     stream_subscriptions: DashMap<NodeId, Box<dyn Subscription>>,
     tracker: Arc<TaskTracker>,
 }
@@ -53,15 +53,11 @@ impl ExecutionContext {
         self.node_states.get(node_id).map(|s| *s)
     }
 
-    pub fn set_output(&self, node_id: NodeId, output: Box<dyn SendableAny>) {
+    pub fn set_output(&self, node_id: NodeId, output: OutputPayload) {
         self.node_outputs.insert(node_id, output);
     }
 
-    pub fn get_output(&self, node_id: &str) -> Option<Box<dyn SendableAny>> {
-        // Clone the Box? SendableAny is a trait.
-        // Box<dyn SendableAny> needs to be clonable.
-        // SendableAny extends Send + Any + CloneBox.
-        // So we can clone it.
+    pub fn get_output(&self, node_id: &str) -> Option<OutputPayload> {
         self.node_outputs.get(node_id).map(|v| v.clone())
     }
 
@@ -71,5 +67,65 @@ impl ExecutionContext {
 
     pub fn remove_stream_subscription(&self, node_id: &str) -> Option<Box<dyn Subscription>> {
         self.stream_subscriptions.remove(node_id).map(|(_, v)| v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    #[test]
+    fn exec_ctx_arc_output_is_shared_by_handle_clone() {
+        let exec_ctx = ExecutionContext::new();
+        exec_ctx.set_output("n1".to_string(), OutputPayload::shared(vec![1, 2, 3]));
+
+        let out1 = exec_ctx.get_output("n1").unwrap();
+        let out2 = exec_ctx.get_output("n1").unwrap();
+
+        match (out1, out2) {
+            (
+                OutputPayload::Shared { value: a1, .. },
+                OutputPayload::Shared { value: a2, .. },
+            ) => {
+                assert!(Arc::ptr_eq(&a1, &a2));
+            }
+            _ => panic!("Expected OutputPayload::Shared"),
+        }
+    }
+
+    struct CloneCounted {
+        clones: Arc<AtomicUsize>,
+        value: usize,
+    }
+
+    impl Clone for CloneCounted {
+        fn clone(&self) -> Self {
+            self.clones.fetch_add(1, Ordering::SeqCst);
+            Self {
+                clones: self.clones.clone(),
+                value: self.value,
+            }
+        }
+    }
+
+    #[test]
+    fn exec_ctx_clone_only_output_is_cloned_on_get() {
+        let exec_ctx = ExecutionContext::new();
+        let clones = Arc::new(AtomicUsize::new(0));
+        exec_ctx.set_output(
+            "n1".to_string(),
+            OutputPayload::cloned(CloneCounted {
+                clones: clones.clone(),
+                value: 42,
+            }),
+        );
+
+        let _ = exec_ctx.get_output("n1").unwrap();
+        let _ = exec_ctx.get_output("n1").unwrap();
+        assert_eq!(clones.load(Ordering::SeqCst), 2);
     }
 }

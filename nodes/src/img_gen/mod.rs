@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs};
+use flow::{Context, Node, NodeInputs, OutputPayload};
 use serde_json::json;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -52,11 +52,9 @@ impl ImgGenNode {
 
 #[async_trait]
 impl Node for ImgGenNode {
-    type Out = String;
-
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
         let Some(api_key) = &self.api_key else {
-            return "Missing OPENROUTER_API_KEY".to_string();
+            return OutputPayload::cloned("Missing OPENROUTER_API_KEY".to_string());
         };
         info!("ImgGenNode: model={}", self.model);
         let space_id = inputs
@@ -91,7 +89,7 @@ impl Node for ImgGenNode {
             Some(file_id) if !file_id.is_empty() => {
                 match utils::load_uploaded_image_data_url(file_id, &space_id) {
                     Ok(v) => v,
-                    Err(e) => return e,
+                    Err(e) => return OutputPayload::cloned(e),
                 }
             }
             _ => None,
@@ -115,7 +113,7 @@ impl Node for ImgGenNode {
         .await
         {
             Ok(v) => v,
-            Err(e) => return e,
+            Err(e) => return OutputPayload::cloned(e),
         };
 
         let Some(data_url) = utils::extract_first_image_data_url(&resp_json) else {
@@ -134,7 +132,7 @@ impl Node for ImgGenNode {
 
         let (mime_type, bytes) = match utils::parse_data_url_to_bytes(&data_url) {
             Ok(v) => v,
-            Err(e) => return e,
+            Err(e) => return OutputPayload::cloned(e),
         };
 
         let media_id = Uuid::new_v4().to_string();
@@ -146,14 +144,15 @@ impl Node for ImgGenNode {
             &self.model,
             &space_id,
         ) {
-            return e;
+            return OutputPayload::cloned(e);
         }
 
-        json!({
+        let out = json!({
             "media_id": media_id,
             "mime_type": mime_type,
             "space_id": space_id,
         })
-        .to_string()
+        .to_string();
+        OutputPayload::cloned(out)
     }
 }

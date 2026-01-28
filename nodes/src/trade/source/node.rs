@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use flow::{Context, Node, NodeInputs};
+use flow::{Context, Node, NodeInputs, OutputPayload};
 
 use crate::trade::{
     k::K,
@@ -70,19 +70,18 @@ impl SourceNode {
 
 #[async_trait]
 impl Node for SourceNode {
-    type Out = Option<K>;
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
         if self.ensure_data().await.is_err() {
-            return None;
+            return OutputPayload::cloned(None::<K>);
         }
 
         if let Some(ref data) = self.cached_data {
             if self.cursor < data.len() {
                 let k = data[self.cursor].clone();
                 self.cursor += 1;
-                return Some(k);
+                return OutputPayload::cloned(Some(k));
             }
         }
-        None
+        OutputPayload::cloned(None::<K>)
     }
 }

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs};
+use flow::{Context, Node, NodeInputs, OutputPayload};
 
 pub struct TextNode {
     #[allow(dead_code)]
@@ -15,12 +15,11 @@ impl TextNode {
 
 #[async_trait]
 impl Node for TextNode {
-    type Out = String;
-
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
         let input = inputs
             .get_any()
-            .and_then(|any| any.as_ref().as_any().downcast_ref::<String>())
+            .and_then(|p| p.as_any())
+            .and_then(|a| a.downcast_ref::<String>())
             .cloned()
             .unwrap_or_default();
         let output = if input.is_empty() {
@@ -28,7 +27,7 @@ impl Node for TextNode {
         } else {
             input
         };
-        output
+        OutputPayload::cloned(output)
     }
 }
 
@@ -37,6 +36,7 @@ mod tests {
     use super::*;
     use flow::Context;
     use flow::NodeInputs;
+    use flow::OutputPayload;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -49,16 +49,23 @@ mod tests {
 
             // Test with empty input
             let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
-            assert_eq!(output, "default text");
+            let s = output
+                .as_any()
+                .and_then(|a| a.downcast_ref::<String>())
+                .cloned()
+                .unwrap_or_default();
+            assert_eq!(s, "default text");
 
             // Test with provided input
             let mut inputs = HashMap::new();
-            inputs.insert(
-                "test".to_string(),
-                Box::new("input text".to_string()) as Box<dyn flow::SendableAny>,
-            );
+            inputs.insert("test".to_string(), OutputPayload::cloned("input text".to_string()));
             let output = node.run(&ctx, NodeInputs::new(inputs)).await;
-            assert_eq!(output, "input text");
+            let s = output
+                .as_any()
+                .and_then(|a| a.downcast_ref::<String>())
+                .cloned()
+                .unwrap_or_default();
+            assert_eq!(s, "input text");
         });
     }
 }

@@ -1,26 +1,20 @@
-use crate::flow::{Context, Node, NodeInputs, SendableAny};
+use crate::flow::{Context, Node, NodeInputs};
 use crate::flow::{GraphBuilder, Runner};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use crate::OutputPayload;
 
-fn get_input<T: 'static + Clone + Send>(inputs: &NodeInputs) -> T {
-    let mut current_any = inputs.get_any().map(|b| b.as_ref().as_any());
-
-    while let Some(any) = current_any {
+fn get_input<T: 'static + Clone>(inputs: &NodeInputs) -> T {
+    for payload in inputs.inputs.values() {
+        let Some(any) = payload.as_any() else {
+            continue;
+        };
         if let Some(v) = any.downcast_ref::<T>() {
             return v.clone();
         }
-
-        if let Some(inner) = any.downcast_ref::<Box<dyn SendableAny>>() {
-            current_any = Some(inner.as_ref().as_any());
-        } else {
-            break;
-        }
     }
-
-    let expected = std::any::type_name::<T>();
-    panic!("Expected input of type {}", expected)
+    panic!("Expected input of type {}", std::any::type_name::<T>())
 }
 
 #[tokio::test]
@@ -28,9 +22,8 @@ async fn test_complex_graph_connections() {
     struct InputNode;
     #[async_trait]
     impl Node for InputNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
@@ -46,29 +39,26 @@ async fn test_complex_graph_connections() {
     }
     #[async_trait]
     impl Node for BranchNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("{}[{}]", input, self.branch_id)
+            OutputPayload::cloned(format!("{}[{}]", input, self.branch_id))
         }
     }
 
     struct MergeNode;
     #[async_trait]
     impl Node for MergeNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("Merged: {}", input)
+            OutputPayload::cloned(format!("Merged: {}", input))
         }
     }
 
     struct OutputNode;
     #[async_trait]
     impl Node for OutputNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
@@ -95,7 +85,7 @@ async fn test_complex_graph_connections() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", &"Test".to_string());
+    runner.set_start_node("input", OutputPayload::cloned("Test".to_string()));
     runner
         .run()
         .await
@@ -107,9 +97,8 @@ async fn test_build_flow_macro() {
     struct TestNode;
     #[async_trait]
     impl Node for TestNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
@@ -126,7 +115,7 @@ async fn test_build_flow_macro() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("node1", &"Start".to_string());
+    runner.set_start_node("node1", OutputPayload::cloned("Start".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok());
@@ -142,7 +131,7 @@ async fn test_build_flow_macro() {
         ]
     );
     let (mut runner_cond, _handle) = Runner::new(graph_cond, None);
-    runner_cond.set_start_node("node1", &"Start".to_string());
+    runner_cond.set_start_node("node1", OutputPayload::cloned("Start".to_string()));
     let result_cond = runner_cond.run().await;
     assert!(result_cond.is_ok());
 }
@@ -152,39 +141,35 @@ async fn test_conditional_branching() {
     struct InputNode;
     #[async_trait]
     impl Node for InputNode {
-        type Out = i32;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<i32>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<i32>(&inputs))
         }
     }
 
     struct CheckNode;
     #[async_trait]
     impl Node for CheckNode {
-        type Out = (i32, bool);
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<i32>(&inputs);
-            (input, input > 0)
+            OutputPayload::cloned((input, input > 0))
         }
     }
 
     struct PositiveNode;
     #[async_trait]
     impl Node for PositiveNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<(i32, bool)>(&inputs);
-            format!("Positive: {}", input.0)
+            OutputPayload::cloned(format!("Positive: {}", input.0))
         }
     }
 
     struct NegativeNode;
     #[async_trait]
     impl Node for NegativeNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<(i32, bool)>(&inputs);
-            format!("Negative: {}", input.0)
+            OutputPayload::cloned(format!("Negative: {}", input.0))
         }
     }
 
@@ -206,7 +191,7 @@ async fn test_conditional_branching() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", &42);
+    runner.set_start_node("input", OutputPayload::cloned(42));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Conditional branching should succeed");
@@ -224,10 +209,9 @@ async fn test_multi_level_graph() {
     }
     #[async_trait]
     impl Node for LevelNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("L{}: {}", self.level, input)
+            OutputPayload::cloned(format!("L{}: {}", self.level, input))
         }
     }
 
@@ -257,7 +241,7 @@ async fn test_multi_level_graph() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("l1_1", &"Start".to_string());
+    runner.set_start_node("l1_1", OutputPayload::cloned("Start".to_string()));
     let result = runner.run().await;
 
     assert!(
@@ -278,20 +262,18 @@ async fn test_large_concurrent_nodes() {
     }
     #[async_trait]
     impl Node for CounterNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("{}[Node{}]", input, self.id)
+            OutputPayload::cloned(format!("{}[Node{}]", input, self.id))
         }
     }
 
     struct AggregatorNode;
     #[async_trait]
     impl Node for AggregatorNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("Aggregated: {}", input)
+            OutputPayload::cloned(format!("Aggregated: {}", input))
         }
     }
 
@@ -310,7 +292,7 @@ async fn test_large_concurrent_nodes() {
 
     let graph = builder.build();
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", &"Data".to_string());
+    runner.set_start_node("input", OutputPayload::cloned("Data".to_string()));
     let result = runner.run().await;
 
     assert!(
@@ -335,24 +317,22 @@ async fn test_concurrent_execution_tracking() {
     }
     #[async_trait]
     impl Node for TrackingNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             {
                 let mut log = self.execution_log.lock().unwrap();
                 log.push(self.id);
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
-            format!("{}[{}]", input, self.id)
+            OutputPayload::cloned(format!("{}[{}]", input, self.id))
         }
     }
 
     struct CollectorNode;
     #[async_trait]
     impl Node for CollectorNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
@@ -377,7 +357,7 @@ async fn test_concurrent_execution_tracking() {
 
     let graph = builder.build();
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", &"Concurrent".to_string());
+    runner.set_start_node("input", OutputPayload::cloned("Concurrent".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Concurrent execution should succeed");
@@ -391,21 +371,19 @@ async fn test_context_write_and_read() {
     struct WriterNode;
     #[async_trait]
     impl Node for WriterNode {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             ctx.set("key1", "value1");
             ctx.set("key2", 42);
             ctx.set("key3", vec![1, 2, 3]);
-            input
+            OutputPayload::cloned(input)
         }
     }
 
     struct ReaderNode;
     #[async_trait]
     impl Node for ReaderNode {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             let value1: Option<String> = ctx.get("key1");
             let value2: Option<i32> = ctx.get("key2");
@@ -415,7 +393,7 @@ async fn test_context_write_and_read() {
             assert_eq!(value2, Some(42));
             assert_eq!(value3, Some(vec![1, 2, 3]));
 
-            format!("Read: {}", input)
+            OutputPayload::cloned(format!("Read: {}", input))
         }
     }
 
@@ -430,7 +408,7 @@ async fn test_context_write_and_read() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("writer", &"Test".to_string());
+    runner.set_start_node("writer", OutputPayload::cloned("Test".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context read/write should succeed");
@@ -441,35 +419,32 @@ async fn test_context_across_multiple_nodes() {
     struct Node1;
     #[async_trait]
     impl Node for Node1 {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             ctx.set("node1_data", "from_node1");
             ctx.set("counter", 1);
-            input
+            OutputPayload::cloned(input)
         }
     }
 
     struct Node2;
     #[async_trait]
     impl Node for Node2 {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             let counter: Option<i32> = ctx.get("counter");
             if let Some(c) = counter {
                 ctx.set("counter", c + 1);
             }
             ctx.set("node2_data", "from_node2");
-            input
+            OutputPayload::cloned(input)
         }
     }
 
     struct Node3;
     #[async_trait]
     impl Node for Node3 {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             let node1_data: Option<String> = ctx.get("node1_data");
             let node2_data: Option<String> = ctx.get("node2_data");
@@ -479,7 +454,7 @@ async fn test_context_across_multiple_nodes() {
             assert_eq!(node2_data, Some("from_node2".to_string()));
             assert_eq!(counter, Some(2));
 
-            format!("Final: {}", input)
+            OutputPayload::cloned(format!("Final: {}", input))
         }
     }
 
@@ -496,7 +471,7 @@ async fn test_context_across_multiple_nodes() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("node1", &"Start".to_string());
+    runner.set_start_node("node1", OutputPayload::cloned("Start".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context across multiple nodes should work");
@@ -507,45 +482,41 @@ async fn test_context_with_conditional_edges() {
     struct InputNode;
     #[async_trait]
     impl Node for InputNode {
-        type Out = i32;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<i32>(&inputs);
             ctx.set("input_value", input);
-            input
+            OutputPayload::cloned(input)
         }
     }
 
     struct CheckNode;
     #[async_trait]
     impl Node for CheckNode {
-        type Out = (i32, bool);
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<i32>(&inputs);
             let stored: Option<i32> = ctx.get("input_value");
             assert_eq!(stored, Some(input));
-            (input, input % 2 == 0)
+            OutputPayload::cloned((input, input % 2 == 0))
         }
     }
 
     struct EvenNode;
     #[async_trait]
     impl Node for EvenNode {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<(i32, bool)>(&inputs);
             ctx.set("result", "even");
-            format!("Even: {}", input.0)
+            OutputPayload::cloned(format!("Even: {}", input.0))
         }
     }
 
     struct OddNode;
     #[async_trait]
     impl Node for OddNode {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<(i32, bool)>(&inputs);
             ctx.set("result", "odd");
-            format!("Odd: {}", input.0)
+            OutputPayload::cloned(format!("Odd: {}", input.0))
         }
     }
 
@@ -567,7 +538,7 @@ async fn test_context_with_conditional_edges() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", &4);
+    runner.set_start_node("input", OutputPayload::cloned(4));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context with conditional edges should work");
@@ -578,23 +549,21 @@ async fn test_context_serialization() {
     struct SerializeNode;
     #[async_trait]
     impl Node for SerializeNode {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             ctx.set("string", "hello");
             ctx.set("number", 123);
             ctx.set("float", 45.67);
             ctx.set("boolean", true);
             ctx.set("array", vec![1, 2, 3, 4, 5]);
-            input
+            OutputPayload::cloned(input)
         }
     }
 
     struct DeserializeNode;
     #[async_trait]
     impl Node for DeserializeNode {
-        type Out = String;
-        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
             let s: Option<String> = ctx.get("string");
             let n: Option<i32> = ctx.get("number");
@@ -608,7 +577,7 @@ async fn test_context_serialization() {
             assert_eq!(b, Some(true));
             assert_eq!(a, Some(vec![1, 2, 3, 4, 5]));
 
-            format!("Deserialized: {}", input)
+            OutputPayload::cloned(format!("Deserialized: {}", input))
         }
     }
 
@@ -623,7 +592,7 @@ async fn test_context_serialization() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("serialize", &"Test".to_string());
+    runner.set_start_node("serialize", OutputPayload::cloned("Test".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context serialization should work");
@@ -634,39 +603,35 @@ async fn test_diamond_graph_pattern() {
     struct StartNode;
     #[async_trait]
     impl Node for StartNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
     struct LeftNode;
     #[async_trait]
     impl Node for LeftNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("L: {}", input)
+            OutputPayload::cloned(format!("L: {}", input))
         }
     }
 
     struct RightNode;
     #[async_trait]
     impl Node for RightNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("R: {}", input)
+            OutputPayload::cloned(format!("R: {}", input))
         }
     }
 
     struct EndNode;
     #[async_trait]
     impl Node for EndNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let input = get_input::<String>(&inputs);
-            format!("E: {}", input)
+            OutputPayload::cloned(format!("E: {}", input))
         }
     }
 
@@ -686,7 +651,7 @@ async fn test_diamond_graph_pattern() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("start", &"Diamond".to_string());
+    runner.set_start_node("start", OutputPayload::cloned("Diamond".to_string()));
     runner
         .run()
         .await
@@ -698,18 +663,16 @@ async fn test_type_mismatch() {
     struct StringNode;
     #[async_trait]
     impl Node for StringNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
     struct IntNode;
     #[async_trait]
     impl Node for IntNode {
-        type Out = i32;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<i32>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<i32>(&inputs))
         }
     }
 
@@ -724,7 +687,7 @@ async fn test_type_mismatch() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("string_node", &"Test".to_string());
+    runner.set_start_node("string_node", OutputPayload::cloned("Test".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_err(), "Type mismatch should cause error");
@@ -736,18 +699,16 @@ async fn test_unit_input_allows_any() {
     struct StringNode;
     #[async_trait]
     impl Node for StringNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
-            get_input::<String>(&inputs)
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(get_input::<String>(&inputs))
         }
     }
 
     struct UnitNode;
     #[async_trait]
     impl Node for UnitNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
-            "UnitNode called".to_string()
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned("UnitNode called".to_string())
         }
     }
 
@@ -762,7 +723,7 @@ async fn test_unit_input_allows_any() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("string_node", &"Test".to_string());
+    runner.set_start_node("string_node", OutputPayload::cloned("Test".to_string()));
     let result = runner.run().await;
 
     assert!(
@@ -777,9 +738,8 @@ async fn test_no_start_nodes_hang_fix() {
     struct TestNode;
     #[async_trait]
     impl Node for TestNode {
-        type Out = ();
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
-            ()
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(())
         }
     }
 
@@ -812,24 +772,22 @@ async fn test_multi_input_merge() {
     }
     #[async_trait]
     impl Node for SourceNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
-            self.value.clone()
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+            OutputPayload::cloned(self.value.clone())
         }
     }
 
     struct MultiMergeNode;
     #[async_trait]
     impl Node for MultiMergeNode {
-        type Out = String;
-        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
             let mut parts: Vec<String> = inputs
                 .inputs
                 .values()
-                .filter_map(|any| any.as_any().downcast_ref::<String>().cloned())
+                .filter_map(|p| p.as_any().and_then(|a| a.downcast_ref::<String>()).cloned())
                 .collect();
             parts.sort(); // Ensure deterministic order
-            format!("Merged: {}", parts.join(", "))
+            OutputPayload::cloned(format!("Merged: {}", parts.join(", ")))
         }
     }
 
@@ -851,8 +809,8 @@ async fn test_multi_input_merge() {
     // Let's use a dummy start node.
 
     // Actually, set_start_node puts tasks in queue.
-    runner.set_start_node("source1", &());
-    runner.set_start_node("source2", &());
+    runner.set_start_node("source1", OutputPayload::cloned(()));
+    runner.set_start_node("source2", OutputPayload::cloned(()));
 
     let result = runner.run().await;
     assert!(result.is_ok());
@@ -868,10 +826,10 @@ async fn test_stream_node_emits_completed() {
     struct StreamNode;
     #[async_trait]
     impl Node for StreamNode {
-        type Out = ReactiveStream<String>;
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
             let data = vec!["A".to_string()];
-            ReactiveStream::from_observable(data)
+            let stream = ReactiveStream::from_observable(data);
+            OutputPayload::stream(stream.subscribe)
         }
     }
 
@@ -881,7 +839,7 @@ async fn test_stream_node_emits_completed() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("stream", &"start".to_string());
+    runner.set_start_node("stream", OutputPayload::cloned("start".to_string()));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(20);
     runner.set_event_sender(tx);
@@ -913,9 +871,8 @@ async fn test_stream_node_emits_completed() {
 #[tokio::test]
 async fn test_runner_keeps_stream_subscription_alive() {
     use crate::flow::{FlowEvent, TaskEvent};
-    use crate::{Context, NodeInputs, NodeId, SendableAny, StreamSubscriptionFn, TaskGuard};
+    use crate::{Context, NodeInputs, NodeId, OutputPayload, StreamSubscriptionFn, TaskGuard};
     use crate::observable::Subscription;
-    use std::any::Any;
     use tokio::sync::mpsc;
 
     struct AbortOnDropSubscription {
@@ -934,56 +891,16 @@ async fn test_runner_keeps_stream_subscription_alive() {
         }
     }
 
-    struct CancelableStream {
-        subscribe: StreamSubscriptionFn,
-    }
-
-    impl std::fmt::Debug for CancelableStream {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("CancelableStream").finish()
-        }
-    }
-
-    impl SendableAny for CancelableStream {
-        fn clone_box(&self) -> Box<dyn SendableAny> {
-            panic!("CancelableStream cannot be cloned. It should only be used once in the flow.");
-        }
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-        fn as_any_mut(&mut self) -> &mut dyn Any {
-            self
-        }
-        fn into_any(self: Box<Self>) -> Box<dyn Any> {
-            self
-        }
-        fn type_name(&self) -> &'static str {
-            std::any::type_name::<Self>()
-        }
-        fn is_stream(&self) -> bool {
-            true
-        }
-        fn into_stream_subscriber(
-            self: Box<Self>,
-        ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>> {
-            Ok(self.subscribe)
-        }
-    }
-
     struct CancelStreamNode;
     #[async_trait]
     impl crate::Node for CancelStreamNode {
-        type Out = CancelableStream;
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
             let subscribe: StreamSubscriptionFn =
                 Box::new(move |guard: TaskGuard, tx: mpsc::Sender<TaskEvent>, node_id: NodeId, _| {
                     let handle = tokio::spawn(async move {
                         let _guard = guard;
                         let _ = tx
-                            .send(TaskEvent::Next(
-                                node_id.clone(),
-                                Box::new("chunk".to_string()) as Box<dyn SendableAny>,
-                            ))
+                            .send(TaskEvent::Next(node_id.clone(), OutputPayload::cloned("chunk".to_string())))
                             .await;
                         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
                         let _ = tx.send(TaskEvent::Completed(node_id, None)).await;
@@ -993,7 +910,7 @@ async fn test_runner_keeps_stream_subscription_alive() {
                     Box::new(AbortOnDropSubscription { abort }) as Box<dyn Subscription>
                 });
 
-            CancelableStream { subscribe }
+            OutputPayload::stream(subscribe)
         }
     }
 
@@ -1003,7 +920,7 @@ async fn test_runner_keeps_stream_subscription_alive() {
     );
 
     let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
-    runner.set_start_node("stream", &());
+    runner.set_start_node("stream", OutputPayload::cloned(()));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(20);
     runner.set_event_sender(tx);
@@ -1040,9 +957,9 @@ async fn test_parallel_stream_nodes_all_completed_before_flow_finished() {
     struct StreamNode;
     #[async_trait]
     impl crate::Node for StreamNode {
-        type Out = ReactiveStream<String>;
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {
-            ReactiveStream::from_observable(vec!["A".to_string()])
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+            let stream = ReactiveStream::from_observable(vec!["A".to_string()]);
+            OutputPayload::stream(stream.subscribe)
         }
     }
 
@@ -1057,10 +974,10 @@ async fn test_parallel_stream_nodes_all_completed_before_flow_finished() {
     );
 
     let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
-    runner.set_start_node("s1", &());
-    runner.set_start_node("s2", &());
-    runner.set_start_node("s3", &());
-    runner.set_start_node("s4", &());
+    runner.set_start_node("s1", OutputPayload::cloned(()));
+    runner.set_start_node("s2", OutputPayload::cloned(()));
+    runner.set_start_node("s3", OutputPayload::cloned(()));
+    runner.set_start_node("s4", OutputPayload::cloned(()));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     runner.set_event_sender(tx);

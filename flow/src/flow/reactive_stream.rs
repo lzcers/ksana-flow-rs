@@ -9,8 +9,8 @@ use crate::{
         TaskGuard,
         event::TaskEvent,
         graph::{Context, NodeId},
-        sendable_any::SendableAny,
     },
+    OutputPayload,
     reactive::observable::{Observable, Observer, Subscription},
 };
 
@@ -23,7 +23,7 @@ pub struct ReactiveStream<T = ()> {
     _marker: std::marker::PhantomData<T>,
 }
 
-pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send>;
+pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<OutputPayload> + Send>;
 
 struct RunnerObserver<T> {
     tx: mpsc::Sender<TaskEvent>,
@@ -33,7 +33,7 @@ struct RunnerObserver<T> {
 }
 
 #[async_trait]
-impl<T: SendableAny + Clone, E: Send + 'static> Observer<T, E> for RunnerObserver<T> {
+impl<T: Any + Send + Clone + 'static, E: Send + 'static> Observer<T, E> for RunnerObserver<T> {
     async fn on_next(&mut self, value: T) {
         if self.accumulator.is_some() {
             self.acc_buffer.push(value.clone());
@@ -43,7 +43,10 @@ impl<T: SendableAny + Clone, E: Send + 'static> Observer<T, E> for RunnerObserve
         // 这实现了完美的异步背压
         let _ = self
             .tx
-            .send(TaskEvent::Next(self.node_id.clone(), Box::new(value)))
+            .send(TaskEvent::Next(
+                self.node_id.clone(),
+                OutputPayload::cloned(value),
+            ))
             .await;
     }
     async fn on_error(&mut self, _error: E) {
@@ -78,7 +81,7 @@ impl Subscription for EmptySubscription {
 impl<T> ReactiveStream<T> {
     pub fn from_observable<E, O>(observable: O) -> Self
     where
-        T: SendableAny + Clone + 'static,
+        T: Any + Send + Clone + 'static,
         E: Send + 'static,
         O: Observable<T, E> + Send + 'static,
     {
@@ -102,10 +105,10 @@ impl<T> ReactiveStream<T> {
 
     pub fn from_observable_with_accumulator<E, O, F>(observable: O, accumulator: F) -> Self
     where
-        T: SendableAny + Clone + 'static,
+        T: Any + Send + Clone + 'static,
         E: Send + 'static,
         O: Observable<T, E> + Send + 'static,
-        F: Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send + 'static,
+        F: Fn(Vec<T>) -> Option<OutputPayload> + Send + 'static,
     {
         Self {
             subscribe: Box::new(move |guard: TaskGuard, tx, node_id, _ctx| {
@@ -131,31 +134,5 @@ impl<T> fmt::Debug for ReactiveStream<T> {
         f.debug_struct("ReactiveStream")
             .field("type", &std::any::type_name::<T>())
             .finish()
-    }
-}
-
-impl<T: 'static + Send + Clone> SendableAny for ReactiveStream<T> {
-    fn clone_box(&self) -> Box<dyn SendableAny> {
-        panic!("ReactiveStream cannot be cloned. It should only be used once in the flow.");
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    fn into_any(self: Box<Self>) -> Box<dyn Any> {
-        self
-    }
-    fn type_name(&self) -> &'static str {
-        std::any::type_name::<Self>()
-    }
-    fn is_stream(&self) -> bool {
-        true
-    }
-    fn into_stream_subscriber(
-        self: Box<Self>,
-    ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>> {
-        Ok(self.subscribe)
     }
 }

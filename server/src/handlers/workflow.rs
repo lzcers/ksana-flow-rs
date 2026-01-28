@@ -12,7 +12,7 @@ use axum::{
     response::IntoResponse,
 };
 use flow::{
-    FlowEvent, NodeInputs, Runner, SendableAny, {ExecutionContext, NodeState},
+    FlowEvent, NodeInputs, OutputPayload, Runner, {ExecutionContext, NodeState},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -143,13 +143,13 @@ pub async fn delete_workflow(
     }
 }
 
-fn restore_value(v: Value) -> Box<dyn SendableAny> {
+fn restore_value(v: Value) -> OutputPayload {
     match v {
-        Value::Null => Box::new(()),
-        Value::Bool(b) => Box::new(b),
-        Value::String(s) => Box::new(s),
+        Value::Null => OutputPayload::cloned(()),
+        Value::Bool(b) => OutputPayload::cloned(b),
+        Value::String(s) => OutputPayload::cloned(s),
         // Keep others as Value
-        other => Box::new(other),
+        other => OutputPayload::cloned(other),
     }
 }
 
@@ -313,7 +313,7 @@ pub async fn run_workflow(
                 let default_val = if let Some(meta) = registry.get_node_metadata(&node.type_name) {
                     registry::create_default_value(&meta.inputs)
                 } else {
-                    Box::new(()) as Box<dyn SendableAny>
+                    OutputPayload::cloned(())
                 };
 
                 let mut map = HashMap::new();
@@ -510,7 +510,7 @@ mod tests {
         extract_single_output_value, reconstruct_execution_context_from_blueprint, restore_value,
     };
     use crate::state::{GraphBlueprint, Node, NodeData, Position};
-    use flow::{NodeState, SendableAny};
+    use flow::{NodeState, OutputPayload};
     use serde_json::{Value, json};
 
     #[test]
@@ -533,26 +533,28 @@ mod tests {
 
     #[test]
     fn restore_value_string_becomes_string() {
-        let any = restore_value(json!("hello"));
-        let inner: &dyn SendableAny = &*any;
-        assert_eq!(
-            inner.as_any().downcast_ref::<String>(),
-            Some(&"hello".to_string())
-        );
+        let payload = restore_value(json!("hello"));
+        let s = payload
+            .as_any()
+            .and_then(|a| a.downcast_ref::<String>())
+            .cloned();
+        assert_eq!(s, Some("hello".to_string()));
     }
 
     #[test]
     fn restore_value_null_becomes_unit() {
-        let any = restore_value(Value::Null);
-        let inner: &dyn SendableAny = &*any;
-        assert!(inner.as_any().downcast_ref::<()>().is_some());
+        let payload = restore_value(Value::Null);
+        assert!(payload.as_any().and_then(|a| a.downcast_ref::<()>()).is_some());
     }
 
     #[test]
     fn restore_value_number_kept_as_json_value() {
-        let any = restore_value(json!(123));
-        let inner: &dyn SendableAny = &*any;
-        assert_eq!(inner.as_any().downcast_ref::<Value>(), Some(&json!(123)));
+        let payload = restore_value(json!(123));
+        let v = payload
+            .as_any()
+            .and_then(|a| a.downcast_ref::<Value>())
+            .cloned();
+        assert_eq!(v, Some(json!(123)));
     }
 
     #[test]

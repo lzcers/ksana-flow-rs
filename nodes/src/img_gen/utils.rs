@@ -11,19 +11,10 @@ pub fn extract_string_input(inputs: &NodeInputs) -> String {
         .or_else(|| inputs.get::<String>("external_start"))
         .or_else(|| inputs.get::<String>("output"))
         .or_else(|| {
-            inputs.get_any().and_then(|any| {
-                let inner: &dyn flow::SendableAny = &**any;
-                if let Some(v) = inner.as_any().downcast_ref::<String>() {
-                    Some(v)
-                } else if let Some(inner_box) =
-                    inner.as_any().downcast_ref::<Box<dyn flow::SendableAny>>()
-                {
-                    let inner_inner: &dyn flow::SendableAny = &**inner_box;
-                    inner_inner.as_any().downcast_ref::<String>()
-                } else {
-                    None
-                }
-            })
+            inputs
+                .get_any()
+                .and_then(|p| p.as_any())
+                .and_then(|a| a.downcast_ref::<String>())
         })
         .cloned()
         .unwrap_or_default()
