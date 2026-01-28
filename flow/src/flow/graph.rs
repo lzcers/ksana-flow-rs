@@ -63,9 +63,8 @@ impl NodeInputs {
 #[async_trait]
 pub trait Node {
     type Out: SendableAny;
-    fn get_trigger_strategy(&self) -> TriggerStrategy {
-        TriggerStrategy::AllUpstreamReady
-    }
+    const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
+
     async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Self::Out;
 }
 
@@ -120,10 +119,11 @@ impl Context {
 #[async_trait]
 pub trait AnyNode: Any + Send + Sync {
     fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
+
     fn get_trigger_strategy(&self) -> TriggerStrategy {
         TriggerStrategy::AllUpstreamReady
     }
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     async fn run(
         &mut self,
         ctx: &Context,
@@ -136,12 +136,12 @@ impl<N: Node + Any + Send + Sync> AnyNode for N {
     fn as_any(&self) -> &dyn Any {
         self
     }
+    fn get_trigger_strategy(&self) -> TriggerStrategy {
+        N::TRIGGER_STRATEGY
+    }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
-    }
-    fn get_trigger_strategy(&self) -> TriggerStrategy {
-        self.get_trigger_strategy()
     }
     async fn run(
         &mut self,
@@ -285,6 +285,36 @@ impl Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct StrategyNode;
+
+    #[async_trait]
+    impl Node for StrategyNode {
+        type Out = ();
+        const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AnyUpstreamAvailable;
+
+        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Self::Out {}
+    }
+
+    #[test]
+    fn test_graph_add_node_reads_strategy_from_node() {
+        let mut graph = Graph::new();
+        graph.add_node("n", StrategyNode::default());
+        assert_eq!(
+            graph.get_trigger_strategy("n"),
+            TriggerStrategy::AnyUpstreamAvailable
+        );
+    }
+
+    #[test]
+    fn test_anynode_trait_object_can_read_strategy() {
+        let node: Box<dyn AnyNode> = Box::new(StrategyNode::default());
+        assert_eq!(
+            node.get_trigger_strategy(),
+            TriggerStrategy::AnyUpstreamAvailable
+        );
+    }
 
     #[test]
     fn test_edge_type_mismatch_unconditional() {
