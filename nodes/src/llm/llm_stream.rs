@@ -59,7 +59,11 @@ impl LLMStreamNode {
 
 #[async_trait]
 impl Node for LLMStreamNode {
-    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &flow::Context,
+        inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         let input = extract_input_string(&inputs);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
         let stream = self.llm.stream_prompt(&prompt).await;
@@ -71,7 +75,7 @@ impl Node for LLMStreamNode {
                 Some(OutputPayload::cloned(full_text))
             },
         );
-        OutputPayload::stream(stream.subscribe)
+        Ok(OutputPayload::stream(stream.subscribe))
     }
 }
 
@@ -125,7 +129,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let OutputPayload::Stream(subscribe) = payload else {
                 panic!("Expected stream payload");
             };
@@ -154,7 +158,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let OutputPayload::Stream(subscribe) = payload else {
                 panic!("Expected stream payload");
             };
@@ -179,7 +183,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let OutputPayload::Stream(subscribe) = payload else {
                 panic!("Expected stream payload");
             };
@@ -203,7 +207,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let OutputPayload::Stream(subscribe) = payload else {
                 panic!("Expected stream payload");
             };
@@ -251,7 +255,7 @@ mod tests {
             let mut node = LLMStreamNode::new("", "Say hello", DEEPSEEK_CHAT);
 
             let inputs = HashMap::new();
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let OutputPayload::Stream(subscribe) = payload else {
                 panic!("Expected stream payload");
             };

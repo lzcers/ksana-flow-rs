@@ -36,7 +36,11 @@ impl ReactiveSourceNode {
 
 #[async_trait]
 impl Node for ReactiveSourceNode {
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &Context,
+        _inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         let (code, start, end) = (self.code.clone(), self.start_time, self.end_time);
         let end_date = end
             .map(|d| d.date_naive())
@@ -60,6 +64,6 @@ impl Node for ReactiveSourceNode {
 
         // Convert Observable to ReactiveStream
         let stream = ReactiveStream::from_observable(filtered_data);
-        OutputPayload::stream(stream.subscribe)
+        Ok(OutputPayload::stream(stream.subscribe))
     }
 }

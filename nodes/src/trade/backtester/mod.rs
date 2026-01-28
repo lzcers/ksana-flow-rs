@@ -28,7 +28,11 @@ pub struct BacktesterOutput {
 
 #[async_trait]
 impl Node for Backtester {
-    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &flow::Context,
+        inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         let input = inputs
             .get_any()
             .and_then(|p| p.as_any())
@@ -44,6 +48,6 @@ impl Node for Backtester {
             positions: self.get_positions().clone(),
             trading_record: self.get_trading_record().clone(),
         };
-        OutputPayload::cloned(out)
+        Ok(OutputPayload::cloned(out))
     }
 }

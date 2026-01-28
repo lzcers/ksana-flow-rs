@@ -27,7 +27,11 @@ impl LLMNode {
 
 #[async_trait]
 impl Node for LLMNode {
-    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &flow::Context,
+        inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         let input = extract_input_string(&inputs);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
 
@@ -36,7 +40,7 @@ impl Node for LLMNode {
             .prompt(&prompt)
             .await
             .unwrap_or("llm request failed".to_owned());
-        OutputPayload::cloned(out)
+        Ok(OutputPayload::cloned(out))
     }
 }
 
@@ -65,7 +69,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             eprintln!("output: {:?}", output);
         });
     }
@@ -83,7 +87,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             eprintln!("output: {:?}", output);
         });
     }
@@ -107,7 +111,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned(input));
 
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             eprintln!("output: {:?}", output);
         });
     }

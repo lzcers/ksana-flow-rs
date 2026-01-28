@@ -3,6 +3,9 @@ use std::{any::Any, sync::Arc};
 use crate::StreamSubscriptionFn;
 use core::fmt;
 
+pub trait SharedAny: Any + Send + Sync {}
+impl<T: Any + Send + Sync> SharedAny for T {}
+
 pub trait CloneAny: Any + Send {
     fn clone_box(&self) -> Box<dyn CloneAny>;
     fn as_any(&self) -> &dyn Any;
@@ -23,7 +26,7 @@ impl<T: Any + Send + Clone> CloneAny for T {
 
 pub enum OutputPayload {
     Shared {
-        value: Arc<dyn Any + Send + Sync>,
+        value: Arc<dyn SharedAny>,
         type_name: &'static str,
     },
     Cloned(Box<dyn CloneAny>),

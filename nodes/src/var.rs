@@ -24,8 +24,8 @@ where
     T: Clone + Send + Sync + 'static,
     I: Send + Sync,
 {
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
-        OutputPayload::cloned(self.value.clone())
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Result<OutputPayload, String> {
+        Ok(OutputPayload::cloned(self.value.clone()))
     }
 }
 
@@ -46,7 +46,7 @@ mod tests {
 
             // 测试字符串类型
             let mut node: VarNode<String, ()> = VarNode::new("hello".to_string());
-            let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
+            let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await.unwrap();
             let s = output
                 .as_any()
                 .and_then(|a| a.downcast_ref::<String>())
@@ -56,7 +56,7 @@ mod tests {
 
             // 测试整数类型
             let mut int_node: VarNode<i32, ()> = VarNode::new(42i32);
-            let output = int_node.run(&ctx, NodeInputs::new(HashMap::new())).await;
+            let output = int_node.run(&ctx, NodeInputs::new(HashMap::new())).await.unwrap();
             let n = output
                 .as_any()
                 .and_then(|a| a.downcast_ref::<i32>())

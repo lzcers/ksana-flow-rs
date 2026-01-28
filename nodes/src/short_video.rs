@@ -73,7 +73,11 @@ impl ShortVideoScriptNode {
 
 #[async_trait]
 impl Node for ShortVideoScriptNode {
-    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &flow::Context,
+        inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         let mut all_inputs = String::new();
         for (key, value) in inputs.inputs.iter() {
             let Some(any) = value.as_any() else {
@@ -116,7 +120,7 @@ impl Node for ShortVideoScriptNode {
                 Some(OutputPayload::cloned(full_text))
             },
         );
-        OutputPayload::stream(stream.subscribe)
+        Ok(OutputPayload::stream(stream.subscribe))
     }
 }
 
@@ -167,7 +171,7 @@ mod tests {
             let mut inputs = HashMap::new();
             inputs.insert("theme".to_string(), OutputPayload::cloned(input));
 
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let OutputPayload::Stream(subscribe) = payload else {
                 panic!("Expected stream payload");
             };

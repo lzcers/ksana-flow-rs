@@ -58,11 +58,11 @@ impl EmailNotifyNode {
 
 #[async_trait]
 impl Node for EmailNotifyNode {
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Result<OutputPayload, String> {
         if let Err(e) = email_notify(&self.subject, &self.body) {
             error!("EmailNotifyNode failed to send email: {:?}", e);
         }
-        OutputPayload::cloned(())
+        Ok(OutputPayload::cloned(()))
     }
 }
 
@@ -76,7 +76,9 @@ mod tests {
     async fn test_email_notify_node() -> Result<()> {
         let mut node = EmailNotifyNode::new("Test Subject".to_string(), "Test Body".to_string());
         let ctx = Context::new();
-        node.run(&ctx, NodeInputs::new(HashMap::new())).await;
+        node.run(&ctx, NodeInputs::new(HashMap::new()))
+            .await
+            .unwrap();
         Ok(())
     }
 

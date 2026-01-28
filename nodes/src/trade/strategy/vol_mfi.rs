@@ -29,7 +29,11 @@ impl VOLMFINode {
 
 #[async_trait]
 impl Node for VOLMFINode {
-    async fn run(&mut self, _ctx: &flow::Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &flow::Context,
+        inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         let input = inputs
             .get_any()
             .and_then(|p| p.as_any())
@@ -56,7 +60,7 @@ impl Node for VOLMFINode {
             k,
             order: signal.signal_type,
         };
-        OutputPayload::cloned(out)
+        Ok(OutputPayload::cloned(out))
     }
 }
 

@@ -1,12 +1,12 @@
 use super::exec_context::{ExecutionContext, NodeState};
 use super::executor::Executor;
 use super::utils::send_flow_event;
+use crate::OutputPayload;
 use crate::TriggerStrategy;
 use crate::flow::{
     event::{FlowEvent, TaskEvent},
     graph::{Context, Graph, NodeId, NodeInputs},
 };
-use crate::OutputPayload;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -135,12 +135,7 @@ impl Runner {
         // 初始启动：将 task_queue 中的初始任务直接启动
         while let Some((node_ids, inputs)) = self.task_queue.pop_front() {
             for node_id in node_ids {
-                let mut inputs_map = HashMap::new();
-                for (k, v) in &inputs.inputs {
-                    inputs_map.insert(k.clone(), v.clone());
-                }
-
-                self.start_node(node_id, NodeInputs::new(inputs_map), task_sender.clone())
+                self.start_node(node_id, inputs.clone(), task_sender.clone())
                     .await?;
             }
         }

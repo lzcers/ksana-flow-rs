@@ -15,7 +15,7 @@ impl TextNode {
 
 #[async_trait]
 impl Node for TextNode {
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
         let input = inputs
             .get_any()
             .and_then(|p| p.as_any())
@@ -27,7 +27,7 @@ impl Node for TextNode {
         } else {
             input
         };
-        OutputPayload::cloned(output)
+        Ok(OutputPayload::cloned(output))
     }
 }
 
@@ -48,7 +48,7 @@ mod tests {
             let mut node = TextNode::new("node1".to_string(), "default text".to_string());
 
             // Test with empty input
-            let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await;
+            let output = node.run(&ctx, NodeInputs::new(HashMap::new())).await.unwrap();
             let s = output
                 .as_any()
                 .and_then(|a| a.downcast_ref::<String>())
@@ -59,7 +59,7 @@ mod tests {
             // Test with provided input
             let mut inputs = HashMap::new();
             inputs.insert("test".to_string(), OutputPayload::cloned("input text".to_string()));
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await;
+            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
             let s = output
                 .as_any()
                 .and_then(|a| a.downcast_ref::<String>())

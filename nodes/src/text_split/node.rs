@@ -16,7 +16,7 @@ impl TextSplitNode {
 
 #[async_trait]
 impl Node for TextSplitNode {
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
         let mut config = self.config.clone();
         if let Some(cfg) = inputs.get::<TextSplitConfig>("config") {
             config = cfg.clone();
@@ -40,7 +40,7 @@ impl Node for TextSplitNode {
 
         let result = split_text(&input_text, &config);
         let out = serde_json::to_value(result).unwrap_or_else(|_| Value::Null);
-        OutputPayload::cloned(out)
+        Ok(OutputPayload::cloned(out))
     }
 }
 
@@ -77,7 +77,7 @@ mod tests {
                 "external_start".to_string(),
                 OutputPayload::cloned("a\nb\nc\n".to_string()),
             );
-            let payload = node.run(&ctx, NodeInputs::new(map)).await;
+            let payload = node.run(&ctx, NodeInputs::new(map)).await.unwrap();
             let out = payload
                 .as_any()
                 .and_then(|a| a.downcast_ref::<Value>())

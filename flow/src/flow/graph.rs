@@ -45,7 +45,7 @@ impl NodeInputs {
 pub trait Node {
     const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
 
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> OutputPayload;
+    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String>;
 }
 
 pub type EdgeCondition = Box<dyn Fn(&Context, &dyn Any) -> bool + Send>;
@@ -120,7 +120,7 @@ impl<N: Node + Any + Send + Sync> AnyNode for N {
         self
     }
     async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
-        Ok(self.run(ctx, inputs).await)
+        self.run(ctx, inputs).await
     }
 }
 
@@ -262,8 +262,12 @@ mod tests {
     impl Node for StrategyNode {
         const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AnyUpstreamAvailable;
 
-        async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
-            OutputPayload::shared(())
+        async fn run(
+            &mut self,
+            _ctx: &Context,
+            _inputs: NodeInputs,
+        ) -> Result<OutputPayload, String> {
+            Ok(OutputPayload::shared(()))
         }
     }
 

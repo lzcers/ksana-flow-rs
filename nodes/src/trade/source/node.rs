@@ -70,18 +70,22 @@ impl SourceNode {
 
 #[async_trait]
 impl Node for SourceNode {
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+    async fn run(
+        &mut self,
+        _ctx: &Context,
+        _inputs: NodeInputs,
+    ) -> Result<OutputPayload, String> {
         if self.ensure_data().await.is_err() {
-            return OutputPayload::cloned(None::<K>);
+            return Ok(OutputPayload::cloned(None::<K>));
         }
 
         if let Some(ref data) = self.cached_data {
             if self.cursor < data.len() {
                 let k = data[self.cursor].clone();
                 self.cursor += 1;
-                return OutputPayload::cloned(Some(k));
+                return Ok(OutputPayload::cloned(Some(k)));
             }
         }
-        OutputPayload::cloned(None::<K>)
+        Ok(OutputPayload::cloned(None::<K>))
     }
 }

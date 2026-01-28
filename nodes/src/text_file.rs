@@ -16,24 +16,29 @@ impl TextFileNode {
 
 #[async_trait]
 impl Node for TextFileNode {
-    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> OutputPayload {
+    async fn run(&mut self, _ctx: &Context, _inputs: NodeInputs) -> Result<OutputPayload, String> {
         let config = match get_config() {
             Ok(c) => c,
-            Err(e) => return OutputPayload::cloned(format!("Error loading config: {}", e)),
+            Err(e) => return Ok(OutputPayload::cloned(format!("Error loading config: {}", e))),
         };
 
         let conn = match Connection::open(&config.source.data_db_uri) {
             Ok(c) => c,
-            Err(e) => return OutputPayload::cloned(format!("Error opening DB: {}", e)),
+            Err(e) => return Ok(OutputPayload::cloned(format!("Error opening DB: {}", e))),
         };
 
         let mut stmt = match conn.prepare("SELECT content FROM uploaded_files WHERE id = ?1") {
             Ok(s) => s,
-            Err(e) => return OutputPayload::cloned(format!("Error preparing statement: {}", e)),
+            Err(e) => {
+                return Ok(OutputPayload::cloned(format!(
+                    "Error preparing statement: {}",
+                    e
+                )))
+            }
         };
 
         let content: Result<String, _> = stmt.query_row(params![self.file_id], |row| row.get(0));
 
-        OutputPayload::cloned(content.expect("Error reading file content"))
+        Ok(OutputPayload::cloned(content.expect("Error reading file content")))
     }
 }

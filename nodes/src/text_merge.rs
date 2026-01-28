@@ -84,7 +84,7 @@ impl TextMergeNode {
 
 #[async_trait]
 impl Node for TextMergeNode {
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> OutputPayload {
+    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
         fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
             loop {
                 let Some(p) = any.downcast_ref::<OutputPayload>() else {
@@ -123,7 +123,7 @@ impl Node for TextMergeNode {
             .iter()
             .filter_map(|(_, any)| extract_text(*any))
             .collect();
-        OutputPayload::cloned(parts.join(&self.separator))
+        Ok(OutputPayload::cloned(parts.join(&self.separator)))
     }
 }
 
@@ -160,7 +160,7 @@ mod tests {
             let mut node = TextMergeNode::new(None);
 
             let inputs = create_inputs(vec![("a", "Hello"), ("b", "World")]);
-            let output = extract_string(node.run(&ctx, inputs).await);
+            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
 
             assert_eq!(output, "HelloWorld");
         });
@@ -176,7 +176,7 @@ mod tests {
             // Intentionally unordered in vector, but NodeInputs is HashMap
             // The node should sort by key "a", "b", "c"
             let inputs = create_inputs(vec![("b", "is"), ("a", "This"), ("c", "test")]);
-            let output = extract_string(node.run(&ctx, inputs).await);
+            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
 
             assert_eq!(output, "This, is, test");
         });
@@ -204,7 +204,7 @@ mod tests {
             );
             let inputs = NodeInputs::new(inputs_map);
 
-            let output = extract_string(node.run(&ctx, inputs).await);
+            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
 
             assert_eq!(output, "Hello World");
         });
@@ -226,7 +226,9 @@ mod tests {
                 OutputPayload::cloned("World".to_string()),
             );
 
-            let output = extract_string(node.run(&ctx, NodeInputs::new(inputs_map)).await);
+            let output = extract_string(
+                node.run(&ctx, NodeInputs::new(inputs_map)).await.unwrap(),
+            );
             assert_eq!(output, "Hello World");
         });
     }
@@ -248,7 +250,9 @@ mod tests {
                 OutputPayload::cloned(json!({ "output": "World" })),
             );
 
-            let output = extract_string(node.run(&ctx, NodeInputs::new(inputs_map)).await);
+            let output = extract_string(
+                node.run(&ctx, NodeInputs::new(inputs_map)).await.unwrap(),
+            );
             assert_eq!(output, "Hello World");
         });
     }
@@ -261,7 +265,7 @@ mod tests {
             let mut node = TextMergeNode::new(Some("\\n".to_string()));
 
             let inputs = create_inputs(vec![("a", "Hello"), ("b", "World")]);
-            let output = extract_string(node.run(&ctx, inputs).await);
+            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
 
             assert_eq!(output, "Hello\nWorld");
         });
