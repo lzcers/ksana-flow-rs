@@ -1,6 +1,9 @@
 use crate::flow::reactive_stream::StreamSubscriptionFn;
 use serde_json::{Value, json};
-use std::any::Any;
+use std::{
+    any::Any,
+    sync::{Arc, Mutex},
+};
 
 pub trait SendableAny: Any + Send {
     fn clone_box(&self) -> Box<dyn SendableAny>;
@@ -44,5 +47,54 @@ impl<T: Any + Send + Clone> SendableAny for T {
 impl Clone for Box<dyn SendableAny> {
     fn clone(&self) -> Self {
         self.as_ref().clone_box()
+    }
+}
+
+pub struct StreamAny {
+    inner: Arc<Mutex<Option<StreamSubscriptionFn>>>,
+}
+
+impl StreamAny {
+    pub fn new(subscribe: StreamSubscriptionFn) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Some(subscribe))),
+        }
+    }
+}
+
+impl SendableAny for StreamAny {
+    fn clone_box(&self) -> Box<dyn SendableAny> {
+        Box::new(Self {
+            inner: self.inner.clone(),
+        })
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+    fn type_name(&self) -> &'static str {
+        "StreamAny"
+    }
+    fn is_stream(&self) -> bool {
+        true
+    }
+    fn into_stream_subscriber(
+        self: Box<Self>,
+    ) -> Result<StreamSubscriptionFn, Box<dyn SendableAny>> {
+        let subscribe = {
+            let Ok(mut guard) = self.inner.lock() else {
+                return Err(self);
+            };
+            guard.take()
+        };
+        match subscribe {
+            Some(subscribe) => Ok(subscribe),
+            None => Err(self),
+        }
     }
 }

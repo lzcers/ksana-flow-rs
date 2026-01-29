@@ -4,40 +4,50 @@ use serde_json::Value;
 use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
-use super::output_payload::OutputPayload;
+use crate::SendableAny;
 
 pub type NodeId = String;
 
 #[derive(Clone)]
 pub struct NodeInputs {
-    pub inputs: HashMap<NodeId, OutputPayload>,
+    pub inputs: HashMap<NodeId, Box<dyn SendableAny>>,
 }
 
 impl NodeInputs {
-    pub fn new(inputs: HashMap<NodeId, OutputPayload>) -> Self {
+    fn unwrap_any<'a>(mut any: &'a dyn Any) -> &'a dyn Any {
+        loop {
+            let Some(inner) = any.downcast_ref::<Box<dyn SendableAny>>() else {
+                return any;
+            };
+            any = inner.as_ref().as_any();
+        }
+    }
+
+    pub fn new(inputs: HashMap<NodeId, Box<dyn SendableAny>>) -> Self {
         Self { inputs }
     }
 
     pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
         self.inputs
             .get(key)
-            .and_then(|p| p.as_any())
-            .and_then(|any| any.downcast_ref::<T>())
+            .and_then(|p| Self::unwrap_any(p.as_any()).downcast_ref::<T>())
     }
 
-    pub fn get_any(&self) -> Option<&OutputPayload> {
-        self.inputs.values().next()
+    pub fn get_any(&self) -> Option<&dyn Any> {
+        self.inputs
+            .values()
+            .next()
+            .map(|p| Self::unwrap_any(p.as_any()))
     }
 
-    pub fn get_payload(&self, key: &str) -> Option<&OutputPayload> {
+    pub fn get_payload(&self, key: &str) -> Option<&Box<dyn SendableAny>> {
         self.inputs.get(key)
     }
 
     pub fn iter_any(&self) -> impl Iterator<Item = (&NodeId, &dyn Any)> + '_ {
-        self.inputs.iter().filter_map(|(k, v)| {
-            let any = v.as_any()?;
-            Some((k, any))
-        })
+        self.inputs
+            .iter()
+            .map(|(k, v)| (k, Self::unwrap_any(v.as_any())))
     }
 }
 
@@ -45,7 +55,11 @@ impl NodeInputs {
 pub trait Node {
     const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
 
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String>;
+    async fn run(
+        &mut self,
+        ctx: &Context,
+        inputs: NodeInputs,
+    ) -> Result<Box<dyn SendableAny>, String>;
 }
 
 pub type EdgeCondition = Box<dyn Fn(&Context, &dyn Any) -> bool + Send>;
@@ -104,7 +118,11 @@ pub trait AnyNode: Any + Send + Sync {
         TriggerStrategy::AllUpstreamReady
     }
     fn as_any_mut(&mut self) -> &mut dyn Any;
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String>;
+    async fn run(
+        &mut self,
+        ctx: &Context,
+        inputs: NodeInputs,
+    ) -> Result<Box<dyn SendableAny>, String>;
 }
 
 #[async_trait]
@@ -119,7 +137,11 @@ impl<N: Node + Any + Send + Sync> AnyNode for N {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
-    async fn run(&mut self, ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
+    async fn run(
+        &mut self,
+        ctx: &Context,
+        inputs: NodeInputs,
+    ) -> Result<Box<dyn SendableAny>, String> {
         self.run(ctx, inputs).await
     }
 }
@@ -266,8 +288,8 @@ mod tests {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::shared(()))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(()))
         }
     }
 

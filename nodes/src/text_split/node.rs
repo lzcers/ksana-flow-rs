@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, OutputPayload};
+use flow::{Context, Node, NodeInputs, SendableAny};
 use serde_json::Value;
 
 use crate::text_split::{split_text, TextSplitConfig};
@@ -16,7 +16,11 @@ impl TextSplitNode {
 
 #[async_trait]
 impl Node for TextSplitNode {
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
+    async fn run(
+        &mut self,
+        _ctx: &Context,
+        inputs: NodeInputs,
+    ) -> Result<Box<dyn SendableAny>, String> {
         let mut config = self.config.clone();
         if let Some(cfg) = inputs.get::<TextSplitConfig>("config") {
             config = cfg.clone();
@@ -40,7 +44,7 @@ impl Node for TextSplitNode {
 
         let result = split_text(&input_text, &config);
         let out = serde_json::to_value(result).unwrap_or_else(|_| Value::Null);
-        Ok(OutputPayload::cloned(out))
+        Ok(Box::new(out))
     }
 }
 
@@ -48,7 +52,6 @@ impl Node for TextSplitNode {
 mod tests {
     use super::*;
     use crate::text_split::{LineNumberInjectionConfig, TextSplitMode};
-    use flow::OutputPayload;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -72,17 +75,24 @@ mod tests {
             };
             let mut node = TextSplitNode::new(config);
 
-            let mut map: HashMap<String, OutputPayload> = HashMap::new();
-            map.insert(
-                "external_start".to_string(),
-                OutputPayload::cloned("a\nb\nc\n".to_string()),
-            );
+            let mut map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
+            map.insert("external_start".to_string(), Box::new("a\nb\nc\n".to_string()));
             let payload = node.run(&ctx, NodeInputs::new(map)).await.unwrap();
-            let out = payload
-                .as_any()
-                .and_then(|a| a.downcast_ref::<Value>())
-                .cloned()
-                .unwrap_or(Value::Null);
+            let out = {
+                fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
+                    loop {
+                        let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>() else {
+                            return any;
+                        };
+                        any = inner.as_ref().as_any();
+                    }
+                }
+
+                unwrap_any(payload.as_any())
+                    .downcast_ref::<Value>()
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            };
 
             let segments = out
                 .get("segments")

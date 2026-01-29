@@ -1,5 +1,5 @@
 use chrono::{Local, NaiveDateTime};
-use flow::{AnyNode, OutputPayload};
+use flow::{AnyNode, SendableAny};
 use nodes::{
     EmailNotifyNode, ImgGenNode, ShortVideoScriptNode, TextFileNode, TextMergeNode, TextNode,
     TimerNode, create_llm_any_node,
@@ -78,15 +78,15 @@ impl Default for NodeRegistry {
     }
 }
 
-pub fn create_default_value(inputs: &[InputType]) -> OutputPayload {
+pub fn create_default_value(inputs: &[InputType]) -> Box<dyn SendableAny> {
     if inputs.is_empty() {
-        return OutputPayload::cloned(());
+        return Box::new(());
     }
     match inputs[0] {
-        InputType::String => OutputPayload::cloned("".to_string()),
-        InputType::None => OutputPayload::cloned(()),
-        InputType::Number => OutputPayload::cloned(0.0),
-        InputType::Boolean => OutputPayload::cloned(false),
+        InputType::String => Box::new("".to_string()),
+        InputType::None => Box::new(()),
+        InputType::Number => Box::new(0.0),
+        InputType::Boolean => Box::new(false),
     }
 }
 

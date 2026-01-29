@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
 use super::task_guard::TaskTracker;
 use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard};
-use crate::OutputPayload;
+use crate::SendableAny;
 use crate::observable::Subscription;
 use dashmap::DashMap;
 
@@ -20,7 +20,7 @@ pub enum NodeState {
 // 存储所有节点的执行状态，为调度器提供调度必要信息
 pub struct ExecutionContext {
     node_states: DashMap<NodeId, NodeState>,
-    node_outputs: DashMap<NodeId, OutputPayload>,
+    node_outputs: Mutex<HashMap<NodeId, Box<dyn SendableAny>>>,
     stream_subscriptions: DashMap<NodeId, Box<dyn Subscription>>,
     tracker: Arc<TaskTracker>,
 }
@@ -29,7 +29,7 @@ impl ExecutionContext {
     pub fn new() -> Self {
         Self {
             node_states: DashMap::new(),
-            node_outputs: DashMap::new(),
+            node_outputs: Mutex::new(HashMap::new()),
             stream_subscriptions: DashMap::new(),
             // 任务跟踪器
             tracker: Arc::new(TaskTracker::new()),
@@ -53,12 +53,17 @@ impl ExecutionContext {
         self.node_states.get(node_id).map(|s| *s)
     }
 
-    pub fn set_output(&self, node_id: NodeId, output: OutputPayload) {
-        self.node_outputs.insert(node_id, output);
+    pub fn set_output(&self, node_id: NodeId, output: Box<dyn SendableAny>) {
+        if let Ok(mut map) = self.node_outputs.lock() {
+            map.insert(node_id, output);
+        }
     }
 
-    pub fn get_output(&self, node_id: &str) -> Option<OutputPayload> {
-        self.node_outputs.get(node_id).map(|v| v.clone())
+    pub fn get_output(&self, node_id: &str) -> Option<Box<dyn SendableAny>> {
+        self.node_outputs
+            .lock()
+            .ok()
+            .and_then(|map| map.get(node_id).cloned())
     }
 
     pub fn set_stream_subscription(&self, node_id: NodeId, sub: Box<dyn Subscription>) {
@@ -79,46 +84,27 @@ mod tests {
     };
 
     #[test]
-    fn exec_ctx_arc_output_is_shared_by_handle_clone() {
-        let exec_ctx = ExecutionContext::new();
-        exec_ctx.set_output("n1".to_string(), OutputPayload::shared(vec![1, 2, 3]));
-
-        let out1 = exec_ctx.get_output("n1").unwrap();
-        let out2 = exec_ctx.get_output("n1").unwrap();
-
-        match (out1, out2) {
-            (
-                OutputPayload::Shared { value: a1, .. },
-                OutputPayload::Shared { value: a2, .. },
-            ) => {
-                assert!(Arc::ptr_eq(&a1, &a2));
-            }
-            _ => panic!("Expected OutputPayload::Shared"),
-        }
-    }
-
-    struct CloneCounted {
+    fn exec_ctx_output_is_cloned_on_get() {
+        struct CloneCounted {
         clones: Arc<AtomicUsize>,
         value: usize,
-    }
+        }
 
-    impl Clone for CloneCounted {
-        fn clone(&self) -> Self {
-            self.clones.fetch_add(1, Ordering::SeqCst);
-            Self {
-                clones: self.clones.clone(),
-                value: self.value,
+        impl Clone for CloneCounted {
+            fn clone(&self) -> Self {
+                self.clones.fetch_add(1, Ordering::SeqCst);
+                Self {
+                    clones: self.clones.clone(),
+                    value: self.value,
+                }
             }
         }
-    }
 
-    #[test]
-    fn exec_ctx_clone_only_output_is_cloned_on_get() {
         let exec_ctx = ExecutionContext::new();
         let clones = Arc::new(AtomicUsize::new(0));
         exec_ctx.set_output(
             "n1".to_string(),
-            OutputPayload::cloned(CloneCounted {
+            Box::new(CloneCounted {
                 clones: clones.clone(),
                 value: 42,
             }),

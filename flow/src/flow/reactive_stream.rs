@@ -10,7 +10,7 @@ use crate::{
         event::TaskEvent,
         graph::{Context, NodeId},
     },
-    OutputPayload,
+    SendableAny,
     reactive::observable::{Observable, Observer, Subscription},
 };
 
@@ -23,7 +23,7 @@ pub struct ReactiveStream<T = ()> {
     _marker: std::marker::PhantomData<T>,
 }
 
-pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<OutputPayload> + Send>;
+pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send>;
 
 struct RunnerObserver<T> {
     tx: mpsc::Sender<TaskEvent>,
@@ -45,7 +45,7 @@ impl<T: Any + Send + Clone + 'static, E: Send + 'static> Observer<T, E> for Runn
             .tx
             .send(TaskEvent::Next(
                 self.node_id.clone(),
-                OutputPayload::cloned(value),
+                Box::new(value),
             ))
             .await;
     }
@@ -108,7 +108,7 @@ impl<T> ReactiveStream<T> {
         T: Any + Send + Clone + 'static,
         E: Send + 'static,
         O: Observable<T, E> + Send + 'static,
-        F: Fn(Vec<T>) -> Option<OutputPayload> + Send + 'static,
+        F: Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send + 'static,
     {
         Self {
             subscribe: Box::new(move |guard: TaskGuard, tx, node_id, _ctx| {

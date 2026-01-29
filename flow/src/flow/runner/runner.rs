@@ -1,7 +1,7 @@
 use super::exec_context::{ExecutionContext, NodeState};
 use super::executor::Executor;
 use super::utils::send_flow_event;
-use crate::OutputPayload;
+use crate::SendableAny;
 use crate::TriggerStrategy;
 use crate::flow::{
     event::{FlowEvent, TaskEvent},
@@ -97,7 +97,7 @@ impl Runner {
         self.event_sender = Some(sender);
     }
 
-    pub fn set_start_node(&mut self, node_id: &str, input: OutputPayload) {
+    pub fn set_start_node(&mut self, node_id: &str, input: Box<dyn SendableAny>) {
         let mut inputs = HashMap::new();
         inputs.insert("external_start".to_owned(), input);
 
@@ -295,7 +295,7 @@ impl Runner {
     async fn trigger_downstream(
         &mut self,
         from_node_id: String,
-        output: OutputPayload,
+        output: Box<dyn SendableAny>,
         tx: mpsc::Sender<TaskEvent>,
     ) -> Result<(), String> {
         // 找到所有满足条件的下游节点
@@ -311,17 +311,13 @@ impl Runner {
     fn find_next_nodes(
         &self,
         from_node_id: &str,
-        output: &OutputPayload,
+        output: &Box<dyn SendableAny>,
     ) -> Result<Vec<String>, String> {
         let mut next_nodes = vec![];
         if let Some(edges) = self.graph.edges.get(from_node_id) {
             trace!(from = %from_node_id, count = edges.len(), "Found outgoing edges");
             for edge in edges.iter() {
-                // Pass the inner value as &dyn Any
-                let Some(any) = output.as_any() else {
-                    continue;
-                };
-                let passes = edge.check_condition(&self.ctx, any);
+                let passes = edge.check_condition(&self.ctx, output.as_any());
                 trace!(
                     from = %edge.from(),
                     to = %edge.to(),

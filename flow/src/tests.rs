@@ -3,13 +3,20 @@ use crate::flow::{GraphBuilder, Runner};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use crate::OutputPayload;
+use crate::{SendableAny, StreamAny};
 
 fn get_input<T: 'static + Clone>(inputs: &NodeInputs) -> T {
+    fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
+        loop {
+            let Some(inner) = any.downcast_ref::<Box<dyn SendableAny>>() else {
+                return any;
+            };
+            any = inner.as_ref().as_any();
+        }
+    }
+
     for payload in inputs.inputs.values() {
-        let Some(any) = payload.as_any() else {
-            continue;
-        };
+        let any = unwrap_any(payload.as_any());
         if let Some(v) = any.downcast_ref::<T>() {
             return v.clone();
         }
@@ -26,8 +33,8 @@ async fn test_complex_graph_connections() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -47,9 +54,9 @@ async fn test_complex_graph_connections() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("{}[{}]", input, self.branch_id)))
+            Ok(Box::new(format!("{}[{}]", input, self.branch_id)))
         }
     }
 
@@ -60,9 +67,9 @@ async fn test_complex_graph_connections() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("Merged: {}", input)))
+            Ok(Box::new(format!("Merged: {}", input)))
         }
     }
 
@@ -73,8 +80,8 @@ async fn test_complex_graph_connections() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -101,7 +108,7 @@ async fn test_complex_graph_connections() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", OutputPayload::cloned("Test".to_string()));
+    runner.set_start_node("input", Box::new("Test".to_string()));
     runner
         .run()
         .await
@@ -117,8 +124,8 @@ async fn test_build_flow_macro() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -135,7 +142,7 @@ async fn test_build_flow_macro() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("node1", OutputPayload::cloned("Start".to_string()));
+    runner.set_start_node("node1", Box::new("Start".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok());
@@ -151,7 +158,7 @@ async fn test_build_flow_macro() {
         ]
     );
     let (mut runner_cond, _handle) = Runner::new(graph_cond, None);
-    runner_cond.set_start_node("node1", OutputPayload::cloned("Start".to_string()));
+    runner_cond.set_start_node("node1", Box::new("Start".to_string()));
     let result_cond = runner_cond.run().await;
     assert!(result_cond.is_ok());
 }
@@ -165,8 +172,8 @@ async fn test_conditional_branching() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<i32>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<i32>(&inputs)))
         }
     }
 
@@ -177,9 +184,9 @@ async fn test_conditional_branching() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<i32>(&inputs);
-            Ok(OutputPayload::cloned((input, input > 0)))
+            Ok(Box::new((input, input > 0)))
         }
     }
 
@@ -190,9 +197,9 @@ async fn test_conditional_branching() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<(i32, bool)>(&inputs);
-            Ok(OutputPayload::cloned(format!("Positive: {}", input.0)))
+            Ok(Box::new(format!("Positive: {}", input.0)))
         }
     }
 
@@ -203,9 +210,9 @@ async fn test_conditional_branching() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<(i32, bool)>(&inputs);
-            Ok(OutputPayload::cloned(format!("Negative: {}", input.0)))
+            Ok(Box::new(format!("Negative: {}", input.0)))
         }
     }
 
@@ -227,7 +234,7 @@ async fn test_conditional_branching() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", OutputPayload::cloned(42));
+    runner.set_start_node("input", Box::new(42));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Conditional branching should succeed");
@@ -249,9 +256,9 @@ async fn test_multi_level_graph() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("L{}: {}", self.level, input)))
+            Ok(Box::new(format!("L{}: {}", self.level, input)))
         }
     }
 
@@ -281,7 +288,7 @@ async fn test_multi_level_graph() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("l1_1", OutputPayload::cloned("Start".to_string()));
+    runner.set_start_node("l1_1", Box::new("Start".to_string()));
     let result = runner.run().await;
 
     assert!(
@@ -306,9 +313,9 @@ async fn test_large_concurrent_nodes() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("{}[Node{}]", input, self.id)))
+            Ok(Box::new(format!("{}[Node{}]", input, self.id)))
         }
     }
 
@@ -319,9 +326,9 @@ async fn test_large_concurrent_nodes() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("Aggregated: {}", input)))
+            Ok(Box::new(format!("Aggregated: {}", input)))
         }
     }
 
@@ -340,7 +347,7 @@ async fn test_large_concurrent_nodes() {
 
     let graph = builder.build();
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", OutputPayload::cloned("Data".to_string()));
+    runner.set_start_node("input", Box::new("Data".to_string()));
     let result = runner.run().await;
 
     assert!(
@@ -369,14 +376,14 @@ async fn test_concurrent_execution_tracking() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             {
                 let mut log = self.execution_log.lock().unwrap();
                 log.push(self.id);
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
-            Ok(OutputPayload::cloned(format!("{}[{}]", input, self.id)))
+            Ok(Box::new(format!("{}[{}]", input, self.id)))
         }
     }
 
@@ -387,8 +394,8 @@ async fn test_concurrent_execution_tracking() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -413,7 +420,7 @@ async fn test_concurrent_execution_tracking() {
 
     let graph = builder.build();
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", OutputPayload::cloned("Concurrent".to_string()));
+    runner.set_start_node("input", Box::new("Concurrent".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Concurrent execution should succeed");
@@ -431,12 +438,12 @@ async fn test_context_write_and_read() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             ctx.set("key1", "value1");
             ctx.set("key2", 42);
             ctx.set("key3", vec![1, 2, 3]);
-            Ok(OutputPayload::cloned(input))
+            Ok(Box::new(input))
         }
     }
 
@@ -447,7 +454,7 @@ async fn test_context_write_and_read() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             let value1: Option<String> = ctx.get("key1");
             let value2: Option<i32> = ctx.get("key2");
@@ -457,7 +464,7 @@ async fn test_context_write_and_read() {
             assert_eq!(value2, Some(42));
             assert_eq!(value3, Some(vec![1, 2, 3]));
 
-            Ok(OutputPayload::cloned(format!("Read: {}", input)))
+            Ok(Box::new(format!("Read: {}", input)))
         }
     }
 
@@ -472,7 +479,7 @@ async fn test_context_write_and_read() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("writer", OutputPayload::cloned("Test".to_string()));
+    runner.set_start_node("writer", Box::new("Test".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context read/write should succeed");
@@ -487,11 +494,11 @@ async fn test_context_across_multiple_nodes() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             ctx.set("node1_data", "from_node1");
             ctx.set("counter", 1);
-            Ok(OutputPayload::cloned(input))
+            Ok(Box::new(input))
         }
     }
 
@@ -502,14 +509,14 @@ async fn test_context_across_multiple_nodes() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             let counter: Option<i32> = ctx.get("counter");
             if let Some(c) = counter {
                 ctx.set("counter", c + 1);
             }
             ctx.set("node2_data", "from_node2");
-            Ok(OutputPayload::cloned(input))
+            Ok(Box::new(input))
         }
     }
 
@@ -520,7 +527,7 @@ async fn test_context_across_multiple_nodes() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             let node1_data: Option<String> = ctx.get("node1_data");
             let node2_data: Option<String> = ctx.get("node2_data");
@@ -530,7 +537,7 @@ async fn test_context_across_multiple_nodes() {
             assert_eq!(node2_data, Some("from_node2".to_string()));
             assert_eq!(counter, Some(2));
 
-            Ok(OutputPayload::cloned(format!("Final: {}", input)))
+            Ok(Box::new(format!("Final: {}", input)))
         }
     }
 
@@ -547,7 +554,7 @@ async fn test_context_across_multiple_nodes() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("node1", OutputPayload::cloned("Start".to_string()));
+    runner.set_start_node("node1", Box::new("Start".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context across multiple nodes should work");
@@ -562,10 +569,10 @@ async fn test_context_with_conditional_edges() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<i32>(&inputs);
             ctx.set("input_value", input);
-            Ok(OutputPayload::cloned(input))
+            Ok(Box::new(input))
         }
     }
 
@@ -576,11 +583,11 @@ async fn test_context_with_conditional_edges() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<i32>(&inputs);
             let stored: Option<i32> = ctx.get("input_value");
             assert_eq!(stored, Some(input));
-            Ok(OutputPayload::cloned((input, input % 2 == 0)))
+            Ok(Box::new((input, input % 2 == 0)))
         }
     }
 
@@ -591,10 +598,10 @@ async fn test_context_with_conditional_edges() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<(i32, bool)>(&inputs);
             ctx.set("result", "even");
-            Ok(OutputPayload::cloned(format!("Even: {}", input.0)))
+            Ok(Box::new(format!("Even: {}", input.0)))
         }
     }
 
@@ -605,10 +612,10 @@ async fn test_context_with_conditional_edges() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<(i32, bool)>(&inputs);
             ctx.set("result", "odd");
-            Ok(OutputPayload::cloned(format!("Odd: {}", input.0)))
+            Ok(Box::new(format!("Odd: {}", input.0)))
         }
     }
 
@@ -630,7 +637,7 @@ async fn test_context_with_conditional_edges() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", OutputPayload::cloned(4));
+    runner.set_start_node("input", Box::new(4));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context with conditional edges should work");
@@ -645,14 +652,14 @@ async fn test_context_serialization() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             ctx.set("string", "hello");
             ctx.set("number", 123);
             ctx.set("float", 45.67);
             ctx.set("boolean", true);
             ctx.set("array", vec![1, 2, 3, 4, 5]);
-            Ok(OutputPayload::cloned(input))
+            Ok(Box::new(input))
         }
     }
 
@@ -663,7 +670,7 @@ async fn test_context_serialization() {
             &mut self,
             ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
             let s: Option<String> = ctx.get("string");
             let n: Option<i32> = ctx.get("number");
@@ -677,7 +684,7 @@ async fn test_context_serialization() {
             assert_eq!(b, Some(true));
             assert_eq!(a, Some(vec![1, 2, 3, 4, 5]));
 
-            Ok(OutputPayload::cloned(format!("Deserialized: {}", input)))
+            Ok(Box::new(format!("Deserialized: {}", input)))
         }
     }
 
@@ -692,7 +699,7 @@ async fn test_context_serialization() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("serialize", OutputPayload::cloned("Test".to_string()));
+    runner.set_start_node("serialize", Box::new("Test".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_ok(), "Context serialization should work");
@@ -707,8 +714,8 @@ async fn test_diamond_graph_pattern() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -719,9 +726,9 @@ async fn test_diamond_graph_pattern() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("L: {}", input)))
+            Ok(Box::new(format!("L: {}", input)))
         }
     }
 
@@ -732,9 +739,9 @@ async fn test_diamond_graph_pattern() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("R: {}", input)))
+            Ok(Box::new(format!("R: {}", input)))
         }
     }
 
@@ -745,9 +752,9 @@ async fn test_diamond_graph_pattern() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let input = get_input::<String>(&inputs);
-            Ok(OutputPayload::cloned(format!("E: {}", input)))
+            Ok(Box::new(format!("E: {}", input)))
         }
     }
 
@@ -767,7 +774,7 @@ async fn test_diamond_graph_pattern() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("start", OutputPayload::cloned("Diamond".to_string()));
+    runner.set_start_node("start", Box::new("Diamond".to_string()));
     runner
         .run()
         .await
@@ -783,8 +790,8 @@ async fn test_type_mismatch() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -795,8 +802,8 @@ async fn test_type_mismatch() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<i32>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<i32>(&inputs)))
         }
     }
 
@@ -811,7 +818,7 @@ async fn test_type_mismatch() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("string_node", OutputPayload::cloned("Test".to_string()));
+    runner.set_start_node("string_node", Box::new("Test".to_string()));
     let result = runner.run().await;
 
     assert!(result.is_err(), "Type mismatch should cause error");
@@ -827,8 +834,8 @@ async fn test_unit_input_allows_any() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(get_input::<String>(&inputs)))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(get_input::<String>(&inputs)))
         }
     }
 
@@ -839,8 +846,8 @@ async fn test_unit_input_allows_any() {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned("UnitNode called".to_string()))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new("UnitNode called".to_string()))
         }
     }
 
@@ -855,7 +862,7 @@ async fn test_unit_input_allows_any() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("string_node", OutputPayload::cloned("Test".to_string()));
+    runner.set_start_node("string_node", Box::new("Test".to_string()));
     let result = runner.run().await;
 
     assert!(
@@ -874,8 +881,8 @@ async fn test_no_start_nodes_hang_fix() {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(()))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(()))
         }
     }
 
@@ -912,8 +919,8 @@ async fn test_multi_input_merge() {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
-            Ok(OutputPayload::cloned(self.value.clone()))
+        ) -> Result<Box<dyn SendableAny>, String> {
+            Ok(Box::new(self.value.clone()))
         }
     }
 
@@ -924,14 +931,14 @@ async fn test_multi_input_merge() {
             &mut self,
             _ctx: &Context,
             inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let mut parts: Vec<String> = inputs
                 .inputs
                 .values()
-                .filter_map(|p| p.as_any().and_then(|a| a.downcast_ref::<String>()).cloned())
+                .filter_map(|p| p.as_any().downcast_ref::<String>().cloned())
                 .collect();
             parts.sort(); // Ensure deterministic order
-            Ok(OutputPayload::cloned(format!("Merged: {}", parts.join(", "))))
+            Ok(Box::new(format!("Merged: {}", parts.join(", "))))
         }
     }
 
@@ -953,8 +960,8 @@ async fn test_multi_input_merge() {
     // Let's use a dummy start node.
 
     // Actually, set_start_node puts tasks in queue.
-    runner.set_start_node("source1", OutputPayload::cloned(()));
-    runner.set_start_node("source2", OutputPayload::cloned(()));
+    runner.set_start_node("source1", Box::new(()));
+    runner.set_start_node("source2", Box::new(()));
 
     let result = runner.run().await;
     assert!(result.is_ok());
@@ -974,10 +981,10 @@ async fn test_stream_node_emits_completed() {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let data = vec!["A".to_string()];
             let stream = ReactiveStream::from_observable(data);
-            Ok(OutputPayload::stream(stream.subscribe))
+            Ok(Box::new(StreamAny::new(stream.subscribe)))
         }
     }
 
@@ -987,7 +994,7 @@ async fn test_stream_node_emits_completed() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("stream", OutputPayload::cloned("start".to_string()));
+    runner.set_start_node("stream", Box::new("start".to_string()));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(20);
     runner.set_event_sender(tx);
@@ -1019,7 +1026,7 @@ async fn test_stream_node_emits_completed() {
 #[tokio::test]
 async fn test_runner_keeps_stream_subscription_alive() {
     use crate::flow::{FlowEvent, TaskEvent};
-    use crate::{Context, NodeInputs, NodeId, OutputPayload, StreamSubscriptionFn, TaskGuard};
+    use crate::{Context, NodeInputs, NodeId, SendableAny, StreamAny, StreamSubscriptionFn, TaskGuard};
     use crate::observable::Subscription;
     use tokio::sync::mpsc;
 
@@ -1046,13 +1053,13 @@ async fn test_runner_keeps_stream_subscription_alive() {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let subscribe: StreamSubscriptionFn =
                 Box::new(move |guard: TaskGuard, tx: mpsc::Sender<TaskEvent>, node_id: NodeId, _| {
                     let handle = tokio::spawn(async move {
                         let _guard = guard;
                         let _ = tx
-                            .send(TaskEvent::Next(node_id.clone(), OutputPayload::cloned("chunk".to_string())))
+                            .send(TaskEvent::Next(node_id.clone(), Box::new("chunk".to_string())))
                             .await;
                         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
                         let _ = tx.send(TaskEvent::Completed(node_id, None)).await;
@@ -1062,7 +1069,7 @@ async fn test_runner_keeps_stream_subscription_alive() {
                     Box::new(AbortOnDropSubscription { abort }) as Box<dyn Subscription>
                 });
 
-            Ok(OutputPayload::stream(subscribe))
+            Ok(Box::new(StreamAny::new(subscribe)))
         }
     }
 
@@ -1072,7 +1079,7 @@ async fn test_runner_keeps_stream_subscription_alive() {
     );
 
     let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
-    runner.set_start_node("stream", OutputPayload::cloned(()));
+    runner.set_start_node("stream", Box::new(()));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(20);
     runner.set_event_sender(tx);
@@ -1113,9 +1120,9 @@ async fn test_parallel_stream_nodes_all_completed_before_flow_finished() {
             &mut self,
             _ctx: &Context,
             _inputs: NodeInputs,
-        ) -> Result<OutputPayload, String> {
+        ) -> Result<Box<dyn SendableAny>, String> {
             let stream = ReactiveStream::from_observable(vec!["A".to_string()]);
-            Ok(OutputPayload::stream(stream.subscribe))
+            Ok(Box::new(StreamAny::new(stream.subscribe)))
         }
     }
 
@@ -1130,10 +1137,10 @@ async fn test_parallel_stream_nodes_all_completed_before_flow_finished() {
     );
 
     let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
-    runner.set_start_node("s1", OutputPayload::cloned(()));
-    runner.set_start_node("s2", OutputPayload::cloned(()));
-    runner.set_start_node("s3", OutputPayload::cloned(()));
-    runner.set_start_node("s4", OutputPayload::cloned(()));
+    runner.set_start_node("s1", Box::new(()));
+    runner.set_start_node("s2", Box::new(()));
+    runner.set_start_node("s3", Box::new(()));
+    runner.set_start_node("s4", Box::new(()));
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
     runner.set_event_sender(tx);

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, OutputPayload};
+use flow::{Context, Node, NodeInputs, SendableAny};
 use serde_json::json;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -52,11 +52,13 @@ impl ImgGenNode {
 
 #[async_trait]
 impl Node for ImgGenNode {
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
+    async fn run(
+        &mut self,
+        _ctx: &Context,
+        inputs: NodeInputs,
+    ) -> Result<Box<dyn SendableAny>, String> {
         let Some(api_key) = &self.api_key else {
-            return Ok(OutputPayload::cloned(
-                "Missing OPENROUTER_API_KEY".to_string(),
-            ));
+            return Ok(Box::new("Missing OPENROUTER_API_KEY".to_string()));
         };
         info!("ImgGenNode: model={}", self.model);
         let space_id = inputs
@@ -91,7 +93,7 @@ impl Node for ImgGenNode {
             Some(file_id) if !file_id.is_empty() => {
                 match utils::load_uploaded_image_data_url(file_id, &space_id) {
                     Ok(v) => v,
-                    Err(e) => return Ok(OutputPayload::cloned(e)),
+                    Err(e) => return Ok(Box::new(e)),
                 }
             }
             _ => None,
@@ -115,7 +117,7 @@ impl Node for ImgGenNode {
         .await
         {
             Ok(v) => v,
-            Err(e) => return Ok(OutputPayload::cloned(e)),
+            Err(e) => return Ok(Box::new(e)),
         };
 
         let Some(data_url) = utils::extract_first_image_data_url(&resp_json) else {
@@ -134,7 +136,7 @@ impl Node for ImgGenNode {
 
         let (mime_type, bytes) = match utils::parse_data_url_to_bytes(&data_url) {
             Ok(v) => v,
-            Err(e) => return Ok(OutputPayload::cloned(e)),
+            Err(e) => return Ok(Box::new(e)),
         };
 
         let media_id = Uuid::new_v4().to_string();
@@ -146,7 +148,7 @@ impl Node for ImgGenNode {
             &self.model,
             &space_id,
         ) {
-            return Ok(OutputPayload::cloned(e));
+            return Ok(Box::new(e));
         }
 
         let out = json!({
@@ -155,6 +157,6 @@ impl Node for ImgGenNode {
             "space_id": space_id,
         })
         .to_string();
-        Ok(OutputPayload::cloned(out))
+        Ok(Box::new(out))
     }
 }

@@ -1,6 +1,6 @@
 use crate::llm::LLMStreamObservable;
 use async_trait::async_trait;
-use flow::{Node, NodeInputs, OutputPayload, ReactiveStream, StreamSubscriptionFn};
+use flow::{Node, NodeInputs, ReactiveStream, SendableAny, StreamAny, StreamSubscriptionFn};
 use futures::StreamExt;
 use rig::{
     agent::{Agent, MultiTurnStreamItem},
@@ -77,12 +77,10 @@ impl Node for ShortVideoScriptNode {
         &mut self,
         _ctx: &flow::Context,
         inputs: NodeInputs,
-    ) -> Result<OutputPayload, String> {
+    ) -> Result<Box<dyn SendableAny>, String> {
         let mut all_inputs = String::new();
-        for (key, value) in inputs.inputs.iter() {
-            let Some(any) = value.as_any() else {
-                continue;
-            };
+        for (_key, value) in inputs.inputs.iter() {
+            let any = value.as_any();
             if let Some(s) = any.downcast_ref::<String>() {
                 if !all_inputs.is_empty() {
                     all_inputs.push_str("\n\n");
@@ -117,17 +115,16 @@ impl Node for ShortVideoScriptNode {
             react_stream,
             |chunks: Vec<String>| {
                 let full_text = chunks.join("");
-                Some(OutputPayload::cloned(full_text))
+                Some(Box::new(full_text) as Box<dyn SendableAny>)
             },
         );
-        Ok(OutputPayload::stream(stream.subscribe))
+        Ok(Box::new(StreamAny::new(stream.subscribe)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::OutputPayload;
     use flow::{Context, TaskEvent};
     use flow::{NodeInputs, TaskGuard};
     use rig::providers::deepseek::DEEPSEEK_CHAT;
@@ -144,11 +141,9 @@ mod tests {
         while let Some(event) = rx.recv().await {
             match event {
                 TaskEvent::Next(_, val) => {
-                    if let Some(any) = val.as_any() {
-                        if let Some(s) = any.downcast_ref::<String>() {
-                            print!("{}", &s);
-                            output.push_str(s);
-                        }
+                    if let Some(s) = val.as_any().downcast_ref::<String>() {
+                        print!("{}", &s);
+                        output.push_str(s);
                     }
                 }
                 TaskEvent::Completed(_, _) => break,
@@ -162,19 +157,23 @@ mod tests {
     #[test]
     fn test_short_video_node() {
         dotenv::dotenv().ok();
+        if std::env::var("RUN_EXTERNAL_TESTS").is_err() || std::env::var("DEEPSEEK_API_KEY").is_err() {
+            return;
+        }
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
             let mut node = ShortVideoScriptNode::new(DEEPSEEK_CHAT);
             let input = "Theme: Cyberpunk detective story".to_owned();
 
-            let mut inputs = HashMap::new();
-            inputs.insert("theme".to_string(), OutputPayload::cloned(input));
+            let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
+            inputs.insert("theme".to_string(), Box::new(input));
 
             let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            let OutputPayload::Stream(subscribe) = payload else {
-                panic!("Expected stream payload");
-            };
+            let subscribe = payload
+                .into_stream_subscriber()
+                .ok()
+                .expect("Expected stream payload");
             let output = collect_output(subscribe).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());

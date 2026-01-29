@@ -1,6 +1,6 @@
 use super::task_guard::TaskGuard;
 use super::utils::send_task_event;
-use crate::{AnyNode, Context, NodeInputs, OutputPayload, TaskEvent};
+use crate::{AnyNode, Context, NodeInputs, SendableAny, TaskEvent};
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{RwLock, mpsc};
@@ -28,7 +28,7 @@ impl Executor {
                 .catch_unwind()
                 .await;
 
-            let output: Result<OutputPayload, String> = match result {
+            let output: Result<Box<dyn SendableAny>, String> = match result {
                 Ok(res) => res,
                 Err(panic_err) => {
                     let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
@@ -46,19 +46,16 @@ impl Executor {
 
             match output {
                 Ok(out) => {
-                    match out {
-                        OutputPayload::Stream(subscribe_fn) => {
+                    match out.into_stream_subscriber() {
+                        Ok(subscribe_fn) => {
                             send_task_event(&task_sender, TaskEvent::Stream(node_id, subscribe_fn))
                                 .await;
                         }
-                        out => {
-                            send_task_event(
-                                &task_sender,
-                                TaskEvent::Completed(node_id, Some(out)),
-                            )
-                            .await;
+                        Err(out) => {
+                            send_task_event(&task_sender, TaskEvent::Completed(node_id, Some(out)))
+                                .await;
                         }
-                    }
+                    };
                 }
                 Err(e) => {
                     send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;

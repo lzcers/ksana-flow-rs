@@ -4,7 +4,7 @@ use crate::trade::{
 };
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
-use flow::{Node, NodeInputs, OutputPayload};
+use flow::{Node, NodeInputs, SendableAny};
 use ta::Next;
 use ta::indicators::{ExponentialMovingAverage, MoneyFlowIndex};
 
@@ -33,10 +33,9 @@ impl Node for VOLMFINode {
         &mut self,
         _ctx: &flow::Context,
         inputs: NodeInputs,
-    ) -> Result<OutputPayload, String> {
+    ) -> Result<Box<dyn SendableAny>, String> {
         let input = inputs
             .get_any()
-            .and_then(|p| p.as_any())
             .and_then(|a| a.downcast_ref::<K>())
             .cloned()
             .expect("VOLMFINode expected K input");
@@ -60,7 +59,7 @@ impl Node for VOLMFINode {
             k,
             order: signal.signal_type,
         };
-        Ok(OutputPayload::cloned(out))
+        Ok(Box::new(out))
     }
 }
 

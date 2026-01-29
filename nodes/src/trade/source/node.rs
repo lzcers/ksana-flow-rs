@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use flow::{Context, Node, NodeInputs, OutputPayload};
+use flow::{Context, Node, NodeInputs, SendableAny};
 
 use crate::trade::{
     k::K,
@@ -74,18 +74,18 @@ impl Node for SourceNode {
         &mut self,
         _ctx: &Context,
         _inputs: NodeInputs,
-    ) -> Result<OutputPayload, String> {
+    ) -> Result<Box<dyn SendableAny>, String> {
         if self.ensure_data().await.is_err() {
-            return Ok(OutputPayload::cloned(None::<K>));
+            return Ok(Box::new(None::<K>));
         }
 
         if let Some(ref data) = self.cached_data {
             if self.cursor < data.len() {
                 let k = data[self.cursor].clone();
                 self.cursor += 1;
-                return Ok(OutputPayload::cloned(Some(k)));
+                return Ok(Box::new(Some(k)));
             }
         }
-        Ok(OutputPayload::cloned(None::<K>))
+        Ok(Box::new(None::<K>))
     }
 }

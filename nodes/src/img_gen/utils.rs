@@ -13,7 +13,6 @@ pub fn extract_string_input(inputs: &NodeInputs) -> String {
         .or_else(|| {
             inputs
                 .get_any()
-                .and_then(|p| p.as_any())
                 .and_then(|a| a.downcast_ref::<String>())
         })
         .cloned()

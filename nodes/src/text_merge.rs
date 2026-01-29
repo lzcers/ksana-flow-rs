@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, OutputPayload};
+use flow::{Context, Node, NodeInputs, SendableAny};
 use serde_json::Value;
 
 /// 将多个文本输入合并为一个字符串输出。
@@ -84,16 +84,17 @@ impl TextMergeNode {
 
 #[async_trait]
 impl Node for TextMergeNode {
-    async fn run(&mut self, _ctx: &Context, inputs: NodeInputs) -> Result<OutputPayload, String> {
+    async fn run(
+        &mut self,
+        _ctx: &Context,
+        inputs: NodeInputs,
+    ) -> Result<Box<dyn SendableAny>, String> {
         fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
             loop {
-                let Some(p) = any.downcast_ref::<OutputPayload>() else {
+                let Some(p) = any.downcast_ref::<Box<dyn SendableAny>>() else {
                     return any;
                 };
-                let Some(inner) = p.as_any() else {
-                    return any;
-                };
-                any = inner;
+                any = p.as_ref().as_any();
             }
         }
 
@@ -123,31 +124,38 @@ impl Node for TextMergeNode {
             .iter()
             .filter_map(|(_, any)| extract_text(*any))
             .collect();
-        Ok(OutputPayload::cloned(parts.join(&self.separator)))
+        Ok(Box::new(parts.join(&self.separator)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::OutputPayload;
     use serde_json::json;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
     // Helper to create inputs
     fn create_inputs(data: Vec<(&str, &str)>) -> NodeInputs {
-        let mut inputs = HashMap::new();
+        let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
         for (id, val) in data {
-            inputs.insert(id.to_string(), OutputPayload::cloned(val.to_string()));
+            inputs.insert(id.to_string(), Box::new(val.to_string()));
         }
         NodeInputs::new(inputs)
     }
 
-    fn extract_string(payload: OutputPayload) -> String {
-        payload
-            .as_any()
-            .and_then(|a| a.downcast_ref::<String>())
+    fn extract_string(payload: Box<dyn SendableAny>) -> String {
+        fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
+            loop {
+                let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>() else {
+                    return any;
+                };
+                any = inner.as_ref().as_any();
+            }
+        }
+
+        unwrap_any(payload.as_any())
+            .downcast_ref::<String>()
             .cloned()
             .unwrap_or_default()
     }
@@ -189,18 +197,18 @@ mod tests {
             let ctx = Context::new();
             let mut node = TextMergeNode::new(Some(" ".to_string()));
 
-            let mut inputs_map = HashMap::new();
+            let mut inputs_map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
             inputs_map.insert(
                 "a".to_string(),
-                OutputPayload::cloned("Hello".to_string()),
+                Box::new("Hello".to_string()),
             );
             inputs_map.insert(
                 "b".to_string(),
-                OutputPayload::cloned(42),
+                Box::new(42),
             );
             inputs_map.insert(
                 "c".to_string(),
-                OutputPayload::cloned("World".to_string()),
+                Box::new("World".to_string()),
             );
             let inputs = NodeInputs::new(inputs_map);
 
@@ -217,13 +225,14 @@ mod tests {
             let ctx = Context::new();
             let mut node = TextMergeNode::new(Some(" ".to_string()));
 
-            let wrapped = OutputPayload::cloned(OutputPayload::cloned("Hello".to_string()));
+            let wrapped: Box<dyn SendableAny> =
+                Box::new(Box::new("Hello".to_string()) as Box<dyn SendableAny>);
 
-            let mut inputs_map = HashMap::new();
+            let mut inputs_map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
             inputs_map.insert("a".to_string(), wrapped);
             inputs_map.insert(
                 "b".to_string(),
-                OutputPayload::cloned("World".to_string()),
+                Box::new("World".to_string()),
             );
 
             let output = extract_string(
@@ -240,14 +249,14 @@ mod tests {
             let ctx = Context::new();
             let mut node = TextMergeNode::new(Some(" ".to_string()));
 
-            let mut inputs_map = HashMap::new();
+            let mut inputs_map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
             inputs_map.insert(
                 "a".to_string(),
-                OutputPayload::cloned(json!("Hello")),
+                Box::new(json!("Hello")),
             );
             inputs_map.insert(
                 "b".to_string(),
-                OutputPayload::cloned(json!({ "output": "World" })),
+                Box::new(json!({ "output": "World" })),
             );
 
             let output = extract_string(

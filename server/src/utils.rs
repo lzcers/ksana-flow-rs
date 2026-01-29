@@ -1,16 +1,13 @@
-use flow::{FlowEvent, NodeInputs, OutputPayload};
+use flow::{FlowEvent, NodeInputs, SendableAny};
 use serde_json::{Map, Value, json};
 use std::any::Any;
 
 fn unwrap_any<'a>(mut any: &'a dyn Any) -> &'a dyn Any {
     loop {
-        let Some(p) = any.downcast_ref::<OutputPayload>() else {
+        let Some(p) = any.downcast_ref::<Box<dyn SendableAny>>() else {
             return any;
         };
-        let Some(inner) = p.as_any() else {
-            return any;
-        };
-        any = inner;
+        any = p.as_ref().as_any();
     }
 }
 
@@ -68,23 +65,11 @@ pub fn try_downcast_to_value(any: &dyn Any) -> Option<Value> {
     None
 }
 
-pub fn output_payload_to_value_lossy(payload: &OutputPayload) -> Value {
-    payload
-        .as_any()
-        .and_then(try_downcast_to_value)
-        .unwrap_or_else(|| {
-            json!({
-                "$unserializable": true,
-                "type": payload.type_name()
-            })
-        })
-}
-
-pub fn sendable_any_to_value_lossy(any: &dyn Any) -> Value {
-    try_downcast_to_value(any).unwrap_or_else(|| {
+pub fn sendable_any_to_value_lossy(any: &dyn SendableAny) -> Value {
+    try_downcast_to_value(any.as_any()).unwrap_or_else(|| {
         json!({
             "$unserializable": true,
-            "type": "unknown"
+            "type": any.type_name()
         })
     })
 }
@@ -92,7 +77,7 @@ pub fn sendable_any_to_value_lossy(any: &dyn Any) -> Value {
 pub fn node_inputs_to_value_lossy(inputs: &NodeInputs) -> Value {
     let mut map = Map::new();
     for (node_id, payload) in &inputs.inputs {
-        map.insert(node_id.clone(), output_payload_to_value_lossy(payload));
+        map.insert(node_id.clone(), sendable_any_to_value_lossy(payload.as_ref()));
     }
     Value::Object(map)
 }
@@ -106,11 +91,11 @@ pub fn flow_event_to_value_lossy(event: &FlowEvent) -> Value {
             json!({ "NodeInMessage": [node_id, node_inputs_to_value_lossy(inputs)] })
         }
         FlowEvent::NodeOutMessage(node_id, payload) => {
-            json!({ "NodeOutMessage": [node_id, output_payload_to_value_lossy(payload)] })
+            json!({ "NodeOutMessage": [node_id, sendable_any_to_value_lossy(payload.as_ref())] })
         }
         FlowEvent::NodeStreamStarted(node_id) => json!({ "NodeStreamStarted": node_id }),
         FlowEvent::NodeStreamNextMessage(node_id, payload) => {
-            json!({ "NodeStreamNextMessage": [node_id, output_payload_to_value_lossy(payload)] })
+            json!({ "NodeStreamNextMessage": [node_id, sendable_any_to_value_lossy(payload.as_ref())] })
         }
         FlowEvent::FlowPaused => Value::String("FlowPaused".to_string()),
         FlowEvent::FlowResumed => Value::String("FlowResumed".to_string()),
@@ -130,20 +115,21 @@ mod tests {
 
     #[test]
     fn downcast_value_supports_recursive_box() {
-        let wrapped = OutputPayload::cloned(OutputPayload::cloned("hello".to_string()));
-        let v = output_payload_to_value_lossy(&wrapped);
+        let wrapped: Box<dyn SendableAny> =
+            Box::new(Box::new("hello".to_string()) as Box<dyn SendableAny>);
+        let v = sendable_any_to_value_lossy(wrapped.as_ref());
         assert_eq!(v, Value::String("hello".to_string()));
     }
 
     #[test]
     fn downcast_value_has_fallback() {
-        let v = sendable_any_to_value_lossy(&NotJson { _x: 1 } as &dyn Any);
+        let v = sendable_any_to_value_lossy(&NotJson { _x: 1 });
         assert!(v.is_object());
     }
 
     #[test]
     fn flow_event_serializes_to_frontend_shape() {
-        let e = FlowEvent::NodeOutMessage("n1".to_string(), OutputPayload::cloned(123i32));
+        let e = FlowEvent::NodeOutMessage("n1".to_string(), Box::new(123i32));
         let v = flow_event_to_value_lossy(&e);
         assert_eq!(v["NodeOutMessage"][0], Value::String("n1".to_string()));
         assert_eq!(v["NodeOutMessage"][1], json!(123));
