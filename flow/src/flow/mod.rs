@@ -1,3 +1,4 @@
+mod SendableAny;
 mod builder;
 mod event;
 mod graph;
@@ -5,6 +6,7 @@ mod output_payload;
 mod reactive_stream;
 mod runner;
 
+pub use SendableAny::*;
 pub use builder::*;
 pub use event::*;
 pub use graph::*;
