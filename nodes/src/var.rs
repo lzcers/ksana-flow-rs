@@ -1,5 +1,7 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
+use serde::Serialize;
+use serde_json::Value;
 use std::marker::PhantomData;
 
 /// 一个泛型的变量节点，返回预设的值。
@@ -21,60 +23,43 @@ impl<T, I> VarNode<T, I> {
 #[async_trait]
 impl<T, I> Node for VarNode<T, I>
 where
-    T: Clone + Send + Sync + 'static,
+    T: Serialize + Clone + Send + Sync + 'static,
     I: Send + Sync,
 {
     async fn run(
         &mut self,
         _ctx: &Context,
-        _inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        Ok(Box::new(self.value.clone()))
+        _input: &Input,
+    ) -> Result<Output, String> {
+        let v =
+            serde_json::to_value(self.value.clone()).map_err(|e| format!("VarNode: {}", e))?;
+        Ok(v.into())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::Context;
-    use flow::NodeInputs;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
     #[test]
     fn test_var_node() {
-        fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-            loop {
-                let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>() else {
-                    return any;
-                };
-                any = inner.as_ref().as_any();
-            }
-        }
-
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
 
             // 测试字符串类型
             let mut node: VarNode<String, ()> = VarNode::new("hello".to_string());
-            let inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            let s = unwrap_any(output.as_any())
-                .downcast_ref::<String>()
-                .cloned()
-                .unwrap_or_default();
-            assert_eq!(s, "hello".to_string());
+            let inputs: HashMap<String, Value> = HashMap::new();
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get(), Some(&Value::String("hello".to_string())));
 
             // 测试整数类型
             let mut int_node: VarNode<i32, ()> = VarNode::new(42i32);
-            let inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            let output = int_node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            let n = unwrap_any(output.as_any())
-                .downcast_ref::<i32>()
-                .copied()
-                .unwrap_or_default();
-            assert_eq!(n, 42);
+            let inputs: HashMap<String, Value> = HashMap::new();
+            let output = int_node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get(), Some(&serde_json::json!(42)));
         });
     }
 }

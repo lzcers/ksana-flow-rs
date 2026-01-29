@@ -1,8 +1,7 @@
-use std::any::Any;
-
 use crate::AnyNode;
 
 use super::graph::{Context, Edge, Graph};
+use serde::de::DeserializeOwned;
 
 pub struct GraphBuilder {
     graph: Graph,
@@ -29,16 +28,18 @@ impl GraphBuilder {
         self
     }
 
-    pub fn add_condition_edge<Out: Any>(
+    pub fn add_condition_edge<Out: DeserializeOwned>(
         mut self,
         from: impl Into<String>,
         to: impl Into<String>,
-        condition: impl Fn(&Context, &Out) -> bool + Send + 'static,
+        condition: impl Fn(&Context, &Out) -> bool + Send + Sync + 'static,
     ) -> Self {
-        let condition = Box::new(move |ctx: &Context, any: &dyn Any| {
-            any.downcast_ref::<Out>()
-                .map(|out| condition(ctx, out))
-                .unwrap_or(false)
+        let condition = Box::new(move |ctx: &Context, output: &super::graph::Output| {
+            if let Some(out) = output.get_as::<Out>() {
+                condition(ctx, &out)
+            } else {
+                false
+            }
         });
         let edge = Edge {
             from: from.into(),

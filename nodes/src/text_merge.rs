@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
 use serde_json::Value;
 
 /// 将多个文本输入合并为一个字符串输出。
@@ -87,44 +87,21 @@ impl Node for TextMergeNode {
     async fn run(
         &mut self,
         _ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-            loop {
-                let Some(p) = any.downcast_ref::<Box<dyn SendableAny>>() else {
-                    return any;
-                };
-                any = p.as_ref().as_any();
+        input: &Input,
+    ) -> Result<Output, String> {
+        fn extract_text<'a>(v: &'a Value) -> Option<&'a str> {
+            match v {
+                Value::String(s) => Some(s.as_str()),
+                Value::Object(map) => map.get("output").and_then(|v| v.as_str()),
+                _ => None,
             }
         }
 
-        fn extract_text<'a>(any: &'a dyn std::any::Any) -> Option<&'a str> {
-            let erased = unwrap_any(any);
-            if let Some(s) = erased.downcast_ref::<String>() {
-                return Some(s.as_str());
-            }
-            if let Some(v) = erased.downcast_ref::<Value>() {
-                match v {
-                    Value::String(s) => return Some(s.as_str()),
-                    Value::Object(map) => {
-                        if let Some(Value::String(s)) = map.get("output") {
-                            return Some(s.as_str());
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
-
-        let mut entries: Vec<_> = inputs.iter_any().collect();
+        let mut entries: Vec<_> = input.get_values().iter().collect();
         entries.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-        let parts: Vec<&str> = entries
-            .iter()
-            .filter_map(|(_, any)| extract_text(*any))
-            .collect();
-        Ok(Box::new(parts.join(&self.separator)))
+        let parts: Vec<&str> = entries.iter().filter_map(|(_, v)| extract_text(v)).collect();
+        Ok(Value::String(parts.join(&self.separator)).into())
     }
 }
 
@@ -136,28 +113,16 @@ mod tests {
     use tokio::runtime::Runtime;
 
     // Helper to create inputs
-    fn create_inputs(data: Vec<(&str, &str)>) -> NodeInputs {
-        let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
+    fn create_inputs(data: Vec<(&str, &str)>) -> Input {
+        let mut inputs: HashMap<String, Value> = HashMap::new();
         for (id, val) in data {
-            inputs.insert(id.to_string(), Box::new(val.to_string()));
+            inputs.insert(id.to_string(), Value::String(val.to_string()));
         }
-        NodeInputs::new(inputs)
+        Input::new(inputs)
     }
 
-    fn extract_string(payload: Box<dyn SendableAny>) -> String {
-        fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-            loop {
-                let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>() else {
-                    return any;
-                };
-                any = inner.as_ref().as_any();
-            }
-        }
-
-        unwrap_any(payload.as_any())
-            .downcast_ref::<String>()
-            .cloned()
-            .unwrap_or_default()
+    fn extract_string(out: Output) -> String {
+        out.get_as::<String>().unwrap_or_default()
     }
 
     #[test]
@@ -168,7 +133,7 @@ mod tests {
             let mut node = TextMergeNode::new(None);
 
             let inputs = create_inputs(vec![("a", "Hello"), ("b", "World")]);
-            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
+            let output = extract_string(node.run(&ctx, &inputs).await.unwrap());
 
             assert_eq!(output, "HelloWorld");
         });
@@ -184,7 +149,7 @@ mod tests {
             // Intentionally unordered in vector, but NodeInputs is HashMap
             // The node should sort by key "a", "b", "c"
             let inputs = create_inputs(vec![("b", "is"), ("a", "This"), ("c", "test")]);
-            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
+            let output = extract_string(node.run(&ctx, &inputs).await.unwrap());
 
             assert_eq!(output, "This, is, test");
         });
@@ -197,47 +162,14 @@ mod tests {
             let ctx = Context::new();
             let mut node = TextMergeNode::new(Some(" ".to_string()));
 
-            let mut inputs_map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs_map.insert(
-                "a".to_string(),
-                Box::new("Hello".to_string()),
-            );
-            inputs_map.insert(
-                "b".to_string(),
-                Box::new(42),
-            );
-            inputs_map.insert(
-                "c".to_string(),
-                Box::new("World".to_string()),
-            );
-            let inputs = NodeInputs::new(inputs_map);
+            let mut inputs_map: HashMap<String, Value> = HashMap::new();
+            inputs_map.insert("a".to_string(), Value::String("Hello".to_string()));
+            inputs_map.insert("b".to_string(), json!(42));
+            inputs_map.insert("c".to_string(), Value::String("World".to_string()));
+            let inputs = Input::new(inputs_map);
 
-            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
+            let output = extract_string(node.run(&ctx, &inputs).await.unwrap());
 
-            assert_eq!(output, "Hello World");
-        });
-    }
-
-    #[test]
-    fn test_text_merge_node_recursive_box() {
-        let runtime = Runtime::new().expect("Failed to create tokio runtime");
-        runtime.block_on(async {
-            let ctx = Context::new();
-            let mut node = TextMergeNode::new(Some(" ".to_string()));
-
-            let wrapped: Box<dyn SendableAny> =
-                Box::new(Box::new("Hello".to_string()) as Box<dyn SendableAny>);
-
-            let mut inputs_map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs_map.insert("a".to_string(), wrapped);
-            inputs_map.insert(
-                "b".to_string(),
-                Box::new("World".to_string()),
-            );
-
-            let output = extract_string(
-                node.run(&ctx, NodeInputs::new(inputs_map)).await.unwrap(),
-            );
             assert_eq!(output, "Hello World");
         });
     }
@@ -249,19 +181,12 @@ mod tests {
             let ctx = Context::new();
             let mut node = TextMergeNode::new(Some(" ".to_string()));
 
-            let mut inputs_map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs_map.insert(
-                "a".to_string(),
-                Box::new(json!("Hello")),
-            );
-            inputs_map.insert(
-                "b".to_string(),
-                Box::new(json!({ "output": "World" })),
-            );
+            let mut inputs_map: HashMap<String, Value> = HashMap::new();
+            inputs_map.insert("a".to_string(), json!("Hello"));
+            inputs_map.insert("b".to_string(), json!({ "output": "World" }));
+            let inputs = Input::new(inputs_map);
 
-            let output = extract_string(
-                node.run(&ctx, NodeInputs::new(inputs_map)).await.unwrap(),
-            );
+            let output = extract_string(node.run(&ctx, &inputs).await.unwrap());
             assert_eq!(output, "Hello World");
         });
     }
@@ -274,7 +199,7 @@ mod tests {
             let mut node = TextMergeNode::new(Some("\\n".to_string()));
 
             let inputs = create_inputs(vec![("a", "Hello"), ("b", "World")]);
-            let output = extract_string(node.run(&ctx, inputs).await.unwrap());
+            let output = extract_string(node.run(&ctx, &inputs).await.unwrap());
 
             assert_eq!(output, "Hello\nWorld");
         });

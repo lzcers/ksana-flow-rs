@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
 use serde_json::Value;
 
 use crate::text_split::{split_text, TextSplitConfig};
@@ -19,32 +19,23 @@ impl Node for TextSplitNode {
     async fn run(
         &mut self,
         _ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
+        input: &Input,
+    ) -> Result<Output, String> {
         let mut config = self.config.clone();
-        if let Some(cfg) = inputs.get::<TextSplitConfig>("config") {
-            config = cfg.clone();
-        } else if let Some(v) = inputs.get::<Value>("config") {
-            if let Ok(cfg) = serde_json::from_value::<TextSplitConfig>(v.clone()) {
-                config = cfg;
-            }
+        if let Some(cfg) = input.get_str_as::<TextSplitConfig>("config") {
+            config = cfg;
         }
 
-        let input_text = inputs
-            .get::<String>("input")
-            .or_else(|| inputs.get::<String>("external_start"))
-            .or_else(|| inputs.get::<String>("output"))
-            .cloned()
-            .or_else(|| {
-                inputs
-                    .iter_any()
-                    .find_map(|(_, any)| any.downcast_ref::<String>().cloned())
-            })
+        let input_text = input
+            .get_str_as::<String>("input")
+            .or_else(|| input.get_str_as::<String>("external_start"))
+            .or_else(|| input.get_str_as::<String>("output"))
+            .or_else(|| input.get_any_as::<String>())
             .unwrap_or_default();
 
         let result = split_text(&input_text, &config);
         let out = serde_json::to_value(result).unwrap_or_else(|_| Value::Null);
-        Ok(Box::new(out))
+        Ok(out.into())
     }
 }
 
@@ -75,24 +66,18 @@ mod tests {
             };
             let mut node = TextSplitNode::new(config);
 
-            let mut map: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            map.insert("external_start".to_string(), Box::new("a\nb\nc\n".to_string()));
-            let payload = node.run(&ctx, NodeInputs::new(map)).await.unwrap();
-            let out = {
-                fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-                    loop {
-                        let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>() else {
-                            return any;
-                        };
-                        any = inner.as_ref().as_any();
-                    }
-                }
-
-                unwrap_any(payload.as_any())
-                    .downcast_ref::<Value>()
-                    .cloned()
-                    .unwrap_or(Value::Null)
-            };
+            let mut map: HashMap<String, Value> = HashMap::new();
+            map.insert(
+                "external_start".to_string(),
+                Value::String("a\nb\nc\n".to_string()),
+            );
+            let out = node
+                .run(&ctx, &Input::new(map))
+                .await
+                .unwrap()
+                .get()
+                .cloned()
+                .unwrap_or(Value::Null);
 
             let segments = out
                 .get("segments")

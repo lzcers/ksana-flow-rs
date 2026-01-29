@@ -1,12 +1,12 @@
 use super::exec_context::{ExecutionContext, NodeState};
 use super::executor::Executor;
 use super::utils::send_flow_event;
-use crate::SendableAny;
 use crate::TriggerStrategy;
 use crate::flow::{
     event::{FlowEvent, TaskEvent},
-    graph::{Context, Graph, NodeId, NodeInputs},
+    graph::{Context, Graph, Input, NodeId, Output},
 };
+use serde_json::Value;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -15,7 +15,7 @@ use std::{
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, error, info, trace};
 
-type TaskPayload = (Vec<NodeId>, NodeInputs);
+type TaskPayload = (Vec<NodeId>, Input);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerState {
@@ -97,15 +97,15 @@ impl Runner {
         self.event_sender = Some(sender);
     }
 
-    pub fn set_start_node(&mut self, node_id: &str, input: Box<dyn SendableAny>) {
+    pub fn set_start_node(&mut self, node_id: &str, input: Value) {
         let mut inputs = HashMap::new();
         inputs.insert("external_start".to_owned(), input);
 
         self.task_queue
-            .push_back((vec![node_id.to_owned()], NodeInputs::new(inputs)));
+            .push_back((vec![node_id.to_owned()], Input::new(inputs)));
     }
 
-    pub fn set_start_node_with_inputs(&mut self, node_id: &str, inputs: NodeInputs) {
+    pub fn set_start_node_with_inputs(&mut self, node_id: &str, inputs: Input) {
         self.task_queue
             .push_back((vec![node_id.to_owned()], inputs));
     }
@@ -236,7 +236,7 @@ impl Runner {
             TaskEvent::Next(node_id, output) => {
                 trace!(
                     node_id = %node_id,
-                    output_type = %output.type_name(),
+                    output = ?output,
                     "Received Next event"
                 );
 
@@ -295,7 +295,7 @@ impl Runner {
     async fn trigger_downstream(
         &mut self,
         from_node_id: String,
-        output: Box<dyn SendableAny>,
+        output: Value,
         tx: mpsc::Sender<TaskEvent>,
     ) -> Result<(), String> {
         // 找到所有满足条件的下游节点
@@ -311,18 +311,18 @@ impl Runner {
     fn find_next_nodes(
         &self,
         from_node_id: &str,
-        output: &Box<dyn SendableAny>,
+        output: &Value,
     ) -> Result<Vec<String>, String> {
         let mut next_nodes = vec![];
+        let output = Output::new(Some(output.clone()));
         if let Some(edges) = self.graph.edges.get(from_node_id) {
             trace!(from = %from_node_id, count = edges.len(), "Found outgoing edges");
             for edge in edges.iter() {
-                let passes = edge.check_condition(&self.ctx, output.as_any());
+                let passes = edge.check_condition(&self.ctx, &output);
                 trace!(
                     from = %edge.from(),
                     to = %edge.to(),
                     passes = passes,
-                    output_type = %output.type_name(),
                     "Edge condition check"
                 );
                 if passes {
@@ -349,7 +349,7 @@ impl Runner {
                 if let Some(output) = self.exec_ctx.get_output(&from_node_id) {
                     inputs_map.insert(from_node_id, output);
                 }
-                let inputs = NodeInputs::new(inputs_map);
+                let inputs = Input::new(inputs_map);
                 self.start_node(node_id.to_string(), inputs, task_sender)
                     .await
             }
@@ -376,7 +376,7 @@ impl Runner {
                         }
                     }
                 }
-                let inputs = NodeInputs::new(inputs_map);
+                let inputs = Input::new(inputs_map);
                 self.start_node(node_id.to_string(), inputs, task_sender)
                     .await
             }
@@ -386,7 +386,7 @@ impl Runner {
     async fn start_node(
         &mut self,
         node_id: NodeId,
-        inputs: NodeInputs,
+        inputs: Input,
         task_sender: mpsc::Sender<TaskEvent>,
     ) -> Result<(), String> {
         debug!(

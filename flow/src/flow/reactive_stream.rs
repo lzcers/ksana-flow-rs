@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use core::fmt;
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
@@ -10,20 +9,20 @@ use crate::{
         event::TaskEvent,
         graph::{Context, NodeId},
     },
-    SendableAny,
     reactive::observable::{Observable, Observer, Subscription},
 };
+use serde::Serialize;
+use serde_json::Value;
 
 pub type StreamSubscriptionFn = Box<
     dyn FnOnce(TaskGuard, mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription>
         + Send,
 >;
-pub struct ReactiveStream<T = ()> {
+pub struct ReactiveStream {
     pub subscribe: StreamSubscriptionFn,
-    _marker: std::marker::PhantomData<T>,
 }
 
-pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send>;
+pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<Value> + Send>;
 
 struct RunnerObserver<T> {
     tx: mpsc::Sender<TaskEvent>,
@@ -33,7 +32,7 @@ struct RunnerObserver<T> {
 }
 
 #[async_trait]
-impl<T: Any + Send + Clone + 'static, E: Send + 'static> Observer<T, E> for RunnerObserver<T> {
+impl<T: Serialize + Send + Clone + 'static, E: Send + 'static> Observer<T, E> for RunnerObserver<T> {
     async fn on_next(&mut self, value: T) {
         if self.accumulator.is_some() {
             self.acc_buffer.push(value.clone());
@@ -41,13 +40,23 @@ impl<T: Any + Send + Clone + 'static, E: Send + 'static> Observer<T, E> for Runn
 
         // 直接使用异步 send，Tokio 会在通道满时自动挂起当前协程
         // 这实现了完美的异步背压
-        let _ = self
-            .tx
-            .send(TaskEvent::Next(
-                self.node_id.clone(),
-                Box::new(value),
-            ))
-            .await;
+        match serde_json::to_value(&value) {
+            Ok(v) => {
+                let _ = self
+                    .tx
+                    .send(TaskEvent::Next(self.node_id.clone(), v))
+                    .await;
+            }
+            Err(e) => {
+                let _ = self
+                    .tx
+                    .send(TaskEvent::Error(
+                        self.node_id.clone(),
+                        format!("Stream serialize error: {}", e),
+                    ))
+                    .await;
+            }
+        }
     }
     async fn on_error(&mut self, _error: E) {
         let _ = self
@@ -78,10 +87,10 @@ impl Subscription for EmptySubscription {
     fn unsubscribe(self) {}
 }
 
-impl<T> ReactiveStream<T> {
-    pub fn from_observable<E, O>(observable: O) -> Self
+impl ReactiveStream {
+    pub fn from_observable<T, E, O>(observable: O) -> Self
     where
-        T: Any + Send + Clone + 'static,
+        T: Serialize + Send + Clone + 'static,
         E: Send + 'static,
         O: Observable<T, E> + Send + 'static,
     {
@@ -99,16 +108,15 @@ impl<T> ReactiveStream<T> {
                 });
                 Box::new(EmptySubscription)
             }),
-            _marker: std::marker::PhantomData,
         }
     }
 
-    pub fn from_observable_with_accumulator<E, O, F>(observable: O, accumulator: F) -> Self
+    pub fn from_observable_with_accumulator<T, E, O, F>(observable: O, accumulator: F) -> Self
     where
-        T: Any + Send + Clone + 'static,
+        T: Serialize + Send + Clone + 'static,
         E: Send + 'static,
         O: Observable<T, E> + Send + 'static,
-        F: Fn(Vec<T>) -> Option<Box<dyn SendableAny>> + Send + 'static,
+        F: Fn(Vec<T>) -> Option<Value> + Send + 'static,
     {
         Self {
             subscribe: Box::new(move |guard: TaskGuard, tx, node_id, _ctx| {
@@ -124,15 +132,6 @@ impl<T> ReactiveStream<T> {
                 });
                 Box::new(EmptySubscription)
             }),
-            _marker: std::marker::PhantomData,
         }
-    }
-}
-
-impl<T> fmt::Debug for ReactiveStream<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ReactiveStream")
-            .field("type", &std::any::type_name::<T>())
-            .finish()
     }
 }

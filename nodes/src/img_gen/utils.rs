@@ -1,21 +1,16 @@
 use base64::Engine;
-use flow::NodeInputs;
+use flow::Input;
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 
 use crate::config::get_config;
 
-pub fn extract_string_input(inputs: &NodeInputs) -> String {
-    inputs
-        .get::<String>("input")
-        .or_else(|| inputs.get::<String>("external_start"))
-        .or_else(|| inputs.get::<String>("output"))
-        .or_else(|| {
-            inputs
-                .get_any()
-                .and_then(|a| a.downcast_ref::<String>())
-        })
-        .cloned()
+pub fn extract_string_input(input: &Input) -> String {
+    input
+        .get_str_as::<String>("input")
+        .or_else(|| input.get_str_as::<String>("external_start"))
+        .or_else(|| input.get_str_as::<String>("output"))
+        .or_else(|| input.get_any_as::<String>())
         .unwrap_or_default()
 }
 

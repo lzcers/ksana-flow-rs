@@ -1,18 +1,10 @@
-use flow::NodeInputs;
+use flow::Input;
 
-pub(crate) fn extract_input_string(inputs: &NodeInputs) -> String {
-    if let Some(s) = inputs.get::<String>("input") {
-        return s.clone();
-    }
-    if let Some(s) = inputs.get::<String>("external_start") {
-        return s.clone();
-    }
-    if let Some(s) = inputs.get::<String>("output") {
-        return s.clone();
-    }
-
-    inputs
-        .iter_any()
-        .find_map(|(_, any)| any.downcast_ref::<String>().cloned())
+pub(crate) fn extract_input_string(input: &Input) -> String {
+    input
+        .get_str_as::<String>("input")
+        .or_else(|| input.get_str_as::<String>("external_start"))
+        .or_else(|| input.get_str_as::<String>("output"))
+        .or_else(|| input.get_any_as::<String>())
         .unwrap_or_default()
 }

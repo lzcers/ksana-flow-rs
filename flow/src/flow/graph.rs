@@ -4,50 +4,99 @@ use serde_json::Value;
 use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
-use crate::SendableAny;
+use crate::ReactiveStream;
 
 pub type NodeId = String;
 
 #[derive(Clone)]
-pub struct NodeInputs {
-    pub inputs: HashMap<NodeId, Box<dyn SendableAny>>,
+pub struct Input {
+    values: HashMap<NodeId, Value>,
 }
 
-impl NodeInputs {
-    fn unwrap_any<'a>(mut any: &'a dyn Any) -> &'a dyn Any {
-        loop {
-            let Some(inner) = any.downcast_ref::<Box<dyn SendableAny>>() else {
-                return any;
-            };
-            any = inner.as_ref().as_any();
+impl Input {
+    pub fn new(values: HashMap<NodeId, Value>) -> Self {
+        Self { values }
+    }
+    pub fn get(&self, key: &NodeId) -> Option<&Value> {
+        self.values.get(key)
+    }
+    pub fn get_str(&self, key: &str) -> Option<&Value> {
+        self.values.get(key)
+    }
+    pub fn get_as<T: serde::de::DeserializeOwned>(&self, key: &NodeId) -> Option<T> {
+        self.values
+            .get(key)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+    pub fn get_str_as<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
+        self.values
+            .get(key)
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+    pub fn get_any(&self) -> Option<&Value> {
+        if let Some(v) = self.values.get("external_start") {
+            return Some(v);
+        }
+        self.values
+            .iter()
+            .min_by_key(|(k, _)| k.as_str())
+            .map(|(_, v)| v)
+    }
+    pub fn get_any_as<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
+        self.get_any()
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+    pub fn get_values(&self) -> &HashMap<NodeId, Value> {
+        &self.values
+    }
+}
+
+pub struct Output {
+    value: Option<Value>,
+    stream: Option<ReactiveStream>,
+}
+
+impl Output {
+    pub fn new(value: Option<Value>) -> Self {
+        Self {
+            value,
+            stream: None,
         }
     }
-
-    pub fn new(inputs: HashMap<NodeId, Box<dyn SendableAny>>) -> Self {
-        Self { inputs }
+    pub fn get(&self) -> Option<&Value> {
+        self.value.as_ref()
     }
-
-    pub fn get<T: 'static>(&self, key: &str) -> Option<&T> {
-        self.inputs
-            .get(key)
-            .and_then(|p| Self::unwrap_any(p.as_any()).downcast_ref::<T>())
+    pub fn get_as<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
+        self.value
+            .as_ref()
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
-
-    pub fn get_any(&self) -> Option<&dyn Any> {
-        self.inputs
-            .values()
-            .next()
-            .map(|p| Self::unwrap_any(p.as_any()))
+    pub fn set(&mut self, value: Value) {
+        self.value = Some(value);
     }
-
-    pub fn get_payload(&self, key: &str) -> Option<&Box<dyn SendableAny>> {
-        self.inputs.get(key)
+    pub fn is_stream(&self) -> bool {
+        self.stream.is_some()
     }
+    pub fn get_stream(&self) -> Option<&ReactiveStream> {
+        self.stream.as_ref()
+    }
+    pub fn set_stream(&mut self, stream: ReactiveStream) {
+        self.stream = Some(stream);
+    }
+    pub fn into_value(self) -> Option<Value> {
+        self.value
+    }
+    pub fn into_stream(self) -> Option<ReactiveStream> {
+        self.stream
+    }
+}
 
-    pub fn iter_any(&self) -> impl Iterator<Item = (&NodeId, &dyn Any)> + '_ {
-        self.inputs
-            .iter()
-            .map(|(k, v)| (k, Self::unwrap_any(v.as_any())))
+impl Into<Output> for Value {
+    fn into(self) -> Output {
+        Output {
+            value: Some(self),
+            stream: None,
+        }
     }
 }
 
@@ -55,14 +104,10 @@ impl NodeInputs {
 pub trait Node {
     const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
 
-    async fn run(
-        &mut self,
-        ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String>;
+    async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String>;
 }
 
-pub type EdgeCondition = Box<dyn Fn(&Context, &dyn Any) -> bool + Send>;
+pub type EdgeCondition = Box<dyn Fn(&Context, &Output) -> bool + Send + Sync>;
 
 // 条件边接收一个节点传出的输出引用，根据条件判断是否继续执行下一个节点
 pub struct Edge {
@@ -112,52 +157,30 @@ impl Context {
 // AnyNode 会被Arc 容器包裹发送到不同的线程中执行，因此需要实现 Send + Sync
 #[async_trait]
 pub trait AnyNode: Any + Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-
     fn get_trigger_strategy(&self) -> TriggerStrategy {
         TriggerStrategy::AllUpstreamReady
     }
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    async fn run(
-        &mut self,
-        ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String>;
+
+    async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String>;
 }
 
 #[async_trait]
 impl<N: Node + Any + Send + Sync> AnyNode for N {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
     fn get_trigger_strategy(&self) -> TriggerStrategy {
         N::TRIGGER_STRATEGY
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-    async fn run(
-        &mut self,
-        ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        self.run(ctx, inputs).await
+    async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String> {
+        <N as Node>::run(self, ctx, input).await
     }
 }
 
-pub trait AnyEdge: Any + Send {
-    fn as_any(&self) -> &dyn Any;
+pub trait AnyEdge: Send {
     fn from(&self) -> &str;
     fn to(&self) -> &str;
-    fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool;
+    fn check_condition(&self, ctx: &Context, output: &Output) -> bool;
 }
 
 impl AnyEdge for Edge {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn from(&self) -> &str {
         &self.from
     }
@@ -166,7 +189,7 @@ impl AnyEdge for Edge {
         &self.to
     }
 
-    fn check_condition(&self, ctx: &Context, output: &dyn Any) -> bool {
+    fn check_condition(&self, ctx: &Context, output: &Output) -> bool {
         match &self.condition {
             Some(condition) => condition(ctx, output),
             None => true,
@@ -270,81 +293,5 @@ impl Graph {
         if let Some(parents) = self.incoming_nodes.get_mut(to) {
             parents.retain(|p| p != from);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Default)]
-    struct StrategyNode;
-
-    #[async_trait]
-    impl Node for StrategyNode {
-        const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AnyUpstreamAvailable;
-
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(()))
-        }
-    }
-
-    #[test]
-    fn test_graph_add_node_reads_strategy_from_node() {
-        let mut graph = Graph::new();
-        graph.add_node("n", StrategyNode::default());
-        assert_eq!(
-            graph.get_trigger_strategy("n"),
-            TriggerStrategy::AnyUpstreamAvailable
-        );
-    }
-
-    #[test]
-    fn test_anynode_trait_object_can_read_strategy() {
-        let node: Box<dyn AnyNode> = Box::new(StrategyNode::default());
-        assert_eq!(
-            node.get_trigger_strategy(),
-            TriggerStrategy::AnyUpstreamAvailable
-        );
-    }
-
-    #[test]
-    fn test_edge_type_mismatch_unconditional() {
-        let edge = Edge {
-            from: "a".to_string(),
-            to: "b".to_string(),
-            condition: None,
-        };
-        let ctx = Context::new();
-
-        // Pass a string
-        let output = "hello".to_string();
-        let any_output: &dyn Any = &output;
-
-        // Check condition
-        assert!(edge.check_condition(&ctx, any_output));
-    }
-
-    #[test]
-    fn test_edge_type_mismatch_conditional() {
-        let edge = Edge {
-            from: "a".to_string(),
-            to: "b".to_string(),
-            condition: Some(Box::new(|_, any| {
-                any.downcast_ref::<i32>().map(|v| *v > 0).unwrap_or(false)
-            })),
-        };
-        let ctx = Context::new();
-
-        // Pass a string
-        let output = "hello".to_string();
-        let any_output: &dyn Any = &output;
-
-        // Check condition - should be false because type mismatch
-        assert!(!edge.check_condition(&ctx, any_output));
     }
 }

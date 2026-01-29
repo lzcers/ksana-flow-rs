@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
+use serde_json::Value;
 use serde_json::json;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -52,22 +53,17 @@ impl ImgGenNode {
 
 #[async_trait]
 impl Node for ImgGenNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
         let Some(api_key) = &self.api_key else {
-            return Ok(Box::new("Missing OPENROUTER_API_KEY".to_string()));
+            return Ok(Value::String("Missing OPENROUTER_API_KEY".to_string()).into());
         };
         info!("ImgGenNode: model={}", self.model);
-        let space_id = inputs
-            .get::<String>("space_id")
-            .cloned()
+        let space_id = input
+            .get_str_as::<String>("space_id")
             .or_else(|| self.space_id.clone())
             .unwrap_or_else(|| "ksana".to_string());
 
-        let input = utils::extract_string_input(&inputs);
+        let input = utils::extract_string_input(input);
         let prompt = if !input.is_empty() {
             if self.user_prompt_template.contains("{input}") {
                 self.user_prompt_template.replace("{input}", &input)
@@ -93,7 +89,7 @@ impl Node for ImgGenNode {
             Some(file_id) if !file_id.is_empty() => {
                 match utils::load_uploaded_image_data_url(file_id, &space_id) {
                     Ok(v) => v,
-                    Err(e) => return Ok(Box::new(e)),
+                    Err(e) => return Ok(Value::String(e).into()),
                 }
             }
             _ => None,
@@ -117,7 +113,7 @@ impl Node for ImgGenNode {
         .await
         {
             Ok(v) => v,
-            Err(e) => return Ok(Box::new(e)),
+            Err(e) => return Ok(Value::String(e).into()),
         };
 
         let Some(data_url) = utils::extract_first_image_data_url(&resp_json) else {
@@ -136,7 +132,7 @@ impl Node for ImgGenNode {
 
         let (mime_type, bytes) = match utils::parse_data_url_to_bytes(&data_url) {
             Ok(v) => v,
-            Err(e) => return Ok(Box::new(e)),
+            Err(e) => return Ok(Value::String(e).into()),
         };
 
         let media_id = Uuid::new_v4().to_string();
@@ -148,7 +144,7 @@ impl Node for ImgGenNode {
             &self.model,
             &space_id,
         ) {
-            return Ok(Box::new(e));
+            return Ok(Value::String(e).into());
         }
 
         let out = json!({
@@ -157,6 +153,6 @@ impl Node for ImgGenNode {
             "space_id": space_id,
         })
         .to_string();
-        Ok(Box::new(out))
+        Ok(Value::String(out).into())
     }
 }

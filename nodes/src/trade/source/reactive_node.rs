@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
 use flow::observable::ObservableExt;
-use flow::{Context, Node, NodeInputs, ReactiveStream, SendableAny, StreamAny};
+use flow::{Context, Input, Node, Output, ReactiveStream};
 
 use crate::trade::{
     k::K,
@@ -36,11 +36,7 @@ impl ReactiveSourceNode {
 
 #[async_trait]
 impl Node for ReactiveSourceNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        _inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
         let (code, start, end) = (self.code.clone(), self.start_time, self.end_time);
         let end_date = end
             .map(|d| d.date_naive())
@@ -64,6 +60,8 @@ impl Node for ReactiveSourceNode {
 
         // Convert Observable to ReactiveStream
         let stream = ReactiveStream::from_observable(filtered_data);
-        Ok(Box::new(StreamAny::new(stream.subscribe)))
+        let mut out = Output::new(None);
+        out.set_stream(stream);
+        Ok(out)
     }
 }

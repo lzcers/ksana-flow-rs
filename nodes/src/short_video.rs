@@ -1,6 +1,6 @@
 use crate::llm::LLMStreamObservable;
 use async_trait::async_trait;
-use flow::{Node, NodeInputs, ReactiveStream, SendableAny, StreamAny, StreamSubscriptionFn};
+use flow::{Context, Input, Node, Output, ReactiveStream, StreamSubscriptionFn};
 use futures::StreamExt;
 use rig::{
     agent::{Agent, MultiTurnStreamItem},
@@ -9,6 +9,7 @@ use rig::{
     providers::deepseek::{self, CompletionModel},
     streaming::{StreamedAssistantContent, StreamingPrompt},
 };
+use serde_json::Value;
 
 const SYSTEM_PROMPT: &str = r#"
 You are a professional short video script writer.
@@ -75,13 +76,12 @@ impl ShortVideoScriptNode {
 impl Node for ShortVideoScriptNode {
     async fn run(
         &mut self,
-        _ctx: &flow::Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
+        _ctx: &Context,
+        input: &Input,
+    ) -> Result<Output, String> {
         let mut all_inputs = String::new();
-        for (_key, value) in inputs.inputs.iter() {
-            let any = value.as_any();
-            if let Some(s) = any.downcast_ref::<String>() {
+        for (_key, value) in input.get_values().iter() {
+            if let Some(s) = value.as_str().or_else(|| value.get("output").and_then(|v| v.as_str())) {
                 if !all_inputs.is_empty() {
                     all_inputs.push_str("\n\n");
                 }
@@ -115,10 +115,12 @@ impl Node for ShortVideoScriptNode {
             react_stream,
             |chunks: Vec<String>| {
                 let full_text = chunks.join("");
-                Some(Box::new(full_text) as Box<dyn SendableAny>)
+                Some(Value::String(full_text))
             },
         );
-        Ok(Box::new(StreamAny::new(stream.subscribe)))
+        let mut out = Output::new(None);
+        out.set_stream(stream);
+        Ok(out)
     }
 }
 
@@ -126,7 +128,7 @@ impl Node for ShortVideoScriptNode {
 mod tests {
     use super::*;
     use flow::{Context, TaskEvent};
-    use flow::{NodeInputs, TaskGuard};
+    use flow::{Input, TaskGuard};
     use rig::providers::deepseek::DEEPSEEK_CHAT;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -141,8 +143,8 @@ mod tests {
         while let Some(event) = rx.recv().await {
             match event {
                 TaskEvent::Next(_, val) => {
-                    if let Some(s) = val.as_any().downcast_ref::<String>() {
-                        print!("{}", &s);
+                    if let Some(s) = val.as_str() {
+                        print!("{}", s);
                         output.push_str(s);
                     }
                 }
@@ -166,14 +168,12 @@ mod tests {
             let mut node = ShortVideoScriptNode::new(DEEPSEEK_CHAT);
             let input = "Theme: Cyberpunk detective story".to_owned();
 
-            let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs.insert("theme".to_string(), Box::new(input));
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("theme".to_string(), Value::String(input));
 
-            let payload = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            let subscribe = payload
-                .into_stream_subscriber()
-                .ok()
-                .expect("Expected stream payload");
+            let out = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            let stream = out.into_stream().expect("Expected stream output");
+            let subscribe = stream.subscribe;
             let output = collect_output(subscribe).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());

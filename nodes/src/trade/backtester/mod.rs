@@ -3,8 +3,9 @@ mod index_calc;
 pub mod trading;
 
 use async_trait::async_trait;
-use flow::{Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::trade::k::K;
 
@@ -30,14 +31,12 @@ pub struct BacktesterOutput {
 impl Node for Backtester {
     async fn run(
         &mut self,
-        _ctx: &flow::Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        let input = inputs
-            .get_any()
-            .and_then(|a| a.downcast_ref::<BacktesterInput>())
-            .cloned()
-            .expect("Backtester expected BacktesterInput");
+        _ctx: &Context,
+        input: &Input,
+    ) -> Result<Output, String> {
+        let input: BacktesterInput = input
+            .get_any_as()
+            .ok_or_else(|| "Backtester expected BacktesterInput".to_string())?;
 
         let _ = self.order(input.order);
         self.update(&input.k);
@@ -47,6 +46,6 @@ impl Node for Backtester {
             positions: self.get_positions().clone(),
             trading_record: self.get_trading_record().clone(),
         };
-        Ok(Box::new(out))
+        Ok(serde_json::to_value(out).unwrap_or(Value::Null).into())
     }
 }

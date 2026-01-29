@@ -1,10 +1,13 @@
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use super::task_guard::TaskTracker;
 use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard};
-use crate::SendableAny;
 use crate::observable::Subscription;
 use dashmap::DashMap;
+use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeState {
@@ -20,7 +23,7 @@ pub enum NodeState {
 // 存储所有节点的执行状态，为调度器提供调度必要信息
 pub struct ExecutionContext {
     node_states: DashMap<NodeId, NodeState>,
-    node_outputs: Mutex<HashMap<NodeId, Box<dyn SendableAny>>>,
+    node_outputs: Mutex<HashMap<NodeId, Value>>,
     stream_subscriptions: DashMap<NodeId, Box<dyn Subscription>>,
     tracker: Arc<TaskTracker>,
 }
@@ -53,13 +56,13 @@ impl ExecutionContext {
         self.node_states.get(node_id).map(|s| *s)
     }
 
-    pub fn set_output(&self, node_id: NodeId, output: Box<dyn SendableAny>) {
+    pub fn set_output(&self, node_id: NodeId, output: Value) {
         if let Ok(mut map) = self.node_outputs.lock() {
             map.insert(node_id, output);
         }
     }
 
-    pub fn get_output(&self, node_id: &str) -> Option<Box<dyn SendableAny>> {
+    pub fn get_output(&self, node_id: &str) -> Option<Value> {
         self.node_outputs
             .lock()
             .ok()
@@ -78,40 +81,15 @@ impl ExecutionContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
 
     #[test]
-    fn exec_ctx_output_is_cloned_on_get() {
-        struct CloneCounted {
-        clones: Arc<AtomicUsize>,
-        value: usize,
-        }
-
-        impl Clone for CloneCounted {
-            fn clone(&self) -> Self {
-                self.clones.fetch_add(1, Ordering::SeqCst);
-                Self {
-                    clones: self.clones.clone(),
-                    value: self.value,
-                }
-            }
-        }
-
+    fn exec_ctx_get_output_returns_stored_value() {
         let exec_ctx = ExecutionContext::new();
-        let clones = Arc::new(AtomicUsize::new(0));
-        exec_ctx.set_output(
-            "n1".to_string(),
-            Box::new(CloneCounted {
-                clones: clones.clone(),
-                value: 42,
-            }),
-        );
+        exec_ctx.set_output("n1".to_string(), serde_json::json!({"x": 1}));
 
-        let _ = exec_ctx.get_output("n1").unwrap();
-        let _ = exec_ctx.get_output("n1").unwrap();
-        assert_eq!(clones.load(Ordering::SeqCst), 2);
+        let out1 = exec_ctx.get_output("n1").unwrap();
+        let out2 = exec_ctx.get_output("n1").unwrap();
+        assert_eq!(out1, serde_json::json!({"x": 1}));
+        assert_eq!(out2, serde_json::json!({"x": 1}));
     }
 }

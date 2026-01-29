@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use flow::{Context, Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
+use serde_json::Value;
 
 pub struct TextNode {
     #[allow(dead_code)]
@@ -18,64 +19,41 @@ impl Node for TextNode {
     async fn run(
         &mut self,
         _ctx: &Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        let input = inputs
-            .get_any()
-            .and_then(|a| a.downcast_ref::<String>())
-            .cloned()
-            .unwrap_or_default();
-        let output = if input.is_empty() {
+        input: &Input,
+    ) -> Result<Output, String> {
+        let in_text: String = input.get_any_as().unwrap_or_default();
+        let output = if in_text.is_empty() {
             self.text.clone()
         } else {
-            input
+            in_text
         };
-        Ok(Box::new(output))
+        Ok(Value::String(output).into())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::Context;
-    use flow::NodeInputs;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
     #[test]
     fn test_text_node() {
-        fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-            loop {
-                let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>() else {
-                    return any;
-                };
-                any = inner.as_ref().as_any();
-            }
-        }
-
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
             let mut node = TextNode::new("node1".to_string(), "default text".to_string());
 
             // Test with empty input
-            let inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            let s = unwrap_any(output.as_any())
-                .downcast_ref::<String>()
-                .cloned()
-                .unwrap_or_default();
-            assert_eq!(s, "default text");
+            let inputs: HashMap<String, Value> = HashMap::new();
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("default text"));
 
             // Test with provided input
-            let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs.insert("test".to_string(), Box::new("input text".to_string()));
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            let s = unwrap_any(output.as_any())
-                .downcast_ref::<String>()
-                .cloned()
-                .unwrap_or_default();
-            assert_eq!(s, "input text");
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), Value::String("input text".to_string()));
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("input text"));
         });
     }
 }

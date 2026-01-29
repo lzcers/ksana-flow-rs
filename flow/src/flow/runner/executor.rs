@@ -1,6 +1,6 @@
 use super::task_guard::TaskGuard;
 use super::utils::send_task_event;
-use crate::{AnyNode, Context, NodeInputs, SendableAny, TaskEvent};
+use crate::{AnyNode, Context, Input, Output, TaskEvent};
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{RwLock, mpsc};
@@ -13,7 +13,7 @@ impl Executor {
         _guard: TaskGuard,
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
-        inputs: NodeInputs,
+        input: Input,
         // 节点执行所需的上下文
         ctx: Arc<Context>,
         // 向调度器发送执行结果
@@ -24,11 +24,11 @@ impl Executor {
             let mut node = node.write().await;
 
             info!(node_id = %node_id, "Node tasks start");
-            let result = AssertUnwindSafe(node.run(&ctx, inputs))
+            let result = AssertUnwindSafe(node.run(ctx.as_ref(), &input))
                 .catch_unwind()
                 .await;
 
-            let output: Result<Box<dyn SendableAny>, String> = match result {
+            let output: Result<Output, String> = match result {
                 Ok(res) => res,
                 Err(panic_err) => {
                     let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
@@ -46,16 +46,28 @@ impl Executor {
 
             match output {
                 Ok(out) => {
-                    match out.into_stream_subscriber() {
-                        Ok(subscribe_fn) => {
-                            send_task_event(&task_sender, TaskEvent::Stream(node_id, subscribe_fn))
+                    let is_stream = out.is_stream();
+                    if is_stream {
+                        match out.into_stream() {
+                            Some(stream) => {
+                                send_task_event(
+                                    &task_sender,
+                                    TaskEvent::Stream(node_id, stream.subscribe),
+                                )
                                 .await;
-                        }
-                        Err(out) => {
-                            send_task_event(&task_sender, TaskEvent::Completed(node_id, Some(out)))
+                            }
+                            None => {
+                                send_task_event(
+                                    &task_sender,
+                                    TaskEvent::Error(node_id, "Missing stream".to_string()),
+                                )
                                 .await;
+                            }
                         }
-                    };
+                    } else {
+                        send_task_event(&task_sender, TaskEvent::Completed(node_id, out.into_value()))
+                            .await;
+                    }
                 }
                 Err(e) => {
                     send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;

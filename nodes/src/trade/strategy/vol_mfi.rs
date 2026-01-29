@@ -4,7 +4,8 @@ use crate::trade::{
 };
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
-use flow::{Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
+use serde_json::Value;
 use ta::Next;
 use ta::indicators::{ExponentialMovingAverage, MoneyFlowIndex};
 
@@ -29,18 +30,10 @@ impl VOLMFINode {
 
 #[async_trait]
 impl Node for VOLMFINode {
-    async fn run(
-        &mut self,
-        _ctx: &flow::Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        let input = inputs
-            .get_any()
-            .and_then(|a| a.downcast_ref::<K>())
-            .cloned()
-            .expect("VOLMFINode expected K input");
-
-        let k = input;
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+        let k: K = input
+            .get_any_as()
+            .ok_or_else(|| "VOLMFINode expected K input".to_string())?;
         let mfi = self.mfi_index.next(&k);
         let vol_ema = self.vol_ema_index.next(k.volume);
 
@@ -59,7 +52,7 @@ impl Node for VOLMFINode {
             k,
             order: signal.signal_type,
         };
-        Ok(Box::new(out))
+        Ok(serde_json::to_value(out).unwrap_or(Value::Null).into())
     }
 }
 

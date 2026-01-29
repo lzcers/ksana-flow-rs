@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use cron::Schedule;
 use flow::observable::{Observable, Observer, Subscription};
-use flow::{Context, Node, NodeInputs, ReactiveStream, SendableAny, StreamAny};
+use flow::{Context, Input, Node, Output, ReactiveStream};
+use serde_json::Value;
 use std::str::FromStr;
 use tokio::time::sleep;
 
@@ -60,19 +61,20 @@ impl Node for TimerNode {
     async fn run(
         &mut self,
         _ctx: &Context,
-        _inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
+        _input: &Input,
+    ) -> Result<Output, String> {
         let schedule = Schedule::from_str(&self.cron_expr).expect("Invalid cron expression");
         let observable = TimerObservable { schedule };
         let stream = ReactiveStream::from_observable(observable);
-        Ok(Box::new(StreamAny::new(stream.subscribe)))
+        let mut out = Output::new(None);
+        out.set_stream(stream);
+        Ok(out)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::NodeInputs;
     use flow::TaskEvent;
     use flow::TaskGuard;
     use std::collections::HashMap;
@@ -87,17 +89,11 @@ mod tests {
         let mut node = TimerNode::new("* * * * * * *").unwrap();
 
         let start = Instant::now();
-        let payload = node
-            .run(
-                &ctx,
-                NodeInputs::new(HashMap::<String, Box<dyn flow::SendableAny>>::new()),
-            )
+        let out = node.run(&ctx, &Input::new(HashMap::<String, Value>::new()))
             .await
             .unwrap();
-        let subscribe = payload
-            .into_stream_subscriber()
-            .ok()
-            .expect("Expected stream payload");
+        let stream = out.into_stream().expect("Expected stream output");
+        let subscribe = stream.subscribe;
 
         let (tx, mut rx) = mpsc::channel(10);
 
@@ -114,17 +110,7 @@ mod tests {
             match event {
                 TaskEvent::Next(node_id, val) => {
                     assert_eq!(node_id, "test_node");
-                    // Verify the value is ()
-                    fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-                        loop {
-                            let Some(inner) = any.downcast_ref::<Box<dyn flow::SendableAny>>()
-                            else {
-                                return any;
-                            };
-                            any = inner.as_ref().as_any();
-                        }
-                    }
-                    assert!(unwrap_any(val.as_any()).is::<()>());
+                    assert_eq!(val, Value::Null);
                 }
                 _ => panic!("Expected Next event"),
             }

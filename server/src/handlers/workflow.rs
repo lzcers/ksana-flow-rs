@@ -11,9 +11,7 @@ use axum::{
     },
     response::IntoResponse,
 };
-use flow::{
-    FlowEvent, NodeInputs, Runner, SendableAny, {ExecutionContext, NodeState},
-};
+use flow::{ExecutionContext, FlowEvent, Input, NodeState, Runner};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -143,16 +141,6 @@ pub async fn delete_workflow(
     }
 }
 
-fn restore_value(v: Value) -> Box<dyn SendableAny> {
-    match v {
-        Value::Null => Box::new(()),
-        Value::Bool(b) => Box::new(b),
-        Value::String(s) => Box::new(s),
-        // Keep others as Value
-        other => Box::new(other),
-    }
-}
-
 fn extract_single_output_value(outputs: &Value) -> Value {
     match outputs {
         Value::Object(map) => {
@@ -189,8 +177,7 @@ fn reconstruct_execution_context_from_blueprint(blueprint: &GraphBlueprint) -> E
         // 节点输出恢复
         // 不一定完整，只能重建出能够序列化的输出
         let val = extract_single_output_value(&node.data.outputs);
-        let output = restore_value(val);
-        execution_ctx.set_output(node.id.clone(), output);
+        execution_ctx.set_output(node.id.clone(), val);
     }
     execution_ctx
 }
@@ -199,7 +186,7 @@ async fn start_execution(
     state: AppState,
     graph: flow::Graph,
     init_execution_ctx: Option<ExecutionContext>,
-    start_inputs: Vec<(String, NodeInputs)>,
+    start_inputs: Vec<(String, Input)>,
     workflow_id: i64,
     workspace_id: String,
 ) -> Result<String, String> {
@@ -313,12 +300,12 @@ pub async fn run_workflow(
                 let default_val = if let Some(meta) = registry.get_node_metadata(&node.type_name) {
                     registry::create_default_value(&meta.inputs)
                 } else {
-                    Box::new(())
+                    Value::Null
                 };
 
                 let mut map = HashMap::new();
                 map.insert("external_start".to_owned(), default_val);
-                inputs.push((node_id.clone(), NodeInputs::new(map)));
+                inputs.push((node_id.clone(), Input::new(map)));
             }
         }
         (graph, inputs)
@@ -373,7 +360,7 @@ pub async fn run_node(
                 }
             }
         }
-        (graph, execution_ctx, NodeInputs::new(node_inputs))
+        (graph, execution_ctx, Input::new(node_inputs))
     };
 
     if !graph.nodes.contains_key(&node_id) {
@@ -506,9 +493,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, workspace_id: Str
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        extract_single_output_value, reconstruct_execution_context_from_blueprint, restore_value,
-    };
+    use super::{extract_single_output_value, reconstruct_execution_context_from_blueprint};
     use crate::state::{GraphBlueprint, Node, NodeData, Position};
     use flow::NodeState;
     use serde_json::{Value, json};
@@ -529,32 +514,6 @@ mod tests {
     fn extract_single_output_keeps_multi_key_object_without_output() {
         let outputs = json!({"a": 1, "b": 2});
         assert_eq!(extract_single_output_value(&outputs), outputs);
-    }
-
-    #[test]
-    fn restore_value_string_becomes_string() {
-        let payload = restore_value(json!("hello"));
-        let s = payload
-            .as_any()
-            .downcast_ref::<String>()
-            .cloned();
-        assert_eq!(s, Some("hello".to_string()));
-    }
-
-    #[test]
-    fn restore_value_null_becomes_unit() {
-        let payload = restore_value(Value::Null);
-        assert!(payload.as_any().downcast_ref::<()>().is_some());
-    }
-
-    #[test]
-    fn restore_value_number_kept_as_json_value() {
-        let payload = restore_value(json!(123));
-        let v = payload
-            .as_any()
-            .downcast_ref::<Value>()
-            .cloned();
-        assert_eq!(v, Some(json!(123)));
     }
 
     #[test]
@@ -592,7 +551,7 @@ mod tests {
         let ctx = reconstruct_execution_context_from_blueprint(&blueprint);
         assert_eq!(ctx.get_state("a"), Some(NodeState::Completed));
         assert_eq!(ctx.get_state("b"), Some(NodeState::Completed));
-        assert!(ctx.get_output("b").is_some());
-        assert!(ctx.get_output("a").is_some());
+        assert_eq!(ctx.get_output("a"), Some(json!("cached-a")));
+        assert_eq!(ctx.get_output("b"), Some(json!("cached-b")));
     }
 }

@@ -1,7 +1,8 @@
 use super::{agent::LlmAgent, input::extract_input_string};
 use crate::prompt::build_user_prompt;
 use async_trait::async_trait;
-use flow::{Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
+use serde_json::Value;
 
 pub struct LLMNode {
     llm: LlmAgent,
@@ -29,10 +30,10 @@ impl LLMNode {
 impl Node for LLMNode {
     async fn run(
         &mut self,
-        _ctx: &flow::Context,
-        inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
-        let input = extract_input_string(&inputs);
+        _ctx: &Context,
+        input: &Input,
+    ) -> Result<Output, String> {
+        let input = extract_input_string(input);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
 
         let out = self
@@ -40,14 +41,14 @@ impl Node for LLMNode {
             .prompt(&prompt)
             .await
             .unwrap_or("llm request failed".to_owned());
-        Ok(Box::new(out))
+        Ok(Value::String(out).into())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use flow::Context;
-    use flow::NodeInputs;
+    use flow::Input;
+    use serde_json::Value;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -65,11 +66,11 @@ mod tests {
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
 
-            let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs.insert("test".to_string(), Box::new(input));
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), Value::String(input));
 
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            eprintln!("output_type: {}", output.type_name());
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            eprintln!("output: {:?}", output.get());
         });
     }
     #[test]
@@ -83,11 +84,11 @@ mod tests {
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
 
-            let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs.insert("test".to_string(), Box::new(input));
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), Value::String(input));
 
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            eprintln!("output_type: {}", output.type_name());
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            eprintln!("output: {:?}", output.get());
         });
     }
 
@@ -107,11 +108,11 @@ mod tests {
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
 
-            let mut inputs: HashMap<String, Box<dyn flow::SendableAny>> = HashMap::new();
-            inputs.insert("test".to_string(), Box::new(input));
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), Value::String(input));
 
-            let output = node.run(&ctx, NodeInputs::new(inputs)).await.unwrap();
-            eprintln!("output_type: {}", output.type_name());
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            eprintln!("output: {:?}", output.get());
         });
     }
 }

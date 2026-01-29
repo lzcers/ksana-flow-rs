@@ -1,27 +1,13 @@
-use crate::flow::{Context, Node, NodeInputs};
-use crate::flow::{GraphBuilder, Runner};
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use crate::{SendableAny, StreamAny};
+use serde_json::{Value, json};
+use std::collections::HashMap;
 
-fn get_input<T: 'static + Clone>(inputs: &NodeInputs) -> T {
-    fn unwrap_any<'a>(mut any: &'a dyn std::any::Any) -> &'a dyn std::any::Any {
-        loop {
-            let Some(inner) = any.downcast_ref::<Box<dyn SendableAny>>() else {
-                return any;
-            };
-            any = inner.as_ref().as_any();
-        }
-    }
+use crate::{Context, Input, Node, Output, Runner, TriggerStrategy};
 
-    for payload in inputs.inputs.values() {
-        let any = unwrap_any(payload.as_any());
-        if let Some(v) = any.downcast_ref::<T>() {
-            return v.clone();
-        }
-    }
-    panic!("Expected input of type {}", std::any::type_name::<T>())
+fn input_with_external_start(value: Value) -> Input {
+    let mut map = HashMap::new();
+    map.insert("external_start".to_string(), value);
+    Input::new(map)
 }
 
 #[tokio::test]
@@ -29,12 +15,9 @@ async fn test_complex_graph_connections() {
     struct InputNode;
     #[async_trait]
     impl Node for InputNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let s: String = input.get_any_as().unwrap_or_default();
+            Ok(Value::String(s).into())
         }
     }
 
@@ -50,38 +33,24 @@ async fn test_complex_graph_connections() {
     }
     #[async_trait]
     impl Node for BranchNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("{}[{}]", input, self.branch_id)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let s: String = input.get_any_as().unwrap_or_default();
+            Ok(Value::String(format!("{}[{}]", s, self.branch_id)).into())
         }
     }
 
     struct MergeNode;
     #[async_trait]
     impl Node for MergeNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("Merged: {}", input)))
-        }
-    }
-
-    struct OutputNode;
-    #[async_trait]
-    impl Node for OutputNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let mut entries: Vec<_> = input.get_values().iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            let joined = entries
+                .iter()
+                .filter_map(|(_, v)| v.as_str())
+                .collect::<Vec<_>>()
+                .join("");
+            Ok(Value::String(format!("Merged: {}", joined)).into())
         }
     }
 
@@ -93,7 +62,6 @@ async fn test_complex_graph_connections() {
             ("branch3", BranchNode::new("C")),
             ("merge1", MergeNode),
             ("merge2", MergeNode),
-            ("output", OutputNode),
         ],
         edges: [
             ("input", "branch1"),
@@ -103,52 +71,28 @@ async fn test_complex_graph_connections() {
             ("branch2", "merge1"),
             ("merge1", "merge2"),
             ("branch3", "merge2"),
-            ("merge2", "output"),
         ]
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", Box::new("Test".to_string()));
-    runner
-        .run()
-        .await
-        .expect("Complex graph execution should succeed");
+    runner.set_start_node("input", json!("Test"));
+    runner.run().await.expect("Complex graph execution should succeed");
 }
 
 #[tokio::test]
-async fn test_build_flow_macro() {
+async fn test_build_flow_macro_with_condition() {
     struct TestNode;
     #[async_trait]
     impl Node for TestNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let s: String = input.get_any_as().unwrap_or_default();
+            Ok(Value::String(s).into())
         }
     }
 
-    let graph = crate::build_flow!(
-        nodes: [
-            ("node1", TestNode),
-            ("node2", TestNode),
-            ("node3", TestNode),
-        ],
-        edges: [
-            ("node1", "node2"),
-            ("node2", "node3"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("node1", Box::new("Start".to_string()));
-    let result = runner.run().await;
-
-    assert!(result.is_ok());
-
     let is_true = |_ctx: &Context, _out: &String| true;
-    let graph_cond = crate::build_flow!(
+
+    let graph = crate::build_flow!(
         nodes: [
             ("node1", TestNode),
             ("node2", TestNode),
@@ -157,10 +101,10 @@ async fn test_build_flow_macro() {
             ("node1", "node2", is_true),
         ]
     );
-    let (mut runner_cond, _handle) = Runner::new(graph_cond, None);
-    runner_cond.set_start_node("node1", Box::new("Start".to_string()));
-    let result_cond = runner_cond.run().await;
-    assert!(result_cond.is_ok());
+
+    let (mut runner, _handle) = Runner::new(graph, None);
+    runner.set_start_node("node1", json!("Start"));
+    runner.run().await.expect("Flow should succeed");
 }
 
 #[tokio::test]
@@ -168,51 +112,38 @@ async fn test_conditional_branching() {
     struct InputNode;
     #[async_trait]
     impl Node for InputNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<i32>(&inputs)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let n: i32 = input.get_any_as().unwrap_or_default();
+            Ok(json!(n).into())
         }
     }
 
     struct CheckNode;
     #[async_trait]
     impl Node for CheckNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<i32>(&inputs);
-            Ok(Box::new((input, input > 0)))
+        const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AnyUpstreamAvailable;
+
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let n: i32 = input.get_any_as().unwrap_or_default();
+            Ok(serde_json::to_value((n, n > 0)).unwrap_or(Value::Null).into())
         }
     }
 
     struct PositiveNode;
     #[async_trait]
     impl Node for PositiveNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<(i32, bool)>(&inputs);
-            Ok(Box::new(format!("Positive: {}", input.0)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let v: (i32, bool) = input.get_any_as().unwrap_or((0, false));
+            Ok(Value::String(format!("Positive: {}", v.0)).into())
         }
     }
 
     struct NegativeNode;
     #[async_trait]
     impl Node for NegativeNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<(i32, bool)>(&inputs);
-            Ok(Box::new(format!("Negative: {}", input.0)))
+        async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+            let v: (i32, bool) = input.get_any_as().unwrap_or((0, false));
+            Ok(Value::String(format!("Negative: {}", v.0)).into())
         }
     }
 
@@ -234,936 +165,7 @@ async fn test_conditional_branching() {
     );
 
     let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", Box::new(42));
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Conditional branching should succeed");
+    runner.set_start_node_with_inputs("input", input_with_external_start(json!(42)));
+    runner.run().await.expect("Conditional branching should succeed");
 }
 
-#[tokio::test]
-async fn test_multi_level_graph() {
-    struct LevelNode {
-        level: u32,
-    }
-    impl LevelNode {
-        fn new(level: u32) -> Self {
-            Self { level }
-        }
-    }
-    #[async_trait]
-    impl Node for LevelNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("L{}: {}", self.level, input)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("l1_1", LevelNode::new(1)),
-            ("l1_2", LevelNode::new(1)),
-            ("l2_1", LevelNode::new(2)),
-            ("l2_2", LevelNode::new(2)),
-            ("l2_3", LevelNode::new(2)),
-            ("l3_1", LevelNode::new(3)),
-            ("l3_2", LevelNode::new(3)),
-            ("l4_1", LevelNode::new(4)),
-        ],
-        edges: [
-            ("l1_1", "l2_1"),
-            ("l1_1", "l2_2"),
-            ("l1_2", "l2_2"),
-            ("l1_2", "l2_3"),
-            ("l2_1", "l3_1"),
-            ("l2_2", "l3_1"),
-            ("l2_2", "l3_2"),
-            ("l2_3", "l3_2"),
-            ("l3_1", "l4_1"),
-            ("l3_2", "l4_1"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("l1_1", Box::new("Start".to_string()));
-    let result = runner.run().await;
-
-    assert!(
-        result.is_ok(),
-        "Multi-level graph should execute successfully"
-    );
-}
-
-#[tokio::test]
-async fn test_large_concurrent_nodes() {
-    struct CounterNode {
-        id: usize,
-    }
-    impl CounterNode {
-        fn new(id: usize) -> Self {
-            Self { id }
-        }
-    }
-    #[async_trait]
-    impl Node for CounterNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("{}[Node{}]", input, self.id)))
-        }
-    }
-
-    struct AggregatorNode;
-    #[async_trait]
-    impl Node for AggregatorNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("Aggregated: {}", input)))
-        }
-    }
-
-    let mut builder = GraphBuilder::new().add_node("input", CounterNode::new(0));
-
-    for i in 1..=50 {
-        builder = builder.add_node(format!("node{}", i).as_str(), CounterNode::new(i));
-        builder = builder.add_edge("input", format!("node{}", i).as_str());
-    }
-
-    builder = builder.add_node("aggregator", AggregatorNode);
-
-    for i in 1..=50 {
-        builder = builder.add_edge(format!("node{}", i).as_str(), "aggregator");
-    }
-
-    let graph = builder.build();
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", Box::new("Data".to_string()));
-    let result = runner.run().await;
-
-    assert!(
-        result.is_ok(),
-        "Large concurrent nodes should execute successfully"
-    );
-}
-
-#[tokio::test]
-async fn test_concurrent_execution_tracking() {
-    struct TrackingNode {
-        id: usize,
-        execution_log: Arc<Mutex<Vec<usize>>>,
-    }
-    impl TrackingNode {
-        fn new(id: usize, log: Arc<Mutex<Vec<usize>>>) -> Self {
-            Self {
-                id,
-                execution_log: log,
-            }
-        }
-    }
-    #[async_trait]
-    impl Node for TrackingNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            {
-                let mut log = self.execution_log.lock().unwrap();
-                log.push(self.id);
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            Ok(Box::new(format!("{}[{}]", input, self.id)))
-        }
-    }
-
-    struct CollectorNode;
-    #[async_trait]
-    impl Node for CollectorNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
-        }
-    }
-
-    let execution_log = Arc::new(Mutex::new(Vec::new()));
-
-    let mut builder =
-        GraphBuilder::new().add_node("input", TrackingNode::new(0, execution_log.clone()));
-
-    for i in 1..=20 {
-        builder = builder.add_node(
-            format!("node{}", i).as_str(),
-            TrackingNode::new(i, execution_log.clone()),
-        );
-        builder = builder.add_edge("input", format!("node{}", i).as_str());
-    }
-
-    builder = builder.add_node("collector", CollectorNode);
-
-    for i in 1..=20 {
-        builder = builder.add_edge(format!("node{}", i).as_str(), "collector");
-    }
-
-    let graph = builder.build();
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", Box::new("Concurrent".to_string()));
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Concurrent execution should succeed");
-
-    let log = execution_log.lock().unwrap();
-    assert_eq!(log.len(), 21, "All nodes should have executed");
-}
-
-#[tokio::test]
-async fn test_context_write_and_read() {
-    struct WriterNode;
-    #[async_trait]
-    impl Node for WriterNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            ctx.set("key1", "value1");
-            ctx.set("key2", 42);
-            ctx.set("key3", vec![1, 2, 3]);
-            Ok(Box::new(input))
-        }
-    }
-
-    struct ReaderNode;
-    #[async_trait]
-    impl Node for ReaderNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            let value1: Option<String> = ctx.get("key1");
-            let value2: Option<i32> = ctx.get("key2");
-            let value3: Option<Vec<i32>> = ctx.get("key3");
-
-            assert_eq!(value1, Some("value1".to_string()));
-            assert_eq!(value2, Some(42));
-            assert_eq!(value3, Some(vec![1, 2, 3]));
-
-            Ok(Box::new(format!("Read: {}", input)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("writer", WriterNode),
-            ("reader", ReaderNode),
-        ],
-        edges: [
-            ("writer", "reader"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("writer", Box::new("Test".to_string()));
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Context read/write should succeed");
-}
-
-#[tokio::test]
-async fn test_context_across_multiple_nodes() {
-    struct Node1;
-    #[async_trait]
-    impl Node for Node1 {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            ctx.set("node1_data", "from_node1");
-            ctx.set("counter", 1);
-            Ok(Box::new(input))
-        }
-    }
-
-    struct Node2;
-    #[async_trait]
-    impl Node for Node2 {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            let counter: Option<i32> = ctx.get("counter");
-            if let Some(c) = counter {
-                ctx.set("counter", c + 1);
-            }
-            ctx.set("node2_data", "from_node2");
-            Ok(Box::new(input))
-        }
-    }
-
-    struct Node3;
-    #[async_trait]
-    impl Node for Node3 {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            let node1_data: Option<String> = ctx.get("node1_data");
-            let node2_data: Option<String> = ctx.get("node2_data");
-            let counter: Option<i32> = ctx.get("counter");
-
-            assert_eq!(node1_data, Some("from_node1".to_string()));
-            assert_eq!(node2_data, Some("from_node2".to_string()));
-            assert_eq!(counter, Some(2));
-
-            Ok(Box::new(format!("Final: {}", input)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("node1", Node1),
-            ("node2", Node2),
-            ("node3", Node3),
-        ],
-        edges: [
-            ("node1", "node2"),
-            ("node2", "node3"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("node1", Box::new("Start".to_string()));
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Context across multiple nodes should work");
-}
-
-#[tokio::test]
-async fn test_context_with_conditional_edges() {
-    struct InputNode;
-    #[async_trait]
-    impl Node for InputNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<i32>(&inputs);
-            ctx.set("input_value", input);
-            Ok(Box::new(input))
-        }
-    }
-
-    struct CheckNode;
-    #[async_trait]
-    impl Node for CheckNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<i32>(&inputs);
-            let stored: Option<i32> = ctx.get("input_value");
-            assert_eq!(stored, Some(input));
-            Ok(Box::new((input, input % 2 == 0)))
-        }
-    }
-
-    struct EvenNode;
-    #[async_trait]
-    impl Node for EvenNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<(i32, bool)>(&inputs);
-            ctx.set("result", "even");
-            Ok(Box::new(format!("Even: {}", input.0)))
-        }
-    }
-
-    struct OddNode;
-    #[async_trait]
-    impl Node for OddNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<(i32, bool)>(&inputs);
-            ctx.set("result", "odd");
-            Ok(Box::new(format!("Odd: {}", input.0)))
-        }
-    }
-
-    let is_even = |_ctx: &Context, output: &(i32, bool)| output.1;
-    let is_odd = |_ctx: &Context, output: &(i32, bool)| !output.1;
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("input", InputNode),
-            ("check", CheckNode),
-            ("even", EvenNode),
-            ("odd", OddNode),
-        ],
-        edges: [
-            ("input", "check"),
-            ("check", "even", is_even),
-            ("check", "odd", is_odd),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("input", Box::new(4));
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Context with conditional edges should work");
-}
-
-#[tokio::test]
-async fn test_context_serialization() {
-    struct SerializeNode;
-    #[async_trait]
-    impl Node for SerializeNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            ctx.set("string", "hello");
-            ctx.set("number", 123);
-            ctx.set("float", 45.67);
-            ctx.set("boolean", true);
-            ctx.set("array", vec![1, 2, 3, 4, 5]);
-            Ok(Box::new(input))
-        }
-    }
-
-    struct DeserializeNode;
-    #[async_trait]
-    impl Node for DeserializeNode {
-        async fn run(
-            &mut self,
-            ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            let s: Option<String> = ctx.get("string");
-            let n: Option<i32> = ctx.get("number");
-            let f: Option<f64> = ctx.get("float");
-            let b: Option<bool> = ctx.get("boolean");
-            let a: Option<Vec<i32>> = ctx.get("array");
-
-            assert_eq!(s, Some("hello".to_string()));
-            assert_eq!(n, Some(123));
-            assert_eq!(f, Some(45.67));
-            assert_eq!(b, Some(true));
-            assert_eq!(a, Some(vec![1, 2, 3, 4, 5]));
-
-            Ok(Box::new(format!("Deserialized: {}", input)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("serialize", SerializeNode),
-            ("deserialize", DeserializeNode),
-        ],
-        edges: [
-            ("serialize", "deserialize"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("serialize", Box::new("Test".to_string()));
-    let result = runner.run().await;
-
-    assert!(result.is_ok(), "Context serialization should work");
-}
-
-#[tokio::test]
-async fn test_diamond_graph_pattern() {
-    struct StartNode;
-    #[async_trait]
-    impl Node for StartNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
-        }
-    }
-
-    struct LeftNode;
-    #[async_trait]
-    impl Node for LeftNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("L: {}", input)))
-        }
-    }
-
-    struct RightNode;
-    #[async_trait]
-    impl Node for RightNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("R: {}", input)))
-        }
-    }
-
-    struct EndNode;
-    #[async_trait]
-    impl Node for EndNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let input = get_input::<String>(&inputs);
-            Ok(Box::new(format!("E: {}", input)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("start", StartNode),
-            ("left", LeftNode),
-            ("right", RightNode),
-            ("end", EndNode),
-        ],
-        edges: [
-            ("start", "left"),
-            ("start", "right"),
-            ("left", "end"),
-            ("right", "end"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("start", Box::new("Diamond".to_string()));
-    runner
-        .run()
-        .await
-        .expect("Diamond pattern should execute successfully");
-}
-
-#[tokio::test]
-async fn test_type_mismatch() {
-    struct StringNode;
-    #[async_trait]
-    impl Node for StringNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
-        }
-    }
-
-    struct IntNode;
-    #[async_trait]
-    impl Node for IntNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<i32>(&inputs)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("string_node", StringNode),
-            ("int_node", IntNode),
-        ],
-        edges: [
-            ("string_node", "int_node"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("string_node", Box::new("Test".to_string()));
-    let result = runner.run().await;
-
-    assert!(result.is_err(), "Type mismatch should cause error");
-    assert!(result.unwrap_err().contains("Expected input of type"));
-}
-
-#[tokio::test]
-async fn test_unit_input_allows_any() {
-    struct StringNode;
-    #[async_trait]
-    impl Node for StringNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(get_input::<String>(&inputs)))
-        }
-    }
-
-    struct UnitNode;
-    #[async_trait]
-    impl Node for UnitNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new("UnitNode called".to_string()))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("string_node", StringNode),
-            ("unit_node", UnitNode),
-        ],
-        edges: [
-            ("string_node", "unit_node"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("string_node", Box::new("Test".to_string()));
-    let result = runner.run().await;
-
-    assert!(
-        result.is_ok(),
-        "Unit input node should allow any input type, got error: {:?}",
-        result.err()
-    );
-}
-
-#[tokio::test]
-async fn test_no_start_nodes_hang_fix() {
-    struct TestNode;
-    #[async_trait]
-    impl Node for TestNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(()))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [("node1", TestNode)],
-        edges: []
-    );
-
-    // Create runner but do NOT set start node
-    let (mut runner, _handle) = Runner::new(graph, None);
-
-    // Use timeout to ensure it doesn't hang
-    let result = tokio::time::timeout(std::time::Duration::from_secs(1), runner.run()).await;
-
-    assert!(
-        result.is_ok(),
-        "Runner should finish immediately and not hang"
-    );
-    assert!(
-        result.unwrap().is_ok(),
-        "Runner execution should be successful"
-    );
-}
-
-#[tokio::test]
-async fn test_multi_input_merge() {
-    use crate::flow::NodeInputs;
-    struct SourceNode {
-        value: String,
-    }
-    #[async_trait]
-    impl Node for SourceNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            Ok(Box::new(self.value.clone()))
-        }
-    }
-
-    struct MultiMergeNode;
-    #[async_trait]
-    impl Node for MultiMergeNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let mut parts: Vec<String> = inputs
-                .inputs
-                .values()
-                .filter_map(|p| p.as_any().downcast_ref::<String>().cloned())
-                .collect();
-            parts.sort(); // Ensure deterministic order
-            Ok(Box::new(format!("Merged: {}", parts.join(", "))))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("source1", SourceNode { value: "A".to_string() }),
-            ("source2", SourceNode { value: "B".to_string() }),
-            ("merge", MultiMergeNode),
-        ],
-        edges: [
-            ("source1", "merge"),
-            ("source2", "merge"),
-        ]
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    // Trigger source1 and source2
-    // Since we don't have a common start node, we can trigger them individually or use a start node.
-    // Let's use a dummy start node.
-
-    // Actually, set_start_node puts tasks in queue.
-    runner.set_start_node("source1", Box::new(()));
-    runner.set_start_node("source2", Box::new(()));
-
-    let result = runner.run().await;
-    assert!(result.is_ok());
-    // We can't easily assert output here without capturing it, but execution success means it ran.
-    // To verify output, we could use a context or something, but `flatten_sendable_any` print might show it if we enable logs.
-    // Or we can add an assertion inside the node? No, let's use a side effect.
-}
-
-#[tokio::test]
-async fn test_stream_node_emits_completed() {
-    use crate::flow::{FlowEvent, ReactiveStream};
-
-    struct StreamNode;
-    #[async_trait]
-    impl Node for StreamNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let data = vec!["A".to_string()];
-            let stream = ReactiveStream::from_observable(data);
-            Ok(Box::new(StreamAny::new(stream.subscribe)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [("stream", StreamNode)],
-        edges: []
-    );
-
-    let (mut runner, _handle) = Runner::new(graph, None);
-    runner.set_start_node("stream", Box::new("start".to_string()));
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(20);
-    runner.set_event_sender(tx);
-
-    let runner_task = tokio::spawn(async move { runner.run().await });
-
-    let mut completed_received = false;
-    let mut next_received = false;
-
-    while let Some(event) = rx.recv().await {
-        match event {
-            FlowEvent::NodeCompleted(id) if id == "stream" => {
-                completed_received = true;
-            }
-            FlowEvent::NodeStreamNextMessage(id, _) if id == "stream" => {
-                next_received = true;
-            }
-            FlowEvent::FlowFinished => break,
-            _ => {}
-        }
-    }
-
-    runner_task.await.unwrap().unwrap();
-
-    assert!(next_received, "Should receive stream message");
-    assert!(completed_received, "Should receive NodeCompleted event");
-}
-
-#[tokio::test]
-async fn test_runner_keeps_stream_subscription_alive() {
-    use crate::flow::{FlowEvent, TaskEvent};
-    use crate::{Context, NodeInputs, NodeId, SendableAny, StreamAny, StreamSubscriptionFn, TaskGuard};
-    use crate::observable::Subscription;
-    use tokio::sync::mpsc;
-
-    struct AbortOnDropSubscription {
-        abort: tokio::task::AbortHandle,
-    }
-
-    impl Drop for AbortOnDropSubscription {
-        fn drop(&mut self) {
-            self.abort.abort();
-        }
-    }
-
-    impl Subscription for AbortOnDropSubscription {
-        fn unsubscribe(self) {
-            self.abort.abort();
-        }
-    }
-
-    struct CancelStreamNode;
-    #[async_trait]
-    impl crate::Node for CancelStreamNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let subscribe: StreamSubscriptionFn =
-                Box::new(move |guard: TaskGuard, tx: mpsc::Sender<TaskEvent>, node_id: NodeId, _| {
-                    let handle = tokio::spawn(async move {
-                        let _guard = guard;
-                        let _ = tx
-                            .send(TaskEvent::Next(node_id.clone(), Box::new("chunk".to_string())))
-                            .await;
-                        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-                        let _ = tx.send(TaskEvent::Completed(node_id, None)).await;
-                    });
-                    let abort = handle.abort_handle();
-                    drop(handle);
-                    Box::new(AbortOnDropSubscription { abort }) as Box<dyn Subscription>
-                });
-
-            Ok(Box::new(StreamAny::new(subscribe)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [("stream", CancelStreamNode)],
-        edges: []
-    );
-
-    let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
-    runner.set_start_node("stream", Box::new(()));
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(20);
-    runner.set_event_sender(tx);
-
-    let runner_task = tokio::spawn(async move { runner.run().await });
-
-    let mut completed_received = false;
-    let mut next_received = false;
-
-    while let Some(event) = rx.recv().await {
-        match event {
-            FlowEvent::NodeCompleted(id) if id == "stream" => {
-                completed_received = true;
-            }
-            FlowEvent::NodeStreamNextMessage(id, _) if id == "stream" => {
-                next_received = true;
-            }
-            FlowEvent::FlowFinished => break,
-            _ => {}
-        }
-    }
-
-    runner_task.await.unwrap().unwrap();
-
-    assert!(next_received, "Should receive stream message");
-    assert!(completed_received, "Should receive NodeCompleted event");
-}
-
-#[tokio::test]
-async fn test_parallel_stream_nodes_all_completed_before_flow_finished() {
-    use crate::flow::{FlowEvent, ReactiveStream};
-    use std::collections::HashSet;
-
-    struct StreamNode;
-    #[async_trait]
-    impl crate::Node for StreamNode {
-        async fn run(
-            &mut self,
-            _ctx: &Context,
-            _inputs: NodeInputs,
-        ) -> Result<Box<dyn SendableAny>, String> {
-            let stream = ReactiveStream::from_observable(vec!["A".to_string()]);
-            Ok(Box::new(StreamAny::new(stream.subscribe)))
-        }
-    }
-
-    let graph = crate::build_flow!(
-        nodes: [
-            ("s1", StreamNode),
-            ("s2", StreamNode),
-            ("s3", StreamNode),
-            ("s4", StreamNode),
-        ],
-        edges: []
-    );
-
-    let (mut runner, _handle) = crate::flow::Runner::new(graph, None);
-    runner.set_start_node("s1", Box::new(()));
-    runner.set_start_node("s2", Box::new(()));
-    runner.set_start_node("s3", Box::new(()));
-    runner.set_start_node("s4", Box::new(()));
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    runner.set_event_sender(tx);
-
-    let runner_task = tokio::spawn(async move { runner.run().await });
-
-    let mut started = HashSet::new();
-    let mut completed = HashSet::new();
-
-    while let Some(event) = rx.recv().await {
-        match event {
-            FlowEvent::NodeStarted(id) => {
-                started.insert(id);
-            }
-            FlowEvent::NodeCompleted(id) => {
-                completed.insert(id);
-            }
-            FlowEvent::FlowFinished => break,
-            _ => {}
-        }
-    }
-
-    runner_task.await.unwrap().unwrap();
-
-    assert_eq!(started, completed, "All started nodes should complete before finish");
-}

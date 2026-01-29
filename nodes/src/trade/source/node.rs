@@ -1,7 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use flow::{Context, Node, NodeInputs, SendableAny};
+use flow::{Context, Input, Node, Output};
+use serde_json::Value;
 
 use crate::trade::{
     k::K,
@@ -70,22 +71,18 @@ impl SourceNode {
 
 #[async_trait]
 impl Node for SourceNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        _inputs: NodeInputs,
-    ) -> Result<Box<dyn SendableAny>, String> {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
         if self.ensure_data().await.is_err() {
-            return Ok(Box::new(None::<K>));
+            return Ok(Value::Null.into());
         }
 
         if let Some(ref data) = self.cached_data {
             if self.cursor < data.len() {
                 let k = data[self.cursor].clone();
                 self.cursor += 1;
-                return Ok(Box::new(Some(k)));
+                return Ok(serde_json::to_value(k).unwrap_or(Value::Null).into());
             }
         }
-        Ok(Box::new(None::<K>))
+        Ok(Value::Null.into())
     }
 }
