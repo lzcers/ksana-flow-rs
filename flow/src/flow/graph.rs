@@ -8,8 +8,13 @@ use super::io::{Input, Output};
 
 pub type NodeId = String;
 
+// 核心节点定义
 #[async_trait]
 pub trait Node {
+    // 节点的调度策略，这决定了节点何时被触发执行
+    // 默认是全量上游就绪才触发
+    // 理论上应该是调度器的配置而不是节点的设置，由用户来决定该节点该如何调度
+    // 同一个节点在不同的场景下可能有不同的调度策略，例如在条件分支中
     const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
 
     async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String>;

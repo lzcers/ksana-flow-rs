@@ -46,7 +46,10 @@ impl LlmAgent {
         }
     }
 
-    pub(crate) async fn stream_prompt(&self, prompt: &str) -> BoxStream<'static, Result<String, String>> {
+    pub(crate) async fn stream_prompt(
+        &self,
+        prompt: &str,
+    ) -> BoxStream<'static, Result<String, String>> {
         match self {
             Self::DeepSeek(agent) => agent
                 .stream_prompt(prompt)
