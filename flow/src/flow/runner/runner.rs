@@ -1,11 +1,14 @@
-use super::exec_context::{ExecutionContext, NodeState};
-use super::executor::Executor;
-use super::utils::send_flow_event;
-use crate::TriggerStrategy;
+use super::{
+    exec_context::{ExecutionContext, NodeState},
+    executor::Executor,
+    utils::send_flow_event,
+};
 use crate::flow::{
     event::{FlowEvent, TaskEvent},
-    graph::{Context, Graph, Input, NodeId, Output},
+    graph::{Context, Graph, NodeId, TriggerStrategy},
+    io::{Input, Output},
 };
+
 use serde_json::Value;
 
 use std::{
@@ -308,11 +311,7 @@ impl Runner {
         Ok(())
     }
 
-    fn find_next_nodes(
-        &self,
-        from_node_id: &str,
-        output: &Value,
-    ) -> Result<Vec<String>, String> {
+    fn find_next_nodes(&self, from_node_id: &str, output: &Value) -> Result<Vec<String>, String> {
         let mut next_nodes = vec![];
         let output = Output::new(Some(output.clone()));
         if let Some(edges) = self.graph.edges.get(from_node_id) {

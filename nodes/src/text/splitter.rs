@@ -1,4 +1,4 @@
-use crate::text_split::{
+use super::types::{
     LineNumberInjectionConfig, TextSegment, TextSplitConfig, TextSplitMode, TextSplitResult,
     TextSplitRule,
 };

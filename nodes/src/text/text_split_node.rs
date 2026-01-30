@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use flow::{Context, Input, Node, Output};
 use serde_json::Value;
 
-use crate::text_split::{split_text, TextSplitConfig};
+use super::{splitter::split_text, types::TextSplitConfig};
 
 pub struct TextSplitNode {
     config: TextSplitConfig,
@@ -16,11 +16,7 @@ impl TextSplitNode {
 
 #[async_trait]
 impl Node for TextSplitNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
         let mut config = self.config.clone();
         if let Some(cfg) = input.get_str_as::<TextSplitConfig>("config") {
             config = cfg;
@@ -41,8 +37,9 @@ impl Node for TextSplitNode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::text_split::{LineNumberInjectionConfig, TextSplitMode};
+    use crate::text::types::{LineNumberInjectionConfig, TextSplitMode};
+
+    use super::super::{text_split_node::*, types::TextSplitConfig};
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -85,7 +82,10 @@ mod tests {
                 .cloned()
                 .unwrap_or_default();
             assert_eq!(segments.len(), 2);
-            assert_eq!(segments[0].get("text").and_then(|v| v.as_str()), Some("a\nb"));
+            assert_eq!(
+                segments[0].get("text").and_then(|v| v.as_str()),
+                Some("a\nb")
+            );
             assert_eq!(segments[1].get("text").and_then(|v| v.as_str()), Some("c"));
         });
     }

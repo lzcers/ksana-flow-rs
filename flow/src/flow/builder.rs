@@ -1,6 +1,9 @@
 use crate::AnyNode;
 
-use super::graph::{Context, Edge, Graph};
+use super::{
+    graph::{Context, Edge, Graph},
+    io::Output,
+};
 use serde::de::DeserializeOwned;
 
 pub struct GraphBuilder {
@@ -34,7 +37,7 @@ impl GraphBuilder {
         to: impl Into<String>,
         condition: impl Fn(&Context, &Out) -> bool + Send + Sync + 'static,
     ) -> Self {
-        let condition = Box::new(move |ctx: &Context, output: &super::graph::Output| {
+        let condition = Box::new(move |ctx: &Context, output: &Output| {
             if let Some(out) = output.get_as::<Out>() {
                 condition(ctx, &out)
             } else {

@@ -11,7 +11,7 @@ tracing = { workspace = true }
 flow = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-rig-core = "0.28.0"
+rig-core = "0.29.0"
 dotenv = "0.15"
 async-trait = "0.1"
 ndarray = "0.16.1"
