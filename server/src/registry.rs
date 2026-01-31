@@ -2,7 +2,7 @@ use chrono::{Local, NaiveDateTime};
 use flow::AnyNode;
 use nodes::{
     EmailNotifyNode, ImgGenNode, ShortVideoScriptNode, TextFileNode, TextMergeNode, TextNode,
-    TimerNode, create_llm_any_node,
+    TextSplitConfig, TextSplitNode, TimerNode, create_llm_any_node,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -381,6 +381,102 @@ pub fn create_registry() -> NodeRegistry {
         |config: Value| {
             let model = config["model"].as_str().unwrap_or("deepseek-chat");
             let node = ShortVideoScriptNode::new(model);
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "TextSplitNode".to_string(),
+            description: "Split text into segments based on line count or rules".to_string(),
+            category: "Logic".to_string(),
+            config: json!({
+                "mode": {
+                    "by_line_count": {
+                        "max_lines_per_part": 200
+                    }
+                },
+                "remove_empty_lines": false,
+                "line_numbers": {
+                    "enabled": false,
+                    "template": "{line}: ",
+                    "pad_width": null,
+                    "pad_char": "0"
+                },
+                "rule_only_keep_matched_ranges": false
+            }),
+            inputs: vec![InputType::String],
+            outputs: vec![InputType::String],
+        },
+        |config: Value| {
+            let mut split_config = TextSplitConfig::default();
+
+            // Parse mode configuration
+            if let Some(mode_obj) = config.get("mode") {
+                if let Some(by_line_count) = mode_obj.get("by_line_count") {
+                    if let Some(max_lines) = by_line_count
+                        .get("max_lines_per_part")
+                        .and_then(|v| v.as_u64())
+                    {
+                        split_config.mode = nodes::text::TextSplitMode::ByLineCount {
+                            max_lines_per_part: max_lines as usize,
+                        };
+                    }
+                } else if let Some(by_rule) = mode_obj.get("by_rule") {
+                    if let Some(rule_obj) = by_rule.get("rule") {
+                        if let Some(heading) = rule_obj.get("heading_keywords") {
+                            let keywords: Vec<String> = heading
+                                .get("keywords")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let require_prefix = heading
+                                .get("require_prefix")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            split_config.mode = nodes::text::TextSplitMode::ByRule {
+                                rule: nodes::text::TextSplitRule::HeadingKeywords {
+                                    keywords,
+                                    require_prefix,
+                                },
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Parse other config options
+            if let Some(v) = config.get("remove_empty_lines").and_then(|v| v.as_bool()) {
+                split_config.remove_empty_lines = v;
+            }
+            if let Some(v) = config
+                .get("rule_only_keep_matched_ranges")
+                .and_then(|v| v.as_bool())
+            {
+                split_config.rule_only_keep_matched_ranges = v;
+            }
+            if let Some(line_nums) = config.get("line_numbers") {
+                if let Some(v) = line_nums.get("enabled").and_then(|v| v.as_bool()) {
+                    split_config.line_numbers.enabled = v;
+                }
+                if let Some(v) = line_nums.get("template").and_then(|v| v.as_str()) {
+                    split_config.line_numbers.template = v.to_string();
+                }
+                if let Some(v) = line_nums.get("pad_width").and_then(|v| v.as_u64()) {
+                    split_config.line_numbers.pad_width = Some(v as usize);
+                }
+                if let Some(v) = line_nums.get("pad_char").and_then(|v| v.as_str()) {
+                    if let Some(c) = v.chars().next() {
+                        split_config.line_numbers.pad_char = c;
+                    }
+                }
+            }
+
+            let node = TextSplitNode::new(split_config);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
     );
