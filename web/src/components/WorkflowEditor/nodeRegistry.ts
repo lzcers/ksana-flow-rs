@@ -15,6 +15,7 @@ import {
   TimerNode,
   VolMfiNode,
 } from '../nodes';
+import { TextSplitNode } from '../nodes/TextSplitNode';
 
 export type NodeRegistryItem = {
   type: NodeType;
@@ -28,6 +29,8 @@ export const NODE_REGISTRY: NodeRegistryItem[] = [
   { type: 'TextNode', label: 'Text', icon: Type, color: 'text-slate-500 bg-slate-50', Component: TextNode },
   { type: 'TextMergeNode', label: 'Merge', icon: GitMerge, color: 'text-cyan-500 bg-cyan-50', Component: TextMergeNode },
   { type: 'TextFileNode', label: 'File', icon: FileText, color: 'text-slate-500 bg-slate-50', Component: TextFileNode },
+  { type: 'TextSplitNode', label: 'Split', icon: FileText, color: 'text-slate-500 bg-slate-50', Component: TextSplitNode },
+
   { type: 'LLMNode', label: 'LLM', icon: Sparkles, color: 'text-purple-500 bg-purple-50', Component: LLMNode },
   { type: 'ImgGenNode', label: 'Image', icon: Image, color: 'text-emerald-500 bg-emerald-50', Component: ImgGenNode },
   { type: 'ReactiveSourceNode', label: 'Source', icon: Database, color: 'text-indigo-500 bg-indigo-50', Component: SourceNode },
