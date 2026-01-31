@@ -211,14 +211,18 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
 
     const updatedNodes = nodes.map(n => {
       if (nodeIds.includes(n.id)) {
+        // Calculate position relative to parent (groupNode)
+        const relativeX = n.position.x - groupX;
+        const relativeY = n.position.y - groupY;
         return {
           ...n,
           parentId: groupId,
           position: {
-            x: n.position.x - groupX,
-            y: n.position.y - groupY,
+            x: relativeX,
+            y: relativeY,
           },
-          expandParent: true,
+          // Remove expandParent to prevent auto-resize behavior
+          expandParent: undefined,
         };
       }
       return n;
@@ -235,34 +239,42 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     const isExpanded = node.data.expanded !== false;
     const nextExpanded = !isExpanded;
 
+    // Get child nodes count for collapsed display
+    const childCount = nodes.filter(n => n.parentId === nodeId).length;
+
     const updatedNodes = nodes.map(n => {
       if (n.id === nodeId) {
         if (nextExpanded) {
            const savedSize = node.data.expandedSize as { width: number, height: number } | undefined;
            return {
              ...n,
-             style: { 
-                ...n.style, 
-                width: savedSize?.width ?? 300, 
-                height: savedSize?.height ?? 200 
+             style: {
+                ...n.style,
+                width: savedSize?.width ?? 300,
+                height: savedSize?.height ?? 200
              },
-             data: { ...n.data, expanded: true }
+             data: {
+               ...n.data,
+               expanded: true,
+               childCount // Store for display
+             }
            };
         } else {
            const currentWidth = node.measured?.width ?? (typeof node.style?.width === 'number' ? node.style.width : 300);
            const currentHeight = node.measured?.height ?? (typeof node.style?.height === 'number' ? node.style.height : 200);
            return {
              ...n,
-             style: { ...n.style, width: 200, height: 60 },
-             data: { 
-               ...n.data, 
+             style: { ...n.style, width: 220, height: 100 },
+             data: {
+               ...n.data,
                expanded: false,
-               expandedSize: { width: currentWidth, height: currentHeight }
+               expandedSize: { width: currentWidth, height: currentHeight },
+               childCount
              }
            };
         }
       }
-      
+
       if (n.parentId === nodeId) {
         return {
           ...n,

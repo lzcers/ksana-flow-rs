@@ -1,6 +1,6 @@
 import { memo } from 'react';
-import { type NodeProps } from '@xyflow/react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { type NodeProps, useReactFlow, type Node } from '@xyflow/react';
+import { ChevronDown, ChevronUp, Network } from 'lucide-react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { subgraphNodeStyles } from './styles';
 import type { NodeData } from '../../../model/types';
@@ -21,6 +21,12 @@ export const SubgraphNodeView = memo(({
   height,
   ...props
 }: SubgraphNodeViewProps) => {
+  const { getNodes } = useReactFlow();
+
+  // Get child nodes count
+  const childNodes = getNodes().filter((n: Node) => n.parentId === id);
+  const childCount = childNodes.length;
+
   const headerActions = (
     <div className={subgraphNodeStyles.headerActions}>
       <button
@@ -51,8 +57,14 @@ export const SubgraphNodeView = memo(({
       {...props}
     >
       {!expanded && (
-        <div className="flex items-center justify-center h-full pt-6">
-          <span className={subgraphNodeStyles.collapsedLabel}>Subgraph Group</span>
+        <div className="flex flex-col items-center justify-center h-full pt-4">
+          <div className={subgraphNodeStyles.collapsedIcon}>
+            <Network size={20} className="text-zinc-400" />
+          </div>
+          <span className={subgraphNodeStyles.collapsedLabel}>Subgraph</span>
+          {childCount > 0 && (
+            <span className={subgraphNodeStyles.collapsedCount}>{childCount} nodes</span>
+          )}
         </div>
       )}
     </NodeWrapper>

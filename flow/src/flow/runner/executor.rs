@@ -3,13 +3,30 @@ use super::utils::send_task_event;
 use crate::{AnyNode, Context, Input, Output, TaskEvent};
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, sync::Arc};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{RwLock, Semaphore, mpsc};
 use tracing::{debug, info};
 // 接收调度器发送来的任务进行执行
-pub struct Executor;
+#[derive(Default)]
+pub struct Executor {
+    semaphore: Option<Arc<Semaphore>>,
+}
 
 impl Executor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_max_concurrency(&mut self, max: usize) {
+        let max = max.max(1);
+        self.semaphore = Some(Arc::new(Semaphore::new(max)));
+    }
+
+    pub fn clear_max_concurrency(&mut self) {
+        self.semaphore = None;
+    }
+
     pub fn exec(
+        &self,
         _guard: TaskGuard,
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
@@ -19,8 +36,23 @@ impl Executor {
         // 向调度器发送执行结果
         task_sender: mpsc::Sender<TaskEvent>,
     ) {
+        let semaphore = self.semaphore.clone();
         tokio::spawn(async move {
             let _keep_alive = _guard; // Force capture
+            let _permit = match semaphore {
+                Some(sem) => match sem.acquire_owned().await {
+                    Ok(permit) => Some(permit),
+                    Err(e) => {
+                        send_task_event(
+                            &task_sender,
+                            TaskEvent::Error(node_id, format!("Semaphore acquire failed: {}", e)),
+                        )
+                        .await;
+                        return;
+                    }
+                },
+                None => None,
+            };
             let mut node = node.write().await;
 
             info!(node_id = %node_id, "Node tasks start");
@@ -65,8 +97,11 @@ impl Executor {
                             }
                         }
                     } else {
-                        send_task_event(&task_sender, TaskEvent::Completed(node_id, out.into_value()))
-                            .await;
+                        send_task_event(
+                            &task_sender,
+                            TaskEvent::Completed(node_id, out.into_value()),
+                        )
+                        .await;
                     }
                 }
                 Err(e) => {

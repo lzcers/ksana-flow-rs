@@ -64,6 +64,7 @@ pub struct Runner {
     task_queue: VecDeque<TaskPayload>,
     // 执行上下文，提供调度决策信息
     exec_ctx: ExecutionContext,
+    executor: Executor,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
     // 外部事件发送通道
@@ -88,6 +89,7 @@ impl Runner {
                 ctx: Arc::new(Context::new()),
                 task_queue: VecDeque::new(),
                 exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
+                executor: Executor::new(),
                 event_sender: None,
                 cmd_rx,
                 state_tx,
@@ -102,6 +104,14 @@ impl Runner {
 
     pub fn set_context(&mut self, ctx: Context) {
         self.ctx = Arc::new(ctx);
+    }
+
+    pub fn set_max_concurrency(&mut self, max: usize) {
+        self.executor.set_max_concurrency(max);
+    }
+
+    pub fn clear_max_concurrency(&mut self) {
+        self.executor.clear_max_concurrency();
     }
 
     pub fn get_execution_context(&self) -> &ExecutionContext {
@@ -423,7 +433,14 @@ impl Runner {
         )
         .await;
         // 让执行器干活
-        Executor::exec(guard, node_id, node_arc, inputs, ctx, task_sender);
+        self.executor.exec(
+            guard,
+            node_id,
+            node_arc,
+            inputs,
+            ctx,
+            task_sender,
+        );
         Ok(())
     }
 }

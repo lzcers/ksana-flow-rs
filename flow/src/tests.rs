@@ -1,6 +1,13 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use crate::{Context, Input, Node, Output, Runner, TriggerStrategy};
 
@@ -169,3 +176,78 @@ async fn test_conditional_branching() {
     runner.run().await.expect("Conditional branching should succeed");
 }
 
+#[tokio::test]
+async fn test_runner_max_concurrency() {
+    struct InputNode;
+    #[async_trait]
+    impl Node for InputNode {
+        async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
+            Ok(json!("start").into())
+        }
+    }
+
+    struct SleepNode {
+        in_flight: Arc<AtomicUsize>,
+        max_in_flight: Arc<AtomicUsize>,
+    }
+
+    impl SleepNode {
+        fn new(in_flight: Arc<AtomicUsize>, max_in_flight: Arc<AtomicUsize>) -> Self {
+            Self {
+                in_flight,
+                max_in_flight,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Node for SleepNode {
+        async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
+            let current = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            loop {
+                let prev = self.max_in_flight.load(Ordering::SeqCst);
+                if current <= prev {
+                    break;
+                }
+                if self
+                    .max_in_flight
+                    .compare_exchange(prev, current, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    break;
+                }
+            }
+
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(json!(current).into())
+        }
+    }
+
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let max_in_flight = Arc::new(AtomicUsize::new(0));
+
+    let graph = crate::build_flow!(
+        nodes: [
+            ("input", InputNode),
+            ("sleep1", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
+            ("sleep2", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
+            ("sleep3", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
+            ("sleep4", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
+        ],
+        edges: [
+            ("input", "sleep1"),
+            ("input", "sleep2"),
+            ("input", "sleep3"),
+            ("input", "sleep4"),
+        ]
+    );
+
+    let (mut runner, _handle) = Runner::new(graph, None);
+    runner.set_max_concurrency(1);
+    runner.set_start_node_with_inputs("input", input_with_external_start(json!(null)));
+    runner.run().await.expect("Flow should succeed");
+
+    let observed = max_in_flight.load(Ordering::SeqCst);
+    assert!(observed <= 1, "max concurrency exceeded: {}", observed);
+}

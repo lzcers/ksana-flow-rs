@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Save, X, Trash2, FileText, LayoutGrid, Loader2, Upload, Download, Group } from 'lucide-react';
+import { Plus, Save, X, Trash2, FileText, LayoutGrid, Loader2, Upload, Download } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 
@@ -21,8 +21,7 @@ interface WorkflowHeaderProps {
   onImportWorkflow: (file: File) => void;
   tabs: Tab[];
   onCloseTab: (id: number | null) => void;
-  selectedNodeIds?: string[];
-  onGroupNodes?: (ids: string[]) => void;
+  // Note: Grouping is now done via SelectionToolbar in Canvas
 }
 
 export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
@@ -38,8 +37,6 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   onImportWorkflow,
   tabs,
   onCloseTab,
-  selectedNodeIds = [],
-  onGroupNodes,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -51,8 +48,6 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
 
   const currentTab = tabs.find(t => t.id === currentWorkflowId);
   const displayName = currentTab?.name || 'New Workflow';
-
-  const canGroup = selectedNodeIds.length > 1;
 
   useEffect(() => {
     setIsEditing(false);
@@ -291,21 +286,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
       </div>
 
       {/* Global Actions */}
-      <div className="flex-none flex items-center px-2 border-l border-zinc-800 ml-1 gap-1">
-        <button
-          onClick={() => canGroup && onGroupNodes?.(selectedNodeIds)}
-          className={cn(
-            "group flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-300",
-            canGroup
-              ? "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
-              : "text-zinc-700 cursor-not-allowed opacity-50"
-          )}
-          title={canGroup ? "Group Selection" : "Select multiple nodes to group"}
-          disabled={!canGroup}
-        >
-          <Group size={16} className={cn("transition-transform", canGroup && "group-hover:scale-105")} />
-        </button>
-
+      <div className="flex-none flex items-center px-2 border-l border-zinc-800 ml-1">
         <button
           onClick={handleSave}
           className="group flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-all duration-300"

@@ -17,6 +17,7 @@ import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
 import { NODE_TYPES } from './nodeTypes';
 import { NodeContextMenu } from './NodeContextMenu';
+import { SelectionToolbar } from './SelectionToolbar';
 import type { Node, Edge } from '../../model/types';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 import type { NodeMetadata } from '../../api';
@@ -36,6 +37,7 @@ interface CanvasProps {
   onPause: () => void;
   onResume: () => void;
   onStop: () => void;
+  onGroupNodes?: (nodeIds: string[]) => void;
 }
 
 const nodeTypes: NodeTypes = {
@@ -388,6 +390,9 @@ export const Canvas: React.FC<CanvasProps> = ({
           onSelect={handleSelectNode}
           onClose={() => setContextMenu(prev => ({ ...prev, visible: false }))}
         />
+
+        {/* Selection Toolbar - shows when multiple nodes are selected */}
+        <SelectionToolbar onGroupNodes={onGroupNodes} />
       </ReactFlow>
     </main>
   );
