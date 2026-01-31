@@ -151,6 +151,7 @@ pub fn split_text(text: &str, cfg: &TextSplitConfig) -> TextSplitResult {
 
     TextSplitResult {
         total_lines,
+        segment_count: segments.len(),
         segments,
     }
 }

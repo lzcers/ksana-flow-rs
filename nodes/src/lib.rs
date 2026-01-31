@@ -1,4 +1,3 @@
-mod agent;
 mod config;
 mod img_gen;
 mod llm;

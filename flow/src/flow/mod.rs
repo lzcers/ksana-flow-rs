@@ -4,7 +4,6 @@ mod graph;
 mod io;
 mod reactive_stream;
 mod runner;
-mod tool;
 
 pub use builder::*;
 pub use event::*;

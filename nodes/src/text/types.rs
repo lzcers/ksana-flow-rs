@@ -43,6 +43,7 @@ pub struct TextSegment {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextSplitResult {
     pub total_lines: usize,
+    pub segment_count: usize,
     pub segments: Vec<TextSegment>,
 }
 
