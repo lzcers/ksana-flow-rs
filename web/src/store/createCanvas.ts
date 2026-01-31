@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { StoreState, Canvas } from './types';
-import type { Node, NodeChange, EdgeChange, Connection } from '../model/types';
+import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/types';
 
 import {
   addNode,
@@ -271,15 +271,46 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   },
 
   toggleSubgraph: (nodeId: string) => {
-    const { nodes } = get();
+    const { nodes, edges } = get();
     const node = nodes.find(n => n.id === nodeId);
     if (!node || node.type !== 'SubgraphNode') return;
+
+    get().pushHistory();
 
     const isExpanded = node.data.expanded !== false;
     const nextExpanded = !isExpanded;
 
     // Get child nodes count for collapsed display
     const childCount = nodes.filter(n => n.parentId === nodeId).length;
+
+    const nodeById = new Map(nodes.map(n => [n.id, n] as const));
+    const collapsedGroupIds = new Set(
+      nodes
+        .filter((n) => n.type === 'SubgraphNode' && n.data?.expanded === false)
+        .map((n) => n.id)
+    );
+    if (nextExpanded) collapsedGroupIds.delete(nodeId);
+    else collapsedGroupIds.add(nodeId);
+
+    const isInGroup = (id: string) => {
+      let current = nodeById.get(id);
+      while (current?.parentId) {
+        if (current.parentId === nodeId) return true;
+        current = nodeById.get(current.parentId);
+      }
+      return false;
+    };
+
+    const isHiddenByCollapsedAncestor = (n: Node) => {
+      let current = n;
+      while (current.parentId) {
+        if (collapsedGroupIds.has(current.parentId)) return true;
+        const parent = nodeById.get(current.parentId);
+        if (!parent) return false;
+        current = parent;
+      }
+      return false;
+    };
 
     const updatedNodes = nodes.map(n => {
       if (n.id === nodeId) {
@@ -303,7 +334,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
            const currentHeight = node.measured?.height ?? (typeof node.style?.height === 'number' ? node.style.height : 200);
            return {
              ...n,
-             style: { ...n.style, width: 220, height: 100 },
+             style: { ...n.style, width: 180, height: 80 },
              data: {
                ...n.data,
                expanded: false,
@@ -314,16 +345,67 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
         }
       }
 
-      if (n.parentId === nodeId) {
+      if (n.parentId) {
+        const hidden = isHiddenByCollapsedAncestor(n);
         return {
           ...n,
-          extent: (n.extent ?? 'parent') as Node['extent'],
-          hidden: !nextExpanded
+          extent: hidden ? undefined : ((n.extent ?? 'parent') as Node['extent']),
+          hidden,
         };
       }
       return n;
     });
 
-    set({ nodes: sortNodesByParent(updatedNodes) });
+    let updatedEdges: Edge[] = edges.filter((e: any) => !e?.data?.__uiSubgraphEdge || e.data.__uiSubgraphEdge.groupId !== nodeId);
+
+    if (!nextExpanded) {
+      const proxyEdges: Edge[] = [];
+      updatedEdges = updatedEdges.map((e: any) => {
+        const sourceIn = isInGroup(e.source);
+        const targetIn = isInGroup(e.target);
+
+        if (sourceIn === targetIn) return e;
+        if (e.source === nodeId || e.target === nodeId) return e;
+
+        const proxyBase = {
+          id: `ui:subgraph:${nodeId}:${e.id}`,
+          type: e.type || 'default',
+          data: { __uiSubgraphEdge: { groupId: nodeId, originalEdgeId: e.id } }
+        };
+
+        if (sourceIn) {
+          proxyEdges.push({
+            ...proxyBase,
+            source: nodeId,
+            target: e.target,
+            sourceHandle: 's-right',
+            targetHandle: e.targetHandle,
+          } as any);
+        } else {
+          proxyEdges.push({
+            ...proxyBase,
+            source: e.source,
+            target: nodeId,
+            sourceHandle: e.sourceHandle,
+            targetHandle: 't-left',
+          } as any);
+        }
+
+        return { ...e, hidden: true };
+      });
+
+      updatedEdges = [...updatedEdges, ...proxyEdges];
+    } else {
+      updatedEdges = updatedEdges.map((e: any) => {
+        if (e?.data?.__uiSubgraphEdge) return e;
+        if (e.hidden !== true) return e;
+        const sourceIn = isInGroup(e.source);
+        const targetIn = isInGroup(e.target);
+        if (sourceIn === targetIn) return e;
+        return { ...e, hidden: false };
+      });
+    }
+
+    set({ nodes: sortNodesByParent(updatedNodes), edges: updatedEdges });
   },
 });

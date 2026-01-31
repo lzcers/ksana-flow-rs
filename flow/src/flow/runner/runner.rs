@@ -140,6 +140,10 @@ impl Runner {
     pub async fn run(&mut self) -> Result<(), String> {
         info!(nodes = ?self.graph.get_node_ids(), "Runner started");
 
+        if let Some(sender) = self.event_sender.as_ref() {
+            self.ctx.set_any("__flow_event_sender", sender.clone());
+        }
+
         if self.task_queue.is_empty() {
             info!("No start node set, runner finished");
             return Ok(());

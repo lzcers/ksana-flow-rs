@@ -134,7 +134,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             hidden: n.hidden,
         };
       }),
-      edges: edges.map(e => ({
+      edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
         id: e.id,
         source: e.source,
         target: e.target,
@@ -187,7 +187,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
               hidden: n.hidden,
             };
           }),
-          edges: edges.map(e => ({
+          edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
             id: e.id,
             source: e.source,
             target: e.target,
@@ -290,7 +290,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         extent: n.extent,
         hidden: n.hidden,
       })),
-      edges: edges.map(e => ({
+      edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
         id: e.id,
         source: e.source,
         target: e.target,

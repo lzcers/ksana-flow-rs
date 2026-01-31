@@ -71,7 +71,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
 
   return (
     <div
-      className={cn(nodeWrapperStyles.root, resizable && 'w-full h-full')}
+      className={cn(nodeWrapperStyles.root, 'w-full h-full')}
       style={{
         minWidth: minWidth ?? 'fit-content',
         minHeight: minHeight ?? 'fit-content',

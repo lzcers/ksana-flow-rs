@@ -43,15 +43,17 @@ impl Default for TriggerStrategy {
 }
 // 节点运行上下文
 // Context 内部是一个并发安全的结构，因此 Context 只要能 Clone 就行
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Context {
     data: DashMap<String, Value>,
+    any: DashMap<String, Arc<dyn Any + Send + Sync>>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
             data: DashMap::new(),
+            any: DashMap::new(),
         }
     }
 
@@ -64,6 +66,29 @@ impl Context {
         self.data
             .get(key)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+
+    pub fn set_any<T: Any + Send + Sync>(&self, key: impl Into<String>, value: T) {
+        self.any.insert(key.into(), Arc::new(value));
+    }
+
+    pub fn get_any<T: Any + Send + Sync>(&self, key: &str) -> Option<Arc<T>> {
+        self.any
+            .get(key)
+            .and_then(|v| v.clone().downcast::<T>().ok())
+    }
+}
+
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut data_keys: Vec<String> = self.data.iter().map(|kv| kv.key().clone()).collect();
+        data_keys.sort();
+        let mut any_keys: Vec<String> = self.any.iter().map(|kv| kv.key().clone()).collect();
+        any_keys.sort();
+        f.debug_struct("Context")
+            .field("data_keys", &data_keys)
+            .field("any_keys", &any_keys)
+            .finish()
     }
 }
 

@@ -1,8 +1,10 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
+use crate::flow::event::FlowEvent;
 use crate::flow::runner::{ExecutionContext, Runner};
 use crate::flow::{Context, Graph, Input, graph::NodeId};
 
@@ -85,6 +87,10 @@ impl SubgraphExecutor {
 
         // 设置上下文
         runner.set_context(subgraph_ctx);
+
+        if let Some(sender) = parent_ctx.get_any::<mpsc::Sender<FlowEvent>>("__flow_event_sender") {
+            runner.set_event_sender((*sender).clone());
+        }
 
         // 设置起始节点
         let mut inputs = HashMap::new();

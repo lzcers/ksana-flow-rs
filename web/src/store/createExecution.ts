@@ -28,7 +28,7 @@ const buildExecutionBlueprint = (nodes: any[], edges: any[]) => ({
     extent: n.extent,
     hidden: n.hidden,
   })),
-  edges: edges.map((e) => ({
+  edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
@@ -86,7 +86,26 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
             for (const wrapper of batch) {
               const { runId, event: msg } = wrapper;
 
-              if (!runId || runId === draft.currentRunId) {
+              let isCurrentRun = !runId || runId === draft.currentRunId;
+              if (
+                !isCurrentRun &&
+                runId &&
+                draft.currentRunId === null &&
+                draft.workflowStatus === 'running'
+              ) {
+                draft.currentRunId = runId;
+                nextCurrentRunId = runId;
+                const wfId = draft.currentWorkflowId;
+                if (wfId != null) {
+                  draft.runIdToWorkflowId[runId] = wfId;
+                  if (draft.workflowStatuses[wfId] !== 'running') {
+                    draft.workflowStatuses[wfId] = 'running';
+                  }
+                }
+                isCurrentRun = true;
+              }
+
+              if (isCurrentRun) {
                 if (typeof msg === 'object') {
                   if ('NodeStarted' in msg) {
                     const id = msg.NodeStarted;
