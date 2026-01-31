@@ -21,7 +21,6 @@ interface WorkflowHeaderProps {
   onImportWorkflow: (file: File) => void;
   tabs: Tab[];
   onCloseTab: (id: number | null) => void;
-  // Note: Grouping is now done via SelectionToolbar in Canvas
 }
 
 export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({

@@ -433,14 +433,8 @@ impl Runner {
         )
         .await;
         // 让执行器干活
-        self.executor.exec(
-            guard,
-            node_id,
-            node_arc,
-            inputs,
-            ctx,
-            task_sender,
-        );
+        self.executor
+            .exec(guard, node_id, node_arc, inputs, ctx, task_sender);
         Ok(())
     }
 }

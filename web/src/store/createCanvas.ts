@@ -16,6 +16,44 @@ import {
   pasteNodes
 } from '../model';
 
+const sortNodesByParent = (nodes: Node[]): Node[] => {
+  const idSet = new Set(nodes.map((n) => n.id));
+  const childrenByParent = new Map<string, Node[]>();
+
+  nodes.forEach((n) => {
+    if (!n.parentId || !idSet.has(n.parentId)) return;
+    const children = childrenByParent.get(n.parentId);
+    if (children) {
+      children.push(n);
+    } else {
+      childrenByParent.set(n.parentId, [n]);
+    }
+  });
+
+  const result: Node[] = [];
+  const visited = new Set<string>();
+
+  const visit = (node: Node) => {
+    if (visited.has(node.id)) return;
+    visited.add(node.id);
+    result.push(node);
+    const children = childrenByParent.get(node.id);
+    if (children) {
+      children.forEach(visit);
+    }
+  };
+
+  nodes.forEach((n) => {
+    if (!n.parentId || !idSet.has(n.parentId)) {
+      visit(n);
+    }
+  });
+
+  nodes.forEach((n) => visit(n));
+
+  return result;
+};
+
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => ({
   nodes: [],
   edges: [],
@@ -217,6 +255,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
         return {
           ...n,
           parentId: groupId,
+          extent: 'parent' as const,
           position: {
             x: relativeX,
             y: relativeY,
@@ -228,7 +267,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       return n;
     });
 
-    set({ nodes: [...updatedNodes, groupNode], selectedNodeId: groupId });
+    set({ nodes: sortNodesByParent([...updatedNodes, groupNode]), selectedNodeId: groupId });
   },
 
   toggleSubgraph: (nodeId: string) => {
@@ -278,12 +317,13 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       if (n.parentId === nodeId) {
         return {
           ...n,
+          extent: (n.extent ?? 'parent') as Node['extent'],
           hidden: !nextExpanded
         };
       }
       return n;
     });
 
-    set({ nodes: updatedNodes });
+    set({ nodes: sortNodesByParent(updatedNodes) });
   },
 });

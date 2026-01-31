@@ -123,7 +123,7 @@ impl Clone for Graph {
     fn clone(&self) -> Self {
         Self {
             nodes: self.nodes.clone(),
-            edges: HashMap::new(), // Box<dyn AnyEdge> 不能 clone，清空边
+            edges: self.edges.clone(),
             incoming_nodes: self.incoming_nodes.clone(),
             node_trigger_strategy: self.node_trigger_strategy.clone(),
         }

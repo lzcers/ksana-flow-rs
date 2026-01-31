@@ -62,8 +62,6 @@ function AppContent() {
     groupNodes
   } = workflow;
 
-  const selectedNodeIds = state.nodes.filter(n => n.selected).map(n => n.id);
-
   const [openTabs, setOpenTabs] = useState<{ id: number | null; name: string }[]>([]);
 
   const handleExportWorkflow = () => {
@@ -213,6 +211,7 @@ function AppContent() {
             onPause={pauseWorkflow}
             onResume={resumeWorkflow}
             onStop={stopWorkflow}
+            onGroupNodes={groupNodes}
           />
         </ReactFlowProvider>
       </div>
@@ -232,8 +231,6 @@ function AppContent() {
           onImportWorkflow={handleImportWorkflow}
           tabs={openTabs}
           onCloseTab={handleCloseTab}
-          selectedNodeIds={selectedNodeIds}
-          onGroupNodes={groupNodes}
         />
       </div>
     </div>

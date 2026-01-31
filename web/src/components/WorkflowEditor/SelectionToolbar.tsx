@@ -1,5 +1,5 @@
 import React from 'react';
-import { useReactFlow, type Node } from '@xyflow/react';
+import { useStore, useViewport, type Node } from '@xyflow/react';
 import { Group } from 'lucide-react';
 
 // Utility for className merging
@@ -14,10 +14,11 @@ interface SelectionToolbarProps {
 export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
   onGroupNodes,
 }) => {
-  const { getNodes, screenToFlowPosition } = useReactFlow();
+  const nodes = useStore((state) => state.nodes);
+  const { x, y, zoom } = useViewport();
 
   // 获取选中的节点
-  const selectedNodes = getNodes().filter((n: Node) => n.selected);
+  const selectedNodes = React.useMemo(() => nodes.filter((n: Node) => n.selected), [nodes]);
 
   // 如果没有选中节点或多个节点，则不显示
   if (selectedNodes.length < 2) {
@@ -44,7 +45,9 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
 
   // 计算工具栏位置（在框选区域的上方居中）
   const centerX = (minX + maxX) / 2;
-  const toolbarY = minY - 50; // 在框选区域上方 50px
+  const toolbarY = minY - 12; // 在框选区域上方 12px
+  const left = centerX * zoom + x;
+  const top = toolbarY * zoom + y;
 
   const handleGroupClick = () => {
     const nodeIds = selectedNodes.map((n: Node) => n.id);
@@ -55,9 +58,9 @@ export const SelectionToolbar: React.FC<SelectionToolbarProps> = ({
     <div
       className="absolute z-50 pointer-events-auto"
       style={{
-        left: centerX,
-        top: toolbarY,
-        transform: 'translate(-50%, 0)',
+        left,
+        top,
+        transform: 'translate(-50%, -100%)',
       }}
     >
       <div className="flex items-center gap-1.5 px-2 py-1.5 bg-zinc-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">

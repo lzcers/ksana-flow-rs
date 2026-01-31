@@ -60,7 +60,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           width: n.width,
           height: n.height,
           style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
-          data: cleanData
+          parentId: n.parentId,
+          extent: n.extent,
+          hidden: n.hidden,
+          data: cleanData,
         };
       });
 
@@ -125,7 +128,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           data: cleanData,
           position: n.position,
           width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-          height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
+            height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
+            parentId: n.parentId,
+            extent: n.extent,
+            hidden: n.hidden,
         };
       }),
       edges: edges.map(e => ({
@@ -175,7 +181,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
               data: cleanData,
               position: n.position,
               width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-              height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
+              height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
+              parentId: n.parentId,
+              extent: n.extent,
+              hidden: n.hidden,
             };
           }),
           edges: edges.map(e => ({
@@ -242,7 +251,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         width: n.width,
         height: n.height,
         style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
-        data: cleanData
+        parentId: n.parentId,
+        extent: n.extent,
+        hidden: n.hidden,
+        data: cleanData,
       };
     });
 
@@ -273,7 +285,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         data: n.data,
         position: n.position,
         width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
+        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
+        parentId: n.parentId,
+        extent: n.extent,
+        hidden: n.hidden,
       })),
       edges: edges.map(e => ({
         id: e.id,

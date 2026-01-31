@@ -78,6 +78,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   onPause,
   onResume,
   onStop,
+  onGroupNodes,
 }) => {
   const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
   const { setConnectionState, pasteNodes, saveWorkflow, undo, redo, pushHistory } = useStore();
@@ -330,7 +331,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         <Background color="#52525b" bgColor='#000' gap={24} size={1} />
         <Controls
           showInteractive={false}
-          className="!bg-zinc-900/80 !backdrop-blur-xl !border-white/10 !shadow-xl !fill-zinc-400 !rounded-xl !overflow-hidden !border"
+          className="bg-zinc-900/80! backdrop-blur-xl! border-white/10! shadow-xl! fill-zinc-400! rounded-xl! overflow-hidden! border!"
         />
 
         <Panel position="bottom-left" style={{ marginLeft: '48px' }}>
@@ -392,7 +393,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         />
 
         {/* Selection Toolbar - shows when multiple nodes are selected */}
-        <SelectionToolbar onGroupNodes={onGroupNodes} />
+        {onGroupNodes && <SelectionToolbar onGroupNodes={onGroupNodes} />}
       </ReactFlow>
     </main>
   );

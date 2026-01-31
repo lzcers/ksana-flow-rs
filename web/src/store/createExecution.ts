@@ -16,6 +16,28 @@ const eventsForCurrentRun$ = eventSubject.pipe(
 );
 let stateUpdatePipelineInitialized = false;
 
+const buildExecutionBlueprint = (nodes: any[], edges: any[]) => ({
+  nodes: nodes.map((n) => ({
+    id: n.id,
+    type: n.type,
+    data: n.data,
+    position: n.position,
+    width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
+    height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
+    parentId: n.parentId,
+    extent: n.extent,
+    hidden: n.hidden,
+  })),
+  edges: edges.map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    sourceHandle: e.sourceHandle,
+    targetHandle: e.targetHandle,
+    type: e.type,
+  })),
+});
+
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
   if (!stateUpdatePipelineInitialized) {
     stateUpdatePipelineInitialized = true;
@@ -246,23 +268,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
       if (!currentSpaceId) return;
 
-      const blueprint = {
-        nodes: nodes.map(n => ({
-          id: n.id,
-          type: n.type,
-          data: n.data,
-          position: n.position,
-          width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-          height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
-        })),
-        edges: edges.map(e => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle,
-          targetHandle: e.targetHandle
-        }))
-      };
+      const blueprint = buildExecutionBlueprint(nodes, edges);
 
       try {
         set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
@@ -327,23 +333,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     runNode: async (nodeId: string) => {
       const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId } = get();
       if (!currentSpaceId) return;
-      const blueprint = {
-        nodes: nodes.map(n => ({
-          id: n.id,
-          type: n.type,
-          data: n.data,
-          position: n.position,
-          width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-          height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height))
-        })),
-        edges: edges.map(e => ({
-          id: e.id,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.sourceHandle,
-          targetHandle: e.targetHandle
-        }))
-      };
+      const blueprint = buildExecutionBlueprint(nodes, edges);
 
       try {
         const res = await api.runNode(currentSpaceId, blueprint, nodeId, currentWorkflowId || -1);

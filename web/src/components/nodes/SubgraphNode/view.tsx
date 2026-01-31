@@ -45,7 +45,6 @@ export const SubgraphNodeView = memo(({
   return (
     <NodeWrapper
       id={id}
-      type="SubgraphNode"
       data={data}
       selected={selected}
       className={expanded ? subgraphNodeStyles.expandedContainer : subgraphNodeStyles.collapsedContainer}

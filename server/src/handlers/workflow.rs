@@ -324,7 +324,19 @@ pub async fn run_node(
     let workspace_id = payload.space_id;
     let workflow_id = payload.workflow_id;
     let blueprint = payload.blueprint;
-    let node_id = payload.node_id;
+    let mut node_id = payload.node_id;
+    loop {
+        let parent_id = blueprint
+            .nodes
+            .iter()
+            .find(|n| n.id == node_id)
+            .and_then(|n| n.parent_id.clone());
+        if let Some(parent_id) = parent_id {
+            node_id = parent_id;
+        } else {
+            break;
+        }
+    }
 
     let (graph, execution_ctx, node_inputs) = {
         let registry = &state.registry;
@@ -531,6 +543,10 @@ mod tests {
                     position: Position { x: 0.0, y: 0.0 },
                     width: None,
                     height: None,
+                    parent_id: None,
+                    extent: None,
+                    hidden: None,
+                    ui: Default::default(),
                 },
                 Node {
                     id: "b".to_string(),
@@ -543,6 +559,10 @@ mod tests {
                     position: Position { x: 0.0, y: 0.0 },
                     width: None,
                     height: None,
+                    parent_id: None,
+                    extent: None,
+                    hidden: None,
+                    ui: Default::default(),
                 },
             ],
             edges: vec![],
