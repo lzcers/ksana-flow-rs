@@ -29,7 +29,12 @@ impl Node for TextSplitNode {
             .or_else(|| input.get_any_as::<String>())
             .unwrap_or_default();
 
-        let result = split_text(&input_text, &config);
+        let result = split_text(&input_text, &config)
+            .segments
+            .into_iter()
+            .map(|seg| seg.text)
+            .collect::<Vec<String>>();
+
         let out = serde_json::to_value(result).unwrap_or_else(|_| Value::Null);
         Ok(out.into())
     }
