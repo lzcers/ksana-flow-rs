@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 import type { NodeProps } from '@xyflow/react';
-import { Activity, Box, Clapperboard, FileText, GitMerge, Image, Mail, Sparkles, Timer, Type, Database } from 'lucide-react';
+import { Activity, Box, Clapperboard, FileText, GitMerge, Image, Mail, Sparkles, Timer, Type, Database, Group } from 'lucide-react';
 import type { NodeData, NodeType } from '../../model/types';
 import {
   BacktesterNode,
@@ -14,6 +14,7 @@ import {
   TextNode,
   TimerNode,
   VolMfiNode,
+  SubgraphNode,
 } from '../nodes';
 import { TextSplitNode } from '../nodes/TextSplitNode';
 
@@ -39,6 +40,7 @@ export const NODE_REGISTRY: NodeRegistryItem[] = [
   { type: 'EmailNotifyNode', label: 'EmailNotifyNode', icon: Mail, color: 'text-indigo-500 bg-indigo-50', Component: EmailNotifyNode },
   { type: 'TimerNode', label: 'TimerNode', icon: Timer, color: 'text-indigo-500 bg-indigo-50', Component: TimerNode },
   { type: 'ShortVideoScriptNode', label: 'AI Video', icon: Clapperboard, color: 'text-rose-500 bg-rose-50', Component: ShortVideoNode },
+  { type: 'SubgraphNode', label: 'Group', icon: Group, color: 'text-zinc-500 bg-zinc-50', Component: SubgraphNode },
 ];
 
 export const NODE_TYPES = NODE_REGISTRY.map(({ type, label, icon, color }) => ({ type, label, icon, color }));

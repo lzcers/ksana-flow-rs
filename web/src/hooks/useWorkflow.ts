@@ -28,6 +28,7 @@ export function useWorkflow() {
     deleteNode: store.deleteNode,
     updateNodeData: store.updateNodeData,
     updateNodeDimensions: store.updateNodeDimensions,
+    groupNodes: store.groupNodes,
     undo: store.undo,
     redo: store.redo,
     canUndo: store.canUndo,

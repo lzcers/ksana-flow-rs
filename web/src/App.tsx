@@ -58,8 +58,11 @@ function AppContent() {
     renameWorkflow,
     createNewWorkflow,
     importWorkflow,
-    getWorkflowBlueprint
+    getWorkflowBlueprint,
+    groupNodes
   } = workflow;
+
+  const selectedNodeIds = state.nodes.filter(n => n.selected).map(n => n.id);
 
   const [openTabs, setOpenTabs] = useState<{ id: number | null; name: string }[]>([]);
 
@@ -229,6 +232,8 @@ function AppContent() {
           onImportWorkflow={handleImportWorkflow}
           tabs={openTabs}
           onCloseTab={handleCloseTab}
+          selectedNodeIds={selectedNodeIds}
+          onGroupNodes={groupNodes}
         />
       </div>
     </div>

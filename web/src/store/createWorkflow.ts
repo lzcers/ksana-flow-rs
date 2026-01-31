@@ -26,6 +26,18 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const allowedTypes = new Set(NODE_TYPES.map(nt => nt.type));
       const filteredTypes = types.filter(t => allowedTypes.has(t.name as any));
 
+      // Inject SubgraphNode manually if not present (frontend-only node)
+      if (!filteredTypes.find(t => t.name === 'SubgraphNode')) {
+        filteredTypes.push({
+          name: 'SubgraphNode',
+          description: 'A group of nodes (Subgraph)',
+          category: 'Logic',
+          inputs: [],
+          outputs: [],
+          config: {},
+        });
+      }
+
       set({ nodeTypes: filteredTypes, workflows: wfList });
     } catch (e) {
       console.error("Failed to load metadata", e);

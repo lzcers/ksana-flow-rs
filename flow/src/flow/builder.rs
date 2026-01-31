@@ -5,6 +5,7 @@ use super::{
     io::Output,
 };
 use serde::de::DeserializeOwned;
+use std::sync::Arc;
 
 pub struct GraphBuilder {
     graph: Graph,

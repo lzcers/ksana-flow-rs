@@ -67,6 +67,8 @@ export interface Canvas {
   isConnecting: boolean;
   connectionSourceId: string | null;
   setConnectionState: (connecting: boolean, sourceId?: string | null) => void;
+  groupNodes: (nodeIds: string[]) => void;
+  toggleSubgraph: (nodeId: string) => void;
 
   // History
   history: {

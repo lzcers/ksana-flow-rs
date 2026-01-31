@@ -100,6 +100,14 @@ impl Runner {
         self.event_sender = Some(sender);
     }
 
+    pub fn set_context(&mut self, ctx: Context) {
+        self.ctx = Arc::new(ctx);
+    }
+
+    pub fn get_execution_context(&self) -> &ExecutionContext {
+        &self.exec_ctx
+    }
+
     pub fn set_start_node(&mut self, node_id: &str, input: Value) {
         let mut inputs = HashMap::new();
         inputs.insert("external_start".to_owned(), input);

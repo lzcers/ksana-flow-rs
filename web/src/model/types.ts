@@ -16,11 +16,13 @@ export type NodeType =
   | 'Backtester'
   | 'ReactiveSourceNode'
   | 'VOLMFINode'
+  | 'SubgraphNode'
   | string;
 
 export interface NodeData extends Record<string, unknown> {
   label?: string;
   description?: string;
+  expanded?: boolean;
   inputs?: Record<string, any>;
   outputs?: Record<string, any>;
   config?: Record<string, any>;

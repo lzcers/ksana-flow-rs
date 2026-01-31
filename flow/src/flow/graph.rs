@@ -20,7 +20,7 @@ pub trait Node {
     async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String>;
 }
 
-pub type EdgeCondition = Box<dyn Fn(&Context, &Output) -> bool + Send>;
+pub type EdgeCondition = Box<dyn Fn(&Context, &Output) -> bool + Send + Sync>;
 
 // 条件边接收一个节点传出的输出引用，根据条件判断是否继续执行下一个节点
 pub struct Edge {
@@ -87,7 +87,7 @@ impl<N: Node + Any + Send + Sync> AnyNode for N {
     }
 }
 
-pub trait AnyEdge: Send {
+pub trait AnyEdge: Send + Sync {
     fn from(&self) -> &str;
     fn to(&self) -> &str;
     fn check_condition(&self, ctx: &Context, output: &Output) -> bool;
@@ -110,11 +110,24 @@ impl AnyEdge for Edge {
     }
 }
 
+// 子图情况下，节点和边都需要被 Arc 包裹，因为会被发送到不同的线程中执行
 pub struct Graph {
     pub nodes: HashMap<NodeId, Arc<RwLock<dyn AnyNode>>>,
-    pub edges: HashMap<NodeId, Vec<Box<dyn AnyEdge>>>,
+    pub edges: HashMap<NodeId, Vec<Arc<dyn AnyEdge>>>,
     pub incoming_nodes: HashMap<NodeId, Vec<NodeId>>,
     pub node_trigger_strategy: HashMap<NodeId, TriggerStrategy>,
+}
+
+// 手动实现 Clone，因为 Box<dyn AnyEdge> 不能自动 Clone
+impl Clone for Graph {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+            edges: HashMap::new(), // Box<dyn AnyEdge> 不能 clone，清空边
+            incoming_nodes: self.incoming_nodes.clone(),
+            node_trigger_strategy: self.node_trigger_strategy.clone(),
+        }
+    }
 }
 
 impl Graph {
@@ -163,7 +176,7 @@ impl Graph {
         self.edges
             .entry(edge.from.clone())
             .or_insert_with(Vec::new)
-            .push(Box::new(edge));
+            .push(Arc::new(edge));
     }
 
     pub fn add_arc_node(
