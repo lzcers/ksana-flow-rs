@@ -63,10 +63,6 @@ impl SubgraphExecutor {
         }
     }
 
-    pub fn new_arc(subgraph: Arc<Graph>, config: SubgraphConfig) -> Self {
-        Self { subgraph, config }
-    }
-
     /// 使用默认配置创建子图执行器
     pub fn with_defaults(subgraph: Graph) -> Self {
         Self::new(subgraph, SubgraphConfig::default())
@@ -96,8 +92,7 @@ impl SubgraphExecutor {
         // 设置起始节点
         let mut inputs = HashMap::new();
         inputs.insert(INPUT_EXTERNAL_START.to_string(), input);
-        let entry_input = Input::new(inputs);
-        runner.set_start_node(&self.config.entry_node, entry_input);
+        runner.set_start_node(&self.config.entry_node, inputs.into());
 
         // 3. 执行子图
         let execution_task = runner.run();
