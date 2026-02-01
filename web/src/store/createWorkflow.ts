@@ -2,6 +2,7 @@ import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
+import { applyCollapsedSubgraphUi } from '../model/utils';
 import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput } from '../model';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 
@@ -53,13 +54,26 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
 
       const nodes: Node[] = wf.blueprint.nodes.map((n: any) => {
         const { type: _, ...cleanData } = n.data || {};
+        const expanded = cleanData.expanded !== false;
+        const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
+        let width = n.width;
+        let height = n.height;
+        if (n.type === 'SubgraphNode') {
+          if (preferredSize && typeof preferredSize.width === 'number' && typeof preferredSize.height === 'number') {
+            width = preferredSize.width;
+            height = preferredSize.height;
+          } else if (!expanded) {
+            width = width ?? 180;
+            height = height ?? 80;
+          }
+        }
         return {
           id: n.id,
           type: n.type,
           position: n.position || { x: 0, y: 0 },
-          width: n.width,
-          height: n.height,
-          style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
+          width,
+          height,
+          style: width && height ? { width, height } : undefined,
           parentId: n.parentId,
           extent: n.extent,
           hidden: n.hidden,
@@ -76,8 +90,9 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         type: e.type || 'default'
       }));
 
-      setNodes(nodes);
-      setEdges(edges);
+      const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
+      setNodes(preprocessed.nodes);
+      setEdges(preprocessed.edges);
       selectNode(null);
 
       try {
@@ -244,13 +259,26 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     // Transform backend nodes to ReactFlow nodes
     const nodes: Node[] = (blueprint.nodes || []).map((n: any) => {
       const { type: _, ...cleanData } = n.data || {};
+      const expanded = cleanData.expanded !== false;
+      const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
+      let width = n.width;
+      let height = n.height;
+      if (n.type === 'SubgraphNode') {
+        if (preferredSize && typeof preferredSize.width === 'number' && typeof preferredSize.height === 'number') {
+          width = preferredSize.width;
+          height = preferredSize.height;
+        } else if (!expanded) {
+          width = width ?? 180;
+          height = height ?? 80;
+        }
+      }
       return {
         id: n.id,
         type: n.type,
         position: n.position || { x: 0, y: 0 },
-        width: n.width,
-        height: n.height,
-        style: n.width && n.height ? { width: n.width, height: n.height } : undefined,
+        width,
+        height,
+        style: width && height ? { width, height } : undefined,
         parentId: n.parentId,
         extent: n.extent,
         hidden: n.hidden,
@@ -268,8 +296,9 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       type: e.type || 'default'
     }));
 
-    setNodes(nodes);
-    setEdges(edges);
+    const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
+    setNodes(preprocessed.nodes);
+    setEdges(preprocessed.edges);
     selectNode(null);
     setCurrentWorkflowId(null);
     setWorkflowStatus('idle');

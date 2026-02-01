@@ -66,6 +66,16 @@ export const updateNodeDimensions = (
       node.style.height = height;
       node.width = width;
       node.height = height;
+
+      if (node.type === 'SubgraphNode') {
+        const expanded = node.data?.expanded !== false;
+        const size = { width, height };
+        node.data = {
+          ...node.data,
+          expandedSize: expanded ? size : (node.data?.expandedSize as any),
+          collapsedSize: expanded ? (node.data?.collapsedSize as any) : size,
+        };
+      }
     }
   });
 };

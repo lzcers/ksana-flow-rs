@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { type NodeProps, useReactFlow, type Node, Position } from '@xyflow/react';
+import { memo, useEffect } from 'react';
+import { type NodeProps, useReactFlow, type Node, Position, useUpdateNodeInternals } from '@xyflow/react';
 import { ChevronDown, ChevronUp, Network } from 'lucide-react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { subgraphNodeStyles } from './styles';
@@ -22,10 +22,15 @@ export const SubgraphNodeView = memo(({
   ...props
 }: SubgraphNodeViewProps) => {
   const { getNodes } = useReactFlow();
+  const updateNodeInternals = useUpdateNodeInternals();
 
   // Get child nodes count
   const childNodes = getNodes().filter((n: Node) => n.parentId === id);
   const childCount = childNodes.length;
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, expanded, width, height, updateNodeInternals]);
 
   const headerActions = (
     <div className={subgraphNodeStyles.headerActions}>
@@ -52,8 +57,8 @@ export const SubgraphNodeView = memo(({
       resizable={expanded}
       minWidth={expanded ? 200 : 120}
       minHeight={expanded ? 100 : 60}
-      targetHandles={[Position.Left]}
-      sourceHandles={[Position.Right]}
+      targetHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
+      sourceHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
       style={{ width, height }}
       {...props}
     >

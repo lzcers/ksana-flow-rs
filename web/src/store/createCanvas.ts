@@ -15,6 +15,7 @@ import {
   setEdges,
   pasteNodes
 } from '../model';
+import { applyCollapsedSubgraphUi } from '../model/utils';
 
 const sortNodesByParent = (nodes: Node[]): Node[] => {
   const idSet = new Set(nodes.map((n) => n.id));
@@ -243,7 +244,12 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       type,
       position: { x: groupX, y: groupY },
       style: { width: groupWidth, height: groupHeight },
-      data: { label: 'Group', expanded: true },
+      data: {
+        label: 'Group',
+        expanded: true,
+        expandedSize: { width: groupWidth, height: groupHeight },
+        collapsedSize: { width: 180, height: 80 },
+      },
       parentId: firstParentId,
     };
 
@@ -292,15 +298,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     if (nextExpanded) collapsedGroupIds.delete(nodeId);
     else collapsedGroupIds.add(nodeId);
 
-    const isInGroup = (id: string) => {
-      let current = nodeById.get(id);
-      while (current?.parentId) {
-        if (current.parentId === nodeId) return true;
-        current = nodeById.get(current.parentId);
-      }
-      return false;
-    };
-
     const isHiddenByCollapsedAncestor = (n: Node) => {
       let current = n;
       while (current.parentId) {
@@ -315,30 +312,53 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     const updatedNodes = nodes.map(n => {
       if (n.id === nodeId) {
         if (nextExpanded) {
+           const currentWidth = node.measured?.width
+             ?? (typeof node.style?.width === 'number' ? node.style.width : undefined)
+             ?? node.width
+             ?? 180;
+           const currentHeight = node.measured?.height
+             ?? (typeof node.style?.height === 'number' ? node.style.height : undefined)
+             ?? node.height
+             ?? 80;
            const savedSize = node.data.expandedSize as { width: number, height: number } | undefined;
+           const nextSize = savedSize ?? { width: 300, height: 200 };
            return {
              ...n,
              style: {
                 ...n.style,
-                width: savedSize?.width ?? 300,
-                height: savedSize?.height ?? 200
+                width: nextSize.width,
+                height: nextSize.height,
              },
+             width: nextSize.width,
+             height: nextSize.height,
              data: {
                ...n.data,
                expanded: true,
+               collapsedSize: { width: currentWidth, height: currentHeight },
                childCount // Store for display
              }
            };
         } else {
-           const currentWidth = node.measured?.width ?? (typeof node.style?.width === 'number' ? node.style.width : 300);
-           const currentHeight = node.measured?.height ?? (typeof node.style?.height === 'number' ? node.style.height : 200);
+           const currentWidth = node.measured?.width
+             ?? (typeof node.style?.width === 'number' ? node.style.width : undefined)
+             ?? node.width
+             ?? 300;
+           const currentHeight = node.measured?.height
+             ?? (typeof node.style?.height === 'number' ? node.style.height : undefined)
+             ?? node.height
+             ?? 200;
+           const savedCollapsed = node.data.collapsedSize as { width: number, height: number } | undefined;
+           const nextSize = savedCollapsed ?? { width: 180, height: 80 };
            return {
              ...n,
-             style: { ...n.style, width: 180, height: 80 },
+             style: { ...n.style, width: nextSize.width, height: nextSize.height },
+             width: nextSize.width,
+             height: nextSize.height,
              data: {
                ...n.data,
                expanded: false,
                expandedSize: { width: currentWidth, height: currentHeight },
+               collapsedSize: nextSize,
                childCount
              }
            };
@@ -356,56 +376,8 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       return n;
     });
 
-    let updatedEdges: Edge[] = edges.filter((e: any) => !e?.data?.__uiSubgraphEdge || e.data.__uiSubgraphEdge.groupId !== nodeId);
-
-    if (!nextExpanded) {
-      const proxyEdges: Edge[] = [];
-      updatedEdges = updatedEdges.map((e: any) => {
-        const sourceIn = isInGroup(e.source);
-        const targetIn = isInGroup(e.target);
-
-        if (sourceIn === targetIn) return e;
-        if (e.source === nodeId || e.target === nodeId) return e;
-
-        const proxyBase = {
-          id: `ui:subgraph:${nodeId}:${e.id}`,
-          type: e.type || 'default',
-          data: { __uiSubgraphEdge: { groupId: nodeId, originalEdgeId: e.id } }
-        };
-
-        if (sourceIn) {
-          proxyEdges.push({
-            ...proxyBase,
-            source: nodeId,
-            target: e.target,
-            sourceHandle: 's-right',
-            targetHandle: e.targetHandle,
-          } as any);
-        } else {
-          proxyEdges.push({
-            ...proxyBase,
-            source: e.source,
-            target: nodeId,
-            sourceHandle: e.sourceHandle,
-            targetHandle: 't-left',
-          } as any);
-        }
-
-        return { ...e, hidden: true };
-      });
-
-      updatedEdges = [...updatedEdges, ...proxyEdges];
-    } else {
-      updatedEdges = updatedEdges.map((e: any) => {
-        if (e?.data?.__uiSubgraphEdge) return e;
-        if (e.hidden !== true) return e;
-        const sourceIn = isInGroup(e.source);
-        const targetIn = isInGroup(e.target);
-        if (sourceIn === targetIn) return e;
-        return { ...e, hidden: false };
-      });
-    }
-
-    set({ nodes: sortNodesByParent(updatedNodes), edges: updatedEdges });
+    const baseEdges: Edge[] = edges.filter((e: any) => !e?.data?.__uiSubgraphEdge);
+    const preprocessed = applyCollapsedSubgraphUi(sortNodesByParent(updatedNodes), baseEdges);
+    set({ nodes: sortNodesByParent(preprocessed.nodes), edges: preprocessed.edges });
   },
 });

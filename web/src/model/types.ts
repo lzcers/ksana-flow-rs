@@ -23,6 +23,8 @@ export interface NodeData extends Record<string, unknown> {
   label?: string;
   description?: string;
   expanded?: boolean;
+  expandedSize?: { width: number; height: number };
+  collapsedSize?: { width: number; height: number };
   inputs?: Record<string, any>;
   outputs?: Record<string, any>;
   config?: Record<string, any>;
