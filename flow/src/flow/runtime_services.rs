@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use super::{CTX_FLOW_EVENT_SENDER, FlowEvent, runtime_context::Context};
+use super::{CTX_FLOW_EVENT_SENDER, FlowEvent, graph::Context};
 
 #[derive(Clone, Default)]
 pub struct RuntimeServices {

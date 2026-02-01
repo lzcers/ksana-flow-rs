@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::{NodeId, ReactiveStream, INPUT_EXTERNAL_START};
+use crate::ReactiveStream;
+
+use super::{graph::NodeId, keys::INPUT_EXTERNAL_START};
 
 #[derive(Clone)]
 pub struct Input {

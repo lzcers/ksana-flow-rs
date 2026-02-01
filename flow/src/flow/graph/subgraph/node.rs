@@ -2,9 +2,13 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 
-use crate::flow::{Context, Input, Node, Output, INPUT_EXTERNAL_START};
-
-use super::SubgraphExecutor;
+use super::{
+    SubgraphExecutor,
+    graph::Node,
+    io::{Input, Output},
+    keys::INPUT_EXTERNAL_START,
+    runtime_context::Context,
+};
 
 pub struct SubgraphNode {
     pub executor: SubgraphExecutor,
@@ -30,7 +34,11 @@ impl Node for SubgraphNode {
             }
         };
 
-        let out = self.executor.execute(v, ctx).await.map_err(|e| e.to_string())?;
+        let out = self
+            .executor
+            .execute(v, ctx)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(out.into())
     }
 }

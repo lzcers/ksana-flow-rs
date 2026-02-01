@@ -3,12 +3,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::flow::{
-    AnyNode, Context, Edge as FlowEdge, EdgeCondition, Graph, Output, NodeFactory, SubgraphConfig,
-    SubgraphExecutor,
+use super::{
+    graph::{AnyNode, Edge as FlowEdge, EdgeCondition, Graph, NodeFactory},
+    io::Output,
+    node::{SubgraphEndNode, SubgraphInNode, SubgraphNode, SubgraphStartNode},
+    runtime_context::Context,
+    {SubgraphConfig, SubgraphExecutor},
 };
-
-use super::node::{SubgraphEndNode, SubgraphInNode, SubgraphNode, SubgraphStartNode};
 
 #[derive(Clone, Debug)]
 pub struct BlueprintNode {
@@ -157,10 +158,7 @@ where
         .get("inherit_context")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let timeout_ms = group_node
-        .config
-        .get("timeout_ms")
-        .and_then(|v| v.as_u64());
+    let timeout_ms = group_node.config.get("timeout_ms").and_then(|v| v.as_u64());
 
     let mut config = SubgraphConfig::default();
     config.entry_node = start_id;

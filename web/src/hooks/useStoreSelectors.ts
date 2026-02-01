@@ -80,18 +80,13 @@ export function useHistoryActions() {
   );
 }
 
-/** 订阅历史状态 */
-export function useHistoryState(): {
-  canUndo: boolean;
-  canRedo: boolean;
-} {
-  return useStore(
-    useCallback((state: StoreState) => {
-      const canUndo = state.history.past.length > 0;
-      const canRedo = state.history.future.length > 0;
-      return { canUndo, canRedo };
-    }, [])
-  );
+/** 订阅历史状态 - 使用独立选择器避免对象比较问题 */
+export function useCanUndo(): boolean {
+  return useStore(useCallback((state: StoreState) => state.history.past.length > 0, []));
+}
+
+export function useCanRedo(): boolean {
+  return useStore(useCallback((state: StoreState) => state.history.future.length > 0, []));
 }
 
 // ==========================================

@@ -13,7 +13,8 @@ import {
   useHistoryActions,
   useWorkflowActions,
   useExecutionActions,
-  useHistoryState,
+  useCanUndo,
+  useCanRedo,
 } from './useStoreSelectors';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
@@ -32,7 +33,8 @@ export function useWorkflow() {
   const currentWorkflowId = useCurrentWorkflowId();
   const workflowStatus = useWorkflowStatus();
   const currentRunId = useCurrentRunId();
-  const { canUndo, canRedo } = useHistoryState();
+  const canUndo = useCanUndo();
+  const canRedo = useCanRedo();
 
   // Actions 有稳定的引用
   const canvasActions = useCanvasActions();

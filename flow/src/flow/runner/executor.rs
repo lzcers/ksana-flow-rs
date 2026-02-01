@@ -1,6 +1,9 @@
 use super::task_guard::TaskGuard;
 use super::utils::send_task_event;
-use crate::{AnyNode, Context, Input, Output, TaskEvent};
+use crate::flow::{
+    AnyNode, TaskEvent,
+    graph::{Context, Input, Output},
+};
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{RwLock, Semaphore, mpsc};
