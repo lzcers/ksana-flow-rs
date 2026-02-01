@@ -105,14 +105,14 @@ impl SubgraphExecutor {
             Runner::new(self.subgraph.clone(), Some(ExecutionContext::new()));
 
         // 设置上下文
-        runner.set_executor_context(subgraph_ctx);
+        runner.set_execution_context(subgraph_ctx);
         runner.set_services(services);
 
         // 设置起始节点
         let mut inputs = HashMap::new();
         inputs.insert(INPUT_EXTERNAL_START.to_string(), input);
         let entry_input = Input::new(inputs);
-        runner.set_start_node_with_inputs(&self.config.entry_node, entry_input);
+        runner.set_start_node(&self.config.entry_node, entry_input);
 
         // 3. 执行子图
         let execution_task = runner.run();

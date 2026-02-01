@@ -134,7 +134,7 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
 
     let (mut runner, _handle) = Runner::new(graph, None);
     for id in start_nodes {
-        runner.set_start_node(&id, Value::Null);
+        runner.set_start_node(&id, Value::Null.into());
     }
     runner.run().await.unwrap();
 

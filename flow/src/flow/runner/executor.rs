@@ -1,4 +1,4 @@
-use super::{task_guard::TaskGuard, utils::send_task_event};
+use super::task_guard::TaskGuard;
 use crate::{
     Context,
     flow::{
@@ -14,14 +14,20 @@ use tracing::{debug, info};
 pub struct Executor {
     semaphore: Option<Arc<Semaphore>>,
     runtime_ctx: Arc<Context>,
+    task_sender: mpsc::Sender<TaskEvent>,
 }
 
 impl Executor {
-    pub fn new() -> Self {
-        Self {
-            runtime_ctx: Arc::new(Context::new()),
-            semaphore: None,
-        }
+    pub fn new() -> (Self, mpsc::Receiver<TaskEvent>) {
+        let (task_sender, task_receiver) = mpsc::channel::<TaskEvent>(128);
+        (
+            Self {
+                runtime_ctx: Arc::new(Context::new()),
+                semaphore: None,
+                task_sender,
+            },
+            task_receiver,
+        )
     }
 
     pub fn set_max_concurrency(&mut self, max: usize) {
@@ -42,6 +48,9 @@ impl Executor {
     pub fn set_context(&mut self, ctx: Context) {
         self.runtime_ctx = Arc::new(ctx);
     }
+    pub fn get_task_sender(&self) -> mpsc::Sender<TaskEvent> {
+        self.task_sender.clone()
+    }
 
     pub fn exec(
         &self,
@@ -49,19 +58,19 @@ impl Executor {
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
         input: Input,
-        // 向调度器发送执行结果
-        task_sender: mpsc::Sender<TaskEvent>,
     ) {
         // 节点执行所需的上下文
         let ctx = self.runtime_ctx.clone();
         let semaphore = self.semaphore.clone();
+        let task_sender = self.get_task_sender();
+
         tokio::spawn(async move {
             let _keep_alive = _guard; // Force capture
             let _permit = match semaphore {
                 Some(sem) => match sem.acquire_owned().await {
                     Ok(permit) => Some(permit),
                     Err(e) => {
-                        send_task_event(
+                        Self::send_task_event(
                             &task_sender,
                             TaskEvent::Error(node_id, format!("Semaphore acquire failed: {}", e)),
                         )
@@ -100,14 +109,14 @@ impl Executor {
                     if is_stream {
                         match out.into_stream() {
                             Some(stream) => {
-                                send_task_event(
+                                Self::send_task_event(
                                     &task_sender,
                                     TaskEvent::Stream(node_id, stream.subscribe),
                                 )
                                 .await;
                             }
                             None => {
-                                send_task_event(
+                                Self::send_task_event(
                                     &task_sender,
                                     TaskEvent::Error(node_id, "Missing stream".to_string()),
                                 )
@@ -115,7 +124,7 @@ impl Executor {
                             }
                         }
                     } else {
-                        send_task_event(
+                        Self::send_task_event(
                             &task_sender,
                             TaskEvent::Completed(node_id, out.into_value()),
                         )
@@ -123,9 +132,12 @@ impl Executor {
                     }
                 }
                 Err(e) => {
-                    send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
+                    Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
                 }
             }
         });
+    }
+    async fn send_task_event(task_sender: &mpsc::Sender<TaskEvent>, event: TaskEvent) {
+        let _ = task_sender.send(event).await;
     }
 }

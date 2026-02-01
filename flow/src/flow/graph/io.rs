@@ -49,6 +49,11 @@ impl Input {
     }
 }
 
+impl Into<Input> for Value {
+    fn into(self) -> Input {
+        Input::new(HashMap::from([(INPUT_EXTERNAL_START.to_string(), self)]))
+    }
+}
 pub struct Output {
     value: Option<Value>,
     stream: Option<ReactiveStream>,

@@ -249,7 +249,7 @@ async fn start_execution(
     tokio::spawn(async move {
         // Setup inputs
         for (node_id, input) in start_inputs {
-            runner.set_start_node_with_inputs(&node_id, input);
+            runner.set_start_node(&node_id, input);
         }
 
         if let Err(e) = runner.run().await {

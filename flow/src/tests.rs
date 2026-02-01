@@ -13,12 +13,6 @@ use crate::{
     Context, Edge, Graph, INPUT_EXTERNAL_START, Input, Node, Output, Runner, TriggerStrategy,
 };
 
-fn input_with_external_start(value: Value) -> Input {
-    let mut map = HashMap::new();
-    map.insert(INPUT_EXTERNAL_START.to_string(), value);
-    Input::new(map)
-}
-
 #[tokio::test]
 async fn test_complex_graph_connections() {
     struct InputNode;
@@ -84,7 +78,7 @@ async fn test_complex_graph_connections() {
     );
 
     let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
-    runner.set_start_node("input", json!("Test"));
+    runner.set_start_node("input", json!("Test").into());
     runner
         .run()
         .await
@@ -115,7 +109,7 @@ async fn test_build_flow_macro_with_condition() {
     );
 
     let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
-    runner.set_start_node("node1", json!("Start"));
+    runner.set_start_node("node1", json!("Start").into());
     runner.run().await.expect("Flow should succeed");
 }
 
@@ -179,7 +173,7 @@ async fn test_conditional_branching() {
     );
 
     let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
-    runner.set_start_node_with_inputs("input", input_with_external_start(json!(42)));
+    runner.set_start_node("input", json!(42).into());
     runner
         .run()
         .await
@@ -287,7 +281,7 @@ async fn test_runner_max_concurrency() {
 
     let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_max_concurrency(1);
-    runner.set_start_node_with_inputs("input", input_with_external_start(json!(null)));
+    runner.set_start_node("input", json!(null).into());
     runner.run().await.expect("Flow should succeed");
 
     let observed = max_in_flight.load(Ordering::SeqCst);

@@ -74,20 +74,23 @@ impl GraphBlueprint {
             })
             .collect();
 
-        let create_leaf_factory = move |node: &flow::BlueprintNode| -> Result<Arc<NodeFactory>, String> {
-            if registry.get_node_metadata(&node.type_name).is_none() {
-                let msg = format!(
-                    "Node type '{}' not found for node '{}'",
-                    node.type_name, node.id
-                );
-                error!("{}", msg);
-                return Err(msg);
-            }
-            let type_name = node.type_name.clone();
-            let config = node.config.clone();
-            let registry = registry.clone();
-            Ok(Arc::new(move || registry.create_node(&type_name, config.clone())))
-        };
+        let create_leaf_factory =
+            move |node: &flow::BlueprintNode| -> Result<Arc<NodeFactory>, String> {
+                if registry.get_node_metadata(&node.type_name).is_none() {
+                    let msg = format!(
+                        "Node type '{}' not found for node '{}'",
+                        node.type_name, node.id
+                    );
+                    error!("{}", msg);
+                    return Err(msg);
+                }
+                let type_name = node.type_name.clone();
+                let config = node.config.clone();
+                let registry = registry.clone();
+                Ok(Arc::new(move || {
+                    registry.create_node(&type_name, config.clone())
+                }))
+            };
 
         flow::compile_graph(&nodes, &edges, SUBGRAPH_NODE_TYPE, create_leaf_factory)
     }
@@ -263,7 +266,7 @@ mod tests {
         rt.block_on(async move {
             let (mut runner, _handle) = Runner::new(graph, Some(ExecutionContext::new()));
             for id in start_nodes {
-                runner.set_start_node(&id, Value::Null);
+                runner.set_start_node(&id, Value::Null.into());
             }
             runner.run().await.unwrap();
             assert_eq!(
