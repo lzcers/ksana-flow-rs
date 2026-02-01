@@ -4,14 +4,12 @@ use super::{
     keys::{CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, INPUT_EXTERNAL_START},
 };
 use crate::{
-    Context,
-    flow::{
-        runner::{ExecutionContext, Runner},
-        runtime_services::RuntimeServices,
-    },
+    Context, FlowEvent,
+    flow::runner::{ExecutionContext, Runner},
 };
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 /// 子图执行器配置
@@ -39,10 +37,9 @@ impl Default for SubgraphConfig {
 }
 
 /// 子图执行器
-///
 /// 复用现有 Runner 实现子图执行，支持上下文隔离/继承
 pub struct SubgraphExecutor {
-    /// 子图定义
+    /// 子图定义, 一个子图执行器可被多个图共享，因此使用 Arc 引用计数
     subgraph: Arc<Graph>,
     /// 执行配置
     config: SubgraphConfig,
@@ -86,17 +83,6 @@ impl SubgraphExecutor {
         input: Value,
         parent_ctx: &Context,
     ) -> Result<Value, SubgraphError> {
-        let services = RuntimeServices::from_context(parent_ctx);
-        self.execute_with_services(input, parent_ctx, services)
-            .await
-    }
-
-    pub async fn execute_with_services(
-        &self,
-        input: Value,
-        parent_ctx: &Context,
-        services: RuntimeServices,
-    ) -> Result<Value, SubgraphError> {
         // 1. 创建子图上下文
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
 
@@ -105,8 +91,7 @@ impl SubgraphExecutor {
             Runner::new(self.subgraph.clone(), Some(ExecutionContext::new()));
 
         // 设置上下文
-        runner.set_execution_context(subgraph_ctx);
-        runner.set_services(services);
+        runner.set_runtime_context(subgraph_ctx);
 
         // 设置起始节点
         let mut inputs = HashMap::new();
@@ -161,6 +146,9 @@ impl SubgraphExecutor {
         } else {
             // 完全隔离的新上下文
             let ctx = Context::new();
+            if let Some(sender) = parent_ctx.get_flow_event_sender() {
+                ctx.set_flow_event_sender(sender);
+            }
             // 将输入放入上下文
             ctx.set(CTX_INPUT, input);
             ctx

@@ -1,15 +1,12 @@
 use super::{
+    event::{FlowEvent, TaskEvent},
     exec_context::{ExecutionContext, NodeState},
     executor::Executor,
     scheduler::{Scheduler, StartSpec},
 };
 use crate::{
     Context,
-    flow::{
-        event::{FlowEvent, TaskEvent},
-        graph::{Graph, Input, NodeId},
-        runtime_services::RuntimeServices,
-    },
+    flow::graph::{Graph, Input, NodeId},
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
@@ -59,13 +56,9 @@ pub struct Runner {
     scheduler: Scheduler,
     // 2. 执行上下文，存储节点状态于执行结果，提供调度决策信息
     exec_ctx: ExecutionContext,
-
-    //3. 任务执行器，负责执行任务
+    // 3. 任务执行器，负责执行任务
     executor: Executor,
-    task_event_receiver: mpsc::Receiver<TaskEvent>,
-
     // 内部运行状态
-    services: RuntimeServices,
     state_tx: watch::Sender<RunnerState>,
     // 外部命令接收通道
     cmd_rx: mpsc::Receiver<RunnerCommand>,
@@ -85,14 +78,12 @@ impl Runner {
             state_rx: state_rx.clone(),
         };
 
-        let (executor, task_event_receiver) = Executor::new();
+        let executor = Executor::new();
         (
             Self {
                 scheduler: Scheduler::new(graph),
                 exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
                 executor,
-                task_event_receiver,
-                services: RuntimeServices::default(),
                 cmd_rx,
                 state_tx,
             },
@@ -100,15 +91,18 @@ impl Runner {
         )
     }
 
-    pub fn set_services(&mut self, services: RuntimeServices) {
-        self.services = services;
-    }
-    pub fn set_execution_context(&mut self, ctx: Context) {
-        self.executor.set_context(ctx);
+    pub fn set_flow_event_sender(&mut self, sender: mpsc::Sender<FlowEvent>) {
+        self.executor
+            .get_runtime_context_ref()
+            .set_flow_event_sender(sender);
     }
 
-    pub fn set_event_sender(&mut self, sender: mpsc::Sender<FlowEvent>) {
-        self.services.event_sender = Some(sender);
+    pub fn set_runtime_context(&mut self, ctx: Context) {
+        self.executor.set_runtime_context(ctx);
+    }
+
+    pub fn get_execution_context(&self) -> &ExecutionContext {
+        &self.exec_ctx
     }
 
     pub fn set_max_concurrency(&mut self, max: usize) {
@@ -117,10 +111,6 @@ impl Runner {
 
     pub fn clear_max_concurrency(&mut self) {
         self.executor.clear_max_concurrency();
-    }
-
-    pub fn get_execution_context(&self) -> &ExecutionContext {
-        &self.exec_ctx
     }
 
     pub fn set_start_node(&mut self, node_id: &str, inputs: Input) {
@@ -133,8 +123,6 @@ impl Runner {
         // 1.准备阶段
         // 各种状态初始化
         // 节点实例化等
-        self.services
-            .attach_to_context(self.executor.get_context().as_ref());
 
         if self.scheduler.is_start_queue_empty() {
             info!("No start node set, runner finished");
@@ -170,32 +158,32 @@ impl Runner {
                             if current_state != RunnerState::Terminated {
                                 info!("Runner paused");
                                 self.update_runner_state(RunnerState::Paused)?;
-                                send_flow_event(&self.services.event_sender, FlowEvent::FlowPaused).await;
+                                self.send_flow_event( FlowEvent::FlowPaused).await;
                             }
                         }
                         RunnerCommand::Resume => {
                             if current_state == RunnerState::Paused {
                                 info!("Runner resumed");
                                 self.update_runner_state(RunnerState::Running)?;
-                                send_flow_event(&self.services.event_sender, FlowEvent::FlowResumed).await;
+                                self.send_flow_event( FlowEvent::FlowResumed).await;
                             }
                         }
                         RunnerCommand::Stop => {
                             info!("Runner terminated by command");
                             self.update_runner_state(RunnerState::Terminated)?;
-                            send_flow_event(&self.services.event_sender, FlowEvent::FlowStopped).await;
+                            self.send_flow_event(FlowEvent::FlowStopped).await;
                             break;
                         }
                     }
                 }
 
                 // 2. 处理任务
-                maybe_event = self.task_event_receiver.recv(), if current_state == RunnerState::Running => {
+                maybe_event = self.executor.get_task_event(), if current_state == RunnerState::Running => {
                     match maybe_event {
                         Some(first_event) => {
                             // 批量获取当前队列中的所有事件
                             let mut events = vec![first_event];
-                            while let Ok(event) = self.task_event_receiver.try_recv() {
+                            while let Ok(event) = self.executor.try_get_task_event() {
                                 events.push(event);
                             }
 
@@ -211,12 +199,12 @@ impl Runner {
             }
             // 没有活跃任务，且事件队列为空，就意味着工作流执行完毕
             if self.exec_ctx.get_task_count() == 0
-                && self.task_event_receiver.is_empty()
+                && self.executor.event_is_empty()
                 && current_state == RunnerState::Running
             {
                 info!("Runner finished: All tasks completed.",);
                 self.update_runner_state(RunnerState::Terminated)?;
-                send_flow_event(&self.services.event_sender, FlowEvent::FlowFinished).await;
+                self.send_flow_event(FlowEvent::FlowFinished).await;
                 break;
             }
         }
@@ -248,14 +236,11 @@ impl Runner {
                     self.exec_ctx.get_task_tracker_guard(),
                     task_sender,
                     node_id.clone(),
-                    self.executor.get_context(),
+                    self.executor.get_runtime_context(),
                 );
                 self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
-                send_flow_event(
-                    &self.services.event_sender,
-                    FlowEvent::NodeStreamStarted(node_id),
-                )
-                .await;
+                self.send_flow_event(FlowEvent::NodeStreamStarted(node_id))
+                    .await;
             }
             // 任务的流式结果
             TaskEvent::Next(node_id, output) => {
@@ -267,16 +252,16 @@ impl Runner {
 
                 // 流式输出存储到 exec_ctx 中
                 self.exec_ctx.set_output(node_id.clone(), output.clone());
-                send_flow_event(
-                    &self.services.event_sender,
-                    FlowEvent::NodeStreamNextMessage(node_id.clone(), output.clone()),
-                )
+                self.send_flow_event(FlowEvent::NodeStreamNextMessage(
+                    node_id.clone(),
+                    output.clone(),
+                ))
                 .await;
                 let starts = self.scheduler.schedule_from_output(
                     &node_id,
                     &output,
                     &self.exec_ctx,
-                    self.executor.get_context_ref(),
+                    self.executor.get_runtime_context_ref(),
                 )?;
                 self.start_by_specs(starts).await?;
             }
@@ -286,27 +271,21 @@ impl Runner {
                 let mut out_value = None;
                 if let Some(out) = output {
                     self.exec_ctx.set_output(node_id.clone(), out.clone());
-                    send_flow_event(
-                        &self.services.event_sender,
-                        FlowEvent::NodeOutMessage(node_id.clone(), out.clone()),
-                    )
-                    .await;
+                    self.send_flow_event(FlowEvent::NodeOutMessage(node_id.clone(), out.clone()))
+                        .await;
                     out_value = Some(out);
                 }
                 self.exec_ctx
                     .set_state(node_id.clone(), NodeState::Completed);
-                send_flow_event(
-                    &self.services.event_sender,
-                    FlowEvent::NodeCompleted(node_id.clone()),
-                )
-                .await;
+                self.send_flow_event(FlowEvent::NodeCompleted(node_id.clone()))
+                    .await;
                 // 如果有输出值，就触发下游调度，流式输出完成时没有值，就不触发下游调度了
                 if let Some(out) = out_value {
                     let starts = self.scheduler.schedule_from_output(
                         &node_id,
                         &out,
                         &self.exec_ctx,
-                        self.executor.get_context_ref(),
+                        self.executor.get_runtime_context_ref(),
                     )?;
                     self.start_by_specs(starts).await?;
                 }
@@ -318,11 +297,7 @@ impl Runner {
                     *first_error = Some(e.clone());
                 }
                 self.exec_ctx.set_state(node_id.clone(), NodeState::Failed);
-                send_flow_event(
-                    &self.services.event_sender,
-                    FlowEvent::NodeError(node_id, e),
-                )
-                .await;
+                self.send_flow_event(FlowEvent::NodeError(node_id, e)).await;
             }
         }
         Ok(())
@@ -353,25 +328,23 @@ impl Runner {
 
         self.exec_ctx.set_state(node_id.clone(), NodeState::Running);
 
-        send_flow_event(
-            &self.services.event_sender,
-            FlowEvent::NodeStarted(node_id.clone()),
-        )
-        .await;
+        self.send_flow_event(FlowEvent::NodeStarted(node_id.clone()))
+            .await;
         // 发送节点输入事件，通知外部，输入的数据不一定能序列化
-        send_flow_event(
-            &self.services.event_sender,
-            FlowEvent::NodeInMessage(node_id.clone(), inputs.clone()),
-        )
-        .await;
+        self.send_flow_event(FlowEvent::NodeInMessage(node_id.clone(), inputs.clone()))
+            .await;
         // 让执行器干活
         self.executor.exec(guard, node_id, node_arc, inputs);
         Ok(())
     }
-}
 
-pub async fn send_flow_event(sender: &Option<mpsc::Sender<FlowEvent>>, event: FlowEvent) {
-    if let Some(sender) = sender {
-        let _ = sender.send(event).await;
+    async fn send_flow_event(&self, event: FlowEvent) {
+        if let Some(sender) = self
+            .executor
+            .get_runtime_context_ref()
+            .get_flow_event_sender_ref()
+        {
+            let _ = sender.send(event).await;
+        }
     }
 }

@@ -1,31 +1,36 @@
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use serde_json::Value;
+use tokio::sync::{OnceCell, mpsc};
+
+use crate::FlowEvent;
 
 // 节点运行上下文
 // Context 内部是一个并发安全的结构，因此 Context 只要能 Clone 就行
 #[derive(Clone)]
 pub struct Context {
     data: Arc<DashMap<String, Value>>,
-    any: Arc<DashMap<String, Arc<dyn Any + Send + Sync>>>,
     parent: Option<Arc<Context>>,
+    // 外部事件发送通道
+    // 放上下文上主要是方便透传到子图
+    flow_event_tx: Arc<OnceCell<mpsc::Sender<FlowEvent>>>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
             data: Arc::new(DashMap::new()),
-            any: Arc::new(DashMap::new()),
             parent: None,
+            flow_event_tx: Arc::new(OnceCell::new()),
         }
     }
 
     pub fn child(&self) -> Self {
         Self {
             data: Arc::new(DashMap::new()),
-            any: Arc::new(DashMap::new()),
             parent: Some(Arc::new(self.clone())),
+            flow_event_tx: self.flow_event_tx.clone(),
         }
     }
 
@@ -41,15 +46,14 @@ impl Context {
             .or_else(|| self.parent.as_ref().and_then(|p| p.get::<T>(key)))
     }
 
-    pub fn set_any<T: Any + Send + Sync>(&self, key: impl Into<String>, value: T) {
-        self.any.insert(key.into(), Arc::new(value));
+    pub fn set_flow_event_sender(&self, sender: mpsc::Sender<FlowEvent>) {
+        let _ = self.flow_event_tx.set(sender);
     }
-
-    pub fn get_any<T: Any + Send + Sync>(&self, key: &str) -> Option<Arc<T>> {
-        self.any
-            .get(key)
-            .and_then(|v| v.clone().downcast::<T>().ok())
-            .or_else(|| self.parent.as_ref().and_then(|p| p.get_any::<T>(key)))
+    pub fn get_flow_event_sender(&self) -> Option<mpsc::Sender<FlowEvent>> {
+        self.flow_event_tx.get().cloned()
+    }
+    pub fn get_flow_event_sender_ref(&self) -> Option<&mpsc::Sender<FlowEvent>> {
+        self.flow_event_tx.get()
     }
 }
 
@@ -62,15 +66,8 @@ impl std::fmt::Debug for Context {
         data_keys.sort();
         data_keys.dedup();
 
-        let mut any_keys: Vec<String> = self.any.iter().map(|kv| kv.key().clone()).collect();
-        if let Some(parent) = self.parent.as_ref() {
-            any_keys.extend(parent.any.iter().map(|kv| kv.key().clone()));
-        }
-        any_keys.sort();
-        any_keys.dedup();
         f.debug_struct("Context")
             .field("data_keys", &data_keys)
-            .field("any_keys", &any_keys)
             .finish()
     }
 }

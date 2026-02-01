@@ -1,33 +1,35 @@
-use super::task_guard::TaskGuard;
+use super::{event::TaskEvent, task_guard::TaskGuard};
 use crate::{
     Context,
     flow::{
-        AnyNode, TaskEvent,
+        AnyNode,
         graph::{Input, Output},
     },
 };
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, sync::Arc};
-use tokio::sync::{RwLock, Semaphore, mpsc};
+use tokio::sync::{
+    RwLock, Semaphore,
+    mpsc::{self, error::TryRecvError},
+};
 use tracing::{debug, info};
 
 pub struct Executor {
     semaphore: Option<Arc<Semaphore>>,
     runtime_ctx: Arc<Context>,
     task_sender: mpsc::Sender<TaskEvent>,
+    task_receiver: mpsc::Receiver<TaskEvent>,
 }
 
 impl Executor {
-    pub fn new() -> (Self, mpsc::Receiver<TaskEvent>) {
+    pub fn new() -> Self {
         let (task_sender, task_receiver) = mpsc::channel::<TaskEvent>(128);
-        (
-            Self {
-                runtime_ctx: Arc::new(Context::new()),
-                semaphore: None,
-                task_sender,
-            },
+        Self {
+            runtime_ctx: Arc::new(Context::new()),
+            semaphore: None,
+            task_sender,
             task_receiver,
-        )
+        }
     }
 
     pub fn set_max_concurrency(&mut self, max: usize) {
@@ -39,17 +41,28 @@ impl Executor {
         self.semaphore = None;
     }
 
-    pub fn get_context(&self) -> Arc<Context> {
+    pub fn get_runtime_context(&self) -> Arc<Context> {
         self.runtime_ctx.clone()
     }
-    pub fn get_context_ref(&self) -> &Context {
+    pub fn get_runtime_context_ref(&self) -> &Context {
         self.runtime_ctx.as_ref()
     }
-    pub fn set_context(&mut self, ctx: Context) {
+
+    pub fn set_runtime_context(&mut self, ctx: Context) {
         self.runtime_ctx = Arc::new(ctx);
     }
+
     pub fn get_task_sender(&self) -> mpsc::Sender<TaskEvent> {
         self.task_sender.clone()
+    }
+    pub async fn get_task_event(&mut self) -> Option<TaskEvent> {
+        self.task_receiver.recv().await
+    }
+    pub fn try_get_task_event(&mut self) -> Result<TaskEvent, TryRecvError> {
+        self.task_receiver.try_recv()
+    }
+    pub fn event_is_empty(&self) -> bool {
+        self.task_receiver.is_empty()
     }
 
     pub fn exec(

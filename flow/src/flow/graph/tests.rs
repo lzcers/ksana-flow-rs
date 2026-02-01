@@ -2,11 +2,10 @@ use super::{
     BlueprintEdge, BlueprintNode, SubgraphConfig, SubgraphError, SubgraphExecutor, compile_graph,
     graph::{AnyNode, Edge, Graph, Node, NodeFactory},
     io::{Input, Output},
-    keys::CTX_FLOW_EVENT_SENDER,
 };
 use crate::{
     Context,
-    flow::{Runner, event::FlowEvent},
+    flow::{Runner, runner::FlowEvent},
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -162,7 +161,7 @@ async fn test_subgraph_events_forwarded_via_context_sender() {
 
     let parent_ctx = Context::new();
     let (tx, mut rx) = mpsc::channel::<FlowEvent>(128);
-    parent_ctx.set_any(CTX_FLOW_EVENT_SENDER, tx);
+    parent_ctx.set_flow_event_sender(tx);
 
     let out = executor
         .execute(json!({"hello": "world"}), &parent_ctx)

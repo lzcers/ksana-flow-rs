@@ -1,7 +1,4 @@
-use super::{
-    graph::NodeId,
-    {TaskGuard, event::TaskEvent},
-};
+use super::{TaskGuard, graph::NodeId, runner::TaskEvent};
 use crate::{
     Context,
     reactive::observable::{Observable, Observer, Subscription},

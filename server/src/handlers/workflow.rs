@@ -209,7 +209,7 @@ async fn start_execution(
     let db_clone = state.db.clone();
     let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
 
-    runner.set_event_sender(event_tx);
+    runner.set_flow_event_sender(event_tx);
 
     let bridge_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
@@ -286,9 +286,8 @@ pub async fn run_workflow(
     let workspace_id = request.space_id;
 
     let (graph, start_inputs) = {
-        let registry = state.registry.clone();
-
         // 解析 JSON 实例化整个蓝图
+        let registry = state.registry.clone();
         let (graph, start_nodes) = match blueprint.instantiate(registry.clone()) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
