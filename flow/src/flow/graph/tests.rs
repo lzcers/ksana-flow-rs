@@ -70,6 +70,17 @@ impl Node for StartNode {
     }
 }
 
+struct ConstNode {
+    value: Value,
+}
+
+#[async_trait]
+impl Node for ConstNode {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
+        Ok(self.value.clone().into())
+    }
+}
+
 struct CountNode {
     counter: Arc<AtomicUsize>,
 }
@@ -186,6 +197,168 @@ async fn test_subgraph_events_forwarded_via_context_sender() {
 
     assert!(saw_mid_started);
     assert!(saw_flow_finished);
+}
+
+#[tokio::test]
+async fn test_subgraph_inbound_proxy_routes_by_source_id() {
+    let nodes = vec![
+        BlueprintNode {
+            id: "A".to_string(),
+            type_name: "ConstNode".to_string(),
+            parent_id: None,
+            config: json!("va"),
+        },
+        BlueprintNode {
+            id: "B".to_string(),
+            type_name: "ConstNode".to_string(),
+            parent_id: None,
+            config: json!("vb"),
+        },
+        BlueprintNode {
+            id: "G".to_string(),
+            type_name: "SubgraphNode".to_string(),
+            parent_id: None,
+            config: Value::Null,
+        },
+        BlueprintNode {
+            id: "X".to_string(),
+            type_name: "EchoNode".to_string(),
+            parent_id: Some("G".to_string()),
+            config: Value::Null,
+        },
+        BlueprintNode {
+            id: "Y".to_string(),
+            type_name: "EchoNode".to_string(),
+            parent_id: Some("G".to_string()),
+            config: Value::Null,
+        },
+    ];
+
+    let edges = vec![
+        BlueprintEdge {
+            id: "e_AX".to_string(),
+            source: "A".to_string(),
+            target: "X".to_string(),
+            source_handle: None,
+            target_handle: None,
+            condition: None,
+        },
+        BlueprintEdge {
+            id: "e_BY".to_string(),
+            source: "B".to_string(),
+            target: "Y".to_string(),
+            source_handle: None,
+            target_handle: None,
+            condition: None,
+        },
+    ];
+
+    let create_leaf_factory = move |node: &BlueprintNode| -> Result<Arc<NodeFactory>, String> {
+        match node.type_name.as_str() {
+            "ConstNode" => {
+                let value = node.config.clone();
+                Ok(Arc::new(move || {
+                    Ok(Arc::new(RwLock::new(ConstNode {
+                        value: value.clone(),
+                    })) as Arc<RwLock<dyn AnyNode>>)
+                }))
+            }
+            "EchoNode" => Ok(Arc::new(move || {
+                Ok(Arc::new(RwLock::new(EchoNode)) as Arc<RwLock<dyn AnyNode>>)
+            })),
+            other => Err(format!("unknown node type: {}", other)),
+        }
+    };
+
+    let (graph, start_nodes) =
+        compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
+
+    let (mut runner, _handle) = Runner::new(graph, None);
+    for id in start_nodes {
+        runner.set_start_node(&id, Value::Null.into());
+    }
+    runner.run().await.unwrap();
+
+    let out = runner.get_execution_context().get_output("G").unwrap();
+    assert_eq!(out, json!({"X": "va", "Y": "vb"}));
+}
+
+#[tokio::test]
+async fn test_subgraph_inbound_proxy_single_source_passthrough() {
+    let nodes = vec![
+        BlueprintNode {
+            id: "A".to_string(),
+            type_name: "ConstNode".to_string(),
+            parent_id: None,
+            config: json!("va"),
+        },
+        BlueprintNode {
+            id: "G".to_string(),
+            type_name: "SubgraphNode".to_string(),
+            parent_id: None,
+            config: Value::Null,
+        },
+        BlueprintNode {
+            id: "X".to_string(),
+            type_name: "EchoNode".to_string(),
+            parent_id: Some("G".to_string()),
+            config: Value::Null,
+        },
+        BlueprintNode {
+            id: "Y".to_string(),
+            type_name: "EchoNode".to_string(),
+            parent_id: Some("G".to_string()),
+            config: Value::Null,
+        },
+    ];
+
+    let edges = vec![
+        BlueprintEdge {
+            id: "e_AX".to_string(),
+            source: "A".to_string(),
+            target: "X".to_string(),
+            source_handle: None,
+            target_handle: None,
+            condition: None,
+        },
+        BlueprintEdge {
+            id: "e_AY".to_string(),
+            source: "A".to_string(),
+            target: "Y".to_string(),
+            source_handle: None,
+            target_handle: None,
+            condition: None,
+        },
+    ];
+
+    let create_leaf_factory = move |node: &BlueprintNode| -> Result<Arc<NodeFactory>, String> {
+        match node.type_name.as_str() {
+            "ConstNode" => {
+                let value = node.config.clone();
+                Ok(Arc::new(move || {
+                    Ok(Arc::new(RwLock::new(ConstNode {
+                        value: value.clone(),
+                    })) as Arc<RwLock<dyn AnyNode>>)
+                }))
+            }
+            "EchoNode" => Ok(Arc::new(move || {
+                Ok(Arc::new(RwLock::new(EchoNode)) as Arc<RwLock<dyn AnyNode>>)
+            })),
+            other => Err(format!("unknown node type: {}", other)),
+        }
+    };
+
+    let (graph, start_nodes) =
+        compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
+
+    let (mut runner, _handle) = Runner::new(graph, None);
+    for id in start_nodes {
+        runner.set_start_node(&id, Value::Null.into());
+    }
+    runner.run().await.unwrap();
+
+    let out = runner.get_execution_context().get_output("G").unwrap();
+    assert_eq!(out, json!({"X": "va", "Y": "va"}));
 }
 
 #[test]
