@@ -1,15 +1,13 @@
 use super::{
     graph::{Graph, NodeId},
-    io::Input,
     keys::{CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, INPUT_EXTERNAL_START},
 };
 use crate::{
-    Context, FlowEvent,
+    Context,
     flow::runner::{ExecutionContext, Runner},
 };
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 /// 子图执行器配置
@@ -83,8 +81,14 @@ impl SubgraphExecutor {
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
 
         // 2. 创建 Runner
-        let (mut runner, _handle) =
-            Runner::new(self.subgraph.clone(), Some(ExecutionContext::new()));
+        let (mut runner, _handle) = match subgraph_ctx.get_runner_command_sender() {
+            Some(cmd_tx) => Runner::new_with_command_sender(
+                self.subgraph.clone(),
+                Some(ExecutionContext::new()),
+                cmd_tx,
+            ),
+            None => Runner::new(self.subgraph.clone(), Some(ExecutionContext::new())),
+        };
 
         // 设置上下文
         runner.set_runtime_context(subgraph_ctx);
@@ -143,6 +147,9 @@ impl SubgraphExecutor {
             let ctx = Context::new();
             if let Some(sender) = parent_ctx.get_flow_event_sender() {
                 ctx.set_flow_event_sender(sender);
+            }
+            if let Some(cmd_tx) = parent_ctx.get_runner_command_sender() {
+                ctx.set_runner_command_sender(cmd_tx);
             }
             // 将输入放入上下文
             ctx.set(CTX_INPUT, input);

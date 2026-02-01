@@ -48,6 +48,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
   headerActions,
 }) => {
   const status = data.status || 'idle';
+  console.log(id, status);
   const {
     runNode,
     updateNodeDimensions,

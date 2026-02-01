@@ -9,7 +9,7 @@ use crate::{
     flow::graph::{Graph, Input, NodeId},
 };
 use std::sync::Arc;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +20,7 @@ pub enum RunnerState {
     Terminated,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerCommand {
     Pause,
     Resume,
@@ -28,21 +29,21 @@ pub enum RunnerCommand {
 
 #[derive(Clone)]
 pub struct RunnerHandle {
-    cmd_tx: mpsc::Sender<RunnerCommand>,
+    cmd_tx: broadcast::Sender<RunnerCommand>,
     state_rx: watch::Receiver<RunnerState>,
 }
 
 impl RunnerHandle {
     pub async fn pause(&self) {
-        let _ = self.cmd_tx.send(RunnerCommand::Pause).await;
+        let _ = self.cmd_tx.send(RunnerCommand::Pause);
     }
 
     pub async fn resume(&self) {
-        let _ = self.cmd_tx.send(RunnerCommand::Resume).await;
+        let _ = self.cmd_tx.send(RunnerCommand::Resume);
     }
 
     pub async fn stop(&self) {
-        let _ = self.cmd_tx.send(RunnerCommand::Stop).await;
+        let _ = self.cmd_tx.send(RunnerCommand::Stop);
     }
 
     pub fn get_state(&self) -> RunnerState {
@@ -60,8 +61,9 @@ pub struct Runner {
     executor: Executor,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
+    cmd_tx: broadcast::Sender<RunnerCommand>,
     // 外部命令接收通道
-    cmd_rx: mpsc::Receiver<RunnerCommand>,
+    cmd_rx: broadcast::Receiver<RunnerCommand>,
 }
 
 impl Runner {
@@ -70,11 +72,41 @@ impl Runner {
         // 用于恢复执行的上下文
         initial_context: Option<ExecutionContext>,
     ) -> (Self, RunnerHandle) {
-        let (cmd_tx, cmd_rx) = mpsc::channel(32);
+        let (cmd_tx, cmd_rx) = broadcast::channel(32);
         let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
 
         let handle = RunnerHandle {
-            cmd_tx,
+            cmd_tx: cmd_tx.clone(),
+            state_rx: state_rx.clone(),
+        };
+
+        let executor = Executor::new();
+        executor
+            .get_runtime_context_ref()
+            .set_runner_command_sender(cmd_tx.clone());
+        (
+            Self {
+                scheduler: Scheduler::new(graph),
+                exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
+                executor,
+                state_tx,
+                cmd_rx,
+                cmd_tx,
+            },
+            handle,
+        )
+    }
+
+    pub fn new_with_command_sender(
+        graph: Arc<Graph>,
+        initial_context: Option<ExecutionContext>,
+        cmd_tx: broadcast::Sender<RunnerCommand>,
+    ) -> (Self, RunnerHandle) {
+        let cmd_rx = cmd_tx.subscribe();
+        let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
+
+        let handle = RunnerHandle {
+            cmd_tx: cmd_tx.clone(),
             state_rx: state_rx.clone(),
         };
 
@@ -86,6 +118,7 @@ impl Runner {
                 executor,
                 cmd_rx,
                 state_tx,
+                cmd_tx,
             },
             handle,
         )
@@ -152,29 +185,38 @@ impl Runner {
             let current_state = *self.state_tx.borrow();
             tokio::select! {
                 // 1. 处理外部命令
-                Some(cmd) = self.cmd_rx.recv() => {
-                    match cmd {
-                        RunnerCommand::Pause => {
-                            if current_state != RunnerState::Terminated {
-                                info!("Runner paused");
-                                self.update_runner_state(RunnerState::Paused)?;
-                                self.send_flow_event( FlowEvent::FlowPaused).await;
+                cmd_res = self.cmd_rx.recv() => {
+                    match cmd_res {
+                        Ok(cmd) => match cmd {
+                            RunnerCommand::Pause => {
+                                if current_state != RunnerState::Terminated {
+                                    info!("Runner paused");
+                                    self.update_runner_state(RunnerState::Paused)?;
+                                    self.send_flow_event( FlowEvent::FlowPaused).await;
+                                }
                             }
-                        }
-                        RunnerCommand::Resume => {
-                            if current_state == RunnerState::Paused {
-                                info!("Runner resumed");
-                                self.update_runner_state(RunnerState::Running)?;
-                                self.send_flow_event( FlowEvent::FlowResumed).await;
+                            RunnerCommand::Resume => {
+                                if current_state == RunnerState::Paused {
+                                    info!("Runner resumed");
+                                    self.update_runner_state(RunnerState::Running)?;
+                                    self.send_flow_event( FlowEvent::FlowResumed).await;
+                                }
                             }
+                            RunnerCommand::Stop => {
+                                info!("Runner terminated by command");
+                                self.executor.cancel();
+                                self.update_runner_state(RunnerState::Terminated)?;
+                                self.send_flow_event(FlowEvent::FlowStopped).await;
+                                break;
+                            }
+                        },
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            continue;
                         }
-                        RunnerCommand::Stop => {
-                            info!("Runner terminated by command");
-                            self.update_runner_state(RunnerState::Terminated)?;
-                            self.send_flow_event(FlowEvent::FlowStopped).await;
+                        Err(broadcast::error::RecvError::Closed) => {
                             break;
                         }
-                    }
+                    };
                 }
 
                 // 2. 处理任务

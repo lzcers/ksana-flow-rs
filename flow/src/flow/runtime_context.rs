@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use serde_json::Value;
-use tokio::sync::{OnceCell, mpsc};
+use tokio::sync::{OnceCell, broadcast, mpsc};
 
 use crate::FlowEvent;
+use crate::flow::runner::RunnerCommand;
 
 // 节点运行上下文
 // Context 内部是一个并发安全的结构，因此 Context 只要能 Clone 就行
@@ -15,6 +16,7 @@ pub struct Context {
     // 外部事件发送通道
     // 放上下文上主要是方便透传到子图
     flow_event_tx: Arc<OnceCell<mpsc::Sender<FlowEvent>>>,
+    runner_cmd_tx: Arc<OnceCell<broadcast::Sender<RunnerCommand>>>,
 }
 
 impl Context {
@@ -23,6 +25,7 @@ impl Context {
             data: Arc::new(DashMap::new()),
             parent: None,
             flow_event_tx: Arc::new(OnceCell::new()),
+            runner_cmd_tx: Arc::new(OnceCell::new()),
         }
     }
 
@@ -31,6 +34,7 @@ impl Context {
             data: Arc::new(DashMap::new()),
             parent: Some(Arc::new(self.clone())),
             flow_event_tx: self.flow_event_tx.clone(),
+            runner_cmd_tx: self.runner_cmd_tx.clone(),
         }
     }
 
@@ -54,6 +58,13 @@ impl Context {
     }
     pub fn get_flow_event_sender_ref(&self) -> Option<&mpsc::Sender<FlowEvent>> {
         self.flow_event_tx.get()
+    }
+
+    pub fn set_runner_command_sender(&self, sender: broadcast::Sender<RunnerCommand>) {
+        let _ = self.runner_cmd_tx.set(sender);
+    }
+    pub fn get_runner_command_sender(&self) -> Option<broadcast::Sender<RunnerCommand>> {
+        self.runner_cmd_tx.get().cloned()
     }
 }
 

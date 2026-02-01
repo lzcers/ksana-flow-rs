@@ -11,6 +11,7 @@ use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{
     RwLock, Semaphore,
     mpsc::{self, error::TryRecvError},
+    watch,
 };
 use tracing::{debug, info};
 
@@ -19,16 +20,21 @@ pub struct Executor {
     runtime_ctx: Arc<Context>,
     task_sender: mpsc::Sender<TaskEvent>,
     task_receiver: mpsc::Receiver<TaskEvent>,
+    cancel_tx: watch::Sender<bool>,
+    cancel_rx: watch::Receiver<bool>,
 }
 
 impl Executor {
     pub fn new() -> Self {
         let (task_sender, task_receiver) = mpsc::channel::<TaskEvent>(128);
+        let (cancel_tx, cancel_rx) = watch::channel(false);
         Self {
             runtime_ctx: Arc::new(Context::new()),
             semaphore: None,
             task_sender,
             task_receiver,
+            cancel_tx,
+            cancel_rx,
         }
     }
 
@@ -65,6 +71,10 @@ impl Executor {
         self.task_receiver.is_empty()
     }
 
+    pub fn cancel(&self) {
+        let _ = self.cancel_tx.send(true);
+    }
+
     pub fn exec(
         &self,
         _guard: TaskGuard,
@@ -76,77 +86,99 @@ impl Executor {
         let ctx = self.runtime_ctx.clone();
         let semaphore = self.semaphore.clone();
         let task_sender = self.get_task_sender();
+        let cancel_rx = self.cancel_rx.clone();
 
         tokio::spawn(async move {
             let _keep_alive = _guard; // Force capture
-            let _permit = match semaphore {
-                Some(sem) => match sem.acquire_owned().await {
-                    Ok(permit) => Some(permit),
-                    Err(e) => {
-                        Self::send_task_event(
-                            &task_sender,
-                            TaskEvent::Error(node_id, format!("Semaphore acquire failed: {}", e)),
-                        )
-                        .await;
-                        return;
+            let mut cancel_rx = cancel_rx;
+            let wait_cancel = async {
+                loop {
+                    if *cancel_rx.borrow() {
+                        break;
                     }
-                },
-                None => None,
-            };
-            let mut node = node.write().await;
-
-            info!(node_id = %node_id, "Node tasks start");
-            let result = AssertUnwindSafe(node.run(ctx.as_ref(), &input))
-                .catch_unwind()
-                .await;
-
-            let output: Result<Output, String> = match result {
-                Ok(res) => res,
-                Err(panic_err) => {
-                    let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
-                        format!("Panic: {}", s)
-                    } else if let Some(s) = panic_err.downcast_ref::<String>() {
-                        format!("Panic: {}", s)
-                    } else {
-                        "Panic: unknown error".to_string()
-                    };
-                    Err(msg)
+                    if cancel_rx.changed().await.is_err() {
+                        break;
+                    }
                 }
             };
 
-            debug!(node_id = %node_id, "Node logic executed");
-
-            match output {
-                Ok(out) => {
-                    let is_stream = out.is_stream();
-                    if is_stream {
-                        match out.into_stream() {
-                            Some(stream) => {
+            let node_id_for_cancel = node_id.clone();
+            tokio::select! {
+                _ = wait_cancel => {
+                    Self::send_task_event(&task_sender, TaskEvent::Error(node_id_for_cancel, "Cancelled".to_string())).await;
+                    return;
+                }
+                _ = async {
+                    let _permit = match semaphore {
+                        Some(sem) => match sem.acquire_owned().await {
+                            Ok(permit) => Some(permit),
+                            Err(e) => {
                                 Self::send_task_event(
                                     &task_sender,
-                                    TaskEvent::Stream(node_id, stream.subscribe),
+                                    TaskEvent::Error(node_id, format!("Semaphore acquire failed: {}", e)),
                                 )
                                 .await;
+                                return;
                             }
-                            None => {
+                        },
+                        None => None,
+                    };
+                    let mut node = node.write().await;
+
+                    info!(node_id = %node_id, "Node tasks start");
+                    let result = AssertUnwindSafe(node.run(ctx.as_ref(), &input))
+                        .catch_unwind()
+                        .await;
+
+                    let output: Result<Output, String> = match result {
+                        Ok(res) => res,
+                        Err(panic_err) => {
+                            let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                                format!("Panic: {}", s)
+                            } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                                format!("Panic: {}", s)
+                            } else {
+                                "Panic: unknown error".to_string()
+                            };
+                            Err(msg)
+                        }
+                    };
+
+                    debug!(node_id = %node_id, "Node logic executed");
+
+                    match output {
+                        Ok(out) => {
+                            let is_stream = out.is_stream();
+                            if is_stream {
+                                match out.into_stream() {
+                                    Some(stream) => {
+                                        Self::send_task_event(
+                                            &task_sender,
+                                            TaskEvent::Stream(node_id, stream.subscribe),
+                                        )
+                                        .await;
+                                    }
+                                    None => {
+                                        Self::send_task_event(
+                                            &task_sender,
+                                            TaskEvent::Error(node_id, "Missing stream".to_string()),
+                                        )
+                                        .await;
+                                    }
+                                }
+                            } else {
                                 Self::send_task_event(
                                     &task_sender,
-                                    TaskEvent::Error(node_id, "Missing stream".to_string()),
+                                    TaskEvent::Completed(node_id, out.into_value()),
                                 )
                                 .await;
                             }
                         }
-                    } else {
-                        Self::send_task_event(
-                            &task_sender,
-                            TaskEvent::Completed(node_id, out.into_value()),
-                        )
-                        .await;
+                        Err(e) => {
+                            Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
+                        }
                     }
-                }
-                Err(e) => {
-                    Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
-                }
+                } => {}
             }
         });
     }
