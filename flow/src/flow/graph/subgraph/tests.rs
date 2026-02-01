@@ -3,9 +3,11 @@ use super::{
     graph::{AnyNode, Edge, Graph, Node, NodeFactory},
     io::{Input, Output},
     keys::CTX_FLOW_EVENT_SENDER,
-    runtime_context::Context,
 };
-use crate::flow::{Runner, event::FlowEvent};
+use crate::{
+    Context,
+    flow::{Runner, event::FlowEvent},
+};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{

@@ -9,10 +9,10 @@ import {
   useCurrentWorkflowId,
   useWorkflowStatus,
   useCurrentRunId,
-  useCanvasActions,
-  useHistoryActions,
-  useWorkflowActions,
-  useExecutionActions,
+  canvasActions,
+  historyActions,
+  workflowActions,
+  executionActions,
   useCanUndo,
   useCanRedo,
 } from './useStoreSelectors';
@@ -36,11 +36,7 @@ export function useWorkflow() {
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
 
-  // Actions 有稳定的引用
-  const canvasActions = useCanvasActions();
-  const historyActions = useHistoryActions();
-  const workflowActions = useWorkflowActions();
-  const executionActions = useExecutionActions();
+  // Actions 直接从常量对象引用，不通过 hook（避免无限循环）
 
   // 派生状态
   const state = {

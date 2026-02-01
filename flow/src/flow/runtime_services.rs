@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use super::{CTX_FLOW_EVENT_SENDER, FlowEvent, graph::Context};
+use super::{CTX_FLOW_EVENT_SENDER, Context, FlowEvent};
 
 #[derive(Clone, Default)]
 pub struct RuntimeServices {
@@ -15,6 +15,7 @@ impl RuntimeServices {
         Self { event_sender }
     }
 
+    // 把 RuntimeServices 中的 event_sender attach 到 Context 中
     pub fn attach_to_context(&self, ctx: &Context) {
         if let Some(sender) = self.event_sender.as_ref() {
             ctx.set_any(CTX_FLOW_EVENT_SENDER, sender.clone());

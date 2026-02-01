@@ -1,12 +1,9 @@
 use async_trait::async_trait;
 
+use super::io::{Input, Output};
+use crate::Context;
 use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
-
-use super::{
-    io::{Input, Output},
-    runtime_context::Context,
-};
 
 pub type NodeId = String;
 

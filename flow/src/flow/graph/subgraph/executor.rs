@@ -1,19 +1,18 @@
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::timeout;
-
 use super::{
     graph::{Graph, NodeId},
     io::Input,
     keys::{CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, INPUT_EXTERNAL_START},
-    runtime_context::Context,
 };
-use crate::flow::{
-    runner::{ExecutionContext, Runner},
-    runtime_services::RuntimeServices,
+use crate::{
+    Context,
+    flow::{
+        runner::{ExecutionContext, Runner},
+        runtime_services::RuntimeServices,
+    },
 };
+use serde_json::Value;
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::time::timeout;
 
 /// 子图执行器配置
 #[derive(Debug, Clone)]
@@ -106,8 +105,7 @@ impl SubgraphExecutor {
             Runner::new(self.subgraph.clone(), Some(ExecutionContext::new()));
 
         // 设置上下文
-        runner.set_context(subgraph_ctx);
-
+        runner.set_executor_context(subgraph_ctx);
         runner.set_services(services);
 
         // 设置起始节点

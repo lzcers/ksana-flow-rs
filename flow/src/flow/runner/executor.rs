@@ -1,22 +1,27 @@
-use super::task_guard::TaskGuard;
-use super::utils::send_task_event;
-use crate::flow::{
-    AnyNode, TaskEvent,
-    graph::{Context, Input, Output},
+use super::{task_guard::TaskGuard, utils::send_task_event};
+use crate::{
+    Context,
+    flow::{
+        AnyNode, TaskEvent,
+        graph::{Input, Output},
+    },
 };
 use futures::FutureExt;
 use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{RwLock, Semaphore, mpsc};
 use tracing::{debug, info};
-// 接收调度器发送来的任务进行执行
-#[derive(Default)]
+
 pub struct Executor {
     semaphore: Option<Arc<Semaphore>>,
+    runtime_ctx: Arc<Context>,
 }
 
 impl Executor {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            runtime_ctx: Arc::new(Context::new()),
+            semaphore: None,
+        }
     }
 
     pub fn set_max_concurrency(&mut self, max: usize) {
@@ -28,17 +33,27 @@ impl Executor {
         self.semaphore = None;
     }
 
+    pub fn get_context(&self) -> Arc<Context> {
+        self.runtime_ctx.clone()
+    }
+    pub fn get_context_ref(&self) -> &Context {
+        self.runtime_ctx.as_ref()
+    }
+    pub fn set_context(&mut self, ctx: Context) {
+        self.runtime_ctx = Arc::new(ctx);
+    }
+
     pub fn exec(
         &self,
         _guard: TaskGuard,
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
         input: Input,
-        // 节点执行所需的上下文
-        ctx: Arc<Context>,
         // 向调度器发送执行结果
         task_sender: mpsc::Sender<TaskEvent>,
     ) {
+        // 节点执行所需的上下文
+        let ctx = self.runtime_ctx.clone();
         let semaphore = self.semaphore.clone();
         tokio::spawn(async move {
             let _keep_alive = _guard; // Force capture

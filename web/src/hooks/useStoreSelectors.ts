@@ -39,46 +39,34 @@ export function useConnectionState(): {
   );
 }
 
-/** 订阅画布操作方法（稳定引用） */
-export function useCanvasActions() {
-  return useStore(
-    useCallback(
-      (state: StoreState) => ({
-        setNodes: state.setNodes,
-        setEdges: state.setEdges,
-        addNode: state.addNode,
-        deleteNode: state.deleteNode,
-        updateNodeData: state.updateNodeData,
-        updateNodeDimensions: state.updateNodeDimensions,
-        selectNode: state.selectNode,
-        onNodesChange: state.onNodesChange,
-        onEdgesChange: state.onEdgesChange,
-        onConnect: state.onConnect,
-        pasteNodes: state.pasteNodes,
-        groupNodes: state.groupNodes,
-        toggleSubgraph: state.toggleSubgraph,
-        setConnectionState: state.setConnectionState,
-      }),
-      []
-    )
-  );
-}
+/** 画布操作方法 - 直接从 store 获取，不通过选择器订阅
+ *  这些 actions 引用稳定，不会导致重渲染
+ */
+export const canvasActions = {
+  get setNodes() { return useStore.getState().setNodes; },
+  get setEdges() { return useStore.getState().setEdges; },
+  get addNode() { return useStore.getState().addNode; },
+  get deleteNode() { return useStore.getState().deleteNode; },
+  get updateNodeData() { return useStore.getState().updateNodeData; },
+  get updateNodeDimensions() { return useStore.getState().updateNodeDimensions; },
+  get selectNode() { return useStore.getState().selectNode; },
+  get onNodesChange() { return useStore.getState().onNodesChange; },
+  get onEdgesChange() { return useStore.getState().onEdgesChange; },
+  get onConnect() { return useStore.getState().onConnect; },
+  get pasteNodes() { return useStore.getState().pasteNodes; },
+  get groupNodes() { return useStore.getState().groupNodes; },
+  get toggleSubgraph() { return useStore.getState().toggleSubgraph; },
+  get setConnectionState() { return useStore.getState().setConnectionState; },
+};
 
-/** 订阅历史操作方法 */
-export function useHistoryActions() {
-  return useStore(
-    useCallback(
-      (state: StoreState) => ({
-        pushHistory: state.pushHistory,
-        undo: state.undo,
-        redo: state.redo,
-        canUndo: state.canUndo,
-        canRedo: state.canRedo,
-      }),
-      []
-    )
-  );
-}
+/** 历史操作方法 - 直接从 store 获取 */
+export const historyActions = {
+  get pushHistory() { return useStore.getState().pushHistory; },
+  get undo() { return useStore.getState().undo; },
+  get redo() { return useStore.getState().redo; },
+  get canUndo() { return useStore.getState().canUndo; },
+  get canRedo() { return useStore.getState().canRedo; },
+};
 
 /** 订阅历史状态 - 使用独立选择器避免对象比较问题 */
 export function useCanUndo(): boolean {
@@ -113,24 +101,17 @@ export function useNodeTypes(): NodeMetadata[] {
   return useStore(useCallback((state: StoreState) => state.nodeTypes, []));
 }
 
-/** 订阅工作流操作方法 */
-export function useWorkflowActions() {
-  return useStore(
-    useCallback(
-      (state: StoreState) => ({
-        loadWorkflow: state.loadWorkflow,
-        saveWorkflow: state.saveWorkflow,
-        renameWorkflow: state.renameWorkflow,
-        deleteWorkflow: state.deleteWorkflow,
-        createNewWorkflow: state.createNewWorkflow,
-        importWorkflow: state.importWorkflow,
-        loadMetadata: state.loadMetadata,
-        setSpaceId: state.setSpaceId,
-      }),
-      []
-    )
-  );
-}
+/** 工作流操作方法 - 直接从 store 获取 */
+export const workflowActions = {
+  get loadWorkflow() { return useStore.getState().loadWorkflow; },
+  get saveWorkflow() { return useStore.getState().saveWorkflow; },
+  get renameWorkflow() { return useStore.getState().renameWorkflow; },
+  get deleteWorkflow() { return useStore.getState().deleteWorkflow; },
+  get createNewWorkflow() { return useStore.getState().createNewWorkflow; },
+  get importWorkflow() { return useStore.getState().importWorkflow; },
+  get loadMetadata() { return useStore.getState().loadMetadata; },
+  get setSpaceId() { return useStore.getState().setSpaceId; },
+};
 
 // ==========================================
 // Execution 状态选择器
@@ -146,37 +127,26 @@ export function useCurrentRunId(): string | null {
   return useStore(useCallback((state: StoreState) => state.currentRunId, []));
 }
 
-/** 订阅执行操作方法 */
-export function useExecutionActions() {
-  return useStore(
-    useCallback(
-      (state: StoreState) => ({
-        runWorkflow: state.runWorkflow,
-        pauseWorkflow: state.pauseWorkflow,
-        resumeWorkflow: state.resumeWorkflow,
-        stopWorkflow: state.stopWorkflow,
-        runNode: state.runNode,
-      }),
-      []
-    )
-  );
-}
+/** 执行操作方法 - 直接从 store 获取 */
+export const executionActions = {
+  get runWorkflow() { return useStore.getState().runWorkflow; },
+  get pauseWorkflow() { return useStore.getState().pauseWorkflow; },
+  get resumeWorkflow() { return useStore.getState().resumeWorkflow; },
+  get stopWorkflow() { return useStore.getState().stopWorkflow; },
+  get runNode() { return useStore.getState().runNode; },
+};
 
 // ==========================================
 // Toast 状态选择器
 // ==========================================
 
-/** 订阅 Toast 操作方法 */
-export function useToastActions() {
-  return useStore(
-    useCallback(
-      (state: StoreState) => ({
-        success: state.success,
-        error: state.error,
-        info: state.info,
-        removeToast: state.removeToast,
-      }),
-      []
-    )
-  );
-}
+/** Toast 操作方法 - 直接从 store 获取 */
+export const toastActions = {
+  get success() { return useStore.getState().success; },
+  get error() { return useStore.getState().error; },
+  get info() { return useStore.getState().info; },
+  get removeToast() { return useStore.getState().removeToast; },
+};
+
+// 导出 useStore 以便直接使用
+export { useStore };

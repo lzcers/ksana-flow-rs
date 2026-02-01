@@ -1,8 +1,10 @@
+use crate::Context;
+
 use super::{
     graph::{AnyNode, Edge, Graph},
     io::Output,
-    runtime_context::Context,
 };
+
 use serde::de::DeserializeOwned;
 
 pub struct GraphBuilder {

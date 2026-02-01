@@ -1,16 +1,16 @@
-use async_trait::async_trait;
-use std::sync::Arc;
-
-use tokio::sync::mpsc;
-
 use super::{
-    graph::{Context, NodeId},
+    graph::NodeId,
     {TaskGuard, event::TaskEvent},
 };
-use crate::reactive::observable::{Observable, Observer, Subscription};
-
+use crate::{
+    Context,
+    reactive::observable::{Observable, Observer, Subscription},
+};
+use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::Arc;
+use tokio::sync::mpsc;
 
 pub type StreamSubscriptionFn = Box<
     dyn FnOnce(TaskGuard, mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription>

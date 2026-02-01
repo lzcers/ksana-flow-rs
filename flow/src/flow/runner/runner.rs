@@ -3,12 +3,13 @@ use super::{
     executor::Executor,
     utils::send_flow_event,
 };
-use crate::flow::{
-    event::{FlowEvent, TaskEvent},
-    graph::{
-        AnyNode, Context, Graph, INPUT_EXTERNAL_START, Input, NodeId, Output, TriggerStrategy,
+use crate::{
+    Context,
+    flow::{
+        event::{FlowEvent, TaskEvent},
+        graph::{AnyNode, Graph, INPUT_EXTERNAL_START, Input, NodeId, Output, TriggerStrategy},
+        runtime_services::RuntimeServices,
     },
-    runtime_services::RuntimeServices,
 };
 
 use serde_json::Value;
@@ -62,7 +63,6 @@ impl RunnerHandle {
 
 pub struct Runner {
     graph: Arc<Graph>,
-    ctx: Arc<Context>,
     task_queue: VecDeque<TaskPayload>,
     // 执行上下文，提供调度决策信息
     exec_ctx: ExecutionContext,
@@ -92,7 +92,6 @@ impl Runner {
         (
             Self {
                 graph,
-                ctx: Arc::new(Context::new()),
                 task_queue: VecDeque::new(),
                 exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
                 executor: Executor::new(),
@@ -109,13 +108,11 @@ impl Runner {
     pub fn set_services(&mut self, services: RuntimeServices) {
         self.services = services;
     }
-
+    pub fn set_executor_context(&mut self, ctx: Context) {
+        self.executor.set_context(ctx);
+    }
     pub fn set_event_sender(&mut self, sender: mpsc::Sender<FlowEvent>) {
         self.services.event_sender = Some(sender);
-    }
-
-    pub fn set_context(&mut self, ctx: Context) {
-        self.ctx = Arc::new(ctx);
     }
 
     pub fn set_max_concurrency(&mut self, max: usize) {
@@ -149,6 +146,7 @@ impl Runner {
             .map_err(|_| "Failed to update runner state".to_owned())
     }
 
+    // 实例化所有节点
     async fn materialize_nodes(&mut self) -> Result<(), String> {
         self.runtime_nodes.clear();
         self.node_trigger_strategy.clear();
@@ -177,7 +175,8 @@ impl Runner {
     pub async fn run(&mut self) -> Result<(), String> {
         info!(nodes = ?self.graph.get_node_ids(), "Runner started");
 
-        self.services.attach_to_context(self.ctx.as_ref());
+        self.services
+            .attach_to_context(self.executor.get_context().as_ref());
 
         if self.task_queue.is_empty() {
             info!("No start node set, runner finished");
@@ -288,7 +287,7 @@ impl Runner {
                     self.exec_ctx.get_task_tracker_guard(),
                     task_sender,
                     node_id.clone(),
-                    self.ctx.clone(),
+                    self.executor.get_context(),
                 );
                 self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
                 send_flow_event(
@@ -383,7 +382,7 @@ impl Runner {
         if let Some(edges) = self.graph.edges.get(from_node_id) {
             trace!(from = %from_node_id, count = edges.len(), "Found outgoing edges");
             for edge in edges.iter() {
-                let passes = edge.check_condition(&self.ctx, &output);
+                let passes = edge.check_condition(self.executor.get_context_ref(), &output);
                 trace!(
                     from = %edge.from(),
                     to = %edge.to(),
@@ -467,8 +466,6 @@ impl Runner {
             .ok_or_else(|| format!("Runner start_node: Node '{}' not found", &node_id))?
             .clone();
 
-        // 节点运行上下文
-        let ctx = self.ctx.clone();
         // 节点任务计数守卫
         let guard = self.exec_ctx.get_task_tracker_guard();
 
@@ -485,7 +482,7 @@ impl Runner {
         .await;
         // 让执行器干活
         self.executor
-            .exec(guard, node_id, node_arc, inputs, ctx, task_sender);
+            .exec(guard, node_id, node_arc, inputs, task_sender);
         Ok(())
     }
 }
