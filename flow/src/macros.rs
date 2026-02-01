@@ -10,7 +10,7 @@ macro_rules! build_flow {
         let mut builder = $crate::GraphBuilder::new();
         // Add all nodes first
         $(
-            builder = builder.add_node($name, $node);
+            builder = builder.add_node($name, move || $node);
         )*
         // Handle edges appropriately
         $(

@@ -1,12 +1,14 @@
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use crate::flow::event::FlowEvent;
 use crate::flow::runner::{ExecutionContext, Runner};
-use crate::flow::{Context, Graph, Input, graph::NodeId};
+use crate::flow::{
+    CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, Context, Graph, INPUT_EXTERNAL_START, Input,
+    RuntimeServices, graph::NodeId,
+};
 
 /// 子图执行器配置
 #[derive(Debug, Clone)]
@@ -37,7 +39,7 @@ impl Default for SubgraphConfig {
 /// 复用现有 Runner 实现子图执行，支持上下文隔离/继承
 pub struct SubgraphExecutor {
     /// 子图定义
-    subgraph: Graph,
+    subgraph: Arc<Graph>,
     /// 执行配置
     config: SubgraphConfig,
 }
@@ -55,9 +57,13 @@ impl SubgraphExecutor {
     /// 创建新的子图执行器
     pub fn new(subgraph: Graph, config: SubgraphConfig) -> Self {
         Self {
-            subgraph: subgraph,
+            subgraph: Arc::new(subgraph),
             config,
         }
+    }
+
+    pub fn new_arc(subgraph: Arc<Graph>, config: SubgraphConfig) -> Self {
+        Self { subgraph, config }
     }
 
     /// 使用默认配置创建子图执行器
@@ -66,17 +72,26 @@ impl SubgraphExecutor {
     }
 
     /// 执行子图
-    ///
     /// # 参数
     /// - `input`: 子图输入数据
     /// - `parent_ctx`: 父图上下文
-    ///
     /// # 返回
     /// 子图执行结果
     pub async fn execute(
         &self,
         input: Value,
         parent_ctx: &Context,
+    ) -> Result<Value, SubgraphError> {
+        let services = RuntimeServices::from_context(parent_ctx);
+        self.execute_with_services(input, parent_ctx, services)
+            .await
+    }
+
+    pub async fn execute_with_services(
+        &self,
+        input: Value,
+        parent_ctx: &Context,
+        services: RuntimeServices,
     ) -> Result<Value, SubgraphError> {
         // 1. 创建子图上下文
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
@@ -88,13 +103,11 @@ impl SubgraphExecutor {
         // 设置上下文
         runner.set_context(subgraph_ctx);
 
-        if let Some(sender) = parent_ctx.get_any::<mpsc::Sender<FlowEvent>>("__flow_event_sender") {
-            runner.set_event_sender((*sender).clone());
-        }
+        runner.set_services(services);
 
         // 设置起始节点
         let mut inputs = HashMap::new();
-        inputs.insert("external_start".to_string(), input);
+        inputs.insert(INPUT_EXTERNAL_START.to_string(), input);
         let entry_input = Input::new(inputs);
         runner.set_start_node_with_inputs(&self.config.entry_node, entry_input);
 
@@ -137,16 +150,16 @@ impl SubgraphExecutor {
     fn create_context(&self, input: Value, parent_ctx: &Context) -> Context {
         if self.config.inherit_context {
             // 继承父上下文并添加子图隔离
-            let ctx = parent_ctx.clone();
+            let ctx = parent_ctx.child();
             // 添加子图隔离标记
-            ctx.set("__subgraph_id", self.config.entry_node.clone());
-            ctx.set("__subgraph_input", input);
+            ctx.set(CTX_SUBGRAPH_ID, self.config.entry_node.clone());
+            ctx.set(CTX_SUBGRAPH_INPUT, input);
             ctx
         } else {
             // 完全隔离的新上下文
             let ctx = Context::new();
             // 将输入放入上下文
-            ctx.set("input", input);
+            ctx.set(CTX_INPUT, input);
             ctx
         }
     }

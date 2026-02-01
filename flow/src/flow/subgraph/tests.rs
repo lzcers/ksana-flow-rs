@@ -1,8 +1,14 @@
 use super::*;
 use async_trait::async_trait;
-use crate::flow::{Context, Edge, Graph, Node, Output};
+use crate::flow::{Context, Edge, Graph, Node, NodeFactory, Output, Runner, CTX_FLOW_EVENT_SENDER};
 use crate::flow::event::FlowEvent;
-use serde_json::json;
+use serde_json::{Value, json};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use std::time::Instant;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 
 #[test]
@@ -52,12 +58,90 @@ impl Node for EchoNode {
     }
 }
 
+struct StartNode;
+
+#[async_trait]
+impl Node for StartNode {
+    async fn run(&mut self, _ctx: &Context, _input: &crate::flow::Input) -> Result<Output, String> {
+        Ok(json!({"ok": true}).into())
+    }
+}
+
+struct CountNode {
+    counter: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl Node for CountNode {
+    async fn run(&mut self, _ctx: &Context, _input: &crate::flow::Input) -> Result<Output, String> {
+        self.counter.fetch_add(1, Ordering::SeqCst);
+        Ok(Value::Null.into())
+    }
+}
+
+#[tokio::test]
+async fn test_compile_graph_bool_condition_blocks_edge() {
+    let counter = Arc::new(AtomicUsize::new(0));
+
+    let nodes = vec![
+        BlueprintNode {
+            id: "A".to_string(),
+            type_name: "StartNode".to_string(),
+            parent_id: None,
+            config: Value::Null,
+        },
+        BlueprintNode {
+            id: "B".to_string(),
+            type_name: "CountNode".to_string(),
+            parent_id: None,
+            config: Value::Null,
+        },
+    ];
+
+    let edges = vec![BlueprintEdge {
+        id: "e1".to_string(),
+        source: "A".to_string(),
+        target: "B".to_string(),
+        source_handle: None,
+        target_handle: None,
+        condition: Some(Value::Bool(false)),
+    }];
+
+    let counter_for_factory = counter.clone();
+    let create_leaf_factory = move |node: &BlueprintNode| -> Result<Arc<NodeFactory>, String> {
+        match node.type_name.as_str() {
+            "StartNode" => Ok(Arc::new(move || {
+                Ok(Arc::new(RwLock::new(StartNode)) as Arc<RwLock<dyn crate::flow::AnyNode>>)
+            })),
+            "CountNode" => {
+                let counter = counter_for_factory.clone();
+                Ok(Arc::new(move || {
+                    Ok(Arc::new(RwLock::new(CountNode { counter: counter.clone() }))
+                        as Arc<RwLock<dyn crate::flow::AnyNode>>)
+                }))
+            }
+            other => Err(format!("unknown node type: {}", other)),
+        }
+    };
+
+    let (graph, start_nodes) =
+        compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
+
+    let (mut runner, _handle) = Runner::new(graph, None);
+    for id in start_nodes {
+        runner.set_start_node(&id, Value::Null);
+    }
+    runner.run().await.unwrap();
+
+    assert_eq!(counter.load(Ordering::SeqCst), 0);
+}
+
 #[tokio::test]
 async fn test_subgraph_events_forwarded_via_context_sender() {
     let mut g = Graph::new();
-    g.add_node("start", EchoNode);
-    g.add_node("mid", EchoNode);
-    g.add_node("end", EchoNode);
+    g.add_node("start", || EchoNode);
+    g.add_node("mid", || EchoNode);
+    g.add_node("end", || EchoNode);
     g.add_edge(Edge {
         from: "start".to_string(),
         to: "mid".to_string(),
@@ -73,7 +157,7 @@ async fn test_subgraph_events_forwarded_via_context_sender() {
 
     let parent_ctx = Context::new();
     let (tx, mut rx) = mpsc::channel::<FlowEvent>(128);
-    parent_ctx.set_any("__flow_event_sender", tx);
+    parent_ctx.set_any(CTX_FLOW_EVENT_SENDER, tx);
 
     let out = executor.execute(json!({"hello": "world"}), &parent_ctx).await.unwrap();
     assert_eq!(out, json!({"hello": "world"}));
@@ -95,4 +179,40 @@ async fn test_subgraph_events_forwarded_via_context_sender() {
 
     assert!(saw_mid_started);
     assert!(saw_flow_finished);
+}
+
+#[test]
+#[ignore]
+fn bench_compile_graph_200_nodes() {
+    let nodes: Vec<BlueprintNode> = (0..200)
+        .map(|i| BlueprintNode {
+            id: format!("N{}", i),
+            type_name: "StartNode".to_string(),
+            parent_id: None,
+            config: Value::Null,
+        })
+        .collect();
+
+    let edges: Vec<BlueprintEdge> = (0..199)
+        .map(|i| BlueprintEdge {
+            id: format!("e{}", i),
+            source: format!("N{}", i),
+            target: format!("N{}", i + 1),
+            source_handle: None,
+            target_handle: None,
+            condition: None,
+        })
+        .collect();
+
+    let create_leaf_factory = |_node: &BlueprintNode| -> Result<Arc<NodeFactory>, String> {
+        Ok(Arc::new(move || {
+            Ok(Arc::new(RwLock::new(StartNode)) as Arc<RwLock<dyn crate::flow::AnyNode>>)
+        }))
+    };
+
+    let start = Instant::now();
+    for _ in 0..100 {
+        let _ = compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory.clone()).unwrap();
+    }
+    let _elapsed = start.elapsed();
 }

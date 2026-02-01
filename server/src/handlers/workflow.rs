@@ -11,10 +11,11 @@ use axum::{
     },
     response::IntoResponse,
 };
-use flow::{ExecutionContext, FlowEvent, Input, NodeState, Runner};
+use flow::{ExecutionContext, FlowEvent, INPUT_EXTERNAL_START, Input, NodeState, Runner};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
 
@@ -184,7 +185,7 @@ fn reconstruct_execution_context_from_blueprint(blueprint: &GraphBlueprint) -> E
 
 async fn start_execution(
     state: AppState,
-    graph: flow::Graph,
+    graph: Arc<flow::Graph>,
     init_execution_ctx: Option<ExecutionContext>,
     start_inputs: Vec<(String, Input)>,
     workflow_id: i64,
@@ -285,10 +286,10 @@ pub async fn run_workflow(
     let workspace_id = request.space_id;
 
     let (graph, start_inputs) = {
-        let registry = &state.registry;
+        let registry = state.registry.clone();
 
         // 解析 JSON 实例化整个蓝图
-        let (graph, start_nodes) = match blueprint.instantiate(registry) {
+        let (graph, start_nodes) = match blueprint.instantiate(registry.clone()) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
         };
@@ -304,7 +305,7 @@ pub async fn run_workflow(
                 };
 
                 let mut map = HashMap::new();
-                map.insert("external_start".to_owned(), default_val);
+                map.insert(INPUT_EXTERNAL_START.to_owned(), default_val);
                 inputs.push((node_id.clone(), Input::new(map)));
             }
         }
@@ -339,10 +340,10 @@ pub async fn run_node(
     }
 
     let (graph, execution_ctx, node_inputs) = {
-        let registry = &state.registry;
+        let registry = state.registry.clone();
 
         // 实例化蓝图
-        let (graph, _) = match blueprint.instantiate(registry) {
+        let (graph, _) = match blueprint.instantiate(registry.clone()) {
             Ok(v) => v,
             Err(e) => return Json(json!({"error": e})),
         };

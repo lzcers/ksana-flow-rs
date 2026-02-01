@@ -9,11 +9,11 @@ use std::{
     time::Duration,
 };
 
-use crate::{Context, Input, Node, Output, Runner, TriggerStrategy};
+use crate::{Context, Edge, Graph, Input, Node, Output, Runner, TriggerStrategy, INPUT_EXTERNAL_START};
 
 fn input_with_external_start(value: Value) -> Input {
     let mut map = HashMap::new();
-    map.insert("external_start".to_string(), value);
+    map.insert(INPUT_EXTERNAL_START.to_string(), value);
     Input::new(map)
 }
 
@@ -81,7 +81,7 @@ async fn test_complex_graph_connections() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_start_node("input", json!("Test"));
     runner.run().await.expect("Complex graph execution should succeed");
 }
@@ -109,7 +109,7 @@ async fn test_build_flow_macro_with_condition() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_start_node("node1", json!("Start"));
     runner.run().await.expect("Flow should succeed");
 }
@@ -171,7 +171,7 @@ async fn test_conditional_branching() {
         ]
     );
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_start_node_with_inputs("input", input_with_external_start(json!(42)));
     runner.run().await.expect("Conditional branching should succeed");
 }
@@ -227,23 +227,55 @@ async fn test_runner_max_concurrency() {
     let in_flight = Arc::new(AtomicUsize::new(0));
     let max_in_flight = Arc::new(AtomicUsize::new(0));
 
-    let graph = crate::build_flow!(
-        nodes: [
-            ("input", InputNode),
-            ("sleep1", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
-            ("sleep2", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
-            ("sleep3", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
-            ("sleep4", SleepNode::new(in_flight.clone(), max_in_flight.clone())),
-        ],
-        edges: [
-            ("input", "sleep1"),
-            ("input", "sleep2"),
-            ("input", "sleep3"),
-            ("input", "sleep4"),
-        ]
-    );
+    let mut graph = Graph::new();
+    graph.add_node("input", || InputNode);
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let in_flight_1 = in_flight.clone();
+    let max_in_flight_1 = max_in_flight.clone();
+    graph.add_node("sleep1", move || {
+        SleepNode::new(in_flight_1.clone(), max_in_flight_1.clone())
+    });
+
+    let in_flight_2 = in_flight.clone();
+    let max_in_flight_2 = max_in_flight.clone();
+    graph.add_node("sleep2", move || {
+        SleepNode::new(in_flight_2.clone(), max_in_flight_2.clone())
+    });
+
+    let in_flight_3 = in_flight.clone();
+    let max_in_flight_3 = max_in_flight.clone();
+    graph.add_node("sleep3", move || {
+        SleepNode::new(in_flight_3.clone(), max_in_flight_3.clone())
+    });
+
+    let in_flight_4 = in_flight.clone();
+    let max_in_flight_4 = max_in_flight.clone();
+    graph.add_node("sleep4", move || {
+        SleepNode::new(in_flight_4.clone(), max_in_flight_4.clone())
+    });
+
+    graph.add_edge(Edge {
+        from: "input".to_string(),
+        to: "sleep1".to_string(),
+        condition: None,
+    });
+    graph.add_edge(Edge {
+        from: "input".to_string(),
+        to: "sleep2".to_string(),
+        condition: None,
+    });
+    graph.add_edge(Edge {
+        from: "input".to_string(),
+        to: "sleep3".to_string(),
+        condition: None,
+    });
+    graph.add_edge(Edge {
+        from: "input".to_string(),
+        to: "sleep4".to_string(),
+        condition: None,
+    });
+
+    let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_max_concurrency(1);
     runner.set_start_node_with_inputs("input", input_with_external_start(json!(null)));
     runner.run().await.expect("Flow should succeed");

@@ -45,15 +45,25 @@ impl Default for TriggerStrategy {
 // Context 内部是一个并发安全的结构，因此 Context 只要能 Clone 就行
 #[derive(Clone)]
 pub struct Context {
-    data: DashMap<String, Value>,
-    any: DashMap<String, Arc<dyn Any + Send + Sync>>,
+    data: Arc<DashMap<String, Value>>,
+    any: Arc<DashMap<String, Arc<dyn Any + Send + Sync>>>,
+    parent: Option<Arc<Context>>,
 }
 
 impl Context {
     pub fn new() -> Self {
         Self {
-            data: DashMap::new(),
-            any: DashMap::new(),
+            data: Arc::new(DashMap::new()),
+            any: Arc::new(DashMap::new()),
+            parent: None,
+        }
+    }
+
+    pub fn child(&self) -> Self {
+        Self {
+            data: Arc::new(DashMap::new()),
+            any: Arc::new(DashMap::new()),
+            parent: Some(Arc::new(self.clone())),
         }
     }
 
@@ -66,6 +76,7 @@ impl Context {
         self.data
             .get(key)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .or_else(|| self.parent.as_ref().and_then(|p| p.get::<T>(key)))
     }
 
     pub fn set_any<T: Any + Send + Sync>(&self, key: impl Into<String>, value: T) {
@@ -76,15 +87,25 @@ impl Context {
         self.any
             .get(key)
             .and_then(|v| v.clone().downcast::<T>().ok())
+            .or_else(|| self.parent.as_ref().and_then(|p| p.get_any::<T>(key)))
     }
 }
 
 impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut data_keys: Vec<String> = self.data.iter().map(|kv| kv.key().clone()).collect();
+        if let Some(parent) = self.parent.as_ref() {
+            data_keys.extend(parent.data.iter().map(|kv| kv.key().clone()));
+        }
         data_keys.sort();
+        data_keys.dedup();
+
         let mut any_keys: Vec<String> = self.any.iter().map(|kv| kv.key().clone()).collect();
+        if let Some(parent) = self.parent.as_ref() {
+            any_keys.extend(parent.any.iter().map(|kv| kv.key().clone()));
+        }
         any_keys.sort();
+        any_keys.dedup();
         f.debug_struct("Context")
             .field("data_keys", &data_keys)
             .field("any_keys", &any_keys)
@@ -136,11 +157,12 @@ impl AnyEdge for Edge {
 }
 
 // 子图情况下，节点和边都需要被 Arc 包裹，因为会被发送到不同的线程中执行
+pub type NodeFactory = dyn Fn() -> Result<Arc<RwLock<dyn AnyNode>>, String> + Send + Sync;
+
 pub struct Graph {
-    pub nodes: HashMap<NodeId, Arc<RwLock<dyn AnyNode>>>,
+    pub nodes: HashMap<NodeId, Arc<NodeFactory>>,
     pub edges: HashMap<NodeId, Vec<Arc<dyn AnyEdge>>>,
     pub incoming_nodes: HashMap<NodeId, Vec<NodeId>>,
-    pub node_trigger_strategy: HashMap<NodeId, TriggerStrategy>,
 }
 
 // 手动实现 Clone，因为 Box<dyn AnyEdge> 不能自动 Clone
@@ -150,7 +172,6 @@ impl Clone for Graph {
             nodes: self.nodes.clone(),
             edges: self.edges.clone(),
             incoming_nodes: self.incoming_nodes.clone(),
-            node_trigger_strategy: self.node_trigger_strategy.clone(),
         }
     }
 }
@@ -161,18 +182,10 @@ impl Graph {
             nodes: HashMap::new(),
             edges: HashMap::new(),
             incoming_nodes: HashMap::new(),
-            node_trigger_strategy: HashMap::new(),
         }
     }
     pub fn get_node_ids(&self) -> Vec<String> {
         self.nodes.keys().cloned().collect()
-    }
-
-    pub fn get_trigger_strategy(&self, node_id: &str) -> TriggerStrategy {
-        self.node_trigger_strategy
-            .get(node_id)
-            .cloned()
-            .unwrap_or_default()
     }
 
     pub fn get_parents(&self, node_id: &str) -> Vec<String> {
@@ -182,14 +195,15 @@ impl Graph {
             .unwrap_or_default()
     }
 
-    pub fn add_node<N: AnyNode>(&mut self, id: &str, node: N) {
-        let node_trigger_strategy = node.get_trigger_strategy();
+    pub fn add_node<N, F>(&mut self, id: &str, creator: F)
+    where
+        N: AnyNode,
+        F: Fn() -> N + Send + Sync + 'static,
+    {
         self.nodes.insert(
             id.to_owned(),
-            Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>,
+            Arc::new(move || Ok(Arc::new(RwLock::new(creator())) as Arc<RwLock<dyn AnyNode>>)),
         );
-        self.node_trigger_strategy
-            .insert(id.to_owned(), node_trigger_strategy);
     }
 
     pub fn add_edge(&mut self, edge: Edge) {
@@ -204,15 +218,8 @@ impl Graph {
             .push(Arc::new(edge));
     }
 
-    pub fn add_arc_node(
-        &mut self,
-        id: &str,
-        node: Arc<RwLock<dyn AnyNode>>,
-        trigger_strategy: Option<TriggerStrategy>,
-    ) {
-        self.nodes.insert(id.to_owned(), node);
-        self.node_trigger_strategy
-            .insert(id.to_owned(), trigger_strategy.unwrap_or_default());
+    pub fn add_node_factory(&mut self, id: &str, factory: Arc<NodeFactory>) {
+        self.nodes.insert(id.to_owned(), factory);
     }
 
     pub fn remove_node(&mut self, id: &str) {

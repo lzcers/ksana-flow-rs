@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use super::{NodeId, ReactiveStream};
+use super::{NodeId, ReactiveStream, INPUT_EXTERNAL_START};
 
 #[derive(Clone)]
 pub struct Input {
@@ -30,7 +30,7 @@ impl Input {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
     pub fn get_any(&self) -> Option<&Value> {
-        if let Some(v) = self.values.get("external_start") {
+        if let Some(v) = self.values.get(INPUT_EXTERNAL_START) {
             return Some(v);
         }
         self.values

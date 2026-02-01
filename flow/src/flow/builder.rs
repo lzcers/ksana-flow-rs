@@ -5,7 +5,6 @@ use super::{
     io::Output,
 };
 use serde::de::DeserializeOwned;
-use std::sync::Arc;
 
 pub struct GraphBuilder {
     graph: Graph,
@@ -18,8 +17,12 @@ impl GraphBuilder {
         }
     }
 
-    pub fn add_node<N: AnyNode>(mut self, id: &str, node: N) -> Self {
-        self.graph.add_node(id, node);
+    pub fn add_node<N, F>(mut self, id: &str, creator: F) -> Self
+    where
+        N: AnyNode,
+        F: Fn() -> N + Send + Sync + 'static,
+    {
+        self.graph.add_node::<N, F>(id, creator);
         self
     }
 

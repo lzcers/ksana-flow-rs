@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use super::task_guard::TaskTracker;
 use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard};
@@ -23,7 +20,7 @@ pub enum NodeState {
 // 存储所有节点的执行状态，为调度器提供调度必要信息
 pub struct ExecutionContext {
     node_states: DashMap<NodeId, NodeState>,
-    node_outputs: Mutex<HashMap<NodeId, Value>>,
+    node_outputs: DashMap<NodeId, Value>,
     stream_subscriptions: DashMap<NodeId, Box<dyn Subscription>>,
     tracker: Arc<TaskTracker>,
 }
@@ -32,7 +29,7 @@ impl ExecutionContext {
     pub fn new() -> Self {
         Self {
             node_states: DashMap::new(),
-            node_outputs: Mutex::new(HashMap::new()),
+            node_outputs: DashMap::new(),
             stream_subscriptions: DashMap::new(),
             // 任务跟踪器
             tracker: Arc::new(TaskTracker::new()),
@@ -57,16 +54,11 @@ impl ExecutionContext {
     }
 
     pub fn set_output(&self, node_id: NodeId, output: Value) {
-        if let Ok(mut map) = self.node_outputs.lock() {
-            map.insert(node_id, output);
-        }
+        self.node_outputs.insert(node_id, output);
     }
 
     pub fn get_output(&self, node_id: &str) -> Option<Value> {
-        self.node_outputs
-            .lock()
-            .ok()
-            .and_then(|map| map.get(node_id).cloned())
+        self.node_outputs.get(node_id).map(|v| v.value().clone())
     }
 
     pub fn set_stream_subscription(&self, node_id: NodeId, sub: Box<dyn Subscription>) {
