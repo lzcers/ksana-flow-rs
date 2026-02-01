@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+};
 
 use serde_json::Value;
 
@@ -6,7 +9,7 @@ use crate::ReactiveStream;
 
 use super::{graph::NodeId, keys::INPUT_EXTERNAL_START};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Input {
     values: HashMap<NodeId, Value>,
 }
@@ -57,6 +60,21 @@ impl Into<Input> for Value {
 impl Into<Input> for HashMap<NodeId, Value> {
     fn into(self) -> Input {
         Input::new(self)
+    }
+}
+
+impl Display for Input {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // 先写入结构体标识，开头换行让格式更清晰
+        write!(f, "Input {{\n")?;
+
+        // 遍历HashMap的键值对，逐个格式化写入（缩进4个空格，美观）
+        for (node_id, value) in &self.values {
+            write!(f, "    node_id: {}, value: {}\n", node_id, value)?;
+        }
+
+        // 写入结构体结束符，与开头匹配
+        write!(f, "}}")
     }
 }
 

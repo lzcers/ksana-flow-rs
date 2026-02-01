@@ -58,7 +58,7 @@ export function useWorkflow() {
     // Canvas actions
     onNodesChange: canvasActions.onNodesChange,
     onEdgesChange: canvasActions.onEdgesChange,
-    onNodeDragStop: (_event: any, _node: any) => { }, // No-op to match interface
+    onNodeDragStop: canvasActions.onNodeDragStop,
     onNodeDragStart: (_event: any, _node: any) => historyActions.pushHistory(),
     onConnect: canvasActions.onConnect,
     addNode: canvasActions.addNode,

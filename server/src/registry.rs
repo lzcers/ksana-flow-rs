@@ -17,6 +17,7 @@ pub enum InputType {
     String,
     Number,
     Boolean,
+    Json,
     None,
 }
 
@@ -87,6 +88,7 @@ pub fn create_default_value(inputs: &[InputType]) -> Value {
         InputType::None => Value::Null,
         InputType::Number => json!(0.0),
         InputType::Boolean => json!(false),
+        InputType::Json => Value::Null,
     }
 }
 
@@ -390,23 +392,9 @@ pub fn create_registry() -> NodeRegistry {
             name: "TextSplitNode".to_string(),
             description: "Split text into segments based on line count or rules".to_string(),
             category: "Logic".to_string(),
-            config: json!({
-                "mode": {
-                    "by_line_count": {
-                        "max_lines_per_part": 200
-                    }
-                },
-                "remove_empty_lines": false,
-                "line_numbers": {
-                    "enabled": false,
-                    "template": "{line}: ",
-                    "pad_width": null,
-                    "pad_char": "0"
-                },
-                "rule_only_keep_matched_ranges": false
-            }),
+            config: serde_json::to_value(TextSplitConfig::default()).unwrap_or(Value::Null),
             inputs: vec![InputType::String],
-            outputs: vec![InputType::String],
+            outputs: vec![InputType::Json],
         },
         |config: Value| {
             let mut split_config = TextSplitConfig::default();
@@ -479,6 +467,23 @@ pub fn create_registry() -> NodeRegistry {
             let node = TextSplitNode::new(split_config);
             Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
         },
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "MapNode".to_string(),
+            description: "Map over array items by running an internal subgraph".to_string(),
+            category: "Logic".to_string(),
+            config: json!({
+                "max_concurrency": 10,
+                "streaming": false,
+                "inherit_context": false,
+                "timeout_ms": null
+            }),
+            inputs: vec![InputType::None],
+            outputs: vec![InputType::None],
+        },
+        |_config: Value| Err("MapNode is a group node and must be compiled from its child nodes".to_string()),
     );
 
     registry

@@ -52,6 +52,7 @@ export const canvasActions = {
   get selectNode() { return useStore.getState().selectNode; },
   get onNodesChange() { return useStore.getState().onNodesChange; },
   get onEdgesChange() { return useStore.getState().onEdgesChange; },
+  get onNodeDragStop() { return useStore.getState().onNodeDragStop; },
   get onConnect() { return useStore.getState().onConnect; },
   get pasteNodes() { return useStore.getState().pasteNodes; },
   get groupNodes() { return useStore.getState().groupNodes; },

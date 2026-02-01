@@ -1,11 +1,13 @@
 use crate::db::Db;
 use crate::registry::NodeRegistry;
-use flow::{Graph, NodeFactory, RunnerHandle};
+use flow::{AnyNode, Graph, NodeFactory, RunnerHandle, SubgraphExecutor, SubgraphNode};
+use nodes::SubgraphMapNode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock as StdRwLock};
 use tokio::sync::broadcast;
+use tokio::sync::RwLock;
 use tracing::error;
 
 #[derive(Clone)]
@@ -33,6 +35,7 @@ pub struct GraphBlueprint {
 }
 
 const SUBGRAPH_NODE_TYPE: &str = "SubgraphNode";
+const MAP_NODE_TYPE: &str = "MapNode";
 
 fn node_config_with_id(node: &Node) -> Value {
     let mut config = node.data.config.clone();
@@ -92,7 +95,43 @@ impl GraphBlueprint {
                 }))
             };
 
-        flow::compile_graph(&nodes, &edges, SUBGRAPH_NODE_TYPE, create_leaf_factory)
+        let is_group = |n: &flow::BlueprintNode| n.type_name == SUBGRAPH_NODE_TYPE || n.type_name == MAP_NODE_TYPE;
+        let create_group_factory =
+            |group_node: &flow::BlueprintNode,
+             executor: SubgraphExecutor|
+             -> Result<Arc<NodeFactory>, String> {
+                match group_node.type_name.as_str() {
+                    SUBGRAPH_NODE_TYPE => Ok(Arc::new(move || {
+                        let node = SubgraphNode {
+                            executor: executor.clone(),
+                        };
+                        Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+                    })),
+                    MAP_NODE_TYPE => {
+                        let max_concurrency = group_node
+                            .config
+                            .get("max_concurrency")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(10) as usize;
+                        let streaming = group_node
+                            .config
+                            .get("streaming")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        Ok(Arc::new(move || {
+                            let node = SubgraphMapNode::with_executor(
+                                executor.clone(),
+                                max_concurrency,
+                                streaming,
+                            );
+                            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+                        }))
+                    }
+                    other => Err(format!("Unknown group node type: {}", other)),
+                }
+            };
+
+        flow::compile_graph_with_groups(&nodes, &edges, is_group, create_group_factory, create_leaf_factory)
     }
 }
 

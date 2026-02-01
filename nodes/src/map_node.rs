@@ -95,6 +95,18 @@ impl MapNode {
         }
     }
 
+    pub fn with_executor(
+        executor: SubgraphExecutor,
+        max_concurrency: usize,
+        streaming: bool,
+    ) -> Self {
+        Self {
+            executor,
+            max_concurrency,
+            streaming,
+        }
+    }
+
     /// 获取最大并发数
     pub fn max_concurrency(&self) -> usize {
         self.max_concurrency

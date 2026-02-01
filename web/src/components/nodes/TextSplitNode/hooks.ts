@@ -74,8 +74,6 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
     Boolean(data.config?.rule_only_keep_matched_ranges ?? false)
   );
 
-  // Output
-  const [outputText, setOutputText] = useState<string>('');
 
   // Sync with external config changes
   useEffect(() => {
@@ -103,21 +101,6 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
     }
   }, [data.config?.line_numbers]);
 
-  // Update output when data changes
-  useEffect(() => {
-    let nextText: string | null = null;
-    if (typeof data.config?.output === 'string') {
-      nextText = data.config.output;
-    } else if (typeof data.outputs?.output === 'string') {
-      nextText = data.outputs.output;
-    } else if (data.lastMessage && typeof data.lastMessage === 'string') {
-      nextText = data.lastMessage;
-    }
-
-    if (nextText !== null) {
-      setOutputText(nextText);
-    }
-  }, [data.config?.output, data.outputs?.output, data.lastMessage]);
 
   const onModeChange = useCallback(
     (next: 'by_line_count' | 'by_rule') => {
@@ -261,13 +244,6 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
     [updateConfig]
   );
 
-  const onOutputChange = useCallback((next: string) => {
-    setOutputText(next);
-  }, []);
-
-  const onOutputBlur = useCallback(() => {
-    updateConfig({ output: outputText });
-  }, [outputText, updateConfig]);
 
   return {
     mode,
@@ -278,7 +254,6 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
     lineNumbersEnabled,
     lineNumbersTemplate,
     ruleOnlyKeepMatched,
-    outputText,
     onModeChange,
     onMaxLinesChange,
     onKeywordsChange,
@@ -287,7 +262,5 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
     onLineNumbersEnabledChange,
     onLineNumbersTemplateChange,
     onRuleOnlyKeepMatchedChange,
-    onOutputChange,
-    onOutputBlur,
   };
 }

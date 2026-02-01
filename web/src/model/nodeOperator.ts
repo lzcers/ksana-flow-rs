@@ -67,7 +67,7 @@ export const updateNodeDimensions = (
       node.width = width;
       node.height = height;
 
-      if (node.type === 'SubgraphNode') {
+      if (node.type === 'SubgraphNode' || node.type === 'MapNode') {
         const expanded = node.data?.expanded !== false;
         const size = { width, height };
         node.data = {

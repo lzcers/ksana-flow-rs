@@ -1,4 +1,4 @@
-import type { StateCreator } from 'zustand';
+import type { StateCreator, StoreApi } from 'zustand';
 import { BehaviorSubject, Subject, interval, animationFrameScheduler, bufferWhen, filter, map, merge, share, timer, withLatestFrom } from 'rxjs';
 import { produce } from 'immer';
 import type { StoreState, Execution, WebSocketFlowMessage } from './types';
@@ -14,7 +14,11 @@ const eventsForCurrentRun$ = eventSubject.pipe(
   map(([wrapper]) => wrapper),
   share()
 );
+type ZustandSetState = StoreApi<StoreState>['setState'];
+
 let stateUpdatePipelineInitialized = false;
+let latestSetState: ZustandSetState | null = null;
+let activeRunNodeExecution: { runId: string; startNodeId: string; workflowId: number | null } | null = null;
 
 const buildExecutionBlueprint = (nodes: any[], edges: any[]) => ({
   nodes: nodes.map((n) => ({
@@ -39,6 +43,8 @@ const buildExecutionBlueprint = (nodes: any[], edges: any[]) => ({
 });
 
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
+  latestSetState = set;
+
   if (!stateUpdatePipelineInitialized) {
     stateUpdatePipelineInitialized = true;
 
@@ -48,8 +54,12 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
         filter((batch) => batch.length > 0)
       )
       .subscribe((batch) => {
+        const setState = latestSetState;
+        if (!setState) return;
+
+        let finalizeRunNodeRunId: string | null = null;
         let nextCurrentRunId: string | null | undefined;
-        set((state) => {
+        setState((state) => {
           return produce(state, (draft) => {
             const nodeIndex = new Map<string, any>();
             for (const node of draft.nodes) nodeIndex.set(node.id, node);
@@ -160,6 +170,29 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
                     const id = msg.NodeCompleted;
                     const data = getNodeData(id);
                     if (data && data.status !== 'completed') data.status = 'completed';
+
+                    if (
+                      runId &&
+                      activeRunNodeExecution &&
+                      activeRunNodeExecution.runId === runId &&
+                      activeRunNodeExecution.startNodeId === id
+                    ) {
+                      const outEdges = outEdgeMap.get(id) ?? [];
+                      if (outEdges.length === 0) {
+                        const wfId = activeRunNodeExecution.workflowId ?? draft.currentWorkflowId;
+                        if (wfId != null) {
+                          if (draft.workflowStatuses[wfId] !== 'idle') draft.workflowStatuses[wfId] = 'idle';
+                        }
+
+                        if (draft.workflowStatus !== 'idle') draft.workflowStatus = 'idle';
+                        if (draft.currentRunId !== null) {
+                          draft.currentRunId = null;
+                          nextCurrentRunId = null;
+                        }
+                        if (runId in draft.runIdToWorkflowId) delete draft.runIdToWorkflowId[runId];
+                        finalizeRunNodeRunId = runId;
+                      }
+                    }
                   } else if ('NodeError' in msg) {
                     const [id, error] = msg.NodeError;
                     const data = getNodeData(id);
@@ -172,13 +205,15 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
                 }
               }
 
-              const workflowId = runId ? draft.runIdToWorkflowId[runId] : null;
+              const workflowId =
+                (runId ? draft.runIdToWorkflowId[runId] : null) ??
+                (runId && runId === draft.currentRunId ? draft.currentWorkflowId : null);
 
               if (msg === 'FlowFinished' || msg === 'FlowStopped') {
-                if (workflowId) {
+                if (workflowId != null) {
                   if (draft.workflowStatuses[workflowId] !== 'idle') draft.workflowStatuses[workflowId] = 'idle';
-                  if (runId && runId in draft.runIdToWorkflowId) delete draft.runIdToWorkflowId[runId];
                 }
+                if (runId && runId in draft.runIdToWorkflowId) delete draft.runIdToWorkflowId[runId];
 
                 if (!runId || runId === draft.currentRunId) {
                   if (draft.workflowStatus !== 'idle') draft.workflowStatus = 'idle';
@@ -188,14 +223,14 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
                   }
                 }
               } else if (msg === 'FlowPaused') {
-                if (workflowId) {
+                if (workflowId != null) {
                   if (draft.workflowStatuses[workflowId] !== 'paused') draft.workflowStatuses[workflowId] = 'paused';
                 }
                 if (!runId || runId === draft.currentRunId) {
                   if (draft.workflowStatus !== 'paused') draft.workflowStatus = 'paused';
                 }
               } else if (msg === 'FlowResumed') {
-                if (workflowId) {
+                if (workflowId != null) {
                   if (draft.workflowStatuses[workflowId] !== 'running') draft.workflowStatuses[workflowId] = 'running';
                 }
                 if (!runId || runId === draft.currentRunId) {
@@ -206,6 +241,9 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           });
         });
         if (nextCurrentRunId !== undefined) currentRunIdSubject.next(nextCurrentRunId);
+        if (finalizeRunNodeRunId && activeRunNodeExecution?.runId === finalizeRunNodeRunId) {
+          activeRunNodeExecution = null;
+        }
       });
   }
 
@@ -299,7 +337,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
         }
         if (res && res.run_id) {
           setCurrentRunId(res.run_id);
-          if (currentWorkflowId) {
+          if (currentWorkflowId != null) {
             setWorkflowStatuses({ ...get().workflowStatuses, [currentWorkflowId]: 'running' });
             set(state => ({ runIdToWorkflowId: { ...state.runIdToWorkflowId, [res.run_id]: currentWorkflowId } }));
           }
@@ -310,7 +348,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
         error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
         setWorkflowStatus('idle');
         setCurrentRunId(null);
-        if (currentWorkflowId) {
+        if (currentWorkflowId != null) {
           setWorkflowStatuses({ ...get().workflowStatuses, [currentWorkflowId]: 'idle' });
         }
       }
@@ -350,7 +388,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     },
 
     runNode: async (nodeId: string) => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
       if (!currentSpaceId) return;
       const blueprint = buildExecutionBlueprint(nodes, edges);
 
@@ -362,6 +400,11 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
         if (res && res.run_id) {
           setCurrentRunId(res.run_id);
           setWorkflowStatus('running');
+          activeRunNodeExecution = { runId: res.run_id, startNodeId: res.start_node ?? nodeId, workflowId: currentWorkflowId };
+          if (currentWorkflowId != null) {
+            setWorkflowStatuses({ ...get().workflowStatuses, [currentWorkflowId]: 'running' });
+            set(state => ({ runIdToWorkflowId: { ...state.runIdToWorkflowId, [res.run_id]: currentWorkflowId } }));
+          }
         }
         success(`Node ${nodeId} execution started`);
       } catch (e) {

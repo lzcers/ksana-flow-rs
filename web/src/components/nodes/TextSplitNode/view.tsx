@@ -21,7 +21,6 @@ export function TextSplitNodeView({
   lineNumbersEnabled,
   lineNumbersTemplate,
   ruleOnlyKeepMatched,
-  outputText,
   onModeChange,
   onMaxLinesChange,
   onKeywordsChange,
@@ -30,8 +29,6 @@ export function TextSplitNodeView({
   onLineNumbersEnabledChange,
   onLineNumbersTemplateChange,
   onRuleOnlyKeepMatchedChange,
-  onOutputChange,
-  onOutputBlur,
 }: NodeProps & {
   data: NodeData;
 } & {
@@ -43,7 +40,6 @@ export function TextSplitNodeView({
   lineNumbersEnabled: boolean;
   lineNumbersTemplate: string;
   ruleOnlyKeepMatched: boolean;
-  outputText: string;
   onModeChange: (next: 'by_line_count' | 'by_rule') => void;
   onMaxLinesChange: (next: number) => void;
   onKeywordsChange: (next: string) => void;
@@ -52,8 +48,6 @@ export function TextSplitNodeView({
   onLineNumbersEnabledChange: (next: boolean) => void;
   onLineNumbersTemplateChange: (next: string) => void;
   onRuleOnlyKeepMatchedChange: (next: boolean) => void;
-  onOutputChange: (next: string) => void;
-  onOutputBlur: () => void;
 }) {
   return (
     <NodeWrapper
@@ -171,24 +165,6 @@ export function TextSplitNodeView({
               />
             </div>
           )}
-        </div>
-
-        {/* Output Display */}
-        <div className={textSplitNodeStyles.outputSection}>
-          <div className={textSplitNodeStyles.outputLabel}>
-            <span>Split Results</span>
-            <span className="text-zinc-600">Array of text segments</span>
-          </div>
-          <textarea
-            className={textSplitNodeStyles.outputTextarea}
-            value={outputText}
-            onChange={(e) => onOutputChange(e.target.value)}
-            onBlur={onOutputBlur}
-            placeholder="Results will appear here as JSON array..."
-            onKeyDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
-            readOnly
-          />
         </div>
       </div>
     </NodeWrapper>

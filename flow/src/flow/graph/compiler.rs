@@ -65,18 +65,19 @@ fn parse_edge_condition(condition: Option<Value>) -> Result<Option<EdgeCondition
     }
 }
 
-fn build_subgraph_executor<F>(
+fn build_subgraph_executor<F, IsGroup>(
     group_node: &BlueprintNode,
     member_nodes: &[BlueprintNode],
     internal_edges: &[BlueprintEdge],
     inbound_edges: &[BlueprintEdge],
     outbound_edges: &[BlueprintEdge],
-    group_type: &str,
+    is_group: &IsGroup,
     create_leaf_factory: &F,
-    runtime_subgraphs: &HashMap<String, Arc<NodeFactory>>,
+    runtime_groups: &HashMap<String, Arc<NodeFactory>>,
 ) -> Result<SubgraphExecutor, String>
 where
     F: Fn(&BlueprintNode) -> Result<Arc<NodeFactory>, String> + Clone,
+    IsGroup: Fn(&BlueprintNode) -> bool,
 {
     let group_id = &group_node.id;
     // 每个子图都会生成一对独立的入口/出口节点，作为内部执行的统一起点与汇点。
@@ -87,13 +88,13 @@ where
     g.add_node(&start_id, || SubgraphStartNode);
     g.add_node(&end_id, || SubgraphEndNode);
 
-    // 添加成员节点：普通节点由 create_leaf_factory 创建；若成员节点本身也是子图容器，则复用已编译好的 runtime_subgraphs。
+    // 添加成员节点：普通节点由 create_leaf_factory 创建；若成员节点本身也是子图容器，则复用已编译好的 runtime_groups。
     for n in member_nodes {
-        let factory = if n.type_name == group_type {
-            runtime_subgraphs
+        let factory = if is_group(n) {
+            runtime_groups
                 .get(&n.id)
                 .cloned()
-                .ok_or_else(|| format!("Nested subgraph '{}' has not been built yet", n.id))?
+                .ok_or_else(|| format!("Nested group '{}' has not been built yet", n.id))?
         } else {
             create_leaf_factory(n)?
         };
@@ -206,10 +207,11 @@ where
     Ok(SubgraphExecutor::new(g, config))
 }
 
-fn fold_subgraphs<F>(
+fn fold_groups<F, IsGroup, CreateGroupFactory>(
     nodes: &[BlueprintNode],
     edges: &[BlueprintEdge],
-    group_type: &str,
+    is_group: &IsGroup,
+    create_group_factory: &CreateGroupFactory,
     create_leaf_factory: &F,
 ) -> Result<
     (
@@ -221,27 +223,27 @@ fn fold_subgraphs<F>(
 >
 where
     F: Fn(&BlueprintNode) -> Result<Arc<NodeFactory>, String> + Clone,
+    IsGroup: Fn(&BlueprintNode) -> bool,
+    CreateGroupFactory: Fn(&BlueprintNode, SubgraphExecutor) -> Result<Arc<NodeFactory>, String>,
 {
     let mut nodes = nodes.to_vec();
     let mut edges = edges.to_vec();
-    let mut runtime_subgraphs: HashMap<String, Arc<NodeFactory>> = HashMap::new();
+    let mut runtime_groups: HashMap<String, Arc<NodeFactory>> = HashMap::new();
 
-    // 收集所有子图容器节点 id。
     let mut group_ids: Vec<String> = nodes
         .iter()
-        .filter(|n| n.type_name == group_type)
+        .filter(|n| is_group(n))
         .map(|n| n.id.clone())
         .collect();
 
     if group_ids.is_empty() {
-        return Ok((nodes, edges, runtime_subgraphs));
+        return Ok((nodes, edges, runtime_groups));
     }
 
-    // 解析子图嵌套关系：child_group.parent_id == parent_group.id。
     let group_id_set: HashSet<String> = group_ids.iter().cloned().collect();
     let mut group_parent: HashMap<String, String> = HashMap::new();
     for n in &nodes {
-        if n.type_name == group_type {
+        if is_group(n) {
             if let Some(pid) = n.parent_id.as_ref() {
                 if group_id_set.contains(pid) {
                     group_parent.insert(n.id.clone(), pid.clone());
@@ -250,7 +252,6 @@ where
         }
     }
 
-    // 计算嵌套深度并按深度从大到小排序，保证先编译最内层子图，再逐层向外折叠。
     let depth_of = |id: &String| -> usize {
         let mut cur = id.clone();
         let mut depth: usize = 0;
@@ -286,10 +287,6 @@ where
             .cloned()
             .collect();
 
-        // 将边按“是否在该子图内部”划分为三类：
-        // - internal：成员 -> 成员（子图内部边）
-        // - inbound：外部 -> 成员（跨入子图）
-        // - outbound：成员 -> 外部（跨出子图）
         let mut internal_edges = Vec::new();
         let mut inbound_edges = Vec::new();
         let mut outbound_edges = Vec::new();
@@ -312,24 +309,17 @@ where
             &internal_edges,
             &inbound_edges,
             &outbound_edges,
-            group_type,
+            is_group,
             create_leaf_factory,
-            &runtime_subgraphs,
+            &runtime_groups,
         )?;
 
-        let group_factory = factory_from_creator(move || SubgraphNode {
-            executor: executor.clone(),
-        });
-        runtime_subgraphs.insert(group_node.id.clone(), group_factory);
+        let group_factory = create_group_factory(&group_node, executor.clone())?;
+        runtime_groups.insert(group_node.id.clone(), group_factory);
 
-        // 折叠：移除该 group 的成员节点，并移除所有与成员相连的边（internal/inbound/outbound 都会被清掉）。
         nodes.retain(|n| !member_set.contains(&n.id));
         edges.retain(|e| !(member_set.contains(&e.source) || member_set.contains(&e.target)));
 
-        // 折叠后重建“外部图”的边：
-        // - inbound：source(外部) -> group(容器)
-        // - outbound：group(容器) -> target(外部)
-        // 同时做 (source,target) 去重，避免重复连接。
         let mut seen: HashSet<(String, String)> = edges
             .iter()
             .map(|e| (e.source.clone(), e.target.clone()))
@@ -364,41 +354,43 @@ where
         }
     }
 
-    Ok((nodes, edges, runtime_subgraphs))
+    Ok((nodes, edges, runtime_groups))
 }
 
-/// 编译蓝图为可执行 `Graph`。
-///
-/// 返回：`(Arc<Graph>, start_nodes)`，其中 start_nodes 是入度为 0 的节点集合（作为默认起点）。
-/// 注意：节点实例由 NodeFactory 延迟创建，保证每次 Runner 执行都拿到“本次运行专属”的节点对象。
-pub fn compile_graph<F>(
+pub fn compile_graph_with_groups<F, IsGroup, CreateGroupFactory>(
     nodes: &[BlueprintNode],
     edges: &[BlueprintEdge],
-    group_type: &str,
+    is_group: IsGroup,
+    create_group_factory: CreateGroupFactory,
     create_leaf_factory: F,
 ) -> Result<(Arc<Graph>, Vec<String>), String>
 where
     F: Fn(&BlueprintNode) -> Result<Arc<NodeFactory>, String> + Clone,
+    IsGroup: Fn(&BlueprintNode) -> bool,
+    CreateGroupFactory: Fn(&BlueprintNode, SubgraphExecutor) -> Result<Arc<NodeFactory>, String>,
 {
-    let (nodes, edges, runtime_subgraphs) =
-        fold_subgraphs(nodes, edges, group_type, &create_leaf_factory)?;
+    let (nodes, edges, runtime_groups) = fold_groups(
+        nodes,
+        edges,
+        &is_group,
+        &create_group_factory,
+        &create_leaf_factory,
+    )?;
 
     let mut new_graph = Graph::new();
     let mut start_nodes = Vec::new();
 
-    // 统计入度：入度为 0 的节点视为“默认起始节点”。
     let mut has_incoming_edges = HashSet::new();
     for edge in &edges {
         has_incoming_edges.insert(edge.target.clone());
     }
 
-    // 先把所有（折叠后的）节点加入可执行图，并为容器节点/普通节点选择对应工厂。
     for node in &nodes {
-        let factory = if node.type_name == group_type {
-            runtime_subgraphs
+        let factory = if is_group(node) {
+            runtime_groups
                 .get(&node.id)
                 .cloned()
-                .ok_or_else(|| format!("Subgraph '{}' not built", node.id))?
+                .ok_or_else(|| format!("Group '{}' not built", node.id))?
         } else {
             create_leaf_factory(node)?
         };
@@ -418,4 +410,36 @@ where
     }
 
     Ok((Arc::new(new_graph), start_nodes))
+}
+
+/// 编译蓝图为可执行 `Graph`。
+///
+/// 返回：`(Arc<Graph>, start_nodes)`，其中 start_nodes 是入度为 0 的节点集合（作为默认起点）。
+/// 注意：节点实例由 NodeFactory 延迟创建，保证每次 Runner 执行都拿到“本次运行专属”的节点对象。
+pub fn compile_graph<F>(
+    nodes: &[BlueprintNode],
+    edges: &[BlueprintEdge],
+    group_type: &str,
+    create_leaf_factory: F,
+) -> Result<(Arc<Graph>, Vec<String>), String>
+where
+    F: Fn(&BlueprintNode) -> Result<Arc<NodeFactory>, String> + Clone,
+{
+    let group_type = group_type.to_string();
+    let is_group = move |n: &BlueprintNode| n.type_name == group_type;
+    let create_group_factory = |_group_node: &BlueprintNode,
+                                executor: SubgraphExecutor|
+     -> Result<Arc<NodeFactory>, String> {
+        Ok(factory_from_creator(move || SubgraphNode {
+            executor: executor.clone(),
+        }))
+    };
+
+    compile_graph_with_groups(
+        nodes,
+        edges,
+        is_group,
+        create_group_factory,
+        create_leaf_factory,
+    )
 }

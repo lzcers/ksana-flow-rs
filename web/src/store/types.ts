@@ -55,6 +55,7 @@ export interface Canvas {
   selectedNodeId: string | null;
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
+  onNodeDragStop: (event: any, node: any) => void;
   onConnect: (connection: Connection) => void;
   addNode: (type: string, position?: { x: number; y: number }) => void;
   deleteNode: (id: string) => void;

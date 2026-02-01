@@ -58,7 +58,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
         let width = n.width;
         let height = n.height;
-        if (n.type === 'SubgraphNode') {
+        if (n.type === 'SubgraphNode' || n.type === 'MapNode') {
           if (preferredSize && typeof preferredSize.width === 'number' && typeof preferredSize.height === 'number') {
             width = preferredSize.width;
             height = preferredSize.height;
@@ -263,7 +263,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
       let width = n.width;
       let height = n.height;
-      if (n.type === 'SubgraphNode') {
+      if (n.type === 'SubgraphNode' || n.type === 'MapNode') {
         if (preferredSize && typeof preferredSize.width === 'number' && typeof preferredSize.height === 'number') {
           width = preferredSize.width;
           height = preferredSize.height;

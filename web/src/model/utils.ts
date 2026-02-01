@@ -5,7 +5,7 @@ export const applyCollapsedSubgraphUi = (nodes: Node[], edges: Edge[]) => {
   const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
   const collapsedGroupIds = new Set(
     nodes
-      .filter((n) => n.type === 'SubgraphNode' && (n.data as any)?.expanded === false)
+      .filter((n) => (n.type === 'SubgraphNode' || n.type === 'MapNode') && (n.data as any)?.expanded === false)
       .map((n) => n.id)
   );
 

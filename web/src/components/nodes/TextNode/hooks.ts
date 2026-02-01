@@ -13,6 +13,20 @@ export function useTextNodeController(id: string, data: NodeData) {
   const [isMarkdown, setIsMarkdown] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
+  const coerceToText = useCallback((value: any): string => {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  }, []);
+
   const incremark = useIncremark({
     math: { tex: true },
     gfm: true,
@@ -57,6 +71,17 @@ export function useTextNodeController(id: string, data: NodeData) {
   }, [text, isMarkdown, data.upstreamIsStreaming]);
 
   useEffect(() => {
+    if (data.lastMessageRunId == null) return;
+    const next = coerceToText(data.lastMessage);
+    if (next === '') return;
+    if (next === text) return;
+    setText(next);
+    if (isMarkdownRef.current) {
+      incremarkRef.current.render(next);
+    }
+  }, [data.lastMessageRunId, data.lastMessage, coerceToText, text]);
+
+  useEffect(() => {
     const stream$ = eventsForCurrentRun$ || events$;
     if (!stream$) return;
 
@@ -64,15 +89,16 @@ export function useTextNodeController(id: string, data: NodeData) {
       const { event } = wrapper;
       const upstreamNodeIds = connectionsRef.current.map((conn) => conn.source);
       const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
+      const isRelevantNode = (nodeId: string) => nodeId === id || isUpstream(nodeId);
 
       if (event.NodeStarted) {
         const nodeId = event.NodeStarted;
-        if (isUpstream(nodeId)) {
+        if (isRelevantNode(nodeId)) {
           isStreamingRef.current = false;
         }
       } else if (event.NodeStreamStarted) {
         const nodeId = event.NodeStreamStarted;
-        if (isUpstream(nodeId)) {
+        if (isRelevantNode(nodeId)) {
           isStreamingRef.current = true;
           setText('');
           setIsMarkdown(true);
@@ -81,20 +107,23 @@ export function useTextNodeController(id: string, data: NodeData) {
         }
       } else if (event.NodeStreamNextMessage) {
         const [nodeId, value] = event.NodeStreamNextMessage;
-        if (isUpstream(nodeId) && isStreamingRef.current) {
-          if (typeof value === 'string') {
-            incremarkRef.current.append(value);
-            setText((prev) => prev + value);
+        if (isRelevantNode(nodeId) && isStreamingRef.current) {
+          const next = coerceToText(value);
+          if (next !== '') {
+            incremarkRef.current.append(next);
+            setText((prev) => prev + next);
           }
         }
       } else if (event.NodeOutMessage) {
         const [nodeId, value] = event.NodeOutMessage;
-        if (isUpstream(nodeId) && !isStreamingRef.current) {
-          if (typeof value === 'string') {
-            setText(value);
-            updateConfig({ text: value });
+        if (isRelevantNode(nodeId)) {
+          isStreamingRef.current = false;
+          const next = coerceToText(value);
+          if (next !== '') {
+            setText(next);
+            updateConfig({ text: next });
             if (isMarkdownRef.current) {
-              incremarkRef.current.render(value);
+              incremarkRef.current.render(next);
             }
           }
         }

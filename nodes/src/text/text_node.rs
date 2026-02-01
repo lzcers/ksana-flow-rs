@@ -16,12 +16,13 @@ impl TextNode {
 
 #[async_trait]
 impl Node for TextNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        input: &Input,
-    ) -> Result<Output, String> {
-        let in_text: String = input.get_any_as().unwrap_or_default();
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+        let in_text = match input.get_any() {
+            None => String::new(),
+            Some(Value::String(s)) => s.clone(),
+            Some(Value::Null) => String::new(),
+            Some(v) => v.to_string(),
+        };
         let output = if in_text.is_empty() {
             self.text.clone()
         } else {
@@ -34,6 +35,7 @@ impl Node for TextNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::collections::HashMap;
     use tokio::runtime::Runtime;
 
@@ -54,6 +56,31 @@ mod tests {
             inputs.insert("test".to_string(), Value::String("input text".to_string()));
             let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
             assert_eq!(output.get().and_then(|v| v.as_str()), Some("input text"));
+
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), json!({"a": 1}));
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("{\"a\":1}"));
+
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), json!([1, 2]));
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("[1,2]"));
+
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), json!(["a", "b"]));
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("[\"a\",\"b\"]"));
+
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), json!(1));
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("1"));
+
+            let mut inputs: HashMap<String, Value> = HashMap::new();
+            inputs.insert("test".to_string(), Value::Null);
+            let output = node.run(&ctx, &Input::new(inputs)).await.unwrap();
+            assert_eq!(output.get().and_then(|v| v.as_str()), Some("default text"));
         });
     }
 }
