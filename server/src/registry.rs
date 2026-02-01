@@ -5,6 +5,7 @@ use nodes::{
     TextSplitConfig, TextSplitNode, TimerNode, create_llm_any_node,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
+use nodes::reduce_node::ReduceNode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -484,6 +485,37 @@ pub fn create_registry() -> NodeRegistry {
             outputs: vec![InputType::None],
         },
         |_config: Value| Err("MapNode is a group node and must be compiled from its child nodes".to_string()),
+    );
+
+    registry.register(
+        NodeMetadata {
+            name: "ReduceNode".to_string(),
+            description: "Reduce an array into a single value".to_string(),
+            category: "Logic".to_string(),
+            config: json!({
+                "reducer": "sum",
+                "separator": "\n"
+            }),
+            inputs: vec![InputType::Json],
+            outputs: vec![InputType::Json],
+        },
+        |config: Value| {
+            let reducer = config.get("reducer").and_then(|v| v.as_str()).unwrap_or("sum");
+            let node = match reducer {
+                "sum" => ReduceNode::sum(),
+                "count" => ReduceNode::count(),
+                "max" => ReduceNode::max(),
+                "min" => ReduceNode::min(),
+                "concat" => {
+                    let separator = config.get("separator").and_then(|v| v.as_str()).unwrap_or("\n");
+                    ReduceNode::concat(separator)
+                }
+                "merge_array" => ReduceNode::merge(false),
+                "merge_object_deep" => ReduceNode::merge(true),
+                other => return Err(format!("Unknown reducer: {}", other)),
+            };
+            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+        },
     );
 
     registry

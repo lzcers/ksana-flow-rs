@@ -11,4 +11,5 @@ export { TimerNode } from './TimerNode/index';
 export { VolMfiNode } from './VolMfiNode/index';
 export { SubgraphNode } from './SubgraphNode/index';
 export { MapNode } from './MapNode/index';
+export { ReduceNode } from './ReduceNode/index';
 export { NodeWrapper } from './NodeWrapper';
