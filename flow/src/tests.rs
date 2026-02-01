@@ -9,7 +9,9 @@ use std::{
     time::Duration,
 };
 
-use crate::{Context, Edge, Graph, Input, Node, Output, Runner, TriggerStrategy, INPUT_EXTERNAL_START};
+use crate::{
+    Context, Edge, Graph, INPUT_EXTERNAL_START, Input, Node, Output, Runner, TriggerStrategy,
+};
 
 fn input_with_external_start(value: Value) -> Input {
     let mut map = HashMap::new();
@@ -83,7 +85,10 @@ async fn test_complex_graph_connections() {
 
     let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_start_node("input", json!("Test"));
-    runner.run().await.expect("Complex graph execution should succeed");
+    runner
+        .run()
+        .await
+        .expect("Complex graph execution should succeed");
 }
 
 #[tokio::test]
@@ -132,7 +137,9 @@ async fn test_conditional_branching() {
 
         async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
             let n: i32 = input.get_any_as().unwrap_or_default();
-            Ok(serde_json::to_value((n, n > 0)).unwrap_or(Value::Null).into())
+            Ok(serde_json::to_value((n, n > 0))
+                .unwrap_or(Value::Null)
+                .into())
         }
     }
 
@@ -173,7 +180,10 @@ async fn test_conditional_branching() {
 
     let (mut runner, _handle) = Runner::new(Arc::new(graph), None);
     runner.set_start_node_with_inputs("input", input_with_external_start(json!(42)));
-    runner.run().await.expect("Conditional branching should succeed");
+    runner
+        .run()
+        .await
+        .expect("Conditional branching should succeed");
 }
 
 #[tokio::test]

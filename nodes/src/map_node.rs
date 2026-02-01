@@ -3,10 +3,7 @@ use tokio::sync::Semaphore;
 
 use async_trait::async_trait;
 use flow::observable::Subscription;
-use flow::{
-    Context, Graph, Input, Node, Output,
-    subgraph::{SubgraphConfig, SubgraphExecutor},
-};
+use flow::{Context, Graph, Input, Node, Output, SubgraphConfig, SubgraphExecutor};
 use flow::{ReactiveStream, TaskEvent};
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;

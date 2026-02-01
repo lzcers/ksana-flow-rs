@@ -4,10 +4,11 @@ use super::{
     utils::send_flow_event,
 };
 use crate::flow::{
+    INPUT_EXTERNAL_START, RuntimeServices,
     event::{FlowEvent, TaskEvent},
-    graph::{AnyNode, Context, Graph, NodeId, TriggerStrategy},
+    graph::{AnyNode, Graph, NodeId, TriggerStrategy},
     io::{Input, Output},
-    RuntimeServices, INPUT_EXTERNAL_START,
+    runtime_context::Context,
 };
 
 use serde_json::Value;
@@ -76,7 +77,10 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(graph: Arc<Graph>, initial_context: Option<ExecutionContext>) -> (Self, RunnerHandle) {
+    pub fn new(
+        graph: Arc<Graph>,
+        initial_context: Option<ExecutionContext>,
+    ) -> (Self, RunnerHandle) {
         let (cmd_tx, cmd_rx) = mpsc::channel(32);
         let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
 
@@ -150,8 +154,8 @@ impl Runner {
         self.node_trigger_strategy.clear();
 
         for (node_id, factory) in self.graph.nodes.iter() {
-            let node = factory()
-                .map_err(|e| format!("Failed to create node '{}': {}", node_id, e))?;
+            let node =
+                factory().map_err(|e| format!("Failed to create node '{}': {}", node_id, e))?;
             let trigger_strategy = {
                 let guard = node.read().await;
                 guard.get_trigger_strategy()
@@ -287,7 +291,11 @@ impl Runner {
                     self.ctx.clone(),
                 );
                 self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
-                send_flow_event(&self.services.event_sender, FlowEvent::NodeStreamStarted(node_id)).await;
+                send_flow_event(
+                    &self.services.event_sender,
+                    FlowEvent::NodeStreamStarted(node_id),
+                )
+                .await;
             }
             // 任务的流式结果
             TaskEvent::Next(node_id, output) => {
@@ -340,7 +348,11 @@ impl Runner {
                     *first_error = Some(e.clone());
                 }
                 self.exec_ctx.set_state(node_id.clone(), NodeState::Failed);
-                send_flow_event(&self.services.event_sender, FlowEvent::NodeError(node_id, e)).await;
+                send_flow_event(
+                    &self.services.event_sender,
+                    FlowEvent::NodeError(node_id, e),
+                )
+                .await;
             }
         }
         Ok(())
@@ -460,7 +472,11 @@ impl Runner {
         // 节点任务计数守卫
         let guard = self.exec_ctx.get_task_tracker_guard();
 
-        send_flow_event(&self.services.event_sender, FlowEvent::NodeStarted(node_id.clone())).await;
+        send_flow_event(
+            &self.services.event_sender,
+            FlowEvent::NodeStarted(node_id.clone()),
+        )
+        .await;
         // 发送节点输入事件，通知外部，输入的数据不一定能序列化
         send_flow_event(
             &self.services.event_sender,

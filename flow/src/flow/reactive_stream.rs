@@ -4,11 +4,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::{
-    flow::{
-        TaskGuard,
-        event::TaskEvent,
-        graph::{Context, NodeId},
-    },
+    flow::{TaskGuard, event::TaskEvent, graph::NodeId, runtime_context::Context},
     reactive::observable::{Observable, Observer, Subscription},
 };
 use serde::Serialize;
@@ -32,7 +28,9 @@ struct RunnerObserver<T> {
 }
 
 #[async_trait]
-impl<T: Serialize + Send + Clone + 'static, E: Send + 'static> Observer<T, E> for RunnerObserver<T> {
+impl<T: Serialize + Send + Clone + 'static, E: Send + 'static> Observer<T, E>
+    for RunnerObserver<T>
+{
     async fn on_next(&mut self, value: T) {
         if self.accumulator.is_some() {
             self.acc_buffer.push(value.clone());
@@ -42,10 +40,7 @@ impl<T: Serialize + Send + Clone + 'static, E: Send + 'static> Observer<T, E> fo
         // 这实现了完美的异步背压
         match serde_json::to_value(&value) {
             Ok(v) => {
-                let _ = self
-                    .tx
-                    .send(TaskEvent::Next(self.node_id.clone(), v))
-                    .await;
+                let _ = self.tx.send(TaskEvent::Next(self.node_id.clone(), v)).await;
             }
             Err(e) => {
                 let _ = self
