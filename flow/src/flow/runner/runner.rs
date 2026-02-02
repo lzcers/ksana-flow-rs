@@ -5,11 +5,12 @@ use super::{
     scheduler::{Scheduler, StartSpec},
 };
 use crate::{
-    Context,
+    Context, ControllerHandle,
     flow::graph::{Graph, Input, NodeId},
+    scope_controller,
 };
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, watch};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,9 +60,9 @@ pub struct Runner {
     exec_ctx: ExecutionContext,
     // 3. 任务执行器，负责执行任务
     executor: Executor,
+    controller: ControllerHandle,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
-    cmd_tx: broadcast::Sender<RunnerCommand>,
     // 外部命令接收通道
     cmd_rx: broadcast::Receiver<RunnerCommand>,
 }
@@ -71,42 +72,12 @@ impl Runner {
         graph: Arc<Graph>,
         // 用于恢复执行的上下文
         initial_context: Option<ExecutionContext>,
+        controller: ControllerHandle,
     ) -> (Self, RunnerHandle) {
-        let (cmd_tx, cmd_rx) = broadcast::channel(32);
         let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
 
         let handle = RunnerHandle {
-            cmd_tx: cmd_tx.clone(),
-            state_rx: state_rx.clone(),
-        };
-
-        let executor = Executor::new();
-        executor
-            .get_runtime_context_ref()
-            .set_runner_command_sender(cmd_tx.clone());
-        (
-            Self {
-                scheduler: Scheduler::new(graph),
-                exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
-                executor,
-                state_tx,
-                cmd_rx,
-                cmd_tx,
-            },
-            handle,
-        )
-    }
-
-    pub fn new_with_command_sender(
-        graph: Arc<Graph>,
-        initial_context: Option<ExecutionContext>,
-        cmd_tx: broadcast::Sender<RunnerCommand>,
-    ) -> (Self, RunnerHandle) {
-        let cmd_rx = cmd_tx.subscribe();
-        let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
-
-        let handle = RunnerHandle {
-            cmd_tx: cmd_tx.clone(),
+            cmd_tx: controller.cmd_tx(),
             state_rx: state_rx.clone(),
         };
 
@@ -116,18 +87,12 @@ impl Runner {
                 scheduler: Scheduler::new(graph),
                 exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
                 executor,
-                cmd_rx,
+                controller,
                 state_tx,
-                cmd_tx,
+                cmd_rx: handle.cmd_tx.subscribe(),
             },
             handle,
         )
-    }
-
-    pub fn set_flow_event_sender(&mut self, sender: mpsc::Sender<FlowEvent>) {
-        self.executor
-            .get_runtime_context_ref()
-            .set_flow_event_sender(sender);
     }
 
     pub fn set_runtime_context(&mut self, ctx: Context) {
@@ -270,17 +235,19 @@ impl Runner {
         event: TaskEvent,
         first_error: &mut Option<String>,
     ) -> Result<(), String> {
-        let task_sender = self.executor.get_task_sender();
         match event {
             // 任务返回流式结果则订阅并通知事件流开始
             TaskEvent::Stream(node_id, subscribe_fn) => {
                 info!(node_id = %node_id, "Received Stream");
-                let sub = subscribe_fn(
-                    self.exec_ctx.get_task_tracker_guard(),
-                    task_sender,
-                    node_id.clone(),
-                    self.executor.get_runtime_context(),
-                );
+                let guard = self.exec_ctx.get_task_tracker_guard();
+                let task_sender = self.executor.get_task_sender();
+                let runtime_ctx = self.executor.get_runtime_context();
+                let controller = self.controller.clone();
+                let node_id_for_sub = node_id.clone();
+                let sub = scope_controller(controller, async move {
+                    subscribe_fn(guard, task_sender, node_id_for_sub, runtime_ctx)
+                })
+                .await;
                 self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
                 self.send_flow_event(FlowEvent::NodeStreamStarted(node_id))
                     .await;
@@ -377,17 +344,12 @@ impl Runner {
         self.send_flow_event(FlowEvent::NodeInMessage(node_id.clone(), inputs.clone()))
             .await;
         // 让执行器干活
-        self.executor.exec(guard, node_id, node_arc, inputs);
+        self.executor
+            .exec(self.controller.clone(), guard, node_id, node_arc, inputs);
         Ok(())
     }
 
     async fn send_flow_event(&self, event: FlowEvent) {
-        if let Some(sender) = self
-            .executor
-            .get_runtime_context_ref()
-            .get_flow_event_sender_ref()
-        {
-            let _ = sender.send(event).await;
-        }
+        self.controller.send_event(event).await;
     }
 }

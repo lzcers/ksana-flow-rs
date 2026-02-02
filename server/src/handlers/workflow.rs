@@ -11,7 +11,7 @@ use axum::{
     },
     response::IntoResponse,
 };
-use flow::{ExecutionContext, FlowEvent, INPUT_EXTERNAL_START, Input, NodeState, Runner};
+use flow::{Controller, ExecutionContext, FlowEvent, INPUT_EXTERNAL_START, Input, NodeState, Runner};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -199,17 +199,16 @@ async fn start_execution(
         let _ = db.create_execution(&run_id, workflow_id);
     }
 
+    let (controller, mut event_rx) = Controller::new();
+
     // Prepare Runner
-    let (mut runner, handle) = Runner::new(graph, init_execution_ctx);
+    let (mut runner, handle) = Runner::new(graph, init_execution_ctx, controller.clone());
 
     // Setup bridge
     let tx = state.tx.clone();
     let run_id_clone = run_id.clone();
     let workspace_id_clone = workspace_id.clone();
     let db_clone = state.db.clone();
-    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(100);
-
-    runner.set_flow_event_sender(event_tx);
 
     let tasks = Arc::new(tokio::sync::Mutex::new(ExecutionTaskHandles {
         runner_task: None,

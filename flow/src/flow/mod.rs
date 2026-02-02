@@ -1,7 +1,9 @@
+mod controller;
 mod graph;
 mod reactive_stream;
 mod runner;
 mod runtime_context;
+pub use controller::*;
 pub use graph::*;
 pub use reactive_stream::*;
 pub use runner::*;

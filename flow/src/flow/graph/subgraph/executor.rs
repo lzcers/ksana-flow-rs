@@ -3,7 +3,7 @@ use super::{
     keys::{CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, INPUT_EXTERNAL_START},
 };
 use crate::{
-    Context,
+    Context, ControllerHandle, try_controller,
     flow::runner::{ExecutionContext, Runner},
 };
 use serde_json::Value;
@@ -77,31 +77,31 @@ impl SubgraphExecutor {
         input: Value,
         parent_ctx: &Context,
     ) -> Result<Value, SubgraphError> {
-        // 1. 创建子图上下文
+        let controller = try_controller().ok_or_else(|| SubgraphError::ExecutionFailed {
+            message: "Missing Controller in current task scope".to_string(),
+        })?;
+        self.execute_with_controller(input, parent_ctx, controller).await
+    }
+
+    pub async fn execute_with_controller(
+        &self,
+        input: Value,
+        parent_ctx: &Context,
+        controller: ControllerHandle,
+    ) -> Result<Value, SubgraphError> {
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
 
-        // 2. 创建 Runner
-        let (mut runner, _handle) = match subgraph_ctx.get_runner_command_sender() {
-            Some(cmd_tx) => Runner::new_with_command_sender(
-                self.subgraph.clone(),
-                Some(ExecutionContext::new()),
-                cmd_tx,
-            ),
-            None => Runner::new(self.subgraph.clone(), Some(ExecutionContext::new())),
-        };
+        let (mut runner, _handle) =
+            Runner::new(self.subgraph.clone(), Some(ExecutionContext::new()), controller);
 
-        // 设置上下文
         runner.set_runtime_context(subgraph_ctx);
 
-        // 设置起始节点
         let mut inputs = HashMap::new();
         inputs.insert(INPUT_EXTERNAL_START.to_string(), input);
         runner.set_start_node(&self.config.entry_node, inputs.into());
 
-        // 3. 执行子图
         let execution_task = runner.run();
 
-        // 4. 等待执行完成（支持超时）
         let result = if let Some(duration) = self.config.timeout {
             match timeout(duration, execution_task).await {
                 Ok(Ok(())) => Ok(()),
@@ -119,9 +119,7 @@ impl SubgraphExecutor {
             }
         };
 
-        // 5. 获取出口节点输出
         let output = if result.is_ok() {
-            // 从 Runner 的 ExecutionContext 获取出口节点输出
             runner
                 .get_execution_context()
                 .get_output(&self.config.exit_node)
@@ -145,12 +143,6 @@ impl SubgraphExecutor {
         } else {
             // 完全隔离的新上下文
             let ctx = Context::new();
-            if let Some(sender) = parent_ctx.get_flow_event_sender() {
-                ctx.set_flow_event_sender(sender);
-            }
-            if let Some(cmd_tx) = parent_ctx.get_runner_command_sender() {
-                ctx.set_runner_command_sender(cmd_tx);
-            }
             // 将输入放入上下文
             ctx.set(CTX_INPUT, input);
             ctx

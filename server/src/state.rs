@@ -209,7 +209,7 @@ pub struct Edge {
 #[cfg(test)]
 mod tests {
     use super::{Edge, GraphBlueprint, Node, NodeData, Position};
-    use flow::{ExecutionContext, Runner};
+    use flow::{Controller, ExecutionContext, Runner};
     use serde_json::{Value, json};
 
     #[test]
@@ -312,7 +312,8 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
-            let (mut runner, _handle) = Runner::new(graph, Some(ExecutionContext::new()));
+            let (controller, _rx) = Controller::new();
+            let (mut runner, _handle) = Runner::new(graph, Some(ExecutionContext::new()), controller);
             for id in start_nodes {
                 runner.set_start_node(&id, Value::Null.into());
             }

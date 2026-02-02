@@ -1,6 +1,6 @@
 use super::{event::TaskEvent, task_guard::TaskGuard};
 use crate::{
-    Context,
+    Context, ControllerHandle, scope_controller,
     flow::{
         AnyNode,
         graph::{Input, Output},
@@ -92,6 +92,7 @@ impl Executor {
 
     pub fn exec(
         &self,
+        controller: ControllerHandle,
         _guard: TaskGuard,
         node_id: String,
         node: Arc<RwLock<dyn AnyNode>>,
@@ -103,7 +104,7 @@ impl Executor {
         let task_sender = self.get_task_sender();
         let cancel = self.cancel.clone();
 
-        let fut = async move {
+        let fut = scope_controller(controller, async move {
             let _keep_alive = _guard; // Force capture
             let node_id_for_cancel = node_id.clone();
             tokio::select! {
@@ -183,7 +184,7 @@ impl Executor {
                     }
                 } => {}
             }
-        };
+        });
 
         if let Ok(mut tasks) = self.tasks.lock() {
             tasks.spawn(fut);

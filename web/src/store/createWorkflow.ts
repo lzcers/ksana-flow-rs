@@ -52,8 +52,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const wf = await api.fetchWorkflow(currentSpaceId, id);
       set({ currentWorkflowId: id });
 
-      const nodes: Node[] = wf.blueprint.nodes.map((n: Record<string, unknown>) => {
-        const { type: _type, ...cleanData } = (n.data as Record<string, unknown>) || {};
+      const nodes: Node[] = wf.blueprint.nodes.map((n: any) => {
+        const { type: _type, ...cleanData } = n.data || {};
         const expanded = cleanData.expanded !== false;
         const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
         let width = n.width;

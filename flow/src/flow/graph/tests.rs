@@ -4,7 +4,7 @@ use super::{
     io::{Input, Output},
 };
 use crate::{
-    Context,
+    Context, Controller, scope_controller,
     flow::{Runner, runner::FlowEvent},
 };
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Instant;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 
 #[test]
 fn test_subgraph_config_default() {
@@ -142,7 +142,8 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
     let (graph, start_nodes) =
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let (controller, _rx) = Controller::new();
+    let (mut runner, _handle) = Runner::new(graph, None, controller);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -152,7 +153,7 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
 }
 
 #[tokio::test]
-async fn test_subgraph_events_forwarded_via_context_sender() {
+async fn test_subgraph_events_forwarded_via_controller() {
     let mut g = Graph::new();
     g.add_node("start", || EchoNode);
     g.add_node("mid", || EchoNode);
@@ -171,13 +172,13 @@ async fn test_subgraph_events_forwarded_via_context_sender() {
     let executor = SubgraphExecutor::with_defaults(g);
 
     let parent_ctx = Context::new();
-    let (tx, mut rx) = mpsc::channel::<FlowEvent>(128);
-    parent_ctx.set_flow_event_sender(tx);
+    let (controller, mut rx) = Controller::new();
 
-    let out = executor
-        .execute(json!({"hello": "world"}), &parent_ctx)
-        .await
-        .unwrap();
+    let out = scope_controller(controller, async {
+        executor.execute(json!({"hello": "world"}), &parent_ctx).await
+    })
+    .await
+    .unwrap();
     assert_eq!(out, json!({"hello": "world"}));
 
     let mut saw_mid_started = false;
@@ -273,7 +274,8 @@ async fn test_subgraph_inbound_proxy_routes_by_source_id() {
     let (graph, start_nodes) =
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let (controller, _rx) = Controller::new();
+    let (mut runner, _handle) = Runner::new(graph, None, controller);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -351,7 +353,8 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
     let (graph, start_nodes) =
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
-    let (mut runner, _handle) = Runner::new(graph, None);
+    let (controller, _rx) = Controller::new();
+    let (mut runner, _handle) = Runner::new(graph, None, controller);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
