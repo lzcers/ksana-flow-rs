@@ -133,6 +133,20 @@ impl ReduceNode {
                 }
             }
             Reducer::Merge { deep } => {
+                if item.is_null() {
+                    return Ok(acc.clone());
+                }
+
+                match (acc, item) {
+                    (Value::Array(arr), Value::Object(_)) if arr.is_empty() => {
+                        return Ok(item.clone());
+                    }
+                    (Value::Object(map), Value::Array(_)) if map.is_empty() => {
+                        return Ok(item.clone());
+                    }
+                    _ => {}
+                }
+
                 let mut result = acc.clone();
                 match (deep, &mut result, item) {
                     (true, Value::Object(acc_map), Value::Object(item_map)) => {
@@ -151,6 +165,9 @@ impl ReduceNode {
                         // 数组合并
                         acc_arr.extend(item_arr.clone());
                     }
+                    (_, Value::Array(acc_arr), item) => {
+                        acc_arr.push(item.clone());
+                    }
                     (_, Value::Object(acc_map), Value::Object(item_map)) => {
                         // 浅层合并
                         for (key, value) in item_map {
@@ -167,44 +184,36 @@ impl ReduceNode {
                 let current = acc.as_u64().unwrap_or(0);
                 Ok(Value::Number((current + 1).into()))
             }
-            Reducer::Max => {
-                match (acc.as_f64(), item.as_f64()) {
-                    (Some(a), Some(b)) if !a.is_nan() && !b.is_nan() => {
-                        if acc.is_null() || b > a {
-                            Ok(item.clone())
-                        } else {
-                            Ok(acc.clone())
-                        }
+            Reducer::Max => match (acc.as_f64(), item.as_f64()) {
+                (Some(a), Some(b)) if !a.is_nan() && !b.is_nan() => {
+                    if acc.is_null() || b > a {
+                        Ok(item.clone())
+                    } else {
+                        Ok(acc.clone())
                     }
-                    (None, Some(_)) => Ok(item.clone()),
-                    (Some(_), None) => Ok(acc.clone()),
-                    _ => Ok(Value::Null),
                 }
-            }
-            Reducer::Min => {
-                match (acc.as_f64(), item.as_f64()) {
-                    (Some(a), Some(b)) if !a.is_nan() && !b.is_nan() => {
-                        if acc.is_null() || b < a {
-                            Ok(item.clone())
-                        } else {
-                            Ok(acc.clone())
-                        }
+                (None, Some(_)) => Ok(item.clone()),
+                (Some(_), None) => Ok(acc.clone()),
+                _ => Ok(Value::Null),
+            },
+            Reducer::Min => match (acc.as_f64(), item.as_f64()) {
+                (Some(a), Some(b)) if !a.is_nan() && !b.is_nan() => {
+                    if acc.is_null() || b < a {
+                        Ok(item.clone())
+                    } else {
+                        Ok(acc.clone())
                     }
-                    (None, Some(_)) => Ok(item.clone()),
-                    (Some(_), None) => Ok(acc.clone()),
-                    _ => Ok(Value::Null),
                 }
-            }
+                (None, Some(_)) => Ok(item.clone()),
+                (Some(_), None) => Ok(acc.clone()),
+                _ => Ok(Value::Null),
+            },
             Reducer::Custom(f) => Ok(f(acc, item)),
         }
     }
 
     /// 深度合并两个值
-    fn deep_merge(
-        &self,
-        a: &Value,
-        b: &Value,
-    ) -> Result<Value, String> {
+    fn deep_merge(&self, a: &Value, b: &Value) -> Result<Value, String> {
         match (a, b) {
             (Value::Object(a_map), Value::Object(b_map)) => {
                 let mut result = a_map.clone();
@@ -234,22 +243,40 @@ impl ReduceNode {
 impl Node for ReduceNode {
     const TRIGGER_STRATEGY: flow::TriggerStrategy = flow::TriggerStrategy::AllUpstreamReady;
 
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        input: &Input,
-    ) -> Result<Output, String> {
-        // 从输入中提取数组
-        let items: Vec<Value> = match input.get_any_as::<Vec<Value>>() {
-            Some(items) => items,
-            None => {
-                // 尝试获取单个值作为单元素数组
-                match input.get_any() {
-                    Some(value) => vec![value.clone()],
-                    None => return Err("Reduce requires array input".to_string()),
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
+        fn expand_input_value(v: &Value) -> Vec<Value> {
+            match v {
+                Value::Array(arr) => arr.clone(),
+                Value::Object(map) => {
+                    if map.len() == 1 {
+                        if let Some(inner) = map.get("output") {
+                            return expand_input_value(inner);
+                        }
+                    }
+                    vec![v.clone()]
                 }
+                _ => vec![v.clone()],
             }
-        };
+        }
+
+        let values = input.get_values();
+        if values.is_empty() {
+            return Err("Reduce requires input".to_string());
+        }
+
+        let mut items: Vec<Value> = Vec::new();
+        if values.len() == 1 {
+            let v = input
+                .get_any()
+                .ok_or_else(|| "Reduce requires input".to_string())?;
+            items = expand_input_value(v);
+        } else {
+            let mut entries: Vec<_> = values.iter().collect();
+            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            for (_, v) in entries {
+                items.extend(expand_input_value(v));
+            }
+        }
 
         // 如果输入为空，返回初始值
         if items.is_empty() {
@@ -269,6 +296,8 @@ impl Node for ReduceNode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn test_reduce_node_sum() {
@@ -290,15 +319,87 @@ mod tests {
 
     #[test]
     fn test_reduce_node_custom() {
-        let reduce = ReduceNode::custom(
-            Value::Number(1.into()),
-            |acc, item| {
-                match (acc.as_i64(), item.as_i64()) {
-                    (Some(a), Some(b)) => Value::Number((a * b).into()),
-                    _ => Value::Null,
-                }
+        let reduce = ReduceNode::custom(Value::Number(1.into()), |acc, item| {
+            match (acc.as_i64(), item.as_i64()) {
+                (Some(a), Some(b)) => Value::Number((a * b).into()),
+                _ => Value::Null,
             }
-        );
+        });
         assert_eq!(reduce.initial, Value::Number(1.into()));
+    }
+
+    #[test]
+    fn test_reduce_node_merge_initial_values() {
+        let reduce = ReduceNode::merge(false);
+        assert_eq!(reduce.initial, Value::Array(vec![]));
+
+        let reduce = ReduceNode::merge(true);
+        assert_eq!(reduce.initial, Value::Object(serde_json::Map::new()));
+    }
+
+    #[test]
+    fn test_reduce_node_merge_objects_shallow() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = ReduceNode::merge(false);
+
+            let input: Input = json!([{"a": 1}, {"b": 2}]).into();
+            let out = node.run(&ctx, &input).await.unwrap();
+            assert_eq!(out.into_value(), Some(json!({"a": 1, "b": 2})));
+        });
+    }
+
+    #[test]
+    fn test_reduce_node_merge_objects_deep() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = ReduceNode::merge(true);
+
+            let input: Input = json!([{"a": {"x": 1}}, {"a": {"y": 2}}]).into();
+            let out = node.run(&ctx, &input).await.unwrap();
+            assert_eq!(out.into_value(), Some(json!({"a": {"x": 1, "y": 2}})));
+        });
+    }
+
+    #[test]
+    fn test_reduce_node_merge_arrays() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = ReduceNode::merge(false);
+
+            let input: Input = json!([[1, 2], [3]]).into();
+            let out = node.run(&ctx, &input).await.unwrap();
+            assert_eq!(out.into_value(), Some(json!([1, 2, 3])));
+        });
+    }
+
+    #[test]
+    fn test_reduce_node_merge_collect_scalars() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = ReduceNode::merge(false);
+
+            let input: Input = json!(["a", "b", "c"]).into();
+            let out = node.run(&ctx, &input).await.unwrap();
+            assert_eq!(out.into_value(), Some(json!(["a", "b", "c"])));
+        });
+    }
+
+    #[test]
+    fn test_reduce_node_unwraps_output_object() {
+        let runtime = Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async {
+            let ctx = Context::new();
+            let mut node = ReduceNode::sum();
+
+            let input: Input = json!({"output": [1, 2, 3]}).into();
+            let out = node.run(&ctx, &input).await.unwrap();
+            let v = out.into_value().unwrap();
+            assert_eq!(v.as_f64(), Some(6.0));
+        });
     }
 }

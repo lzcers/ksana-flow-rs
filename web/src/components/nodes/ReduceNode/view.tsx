@@ -49,8 +49,8 @@ export function ReduceNodeView({
       sourceHandles={SOURCE_HANDLES}
       targetHandles={TARGET_HANDLES}
       className="flex flex-col"
-      minWidth={220}
-      minHeight={170}
+      minWidth={300}
+      minHeight={220}
       style={{ width, height }}
     >
       <div className={reduceNodeStyles.container}>
