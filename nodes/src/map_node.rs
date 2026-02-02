@@ -5,11 +5,10 @@ use async_trait::async_trait;
 use flow::observable::Subscription;
 use flow::{Context, Graph, Input, Node, Output, SubgraphConfig, SubgraphExecutor};
 use flow::{ReactiveStream, TaskEvent};
-use futures::StreamExt;
-use futures::stream::FuturesUnordered;
 use serde_json::Value;
 use serde_json::json;
 use tokio::sync::mpsc;
+use tokio::task::{JoinHandle, JoinSet};
 
 /// MapNode - 并发映射节点
 ///
@@ -191,13 +190,18 @@ impl MapNode {
         let max_concurrency = self.max_concurrency;
         ReactiveStream {
             subscribe: Box::new(move |guard, tx: mpsc::Sender<TaskEvent>, node_id, ctx| {
-                struct EmptySubscription;
-                impl Subscription for EmptySubscription {
-                    fn unsubscribe(self) {}
+                struct TaskSubscription {
+                    handle: JoinHandle<()>,
+                }
+
+                impl Subscription for TaskSubscription {
+                    fn unsubscribe(self: Box<Self>) {
+                        self.handle.abort();
+                    }
                 }
 
                 let total = items.len();
-                tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     let _guard = guard;
 
                     if items.is_empty() {
@@ -220,14 +224,14 @@ impl MapNode {
                     };
                     let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
 
-                    let mut futures = FuturesUnordered::new();
+                    let mut join_set = JoinSet::new();
                     for (idx, item) in items.into_iter().enumerate() {
                         let semaphore = semaphore.clone();
                         let executor = executor.clone();
                         let ctx = ctx.clone();
                         let tx = tx.clone();
                         let node_id = node_id.clone();
-                        futures.push(tokio::spawn(async move {
+                        join_set.spawn(async move {
                             let permit = semaphore
                                 .acquire_owned()
                                 .await
@@ -245,17 +249,17 @@ impl MapNode {
                                             json!({"kind":"item","index":idx,"output":output}),
                                         ))
                                         .await;
-                                    Ok::<(usize, Value), String>((idx, output))
+                                        Ok::<(usize, Value), String>((idx, output))
                                 }
                                 Err(e) => Err(e),
                             }
-                        }));
+                        });
                     }
 
                     let mut results: Vec<Option<Value>> = vec![None; total];
                     let mut error: Option<String> = None;
 
-                    while let Some(joined) = futures.next().await {
+                    while let Some(joined) = join_set.join_next().await {
                         match joined {
                             Ok(Ok((idx, output))) => {
                                 if idx < results.len() {
@@ -264,10 +268,12 @@ impl MapNode {
                             }
                             Ok(Err(e)) => {
                                 error = Some(e);
+                                join_set.abort_all();
                                 break;
                             }
                             Err(e) => {
                                 error = Some(format!("Task panicked: {}", e));
+                                join_set.abort_all();
                                 break;
                             }
                         }
@@ -293,7 +299,7 @@ impl MapNode {
                         .await;
                 });
 
-                Box::new(EmptySubscription)
+                Box::new(TaskSubscription { handle })
             }),
         }
     }

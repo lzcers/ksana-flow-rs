@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 pub type StreamSubscriptionFn = Box<
     dyn FnOnce(TaskGuard, mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription>
@@ -76,9 +76,14 @@ impl<T: Serialize + Send + Clone + 'static, E: Send + 'static> Observer<T, E>
     }
 }
 
-struct EmptySubscription;
-impl Subscription for EmptySubscription {
-    fn unsubscribe(self) {}
+struct TaskSubscription {
+    handle: JoinHandle<()>,
+}
+
+impl Subscription for TaskSubscription {
+    fn unsubscribe(self: Box<Self>) {
+        self.handle.abort();
+    }
 }
 
 impl ReactiveStream {
@@ -96,11 +101,11 @@ impl ReactiveStream {
                     acc_buffer: Vec::new(),
                     accumulator: None,
                 };
-                tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     let _guard = guard;
                     let _sub = observable.subscribe(observer).await;
                 });
-                Box::new(EmptySubscription)
+                Box::new(TaskSubscription { handle })
             }),
         }
     }
@@ -120,11 +125,11 @@ impl ReactiveStream {
                     acc_buffer: Vec::new(),
                     accumulator: Some(Box::new(accumulator)),
                 };
-                tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     let _guard = guard;
                     let _sub = observable.subscribe(observer).await;
                 });
-                Box::new(EmptySubscription)
+                Box::new(TaskSubscription { handle })
             }),
         }
     }

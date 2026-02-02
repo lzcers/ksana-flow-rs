@@ -26,7 +26,7 @@ pub struct TimerObservable {
 pub struct TimerSubscription;
 
 impl Subscription for TimerSubscription {
-    fn unsubscribe(self) {}
+    fn unsubscribe(self: Box<Self>) {}
 }
 
 #[async_trait]
@@ -81,6 +81,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Instant;
     use tokio::sync::mpsc;
+    use tokio::time::{Duration, timeout};
 
     #[tokio::test]
     async fn test_timer_node() {
@@ -98,7 +99,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
 
         // Manually subscribe to the stream
-        subscribe(
+        let sub = subscribe(
             TaskGuard::default(),
             tx,
             "test_node".to_string(),
@@ -113,6 +114,27 @@ mod tests {
                     assert_eq!(val, Value::Null);
                 }
                 _ => panic!("Expected Next event"),
+            }
+        }
+
+        sub.unsubscribe();
+        while rx.try_recv().is_ok() {}
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(2500);
+        let mut received_after_unsub = 0usize;
+        loop {
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                break;
+            }
+            let remaining = deadline - now;
+            match timeout(remaining, rx.recv()).await {
+                Ok(Some(_)) => {
+                    received_after_unsub += 1;
+                    if received_after_unsub > 1 {
+                        panic!("Received too many events after unsubscribe");
+                    }
+                }
+                _ => break,
             }
         }
 

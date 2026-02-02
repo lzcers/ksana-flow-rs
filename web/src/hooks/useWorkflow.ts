@@ -59,7 +59,7 @@ export function useWorkflow() {
     onNodesChange: canvasActions.onNodesChange,
     onEdgesChange: canvasActions.onEdgesChange,
     onNodeDragStop: canvasActions.onNodeDragStop,
-    onNodeDragStart: (_event: any, _node: any) => historyActions.pushHistory(),
+    onNodeDragStart: () => historyActions.pushHistory(),
     onConnect: canvasActions.onConnect,
     addNode: canvasActions.addNode,
     deleteNode: canvasActions.deleteNode,

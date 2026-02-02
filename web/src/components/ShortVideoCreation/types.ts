@@ -41,5 +41,5 @@ export interface ShortVideoCreationProps {
   data: ProjectData;
   onBack?: () => void;
   onDataChange?: (data: ProjectData) => void;
-  isNodeCompleted?: (value: any) => boolean;
+  isNodeCompleted?: (value: unknown) => boolean;
 }

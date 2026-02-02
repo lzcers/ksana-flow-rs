@@ -7,7 +7,10 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock as StdRwLock};
 use tokio::sync::broadcast;
-use tokio::sync::RwLock;
+use tokio::{
+    sync::RwLock,
+    task::JoinHandle,
+};
 use tracing::error;
 
 #[derive(Clone)]
@@ -15,6 +18,12 @@ pub struct ExecutionHandle {
     pub runner_handle: RunnerHandle,
     pub workflow_id: i64,
     pub workspace_id: String,
+    pub tasks: Arc<tokio::sync::Mutex<ExecutionTaskHandles>>,
+}
+
+pub struct ExecutionTaskHandles {
+    pub runner_task: Option<JoinHandle<()>>,
+    pub bridge_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Clone)]

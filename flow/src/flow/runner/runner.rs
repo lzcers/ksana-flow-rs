@@ -239,6 +239,7 @@ impl Runner {
                     }
                 }
             }
+            self.executor.reap_finished();
             // 没有活跃任务，且事件队列为空，就意味着工作流执行完毕
             if self.exec_ctx.get_task_count() == 0
                 && self.executor.event_is_empty()

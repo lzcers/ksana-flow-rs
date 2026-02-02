@@ -64,6 +64,6 @@ mod tests {
             .filter(|v| v % 2 == 0)
             .subscribe(|v| println!("{v}"))
             .await;
-        sub.unsubscribe();
+        Box::new(sub).unsubscribe();
     }
 }

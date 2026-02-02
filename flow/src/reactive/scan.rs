@@ -71,7 +71,7 @@ mod tests {
     struct NumStream;
     struct NumSubscription;
     impl Subscription for NumSubscription {
-        fn unsubscribe(self) {}
+        fn unsubscribe(self: Box<Self>) {}
     }
     #[async_trait]
     impl Observable<i32, ()> for NumStream {

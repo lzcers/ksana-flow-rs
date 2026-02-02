@@ -8,7 +8,7 @@ export interface NodeMetadata {
     category: string;
     inputs: string[];
     outputs: string[];
-    config: any;
+    config: Record<string, unknown>;
 }
 
 export interface Workflow {
@@ -37,7 +37,7 @@ export const fetchWorkflow = async (spaceId: string, id: number): Promise<Workfl
     return res.json();
 };
 
-export const createWorkflow = async (spaceId: string, name: string, blueprint: any) => {
+export const createWorkflow = async (spaceId: string, name: string, blueprint: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE}/workflows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -46,7 +46,7 @@ export const createWorkflow = async (spaceId: string, name: string, blueprint: a
     return res.json();
 };
 
-export const updateWorkflow = async (spaceId: string, id: number, name: string | undefined, blueprint: any) => {
+export const updateWorkflow = async (spaceId: string, id: number, name: string | undefined, blueprint: Record<string, unknown>) => {
     const res = await fetch(`${API_BASE}/workflows/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -62,7 +62,7 @@ export const deleteWorkflow = async (spaceId: string, id: number) => {
     return res.json();
 };
 
-export const runWorkflow = async (spaceId: string, blueprint: any, workflowId: number) => {
+export const runWorkflow = async (spaceId: string, blueprint: Record<string, unknown>, workflowId: number) => {
     const res = await fetch(`${API_BASE}/workflow/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,7 +76,7 @@ export const getWorkflowStatus = async (_spaceId: string, id: number) => {
     return res.json();
 };
 
-export const runNode = async (spaceId: string, blueprint: any, nodeId: string, workflowId: number) => {
+export const runNode = async (spaceId: string, blueprint: Record<string, unknown>, nodeId: string, workflowId: number) => {
     const res = await fetch(`${API_BASE}/workflow/run_node`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -16,7 +16,7 @@ impl NumStream {
 pub struct NumSubscription;
 
 impl Subscription for NumSubscription {
-    fn unsubscribe(self) {}
+    fn unsubscribe(self: Box<Self>) {}
 }
 
 #[async_trait]

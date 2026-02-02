@@ -7,12 +7,18 @@ use crate::{
     },
 };
 use futures::FutureExt;
-use std::{panic::AssertUnwindSafe, sync::Arc};
-use tokio::sync::{
-    RwLock, Semaphore,
-    mpsc::{self, error::TryRecvError},
-    watch,
+use std::{
+    panic::AssertUnwindSafe,
+    sync::{Arc, Mutex},
 };
+use tokio::{
+    sync::{
+        RwLock, Semaphore,
+        mpsc::{self, error::TryRecvError},
+    },
+    task::JoinSet,
+};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
 pub struct Executor {
@@ -20,21 +26,20 @@ pub struct Executor {
     runtime_ctx: Arc<Context>,
     task_sender: mpsc::Sender<TaskEvent>,
     task_receiver: mpsc::Receiver<TaskEvent>,
-    cancel_tx: watch::Sender<bool>,
-    cancel_rx: watch::Receiver<bool>,
+    cancel: CancellationToken,
+    tasks: Mutex<JoinSet<()>>,
 }
 
 impl Executor {
     pub fn new() -> Self {
         let (task_sender, task_receiver) = mpsc::channel::<TaskEvent>(128);
-        let (cancel_tx, cancel_rx) = watch::channel(false);
         Self {
             runtime_ctx: Arc::new(Context::new()),
             semaphore: None,
             task_sender,
             task_receiver,
-            cancel_tx,
-            cancel_rx,
+            cancel: CancellationToken::new(),
+            tasks: Mutex::new(JoinSet::new()),
         }
     }
 
@@ -72,7 +77,17 @@ impl Executor {
     }
 
     pub fn cancel(&self) {
-        let _ = self.cancel_tx.send(true);
+        self.cancel.cancel();
+        if let Ok(mut tasks) = self.tasks.lock() {
+            tasks.abort_all();
+            while tasks.try_join_next().is_some() {}
+        }
+    }
+
+    pub fn reap_finished(&self) {
+        if let Ok(mut tasks) = self.tasks.lock() {
+            while tasks.try_join_next().is_some() {}
+        }
     }
 
     pub fn exec(
@@ -86,25 +101,13 @@ impl Executor {
         let ctx = self.runtime_ctx.clone();
         let semaphore = self.semaphore.clone();
         let task_sender = self.get_task_sender();
-        let cancel_rx = self.cancel_rx.clone();
+        let cancel = self.cancel.clone();
 
-        tokio::spawn(async move {
+        let fut = async move {
             let _keep_alive = _guard; // Force capture
-            let mut cancel_rx = cancel_rx;
-            let wait_cancel = async {
-                loop {
-                    if *cancel_rx.borrow() {
-                        break;
-                    }
-                    if cancel_rx.changed().await.is_err() {
-                        break;
-                    }
-                }
-            };
-
             let node_id_for_cancel = node_id.clone();
             tokio::select! {
-                _ = wait_cancel => {
+                _ = cancel.cancelled() => {
                     Self::send_task_event(&task_sender, TaskEvent::Error(node_id_for_cancel, "Cancelled".to_string())).await;
                     return;
                 }
@@ -180,9 +183,25 @@ impl Executor {
                     }
                 } => {}
             }
-        });
+        };
+
+        if let Ok(mut tasks) = self.tasks.lock() {
+            tasks.spawn(fut);
+        } else {
+            tokio::spawn(fut);
+        }
     }
     async fn send_task_event(task_sender: &mpsc::Sender<TaskEvent>, event: TaskEvent) {
         let _ = task_sender.send(event).await;
+    }
+}
+
+impl Drop for Executor {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Ok(tasks) = self.tasks.get_mut() {
+            tasks.abort_all();
+            while tasks.try_join_next().is_some() {}
+        }
     }
 }

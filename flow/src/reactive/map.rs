@@ -65,7 +65,7 @@ mod tests {
     struct NumObservableSub {}
 
     impl Subscription for NumObservableSub {
-        fn unsubscribe(self) {}
+        fn unsubscribe(self: Box<Self>) {}
     }
 
     #[async_trait]
@@ -83,7 +83,7 @@ mod tests {
     async fn test_observable_subscribe() {
         let observable = NumObservable {};
         let sub = observable.subscribe(|v| println!("{v}")).await;
-        sub.unsubscribe();
+        Box::new(sub).unsubscribe();
     }
 
     #[tokio::test]
@@ -94,6 +94,6 @@ mod tests {
             .map(|v| v * 2)
             .subscribe(|v| println!("{v}"))
             .await;
-        sub.unsubscribe();
+        Box::new(sub).unsubscribe();
     }
 }

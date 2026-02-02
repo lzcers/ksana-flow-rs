@@ -11,7 +11,7 @@ pub use super::map::MapOperator;
 pub use super::scan::ScanOperator;
 
 pub trait Subscription: Send + Sync {
-    fn unsubscribe(self);
+    fn unsubscribe(self: Box<Self>);
 }
 
 #[async_trait]
@@ -48,15 +48,16 @@ pub struct OperatorSubscription<S> {
 }
 
 impl<S: Subscription> Subscription for OperatorSubscription<S> {
-    fn unsubscribe(self) {
-        self.source_sub.unsubscribe();
+    fn unsubscribe(self: Box<Self>) {
+        let OperatorSubscription { source_sub } = *self;
+        Box::new(source_sub).unsubscribe();
     }
 }
 
 pub struct VecSubscription;
 
 impl Subscription for VecSubscription {
-    fn unsubscribe(self) {}
+    fn unsubscribe(self: Box<Self>) {}
 }
 
 #[async_trait]

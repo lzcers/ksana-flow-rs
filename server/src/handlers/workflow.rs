@@ -1,6 +1,6 @@
 use crate::{
     registry,
-    state::{AppState, ExecutionHandle, GraphBlueprint},
+    state::{AppState, ExecutionHandle, ExecutionTaskHandles, GraphBlueprint},
     utils,
 };
 use axum::{
@@ -211,7 +211,12 @@ async fn start_execution(
 
     runner.set_flow_event_sender(event_tx);
 
-    let bridge_handle = tokio::spawn(async move {
+    let tasks = Arc::new(tokio::sync::Mutex::new(ExecutionTaskHandles {
+        runner_task: None,
+        bridge_task: None,
+    }));
+
+    let bridge_task = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             // Save event to DB
             {
@@ -237,16 +242,23 @@ async fn start_execution(
                 workflow_id,
                 runner_handle: handle.clone(),
                 workspace_id: workspace_id.clone(),
+                tasks: tasks.clone(),
             },
         );
+    }
+
+    {
+        let mut t = tasks.lock().await;
+        t.bridge_task = Some(bridge_task);
     }
 
     let state_clone = state.clone();
     let run_id_for_task = run_id.clone();
     let run_id_for_event = run_id.clone();
     let workspace_id_for_event = workspace_id.clone();
+    let tasks_for_runner_task = tasks.clone();
 
-    tokio::spawn(async move {
+    let runner_task = tokio::spawn(async move {
         // Setup inputs
         for (node_id, input) in start_inputs {
             runner.set_start_node(&node_id, input);
@@ -265,7 +277,13 @@ async fn start_execution(
             ));
         }
 
-        let _ = bridge_handle.await;
+        let bridge_task = {
+            let mut t = tasks_for_runner_task.lock().await;
+            t.bridge_task.take()
+        };
+        if let Some(bridge_task) = bridge_task {
+            let _ = bridge_task.await;
+        }
 
         // Remove from executions
         {
@@ -273,6 +291,11 @@ async fn start_execution(
             executions.remove(&run_id_for_task);
         }
     });
+
+    {
+        let mut t = tasks.lock().await;
+        t.runner_task = Some(runner_task);
+    }
 
     Ok(run_id)
 }
@@ -431,13 +454,13 @@ pub async fn pause_workflow(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let handle = {
+    let runner_handle = {
         let executions = state.executions.read().expect("lock poisoned");
-        executions.get(&id).cloned()
+        executions.get(&id).map(|h| h.runner_handle.clone())
     };
 
-    if let Some(handle) = handle {
-        handle.runner_handle.pause().await;
+    if let Some(runner_handle) = runner_handle {
+        runner_handle.pause().await;
         Json(json!({"status": "paused"}))
     } else {
         Json(json!({"error": "Workflow execution not found"}))
@@ -448,13 +471,13 @@ pub async fn resume_workflow(
     Path(id): Path<String>,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let handle = {
+    let runner_handle = {
         let executions = state.executions.read().expect("lock poisoned");
-        executions.get(&id).cloned()
+        executions.get(&id).map(|h| h.runner_handle.clone())
     };
 
-    if let Some(handle) = handle {
-        handle.runner_handle.resume().await;
+    if let Some(runner_handle) = runner_handle {
+        runner_handle.resume().await;
         Json(json!({"status": "resumed"}))
     } else {
         Json(json!({"error": "Workflow execution not found"}))
@@ -466,12 +489,27 @@ pub async fn stop_workflow(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
     let handle = {
-        let executions = state.executions.read().expect("lock poisoned");
-        executions.get(&id).cloned()
+        let mut executions = state.executions.write().expect("lock poisoned");
+        executions.remove(&id)
     };
 
     if let Some(handle) = handle {
         handle.runner_handle.stop().await;
+
+        let (runner_task, bridge_task) = {
+            let mut t = handle.tasks.lock().await;
+            (t.runner_task.take(), t.bridge_task.take())
+        };
+
+        if let Some(runner_task) = runner_task {
+            runner_task.abort();
+            let _ = runner_task.await;
+        }
+        if let Some(bridge_task) = bridge_task {
+            bridge_task.abort();
+            let _ = bridge_task.await;
+        }
+
         Json(json!({ "status": "stopped" }))
     } else {
         Json(json!({ "error": "Workflow execution not found" }))
