@@ -3,7 +3,10 @@ use tokio::sync::Semaphore;
 
 use async_trait::async_trait;
 use flow::observable::Subscription;
-use flow::{Context, Graph, Input, Node, Output, SubgraphConfig, SubgraphExecutor};
+use flow::{
+    Context, ControllerHandle, Graph, Input, Node, Output, RunnerId, SubgraphConfig,
+    SubgraphExecutor,
+};
 use flow::{ReactiveStream, TaskEvent};
 use serde_json::Value;
 use serde_json::json;
@@ -124,6 +127,10 @@ impl MapNode {
     ///
     /// 对输入数组中的每个元素并行执行子图
     async fn execute_map(&self, ctx: &Context, items: Vec<Value>) -> Result<Vec<Value>, String> {
+        let controller = flow::try_controller()
+            .ok_or_else(|| "Missing Controller in current task scope".to_string())?;
+        let parent_runner_id = flow::try_runner_id();
+
         // 如果没有输入，直接返回空数组
         if items.is_empty() {
             return Ok(Vec::new());
@@ -151,10 +158,18 @@ impl MapNode {
 
             let executor = self.executor.clone();
             let parent_ctx = ctx.clone();
+            let controller = controller.clone();
 
             // 创建异步任务
             let handle = tokio::spawn(async move {
-                let result = executor.execute(item, &parent_ctx).await;
+                let result = executor
+                    .execute_with_controller_and_parent(
+                        item,
+                        &parent_ctx,
+                        controller,
+                        parent_runner_id,
+                    )
+                    .await;
                 drop(permit); // 释放许可
                 (idx, result)
             });
@@ -185,7 +200,12 @@ impl MapNode {
         Ok(outputs)
     }
 
-    fn build_stream(&self, items: Vec<Value>) -> ReactiveStream {
+    fn build_stream(
+        &self,
+        items: Vec<Value>,
+        controller: ControllerHandle,
+        parent_runner_id: Option<RunnerId>,
+    ) -> ReactiveStream {
         let executor = self.executor.clone();
         let max_concurrency = self.max_concurrency;
         ReactiveStream {
@@ -201,6 +221,7 @@ impl MapNode {
                 }
 
                 let total = items.len();
+                let controller = controller.clone();
                 let handle = tokio::spawn(async move {
                     let _guard = guard;
 
@@ -231,13 +252,19 @@ impl MapNode {
                         let ctx = ctx.clone();
                         let tx = tx.clone();
                         let node_id = node_id.clone();
+                            let controller = controller.clone();
                         join_set.spawn(async move {
                             let permit = semaphore
                                 .acquire_owned()
                                 .await
                                 .map_err(|e| format!("Failed to acquire permit: {}", e))?;
                             let result: Result<Value, String> = executor
-                                .execute(item, ctx.as_ref())
+                                .execute_with_controller_and_parent(
+                                    item,
+                                    ctx.as_ref(),
+                                    controller,
+                                    parent_runner_id,
+                                )
                                 .await
                                 .map_err(|e| e.to_string());
                             drop(permit);
@@ -323,7 +350,10 @@ impl Node for MapNode {
         };
 
         if self.streaming {
-            let stream = self.build_stream(items);
+            let controller = flow::try_controller()
+                .ok_or_else(|| "Missing Controller in current task scope".to_string())?;
+            let parent_runner_id = flow::try_runner_id();
+            let stream = self.build_stream(items, controller, parent_runner_id);
             let mut out = Output::new(None);
             out.set_stream(stream);
             Ok(out)

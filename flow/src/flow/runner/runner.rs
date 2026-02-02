@@ -7,7 +7,7 @@ use super::{
 use crate::{
     Context, ControllerHandle, RunnerId,
     flow::graph::{Graph, Input, NodeId},
-    scope_controller,
+    scope_runner,
 };
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
@@ -247,7 +247,7 @@ impl Runner {
                 let runtime_ctx = self.executor.get_runtime_context();
                 let controller = self.controller.clone();
                 let node_id_for_sub = node_id.clone();
-                let sub = scope_controller(controller, async move {
+                let sub = scope_runner(controller, self.runner_id, async move {
                     subscribe_fn(guard, task_sender, node_id_for_sub, runtime_ctx)
                 })
                 .await;

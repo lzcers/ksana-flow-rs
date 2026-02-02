@@ -3,8 +3,8 @@ use super::{
     keys::{CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, INPUT_EXTERNAL_START},
 };
 use crate::{
-    Context, ControllerHandle, ControllerRunners, RunnerKind, flow::runner::ExecutionContext,
-    scope_runner, try_controller, try_runner_id,
+    Context, ControllerHandle, ControllerRunners, RunnerId, RunnerKind,
+    flow::runner::ExecutionContext, scope_runner, try_controller, try_runner_id,
 };
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -90,14 +90,24 @@ impl SubgraphExecutor {
         parent_ctx: &Context,
         controller: ControllerHandle,
     ) -> Result<Value, SubgraphError> {
+        self.execute_with_controller_and_parent(input, parent_ctx, controller, try_runner_id())
+            .await
+    }
+
+    pub async fn execute_with_controller_and_parent(
+        &self,
+        input: Value,
+        parent_ctx: &Context,
+        controller: ControllerHandle,
+        parent_runner_id: Option<RunnerId>,
+    ) -> Result<Value, SubgraphError> {
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
 
-        let parent = try_runner_id();
         let (runner_id, mut runner, _handle) = controller.create_runner(
             self.subgraph.clone(),
             Some(ExecutionContext::new()),
             RunnerKind::Subgraph,
-            parent,
+            parent_runner_id,
         );
 
         runner.set_runtime_context(subgraph_ctx);
