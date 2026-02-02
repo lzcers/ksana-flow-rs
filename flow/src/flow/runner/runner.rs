@@ -5,7 +5,7 @@ use super::{
     scheduler::{Scheduler, StartSpec},
 };
 use crate::{
-    Context, ControllerHandle,
+    Context, ControllerHandle, RunnerId,
     flow::graph::{Graph, Input, NodeId},
     scope_controller,
 };
@@ -60,6 +60,7 @@ pub struct Runner {
     exec_ctx: ExecutionContext,
     // 3. 任务执行器，负责执行任务
     executor: Executor,
+    runner_id: RunnerId,
     controller: ControllerHandle,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
@@ -68,11 +69,12 @@ pub struct Runner {
 }
 
 impl Runner {
-    pub fn new(
+    pub(crate) fn new(
         graph: Arc<Graph>,
         // 用于恢复执行的上下文
         initial_context: Option<ExecutionContext>,
         controller: ControllerHandle,
+        runner_id: RunnerId,
     ) -> (Self, RunnerHandle) {
         let (state_tx, state_rx) = watch::channel(RunnerState::Initial);
 
@@ -87,6 +89,7 @@ impl Runner {
                 scheduler: Scheduler::new(graph),
                 exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
                 executor,
+                runner_id,
                 controller,
                 state_tx,
                 cmd_rx: handle.cmd_tx.subscribe(),
@@ -344,8 +347,14 @@ impl Runner {
         self.send_flow_event(FlowEvent::NodeInMessage(node_id.clone(), inputs.clone()))
             .await;
         // 让执行器干活
-        self.executor
-            .exec(self.controller.clone(), guard, node_id, node_arc, inputs);
+        self.executor.exec(
+            self.runner_id,
+            self.controller.clone(),
+            guard,
+            node_id,
+            node_arc,
+            inputs,
+        );
         Ok(())
     }
 

@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    Context, Controller, Edge, Graph, INPUT_EXTERNAL_START, Input, Node, Output, Runner,
+    Context, Controller, ControllerRunners, Edge, Graph, Input, Node, Output, RunnerKind,
     TriggerStrategy,
 };
 
@@ -79,7 +79,8 @@ async fn test_complex_graph_connections() {
     );
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(Arc::new(graph), None, controller);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
     runner.set_start_node("input", json!("Test").into());
     runner
         .run()
@@ -111,7 +112,8 @@ async fn test_build_flow_macro_with_condition() {
     );
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(Arc::new(graph), None, controller);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
     runner.set_start_node("node1", json!("Start").into());
     runner.run().await.expect("Flow should succeed");
     runner.run().await.expect("Flow should succeed");
@@ -178,7 +180,8 @@ async fn test_conditional_branching() {
     );
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(Arc::new(graph), None, controller);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
     runner.set_start_node("input", json!(42).into());
     runner
         .run()
@@ -286,7 +289,8 @@ async fn test_runner_max_concurrency() {
     });
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(Arc::new(graph), None, controller);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
     runner.set_max_concurrency(1);
     runner.set_start_node("input", json!(null).into());
     runner.run().await.expect("Flow should succeed");

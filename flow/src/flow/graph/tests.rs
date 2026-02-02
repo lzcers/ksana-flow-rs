@@ -4,7 +4,7 @@ use super::{
     io::{Input, Output},
 };
 use crate::{
-    Context, Controller, scope_controller,
+    Context, Controller, ControllerRunners, RunnerKind, scope_controller,
     flow::{Runner, runner::FlowEvent},
 };
 use async_trait::async_trait;
@@ -143,7 +143,7 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(graph, None, controller);
+    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -275,7 +275,7 @@ async fn test_subgraph_inbound_proxy_routes_by_source_id() {
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(graph, None, controller);
+    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -354,7 +354,7 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
     let (controller, _rx) = Controller::new();
-    let (mut runner, _handle) = Runner::new(graph, None, controller);
+    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }

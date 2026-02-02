@@ -11,7 +11,10 @@ use axum::{
     },
     response::IntoResponse,
 };
-use flow::{Controller, ExecutionContext, FlowEvent, INPUT_EXTERNAL_START, Input, NodeState, Runner};
+use flow::{
+    Controller, ControllerRunners, ExecutionContext, FlowEvent, RunnerKind, INPUT_EXTERNAL_START,
+    Input, NodeState,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -202,7 +205,8 @@ async fn start_execution(
     let (controller, mut event_rx) = Controller::new();
 
     // Prepare Runner
-    let (mut runner, handle) = Runner::new(graph, init_execution_ctx, controller.clone());
+    let (root_runner_id, mut runner, handle) =
+        controller.create_runner(graph, init_execution_ctx, RunnerKind::Root, None);
 
     // Setup bridge
     let tx = state.tx.clone();
@@ -241,6 +245,8 @@ async fn start_execution(
                 workflow_id,
                 runner_handle: handle.clone(),
                 workspace_id: workspace_id.clone(),
+                controller: controller.clone(),
+                root_runner_id,
                 tasks: tasks.clone(),
             },
         );
@@ -256,6 +262,8 @@ async fn start_execution(
     let run_id_for_event = run_id.clone();
     let workspace_id_for_event = workspace_id.clone();
     let tasks_for_runner_task = tasks.clone();
+    let controller_for_runner_task = controller.clone();
+    let root_runner_id_for_runner_task = root_runner_id;
 
     let runner_task = tokio::spawn(async move {
         // Setup inputs
@@ -263,7 +271,13 @@ async fn start_execution(
             runner.set_start_node(&node_id, input);
         }
 
-        if let Err(e) = runner.run().await {
+        let join = controller_for_runner_task.spawn_runner(root_runner_id_for_runner_task, runner);
+        let run_result = match join.await {
+            Ok(r) => r,
+            Err(e) => Err(format!("Runner task join error: {}", e)),
+        };
+
+        if let Err(e) = run_result {
             tracing::error!("Flow execution error: {}", e);
             let event = crate::utils::flow_event_to_value_lossy(&FlowEvent::NodeError(
                 "runner".to_string(),
@@ -493,7 +507,8 @@ pub async fn stop_workflow(
     };
 
     if let Some(handle) = handle {
-        handle.runner_handle.stop().await;
+        handle.controller.stop_all();
+        handle.controller.abort_runner(handle.root_runner_id);
 
         let (runner_task, bridge_task) = {
             let mut t = handle.tasks.lock().await;

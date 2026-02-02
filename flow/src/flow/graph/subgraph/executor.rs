@@ -3,8 +3,8 @@ use super::{
     keys::{CTX_INPUT, CTX_SUBGRAPH_ID, CTX_SUBGRAPH_INPUT, INPUT_EXTERNAL_START},
 };
 use crate::{
-    Context, ControllerHandle, try_controller,
-    flow::runner::{ExecutionContext, Runner},
+    Context, ControllerHandle, ControllerRunners, RunnerKind, flow::runner::ExecutionContext,
+    scope_runner, try_controller, try_runner_id,
 };
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -80,7 +80,8 @@ impl SubgraphExecutor {
         let controller = try_controller().ok_or_else(|| SubgraphError::ExecutionFailed {
             message: "Missing Controller in current task scope".to_string(),
         })?;
-        self.execute_with_controller(input, parent_ctx, controller).await
+        self.execute_with_controller(input, parent_ctx, controller)
+            .await
     }
 
     pub async fn execute_with_controller(
@@ -91,8 +92,13 @@ impl SubgraphExecutor {
     ) -> Result<Value, SubgraphError> {
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
 
-        let (mut runner, _handle) =
-            Runner::new(self.subgraph.clone(), Some(ExecutionContext::new()), controller);
+        let parent = try_runner_id();
+        let (runner_id, mut runner, _handle) = controller.create_runner(
+            self.subgraph.clone(),
+            Some(ExecutionContext::new()),
+            RunnerKind::Subgraph,
+            parent,
+        );
 
         runner.set_runtime_context(subgraph_ctx);
 
@@ -100,7 +106,7 @@ impl SubgraphExecutor {
         inputs.insert(INPUT_EXTERNAL_START.to_string(), input);
         runner.set_start_node(&self.config.entry_node, inputs.into());
 
-        let execution_task = runner.run();
+        let execution_task = scope_runner(controller.clone(), runner_id, runner.run());
 
         let result = if let Some(duration) = self.config.timeout {
             match timeout(duration, execution_task).await {
@@ -128,6 +134,7 @@ impl SubgraphExecutor {
             return Err(result.err().unwrap());
         };
 
+        controller.unregister_runner(runner_id);
         Ok(output)
     }
 

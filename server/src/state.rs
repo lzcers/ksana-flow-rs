@@ -1,6 +1,9 @@
 use crate::db::Db;
 use crate::registry::NodeRegistry;
-use flow::{AnyNode, Graph, NodeFactory, RunnerHandle, SubgraphExecutor, SubgraphNode};
+use flow::{
+    AnyNode, ControllerHandle, Graph, NodeFactory, RunnerHandle, RunnerId, SubgraphExecutor,
+    SubgraphNode,
+};
 use nodes::SubgraphMapNode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -18,6 +21,8 @@ pub struct ExecutionHandle {
     pub runner_handle: RunnerHandle,
     pub workflow_id: i64,
     pub workspace_id: String,
+    pub controller: ControllerHandle,
+    pub root_runner_id: RunnerId,
     pub tasks: Arc<tokio::sync::Mutex<ExecutionTaskHandles>>,
 }
 
@@ -209,7 +214,7 @@ pub struct Edge {
 #[cfg(test)]
 mod tests {
     use super::{Edge, GraphBlueprint, Node, NodeData, Position};
-    use flow::{Controller, ExecutionContext, Runner};
+    use flow::{Controller, ControllerRunners, ExecutionContext, RunnerKind};
     use serde_json::{Value, json};
 
     #[test]
@@ -313,7 +318,12 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
             let (controller, _rx) = Controller::new();
-            let (mut runner, _handle) = Runner::new(graph, Some(ExecutionContext::new()), controller);
+            let (_id, mut runner, _handle) = controller.create_runner(
+                graph,
+                Some(ExecutionContext::new()),
+                RunnerKind::Root,
+                None,
+            );
             for id in start_nodes {
                 runner.set_start_node(&id, Value::Null.into());
             }

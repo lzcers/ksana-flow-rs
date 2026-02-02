@@ -1,10 +1,11 @@
 use super::{event::TaskEvent, task_guard::TaskGuard};
 use crate::{
-    Context, ControllerHandle, scope_controller,
+    Context, ControllerHandle, RunnerId,
     flow::{
         AnyNode,
         graph::{Input, Output},
     },
+    scope_runner,
 };
 use futures::FutureExt;
 use std::{
@@ -92,6 +93,7 @@ impl Executor {
 
     pub fn exec(
         &self,
+        runner_id: RunnerId,
         controller: ControllerHandle,
         _guard: TaskGuard,
         node_id: String,
@@ -104,7 +106,7 @@ impl Executor {
         let task_sender = self.get_task_sender();
         let cancel = self.cancel.clone();
 
-        let fut = scope_controller(controller, async move {
+        let fut = scope_runner(controller, runner_id, async move {
             let _keep_alive = _guard; // Force capture
             let node_id_for_cancel = node_id.clone();
             tokio::select! {
