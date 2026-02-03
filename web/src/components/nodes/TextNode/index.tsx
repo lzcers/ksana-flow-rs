@@ -11,9 +11,11 @@ export const TextNode = memo((props: NodeProps & { data: NodeData }) => {
     text,
     isMarkdown,
     onChange,
-    onSave,
     toggleMarkdown,
-    resetText,
+    isFullScreen,
+    setIsFullScreen,
+    incremark,
+    onBlur,
   } = useTextNode(id, data);
 
   return (
@@ -23,11 +25,11 @@ export const TextNode = memo((props: NodeProps & { data: NodeData }) => {
       isMarkdown={isMarkdown}
       isFullScreen={isFullScreen}
       onToggleMarkdown={toggleMarkdown}
-      onOpenFullScreen={() => controller.setIsFullScreen(true)}
-      onCloseFullScreen={() => controller.setIsFullScreen(false)}
-      incremark={controller.incremark}
-      onTextChange={controller.onChange}
-      onTextBlur={controller.onBlur}
+      onOpenFullScreen={() => setIsFullScreen(true)}
+      onCloseFullScreen={() => setIsFullScreen(false)}
+      incremark={incremark}
+      onTextChange={onChange}
+      onTextBlur={onBlur}
     />
   );
 });

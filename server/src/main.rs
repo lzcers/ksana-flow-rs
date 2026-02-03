@@ -64,10 +64,6 @@ async fn main() -> anyhow::Result<()> {
             .with(
                 tracing_subscriber::fmt::layer()
                     .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339())
-                    .with_thread_ids(true)
-                    .with_thread_names(true)
-                    .with_file(true)
-                    .with_line_number(true)
                     .with_target(false) // 隐藏模块路径，更简洁
                     .compact(), // 使用紧凑格式
             )

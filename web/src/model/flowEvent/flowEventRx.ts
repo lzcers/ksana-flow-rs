@@ -27,7 +27,21 @@ import {
   FlowEventModel,
   type FlowEventState,
   type FlowEventModelOptions,
+  type FlowEventProcessor,
 } from './flowEventModel';
+import {
+  processFlowEvent,
+  processSetCurrentRun,
+  processUpdateWorkflowStatus,
+  processMapRunToWorkflow,
+  processUnmapRun,
+  processUpdateNodeExecutionData,
+  processBatchUpdateNodeData,
+  processClearPendingUpdates,
+  processSetActiveRunContext,
+  processClearActiveRunContext,
+  processResetFlowEventState,
+} from './processors';
 import type { FlowEventCommand, NodeExecutionData } from './commands';
 import type { FlowEvent, WebSocketFlowMessage } from './types';
 import { createFlowSocketObservable } from './socket';
@@ -70,6 +84,21 @@ export class RxFlowEvent {
       ...options,
       onStateChange: (state) => this._state$.next(state),
       onNodeUpdates: (updates) => this._batchedUpdates$.next(updates),
+    });
+
+    // 注册处理器
+    this._model.registerHandlers({
+      'PROCESS_FLOW_EVENT': processFlowEvent as FlowEventProcessor,
+      'SET_CURRENT_RUN': processSetCurrentRun as FlowEventProcessor,
+      'UPDATE_WORKFLOW_STATUS': processUpdateWorkflowStatus as FlowEventProcessor,
+      'MAP_RUN_TO_WORKFLOW': processMapRunToWorkflow as FlowEventProcessor,
+      'UNMAP_RUN': processUnmapRun as FlowEventProcessor,
+      'UPDATE_NODE_EXECUTION_DATA': processUpdateNodeExecutionData as FlowEventProcessor,
+      'BATCH_UPDATE_NODE_DATA': processBatchUpdateNodeData as FlowEventProcessor,
+      'CLEAR_PENDING_UPDATES': processClearPendingUpdates as FlowEventProcessor,
+      'SET_ACTIVE_RUN_CONTEXT': processSetActiveRunContext as FlowEventProcessor,
+      'CLEAR_ACTIVE_RUN_CONTEXT': processClearActiveRunContext as FlowEventProcessor,
+      'RESET_FLOW_EVENT_STATE': processResetFlowEventState as FlowEventProcessor,
     });
 
     // 初始化 State 流
@@ -117,21 +146,6 @@ export class RxFlowEvent {
       map(s => s.pendingNodeUpdates as Map<string, NodeExecutionData>),
       distinctUntilChanged()
     );
-
-    // 设置事件处理管道
-    this._setupEventProcessingPipeline();
-  }
-
-  private _setupEventProcessingPipeline(): void {
-    // 订阅事件流并转换为 Commands
-    this.events$.subscribe(event => {
-      this._model.processFlowEvent(event, this._model.state.currentRunId || undefined);
-    });
-
-    // 订阅批量节点更新并生成 WorkflowModel Commands
-    this.batchedNodeUpdates$.subscribe(() => {
-      // 这里会通过回调通知外部，由 store/index.ts 处理转换为 WorkflowModel Commands
-    });
   }
 
   // ===== Public API =====
@@ -149,6 +163,7 @@ export class RxFlowEvent {
    */
   emitEvent(event: FlowEvent): void {
     this._events$.next(event);
+    this._model.processFlowEvent(event, this._model.state.currentRunId || undefined);
   }
 
   /**
@@ -186,8 +201,11 @@ export class RxFlowEvent {
     return createFlowSocketObservable(spaceId).pipe(
       retry({ delay: 2000 }),
       tap(message => {
-        // 将 WebSocket 消息转换为事件并发送
-        this.emitEvent(message.event);
+        this._events$.next(message.event);
+        this.dispatch({
+          type: 'PROCESS_FLOW_EVENT',
+          payload: { event: message.event },
+        });
       })
     );
   }

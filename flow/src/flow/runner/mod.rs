@@ -5,8 +5,8 @@ mod task_guard;
 
 mod event;
 mod executor;
-mod scheduler;
 pub mod logger;
+mod scheduler;
 pub use event::*;
 pub use exec_context::*;
 pub use runner::*;

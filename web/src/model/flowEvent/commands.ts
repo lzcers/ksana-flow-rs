@@ -23,7 +23,7 @@ export interface ProcessFlowEventCommand extends BaseCommand {
 }
 
 export interface ProcessWebSocketMessageCommand extends BaseCommand {
-  type: 'PROCESS_WS_MESSAGE';
+  type: 'PROCESS_FLOW_EVENT';
   payload: {
     message: WebSocketFlowMessage;
   };

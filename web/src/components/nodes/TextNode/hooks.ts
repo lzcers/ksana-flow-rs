@@ -15,6 +15,8 @@ export function useTextNode(id: string, data: NodeData) {
   const connectionsRef = useRef(connections);
   connectionsRef.current = connections;
 
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
   const isStreamingRef = useRef(false);
   const isMarkdownRef = useRef(isMarkdown);
   isMarkdownRef.current = isMarkdown;
@@ -115,6 +117,10 @@ export function useTextNode(id: string, data: NodeData) {
     incremarkRef.current.reset();
   }, [updateConfig]);
 
+  const onBlur = useCallback(() => {
+    updateConfig({ text });
+  }, [updateConfig, text]);
+
   return {
     text,
     isMarkdown,
@@ -122,6 +128,10 @@ export function useTextNode(id: string, data: NodeData) {
     onSave,
     toggleMarkdown,
     resetText,
+    isFullScreen,
+    setIsFullScreen,
+    incremark,
+    onBlur,
   };
 }
 

@@ -18,6 +18,7 @@ import type {
   SetActiveRunContextCommand,
   ClearActiveRunContextCommand,
   ResetFlowEventStateCommand,
+  ProcessWebSocketMessageCommand,
 } from '../commands';
 import type {
   FlowControlEvent,
@@ -100,6 +101,21 @@ export const processFlowEvent = (
       handleControlEvent(draft, event as FlowControlEvent);
     }
   });
+};
+
+export const processWebSocketMessage = (
+  state: Immutable<FlowEventState>,
+  command: ProcessWebSocketMessageCommand
+): Immutable<FlowEventState> => {
+  const { message } = command.payload;
+  const flowEventCommand: ProcessFlowEventCommand = {
+    type: 'PROCESS_FLOW_EVENT',
+    payload: {
+      event: message.event,
+      runId: message.runId,
+    },
+  };
+  return processFlowEvent(state, flowEventCommand);
 };
 
 // 辅助函数：处理 RunNode 完成

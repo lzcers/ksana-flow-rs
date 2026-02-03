@@ -11,6 +11,12 @@ import type { WorkflowState } from '../model/workflow/types';
 import type { GraphCommand } from '../model/workflow/commands';
 import type { NodeExecutionData } from '../model/flowEvent/commands';
 
+// Workflow Model 实例
+export const rxWorkflowModel = createWorkflowModel();
+// FlowEvent Model 实例
+export const rxFlowEventModel = createFlowEventModel();
+
+
 export const useStore = create<StoreState>((set, get, store) => ({
   ...createWorkflow(set, get, store),
   ...createCanvas(set, get, store),
@@ -18,11 +24,6 @@ export const useStore = create<StoreState>((set, get, store) => ({
   ...createToast(set, get, store),
 }));
 
-// Workflow Model 实例
-export const rxWorkflowModel = createWorkflowModel();
-
-// FlowEvent Model 实例
-export const rxFlowEventModel = createFlowEventModel();
 
 // 连接 WorkflowModel 到 Store
 let detachWorkflow: (() => void) | null = null;

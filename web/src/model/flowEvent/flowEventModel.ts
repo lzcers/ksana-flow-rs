@@ -97,11 +97,20 @@ export class FlowEventModel {
         return;
       }
 
-      this._updateState(nextState);
+      const previousPendingUpdates = this._state.pendingNodeUpdates;
+      const nextPendingUpdates = nextState.pendingNodeUpdates;
+      if (
+        nextPendingUpdates !== previousPendingUpdates &&
+        nextPendingUpdates.size > 0
+      ) {
+        const updatesSnapshot = new Map<string, NodeExecutionData>();
+        nextPendingUpdates.forEach((data, nodeId) => {
+          updatesSnapshot.set(nodeId, { ...data });
+        });
+        this._options.onNodeUpdates?.(updatesSnapshot);
+      }
 
-      // 触发节点更新回调
-      // 注意：由于 Immer 会冻结对象，我们需要在更新前捕获待处理的更新
-      // 这里通过回调通知外部，由外部处理转换为 WorkflowModel Commands
+      this._updateState(nextState);
     } catch (error) {
       console.error(`[FlowEventModel] Error executing command ${command.type}:`, error);
       this._options.onError?.(error, command);

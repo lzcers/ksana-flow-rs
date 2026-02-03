@@ -59,11 +59,6 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       return () => subscription.unsubscribe();
     },
 
-    handleWebSocketMessage: (message) => {
-      // WebSocket 消息现在由 RxFlowEvent 自动处理
-      // 这个方法保留用于兼容性
-      rxFlowEventModel.emitEvent(message.event);
-    },
 
     // ===== Workflow Actions =====
     runWorkflow: async () => {
