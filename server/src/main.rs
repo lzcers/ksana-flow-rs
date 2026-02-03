@@ -25,17 +25,54 @@ use crate::handlers::{
 use crate::registry::create_registry;
 use crate::state::AppState;
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "server=info,flow=info,nodes=info,axum=info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    // 根据环境变量选择日志格式
+    // LOG_FORMAT=json 使用 JSON 格式（生产环境）
+    // 默认使用紧凑格式（开发环境）
+    let log_format = std::env::var("LOG_FORMAT").unwrap_or_default();
+    let is_json = log_format.eq_ignore_ascii_case("json");
+
+    // 构建基础环境过滤器
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "server=info,flow=info,nodes=info,axum=info".into());
+
+    // 根据格式初始化 subscriber
+    if is_json {
+        // JSON 格式 - 适合生产环境，便于日志收集系统处理
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_timer(tracing_subscriber::fmt::time::UtcTime::rfc_3339())
+                    .with_thread_ids(true)
+                    .with_thread_names(true)
+                    .with_file(true)
+                    .with_line_number(true)
+                    .with_target(true)
+                    .with_current_span(true)
+                    .with_span_list(true),
+            )
+            .init();
+    } else {
+        // 紧凑格式 - 适合开发环境，便于阅读
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_timer(tracing_subscriber::fmt::time::LocalTime::rfc_3339())
+                    .with_thread_ids(true)
+                    .with_thread_names(true)
+                    .with_file(true)
+                    .with_line_number(true)
+                    .with_target(false) // 隐藏模块路径，更简洁
+                    .compact(), // 使用紧凑格式
+            )
+            .init();
+    }
 
     let registry = create_registry();
     let (tx, _rx) = broadcast::channel::<(String, String, Value)>(100);

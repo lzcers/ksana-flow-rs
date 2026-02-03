@@ -289,9 +289,9 @@ async fn test_runner_max_concurrency() {
     });
 
     let (controller, _rx) = Controller::new();
+    controller.set_max_concurrency(1);
     let (_id, mut runner, _handle) =
         controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
-    runner.set_max_concurrency(1);
     runner.set_start_node("input", json!(null).into());
     runner.run().await.expect("Flow should succeed");
 

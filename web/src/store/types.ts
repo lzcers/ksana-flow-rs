@@ -77,9 +77,9 @@ export interface Execution {
   setCurrentRunId: (runId: string | null) => void;
   initializeWebSocket: () => () => void;
   handleWebSocketMessage: (message: WebSocketFlowMessage) => void;
-  events$: Observable<WebSocketFlowMessage>;
-  eventsForCurrentRun$: Observable<WebSocketFlowMessage>;
-  eventsForNode$: (nodeId: string) => Observable<WebSocketFlowMessage>;
+  events$: Observable<import('../model/flowEvent/types').FlowEvent>;
+  eventsForCurrentRun$: Observable<import('../model/flowEvent/types').FlowEvent>;
+  eventsForNode$: (nodeId: string) => Observable<import('../model/flowEvent/types').FlowEvent>;
 }
 
 export interface ToastItem {

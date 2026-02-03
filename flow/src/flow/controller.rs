@@ -33,6 +33,7 @@ pub struct RunnerRecord {
     abort: Mutex<Option<AbortHandle>>,
 }
 
+// Runner 的控制面，用于发送命令和接收事件
 pub struct Controller {
     cmd_tx: broadcast::Sender<RunnerCommand>,
     event_tx: mpsc::Sender<FlowEvent>,
@@ -58,17 +59,15 @@ impl Controller {
     pub fn cmd_tx(&self) -> broadcast::Sender<RunnerCommand> {
         self.cmd_tx.clone()
     }
-
-    pub fn cmd_rx(&self) -> broadcast::Receiver<RunnerCommand> {
-        self.cmd_tx.subscribe()
-    }
-
-    pub fn event_tx(&self) -> mpsc::Sender<FlowEvent> {
+    pub fn get_flow_event_sender(&self) -> mpsc::Sender<FlowEvent> {
         self.event_tx.clone()
     }
+    pub fn set_max_concurrency(&self, max: usize) {
+        let _ = self.cmd_tx.send(RunnerCommand::SetMaxConcurrency(max));
+    }
 
-    pub async fn send_event(&self, event: FlowEvent) {
-        let _ = self.event_tx.send(event).await;
+    pub fn clear_max_concurrency(&self) {
+        let _ = self.cmd_tx.send(RunnerCommand::ClearMaxConcurrency);
     }
 }
 

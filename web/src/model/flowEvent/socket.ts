@@ -15,17 +15,14 @@ export function createFlowSocketObservable(spaceId: string): Observable<WebSocke
         subscriber.next(message);
       } catch (error) {
         console.error('WS parse error', error);
-        // We don't error the stream here to avoid breaking the connection on a single bad message
       }
     };
 
     ws.onerror = (error) => {
-      // Error will trigger retry in the consumer
       subscriber.error(error);
     };
 
     ws.onclose = () => {
-      // Treat close as an error to trigger retry
       subscriber.error(new Error('WebSocket closed'));
     };
 

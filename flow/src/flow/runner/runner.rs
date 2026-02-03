@@ -2,6 +2,7 @@ use super::{
     event::{FlowEvent, TaskEvent},
     exec_context::{ExecutionContext, NodeState},
     executor::Executor,
+    logger,
     scheduler::{Scheduler, StartSpec},
 };
 use crate::{
@@ -10,8 +11,9 @@ use crate::{
     scope_runner,
 };
 use std::sync::Arc;
-use tokio::sync::{broadcast, watch};
-use tracing::{debug, error, info, trace};
+use std::time::Instant;
+use tokio::sync::{broadcast, mpsc, watch};
+use tracing::{Instrument, trace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerState {
@@ -26,6 +28,8 @@ pub enum RunnerCommand {
     Pause,
     Resume,
     Stop,
+    SetMaxConcurrency(usize),
+    ClearMaxConcurrency,
 }
 
 #[derive(Clone)]
@@ -61,11 +65,14 @@ pub struct Runner {
     // 3. 任务执行器，负责执行任务
     executor: Executor,
     runner_id: RunnerId,
-    controller: ControllerHandle,
     // 内部运行状态
     state_tx: watch::Sender<RunnerState>,
+    // Runner 开始时间，用于计算总耗时
+    start_time: Option<Instant>,
     // 外部命令接收通道
+    controller: ControllerHandle,
     cmd_rx: broadcast::Receiver<RunnerCommand>,
+    flow_event_tx: mpsc::Sender<FlowEvent>,
 }
 
 impl Runner {
@@ -83,16 +90,22 @@ impl Runner {
             state_rx: state_rx.clone(),
         };
 
+        let mut exec_ctx = initial_context.unwrap_or_else(ExecutionContext::new);
+        // 设置 runner_id 用于日志记录
+        exec_ctx.set_runner_id(runner_id);
+        let flow_event_tx = controller.get_flow_event_sender();
         let executor = Executor::new();
         (
             Self {
                 scheduler: Scheduler::new(graph),
-                exec_ctx: initial_context.unwrap_or_else(ExecutionContext::new),
+                exec_ctx,
                 executor,
                 runner_id,
                 controller,
                 state_tx,
                 cmd_rx: handle.cmd_tx.subscribe(),
+                flow_event_tx,
+                start_time: None,
             },
             handle,
         )
@@ -106,130 +119,147 @@ impl Runner {
         &self.exec_ctx
     }
 
-    pub fn set_max_concurrency(&mut self, max: usize) {
-        self.executor.set_max_concurrency(max);
-    }
-
-    pub fn clear_max_concurrency(&mut self) {
-        self.executor.clear_max_concurrency();
-    }
-
     pub fn set_start_node(&mut self, node_id: &str, inputs: Input) {
         self.scheduler.enqueue_start(node_id, inputs);
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
-        info!(nodes = ?self.scheduler.get_node_ids(), "Runner started");
+        // 记录 Runner 启动
+        self.start_time = Some(Instant::now());
+        let node_count = self.scheduler.get_node_ids().len();
+        logger::log_runner_started(self.runner_id, node_count);
 
-        // 1.准备阶段
-        // 各种状态初始化
-        // 节点实例化等
+        // 创建 runner span 用于追踪整个执行过程
+        let runner_span = logger::create_runner_span(self.runner_id, node_count);
 
-        if self.scheduler.is_start_queue_empty() {
-            info!("No start node set, runner finished");
-            return Ok(());
-        }
-        let init_state = *self.state_tx.borrow();
-        if init_state == RunnerState::Initial {
-            self.update_runner_state(RunnerState::Running)?;
-        }
-        self.scheduler.materialize_nodes().await?;
-        self.exec_ctx.reset_task_count(); // 重置任务计数器
+        async move {
+            // 1.准备阶段
+            // 各种状态初始化
+            // 节点实例化等
+
+            if self.scheduler.is_start_queue_empty() {
+                logger::log_runner_terminated(self.runner_id, "No start node set");
+                return Ok(());
+            }
+            let init_state = *self.state_tx.borrow();
+            if init_state == RunnerState::Initial {
+                self.update_runner_state(RunnerState::Running)?;
+            }
+            self.scheduler.materialize_nodes().await?;
+            self.exec_ctx.reset_task_count(); // 重置任务计数器
 
         // run 只返回最错的报错信息, 如果有
         let mut first_error = None;
 
         // 2. 启动阶段
-        // 从 scheduler 中弹出初始启动节点
-        let starts = self.scheduler.pop_initial_starts();
-        self.start_by_specs(starts).await?;
+            // 从 scheduler 中弹出初始启动节点
+            let starts = self.scheduler.pop_initial_starts();
+            self.start_by_specs(starts).await?;
 
-        // 3. 执行阶段
-        // 整个 loop 就干三件事
-        // 1. 接收外部 command，外部通过 handle 传入 cmd 可能改变内部状态
-        // 2. 根据内部状态判断是否需要处理任务事件
-        // 3. 检查终止条件，没有任务为止
-        loop {
-            let current_state = *self.state_tx.borrow();
-            tokio::select! {
-                // 1. 处理外部命令
-                cmd_res = self.cmd_rx.recv() => {
-                    match cmd_res {
-                        Ok(cmd) => match cmd {
-                            RunnerCommand::Pause => {
-                                if current_state != RunnerState::Terminated {
-                                    info!("Runner paused");
-                                    self.update_runner_state(RunnerState::Paused)?;
-                                    self.send_flow_event( FlowEvent::FlowPaused).await;
+            // 3. 执行阶段
+            // 整个 loop 就干三件事
+            // 1. 接收外部 command，外部通过 handle 传入 cmd 可能改变内部状态
+            // 2. 根据内部状态判断是否需要处理任务事件
+            // 3. 检查终止条件，没有任务为止
+            loop {
+                let current_state = *self.state_tx.borrow();
+                tokio::select! {
+                    // 1. 处理外部命令
+                    cmd_res = self.cmd_rx.recv() => {
+                        match cmd_res {
+                            Ok(cmd) => match cmd {
+                                RunnerCommand::Pause => {
+                                    if current_state != RunnerState::Terminated {
+                                        self.update_runner_state(RunnerState::Paused)?;
+                                        self.send_flow_event( FlowEvent::FlowPaused).await;
+                                    }
                                 }
-                            }
-                            RunnerCommand::Resume => {
-                                if current_state == RunnerState::Paused {
-                                    info!("Runner resumed");
-                                    self.update_runner_state(RunnerState::Running)?;
-                                    self.send_flow_event( FlowEvent::FlowResumed).await;
+                                RunnerCommand::Resume => {
+                                    if current_state == RunnerState::Paused {
+                                        self.update_runner_state(RunnerState::Running)?;
+                                        self.send_flow_event( FlowEvent::FlowResumed).await;
+                                    }
                                 }
+                                RunnerCommand::Stop => {
+                                    logger::log_runner_terminated(self.runner_id, "Stop command received");
+                                    self.executor.cancel();
+                                    self.update_runner_state(RunnerState::Terminated)?;
+                                    self.send_flow_event(FlowEvent::FlowStopped).await;
+                                    break;
+                                }
+                                RunnerCommand::SetMaxConcurrency(max) => {
+                                    self.executor.set_max_concurrency(max);
+                                }
+                                RunnerCommand::ClearMaxConcurrency => {
+                                    self.executor.clear_max_concurrency();
+                                }
+                            },
+                            Err(broadcast::error::RecvError::Lagged(_)) => {
+                                continue;
                             }
-                            RunnerCommand::Stop => {
-                                info!("Runner terminated by command");
-                                self.executor.cancel();
-                                self.update_runner_state(RunnerState::Terminated)?;
-                                self.send_flow_event(FlowEvent::FlowStopped).await;
+                            Err(broadcast::error::RecvError::Closed) => {
                                 break;
                             }
-                        },
-                        Err(broadcast::error::RecvError::Lagged(_)) => {
-                            continue;
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            break;
-                        }
-                    };
-                }
+                        };
+                    }
 
-                // 2. 处理任务
-                maybe_event = self.executor.get_task_event(), if current_state == RunnerState::Running => {
-                    match maybe_event {
-                        Some(first_event) => {
-                            // 批量获取当前队列中的所有事件
-                            let mut events = vec![first_event];
-                            while let Ok(event) = self.executor.try_get_task_event() {
-                                events.push(event);
-                            }
+                    // 2. 处理任务
+                    maybe_event = self.executor.get_task_event(), if current_state == RunnerState::Running => {
+                        match maybe_event {
+                            Some(first_event) => {
+                                // 批量获取当前队列中的所有事件
+                                let mut events = vec![first_event];
+                                while let Ok(event) = self.executor.try_get_task_event() {
+                                    events.push(event);
+                                }
 
-                            for task_event in events {
-                                self.handle_task_event(task_event, &mut first_error).await?;
+                                for task_event in events {
+                                    self.handle_task_event(task_event, &mut first_error).await?;
+                                }
                             }
-                        }
-                        None => {
-                            // 没有事件了，继续等待
+                            None => {
+                                // 没有事件了，继续等待
+                            }
                         }
                     }
                 }
+                self.executor.reap_finished();
+                // 没有活跃任务，且事件队列为空，就意味着工作流执行完毕
+                if self.exec_ctx.get_task_count() == 0
+                    && self.executor.event_is_empty()
+                    && current_state == RunnerState::Running
+                {
+                    self.update_runner_state(RunnerState::Terminated)?;
+                    self.send_flow_event(FlowEvent::FlowFinished).await;
+                    break;
+                }
             }
-            self.executor.reap_finished();
-            // 没有活跃任务，且事件队列为空，就意味着工作流执行完毕
-            if self.exec_ctx.get_task_count() == 0
-                && self.executor.event_is_empty()
-                && current_state == RunnerState::Running
-            {
-                info!("Runner finished: All tasks completed.",);
-                self.update_runner_state(RunnerState::Terminated)?;
-                self.send_flow_event(FlowEvent::FlowFinished).await;
-                break;
-            }
-        }
 
-        if let Some(e) = first_error {
-            Err(e)
-        } else {
-            Ok(())
+            // 记录 Runner 完成
+            if let Some(start_time) = self.start_time {
+                logger::log_runner_completed(self.runner_id, start_time.elapsed());
+            }
+
+            if let Some(e) = first_error {
+                Err(e)
+            } else {
+                Ok(())
+            }
         }
+        .instrument(runner_span)
+        .await
     }
 
-    fn update_runner_state(&self, state: RunnerState) -> Result<(), String> {
+    fn update_runner_state(&self, new_state: RunnerState) -> Result<(), String> {
+        let old_state = *self.state_tx.borrow();
+
+        // 只在状态变化时记录日志
+        if old_state != new_state {
+            logger::log_runner_state_change(self.runner_id, old_state, new_state);
+        }
+
         self.state_tx
-            .send(state)
+            .send(new_state)
             .map_err(|_| "Failed to update runner state".to_owned())
     }
 
@@ -241,13 +271,14 @@ impl Runner {
         match event {
             // 任务返回流式结果则订阅并通知事件流开始
             TaskEvent::Stream(node_id, subscribe_fn) => {
-                info!(node_id = %node_id, "Received Stream");
+                logger::log_stream_started(&node_id, self.runner_id);
                 let guard = self.exec_ctx.get_task_tracker_guard();
                 let task_sender = self.executor.get_task_sender();
                 let runtime_ctx = self.executor.get_runtime_context();
                 let controller = self.controller.clone();
                 let node_id_for_sub = node_id.clone();
-                let sub = scope_runner(controller, self.runner_id, async move {
+                let runner_id = self.runner_id;
+                let sub = scope_runner(controller, runner_id, async move {
                     subscribe_fn(guard, task_sender, node_id_for_sub, runtime_ctx)
                 })
                 .await;
@@ -279,7 +310,20 @@ impl Runner {
                 self.start_by_specs(starts).await?;
             }
             TaskEvent::Completed(node_id, output) => {
-                info!(node_id = %node_id, "Node tasks completed");
+                // 获取节点执行耗时
+                let elapsed = self.exec_ctx.get_node_elapsed(&node_id);
+                let has_output = output.is_some();
+
+                // 记录节点执行完成
+                if let Some(duration) = elapsed {
+                    logger::log_node_execution_completed(
+                        &node_id,
+                        self.runner_id,
+                        duration,
+                        has_output,
+                    );
+                }
+
                 let _ = self.exec_ctx.remove_stream_subscription(&node_id);
                 let mut out_value = None;
                 if let Some(out) = output {
@@ -304,7 +348,7 @@ impl Runner {
                 }
             }
             TaskEvent::Error(node_id, e) => {
-                error!(node_id = %node_id, error = %e, "Node execution failed");
+                logger::log_node_execution_error(&node_id, self.runner_id, &e);
                 let _ = self.exec_ctx.remove_stream_subscription(&node_id);
                 if first_error.is_none() {
                     *first_error = Some(e.clone());
@@ -324,11 +368,10 @@ impl Runner {
     }
 
     async fn start_node(&mut self, node_id: NodeId, inputs: Input) -> Result<(), String> {
-        debug!(
-            node_id = %node_id,
-            total_active = self.exec_ctx.get_task_count(),
-            "Starting node task"
-        );
+        // 记录节点执行开始
+        let active_count = self.exec_ctx.get_task_count();
+        logger::log_node_execution_start(&node_id, self.runner_id, active_count);
+
         // 准备节点执行数据
         // 节点实例
         let node_arc = self
@@ -359,6 +402,6 @@ impl Runner {
     }
 
     async fn send_flow_event(&self, event: FlowEvent) {
-        self.controller.send_event(event).await;
+        let _ = self.flow_event_tx.send(event).await;
     }
 }
