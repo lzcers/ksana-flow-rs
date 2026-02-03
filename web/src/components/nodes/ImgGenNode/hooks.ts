@@ -3,6 +3,7 @@ import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
 import type { NodeData } from '@/model/workflow/types';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
 const IMG_GEN_MIN_WIDTH = 270;
 const IMG_GEN_MIN_HEIGHT = 480;
@@ -201,25 +202,26 @@ export function useImgGenNodeController({
   useEffect(() => {
     const stream$ = eventsForNode$?.(id);
     if (!stream$) return;
-    const subscription = stream$.subscribe((wrapper: any) => {
-      const { event } = wrapper;
+    const subscription = stream$.subscribe((event: FlowEvent) => {
+      if (!('nodeId' in event)) return;
+      if (event.nodeId !== id) return;
 
-      if (event.NodeStarted) {
-        if (event.NodeStarted === id) {
+      switch (event.type) {
+        case 'NodeStarted':
           setImageSrc(undefined);
           setMediaId(undefined);
           setOutputRaw('');
           updateConfig({ output: '' });
-        }
-      } else if (event.NodeOutMessage) {
-        const [nodeId, value] = event.NodeOutMessage;
-        if (nodeId === id) {
+          break;
+        case 'NodeOutMessage': {
+          const value = event.msg;
           const nextRaw = typeof value === 'string' ? value : JSON.stringify(value);
           setOutputRaw(nextRaw);
           updateConfig({ output: nextRaw });
           const parsed = parseImgGenOutput(nextRaw);
           setImageSrc(parsed.imageSrc);
           setMediaId(parsed.mediaId);
+          break;
         }
       }
     });

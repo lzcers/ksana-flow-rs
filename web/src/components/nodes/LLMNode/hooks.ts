@@ -3,6 +3,7 @@ import { useIncremark } from '@incremark/react';
 import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
@@ -127,6 +128,76 @@ export function useLLMNodeController(id: string, data: NodeData) {
     return () => window.removeEventListener('keydown', onKey);
   }, [isConfigOpen]);
 
+  useEffect(() => {
+    const stream$ = eventsForNode$?.(id);
+    if (!stream$) return;
+
+    const subscription = stream$.subscribe((event: FlowEvent) => {
+      if (!('nodeId' in event)) return;
+      if (event.nodeId !== id) return;
+
+      switch (event.type) {
+        case 'NodeStarted':
+          cancelFlush();
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          break;
+
+        case 'NodeStreamStarted':
+          cancelFlush();
+          isStreamingRef.current = true;
+          setIsStreaming(true);
+          setOutputText('');
+          updateConfig({ output: '' });
+          isMarkdownRef.current = true;
+          setIsMarkdown(true);
+          incremarkRef.current.reset();
+          break;
+
+        case 'NodeStreamNextMessage':
+          if (isStreamingRef.current) {
+            const value = event.msg;
+            if (typeof value === 'string') {
+              pendingChunkRef.current += value;
+              scheduleFlush();
+            }
+          }
+          break;
+
+        case 'NodeOutMessage':
+          cancelFlush();
+          const value = event.msg;
+          if (typeof value === 'string') {
+            setOutputText(value);
+            updateConfig({ output: value });
+            if (isMarkdownRef.current) {
+              incremarkRef.current.render(value);
+            }
+          }
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          break;
+
+        case 'NodeCompleted':
+          cancelFlush();
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          break;
+
+        case 'NodeError':
+          cancelFlush();
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          break;
+      }
+    });
+
+    return () => {
+      cancelFlush();
+      subscription.unsubscribe();
+    };
+  }, [eventsForNode$, id, cancelFlush, scheduleFlush, updateConfig]);
+
   const onModelChange = useCallback(
     (next: string) => {
       setModel(next);
@@ -199,71 +270,6 @@ export function useLLMNodeController(id: string, data: NodeData) {
       incremarkRef.current.render(outputText);
     }
   }, [outputText, updateConfig]);
-
-  useEffect(() => {
-    const stream$ = eventsForNode$?.(id);
-    if (!stream$) return;
-    const subscription = stream$.subscribe((wrapper: any) => {
-      const { event } = wrapper;
-      if (event.NodeStarted) {
-        if (event.NodeStarted === id) {
-          cancelFlush();
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-        }
-      } else if (event.NodeStreamStarted) {
-        if (event.NodeStreamStarted === id) {
-          cancelFlush();
-          isStreamingRef.current = true;
-          setIsStreaming(true);
-          setOutputText('');
-          updateConfig({ output: '' });
-          isMarkdownRef.current = true;
-          setIsMarkdown(true);
-          incremarkRef.current.reset();
-        }
-      } else if (event.NodeStreamNextMessage) {
-        const [nodeId, value] = event.NodeStreamNextMessage;
-        if (nodeId === id && isStreamingRef.current) {
-          if (typeof value === 'string') {
-            pendingChunkRef.current += value;
-            scheduleFlush();
-          }
-        }
-      } else if (event.NodeError) {
-        const [nodeId] = event.NodeError;
-        if (nodeId === id) {
-          cancelFlush();
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-        }
-      } else if (event.NodeCompleted) {
-        if (event.NodeCompleted === id) {
-          cancelFlush();
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-        }
-      } else if (event.NodeOutMessage) {
-        const [nodeId, value] = event.NodeOutMessage;
-        if (nodeId === id) {
-          cancelFlush();
-          if (typeof value === 'string') {
-            setOutputText(value);
-            updateConfig({ output: value });
-            if (isMarkdownRef.current) {
-              incremarkRef.current.render(value);
-            }
-          }
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-        }
-      }
-    });
-    return () => {
-      cancelFlush();
-      subscription.unsubscribe();
-    };
-  }, [eventsForNode$, id, cancelFlush, scheduleFlush, updateConfig]);
 
   return {
     systemInputRef,

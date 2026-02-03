@@ -4,153 +4,133 @@ import { useIncremark } from '@incremark/react';
 import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
-export function useTextNodeController(id: string, data: NodeData) {
-  const { eventsForCurrentRun$, events$ } = useStore();
+export function useTextNode(id: string, data: NodeData) {
   const { updateConfig } = useNodeConfig(id, data.config);
+  const [text, setText] = useState<string>(() => data.config?.text ?? '');
+  const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? true);
+  const { events$, eventsForCurrentRun$ } = useStore();
+  const connections = useNodeConnections();
+  const connectionsRef = useRef(connections);
+  connectionsRef.current = connections;
 
-  const [text, setText] = useState<string>(String(data.config?.text ?? ''));
-  const [isMarkdown, setIsMarkdown] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
-
-  const coerceToText = useCallback((value: any): string => {
-    if (value == null) return '';
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-    if (typeof value === 'object') {
-      try {
-        return JSON.stringify(value);
-      } catch {
-        return String(value);
-      }
-    }
-    return String(value);
-  }, []);
+  const isStreamingRef = useRef(false);
+  const isMarkdownRef = useRef(isMarkdown);
+  isMarkdownRef.current = isMarkdown;
 
   const incremark = useIncremark({
     math: { tex: true },
     gfm: true,
   });
+
   const incremarkRef = useRef(incremark);
   useEffect(() => {
     incremarkRef.current = incremark;
   }, [incremark]);
 
-  const connections = useNodeConnections({ handleType: 'target' });
-  const connectionsRef = useRef(connections);
-  const dataRef = useRef(data);
-  const isMarkdownRef = useRef(isMarkdown);
-  const isStreamingRef = useRef(data.upstreamIsStreaming || false);
 
   useEffect(() => {
-    connectionsRef.current = connections;
-  }, [connections]);
-
-  useEffect(() => {
-    dataRef.current = data;
-    isStreamingRef.current = data.upstreamIsStreaming || false;
-  }, [data]);
-
-  useEffect(() => {
-    isMarkdownRef.current = isMarkdown;
-  }, [isMarkdown]);
-
-  useEffect(() => {
-    if (data.upstreamIsStreaming && text !== data.config?.text) {
-      const timeoutId = setTimeout(() => {
-        updateConfig({ text });
-      }, 200);
-      return () => clearTimeout(timeoutId);
+    if (data.lastMessage !== undefined && data.lastMessage !== text) {
+      const next = typeof data.lastMessage === 'string' ? data.lastMessage : JSON.stringify(data.lastMessage);
+      if (next !== text) {
+        setText(next);
+        updateConfig({ text: next });
+        if (isMarkdownRef.current) {
+          incremarkRef.current.render(next);
+        }
+      }
     }
-  }, [data.upstreamIsStreaming, text, updateConfig, data.config?.text]);
-
-  useEffect(() => {
-    if (!data.upstreamIsStreaming && isMarkdown && text !== incremarkRef.current.markdown) {
-      incremarkRef.current.render(text);
-    }
-  }, [text, isMarkdown, data.upstreamIsStreaming]);
-
-  useEffect(() => {
-    if (data.lastMessageRunId == null) return;
-    const next = coerceToText(data.lastMessage);
-    if (next === '') return;
-    if (next === text) return;
-    setText(next);
-    if (isMarkdownRef.current) {
-      incremarkRef.current.render(next);
-    }
-  }, [data.lastMessageRunId, data.lastMessage, coerceToText, text]);
+  }, [data.lastMessageRunId, data.lastMessage, text, updateConfig]);
 
   useEffect(() => {
     const stream$ = eventsForCurrentRun$ || events$;
     if (!stream$) return;
 
-    const subscription = stream$.subscribe((wrapper: any) => {
-      const { event } = wrapper;
+    const subscription = stream$.subscribe((event: FlowEvent) => {
       const upstreamNodeIds = connectionsRef.current.map((conn) => conn.source);
       const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
       const isRelevantNode = (nodeId: string) => nodeId === id || isUpstream(nodeId);
 
-      if (event.NodeStarted) {
-        const nodeId = event.NodeStarted;
-        if (isRelevantNode(nodeId)) {
-          isStreamingRef.current = false;
-        }
-      } else if (event.NodeStreamStarted) {
-        const nodeId = event.NodeStreamStarted;
-        if (isRelevantNode(nodeId)) {
-          isStreamingRef.current = true;
-          setText('');
-          setIsMarkdown(true);
-          incremarkRef.current.reset();
-          updateConfig({ text: '' });
-        }
-      } else if (event.NodeStreamNextMessage) {
-        const [nodeId, value] = event.NodeStreamNextMessage;
-        if (isRelevantNode(nodeId) && isStreamingRef.current) {
-          const next = coerceToText(value);
-          if (next !== '') {
-            incremarkRef.current.append(next);
-            setText((prev) => prev + next);
-          }
-        }
-      } else if (event.NodeOutMessage) {
-        const [nodeId, value] = event.NodeOutMessage;
-        if (isRelevantNode(nodeId)) {
-          isStreamingRef.current = false;
-          const next = coerceToText(value);
-          if (next !== '') {
-            setText(next);
-            updateConfig({ text: next });
-            if (isMarkdownRef.current) {
-              incremarkRef.current.render(next);
+      if ('nodeId' in event) {
+        const { nodeId } = event;
+        if (!isRelevantNode(nodeId)) return;
+        switch (event.type) {
+          case 'NodeStarted':
+            isStreamingRef.current = false;
+            break;
+          case 'NodeStreamStarted':
+            isStreamingRef.current = true;
+            setText('');
+            setIsMarkdown(true);
+            incremarkRef.current.reset();
+            updateConfig({ text: '' });
+            break;
+          case 'NodeStreamNextMessage':
+            if (isStreamingRef.current) {
+              const next = coerceToText(event.msg);
+              if (next !== '') {
+                incremarkRef.current.append(next);
+                setText(prev => prev + next);
+              }
             }
-          }
+            break;
+          case 'NodeOutMessage':
+            isStreamingRef.current = false;
+            const next = coerceToText(event.msg);
+            if (next !== '') {
+              setText(next);
+              updateConfig({ text: next });
+              if (isMarkdownRef.current) {
+                incremarkRef.current.render(next);
+              }
+            }
+            break;
         }
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [eventsForCurrentRun$, events$, updateConfig]);
+  }, [eventsForCurrentRun$, events$, updateConfig, id]);
 
   const onChange = useCallback((next: string) => {
     setText(next);
   }, []);
 
-  const onBlur = useCallback(() => {
-    if (text !== dataRef.current.config?.text) {
-      updateConfig({ text });
-    }
-  }, [text, updateConfig]);
+  const onSave = useCallback((next: string) => {
+    updateConfig({ text: next });
+  }, [updateConfig]);
+
+  const toggleMarkdown = useCallback(() => {
+    setIsMarkdown((prev) => {
+      const next = !prev;
+      updateConfig({ isMarkdown: next });
+      return next;
+    });
+  }, [updateConfig]);
+
+  const resetText = useCallback(() => {
+    setText('');
+    updateConfig({ text: '' });
+    incremarkRef.current.reset();
+  }, [updateConfig]);
 
   return {
     text,
     isMarkdown,
-    setIsMarkdown,
-    isFullScreen,
-    setIsFullScreen,
-    incremark,
     onChange,
-    onBlur,
+    onSave,
+    toggleMarkdown,
+    resetText,
   };
+}
+
+function coerceToText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

@@ -4,8 +4,9 @@ use super::{
     io::{Input, Output},
 };
 use crate::{
-    Context, Controller, ControllerRunners, RunnerKind, scope_controller,
+    Context, Controller, ControllerRunners, RunnerKind,
     flow::{Runner, runner::FlowEvent},
+    scope_controller,
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -175,7 +176,9 @@ async fn test_subgraph_events_forwarded_via_controller() {
     let (controller, mut rx) = Controller::new();
 
     let out = scope_controller(controller, async {
-        executor.execute(json!({"hello": "world"}), &parent_ctx).await
+        executor
+            .execute(json!({"hello": "world"}), &parent_ctx)
+            .await
     })
     .await
     .unwrap();

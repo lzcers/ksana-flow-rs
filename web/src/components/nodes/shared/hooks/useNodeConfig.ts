@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { workflowModel } from '@/store';
+import { rxWorkflowModel } from '@/store';
 
-export function useNodeConfig<T extends Record<string, unknown>>(id: string, config: T | undefined) {
+export function useNodeConfig<T extends Record<string, unknown>>(id: string, config?: T) {
   const configRef = useRef<T | undefined>(config);
 
   useEffect(() => {
@@ -10,7 +10,7 @@ export function useNodeConfig<T extends Record<string, unknown>>(id: string, con
 
   const updateConfig = useCallback(
     (patch: Partial<T>) => {
-      workflowModel.dispatchers.updateNodeData(id, { config: { ...(configRef.current ?? ({} as T)), ...patch } });
+      rxWorkflowModel.dispatchers.updateNodeData(id, { config: { ...(configRef.current ?? ({} as T)), ...patch } });
     },
     [id],
   );

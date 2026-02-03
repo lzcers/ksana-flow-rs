@@ -2,7 +2,7 @@ import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import type { Observable } from 'rxjs';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
-import type { WebSocketFlowMessage } from '@/model/flowEvent/types';
+import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
@@ -28,7 +28,7 @@ export interface Workflow {
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
   setNodeTypes: (types: NodeMetadata[]) => void;
-  applyExecutionEvent: (event: any) => void;
+  applyExecutionEvent: (event: FlowEvent) => void;
 }
 
 // 处理画布相关的状态和操作

@@ -2,9 +2,10 @@ import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/workflow/utils';
+import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 import { rxWorkflowModel } from '.';
-import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],
@@ -198,74 +199,97 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     return api.uploadFile(currentSpaceId, file);
   },
 
-  applyExecutionEvent: (event: any) => {
+  applyExecutionEvent: (event: FlowEvent) => {
     // 使用 CommandBus 派发事件，而不是直接修改 state
     // 注意：这里不再需要 set()，因为 CommandBus 会更新 RxState，RxState 会同步回 Zustand
-    if (event.NodeStarted) {
-      const id = event.NodeStarted;
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_STATUS',
-        payload: { id, status: 'running' }
-      });
-    } else if (event.NodeStreamStarted) {
-      const id = event.NodeStreamStarted;
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_DATA',
-        payload: { id, data: { isOutputStream: true } }
-      });
-    }
-    else if (event.NodeInMessage) {
-      const [id, value] = event.NodeInMessage;
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_DATA',
-        payload: { id, data: { lastMessage: value } }
-      });
-      if (typeof value === 'object' && value !== null) {
-        rxWorkflowModel.dispatch({
-          type: 'UPDATE_NODE_INPUTS',
-          payload: { id, inputs: value }
-        });
-      }
-    } else if (event.NodeOutMessage) {
-      const [id, value] = event.NodeOutMessage;
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_DATA',
-        payload: { id, data: { lastMessage: value, isOutputStream: false } }
-      });
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_OUTPUT',
-        payload: { id, key: 'output', value }
-      });
+    // 使用类型守卫判断事件类型
+    if ('nodeId' in event) {
+      // 节点相关事件 (FlowNodeMsgEvent | FlowNodeStatusEvent)
+      const { nodeId: id } = event;
+      switch (event.type) {
+        case 'NodeStarted':
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_STATUS',
+            payload: { id, status: 'running' }
+          });
+          break;
+        case 'NodeStreamStarted':
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_DATA',
+            payload: { id, data: { isOutputStream: true } }
+          });
+          break;
+        case 'NodeInMessage': {
+          const { msg: value } = event;
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_DATA',
+            payload: { id, data: { lastMessage: value } }
+          });
+          if (typeof value === 'object' && value !== null) {
+            rxWorkflowModel.dispatch({
+              type: 'UPDATE_NODE_INPUTS',
+              payload: { id, inputs: value }
+            });
+          }
+          break;
+        }
+        case 'NodeOutMessage': {
+          const { msg: value } = event;
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_DATA',
+            payload: { id, data: { lastMessage: value, isOutputStream: false } }
+          });
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_OUTPUT',
+            payload: { id, key: 'output', value }
+          });
 
-      // Propagate to downstream nodes
-      const { edges } = rxWorkflowModel.getSnapshot();
-      const outEdges = edges.filter(e => e.source === id);
-      outEdges.forEach(edge => {
-        rxWorkflowModel.dispatch({
-          type: 'UPDATE_NODE_DATA',
-          payload: { id: edge.target, data: { lastMessage: value } }
-        });
-        rxWorkflowModel.dispatch({
-          type: 'UPDATE_NODE_INPUT',
-          payload: { id: edge.target, key: edge.targetHandle || 'default', value }
-        });
-      });
-    } else if (event.NodeCompleted) {
-      const id = event.NodeCompleted;
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_STATUS',
-        payload: { id, status: 'completed' }
-      });
-    } else if (event.NodeError) {
-      const [id, error] = event.NodeError;
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_STATUS',
-        payload: { id, status: 'error', errorMessage: error }
-      });
-      rxWorkflowModel.dispatch({
-        type: 'UPDATE_NODE_DATA',
-        payload: { id, data: { isOutputStream: false } }
-      });
+          // Propagate to downstream nodes
+          const { edges } = rxWorkflowModel.getSnapshot();
+          const outEdges = edges.filter(e => e.source === id);
+          outEdges.forEach(edge => {
+            rxWorkflowModel.dispatch({
+              type: 'UPDATE_NODE_DATA',
+              payload: { id: edge.target, data: { lastMessage: value } }
+            });
+            rxWorkflowModel.dispatch({
+              type: 'UPDATE_NODE_INPUT',
+              payload: { id: edge.target, key: edge.targetHandle || 'default', value }
+            });
+          });
+          break;
+        }
+        case 'NodeCompleted':
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_STATUS',
+            payload: { id, status: 'completed' }
+          });
+          break;
+        case 'NodeError': {
+          const { msg: error } = event;
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_STATUS',
+            payload: { id, status: 'error', errorMessage: error }
+          });
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_DATA',
+            payload: { id, data: { isOutputStream: false } }
+          });
+          break;
+        }
+      }
+    } else {
+      // 控制事件 (FlowControlEvent)
+      // 目前 applyExecutionEvent 主要处理节点事件
+      // 控制事件通常由 FlowEventModel 处理
+      switch (event.type) {
+        case 'FlowFinished':
+        case 'FlowStopped':
+        case 'FlowPaused':
+        case 'FlowResumed':
+          // 这些事件由 FlowEventModel 处理
+          break;
+      }
     }
   }
 });

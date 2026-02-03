@@ -3,6 +3,7 @@ import { parse } from 'jsonriver';
 import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
+import type { FlowEvent } from '@/model/flowEvent/types';
 import type { ProjectData } from '../../ShortVideoCreation/types';
 
 export function useShortVideoNodeController(id: string, data: NodeData) {
@@ -60,29 +61,32 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
     const stream$ = eventsForNode$?.(id);
     if (!stream$) return;
 
-    const subscription = stream$.subscribe((wrapper: any) => {
-      const { event } = wrapper;
+    const subscription = stream$.subscribe((event: FlowEvent) => {
+      if (!('nodeId' in event)) return;
+      if (event.nodeId !== id) return;
 
-      if (event.NodeStarted) {
-        if (event.NodeStarted === id) {
+      switch (event.type) {
+        case 'NodeStarted':
           isStreamingRef.current = false;
-        }
-      } else if (event.NodeStreamStarted) {
-        if (event.NodeStreamStarted === id) {
+          break;
+
+        case 'NodeStreamStarted':
           isStreamingRef.current = true;
           setProjectData(null);
           startNewStream();
-        }
-      } else if (event.NodeStreamNextMessage) {
-        const [nodeId, value] = event.NodeStreamNextMessage;
-        if (nodeId === id && isStreamingRef.current) {
-          if (typeof value === 'string') {
-            streamControllerRef.current?.enqueue(value);
+          break;
+
+        case 'NodeStreamNextMessage':
+          if (isStreamingRef.current) {
+            const value = event.msg;
+            if (typeof value === 'string') {
+              streamControllerRef.current?.enqueue(value);
+            }
           }
-        }
-      } else if (event.NodeOutMessage) {
-        const [nodeId, value] = event.NodeOutMessage;
-        if (nodeId === id) {
+          break;
+
+        case 'NodeOutMessage':
+          const value = event.msg;
           if (isStreamingRef.current) {
             if (streamControllerRef.current) {
               try {
@@ -97,7 +101,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
             updateConfig({ projectData: parsed } as any);
           } catch { }
           isStreamingRef.current = false;
-        }
+          break;
       }
     });
 
@@ -133,4 +137,3 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
     onProjectDataChange,
   };
 }
-
