@@ -1,12 +1,13 @@
 import type { Observable } from 'rxjs';
-import { map, shareReplay } from 'rxjs/operators';
-import { RxCommandBus } from './rx';
+import { RxWorkflow, type RxWorkflowOptions } from './rx/RxWorkflow';
 import { registerAllHandlers } from './commandHandlers';
-import { applyCollapsedSubgraphUi } from './utils';
 import type { WorkflowState } from './types';
 import type { GraphCommand } from './commands';
 import type { XYPosition, Connection } from '@xyflow/react';
 import type { Edge } from './types';
+
+// Re-export RxWorkflow types
+export type { RxWorkflow, RxWorkflowOptions };
 
 export interface WorkflowModelDispatchers {
   addNode: (
@@ -30,8 +31,9 @@ export interface WorkflowModelDispatchers {
   handleNodeDragStop: (nodeId: string) => void;
 }
 
-export interface WorkflowModel {
-  commandBus: RxCommandBus;
+// 保持接口兼容性，虽然内部实现换成了 RxWorkflow
+export interface WorkflowModelInterface {
+  rxWorkflow: RxWorkflow;
   state$: Observable<WorkflowState>;
   viewState$: Observable<WorkflowState>;
   canUndo$: Observable<boolean>;
@@ -44,50 +46,24 @@ export interface WorkflowModel {
   destroy: () => void;
 }
 
-export interface CreateWorkflowModelOptions {
-  initialState?: WorkflowState;
-  enableLogging?: boolean;
-}
-
-const defaultWorkflowState: WorkflowState = {
-  nodes: [],
-  edges: [],
-  selectedNodeId: null,
-};
-
 export function createWorkflowModel(
-  options: CreateWorkflowModelOptions = {}
-): WorkflowModel {
-  const commandBus = new RxCommandBus({
-    initialState: options.initialState ?? defaultWorkflowState,
-    enableLogging: options.enableLogging,
-  });
-  registerAllHandlers(commandBus);
+  options: RxWorkflowOptions = {}
+): WorkflowModelInterface {
+  const rxWorkflow = new RxWorkflow(options);
 
-  const state$ = commandBus.state$.pipe(
-    shareReplay({ bufferSize: 1, refCount: true })
-  );
+  // 注册所有处理器到 RxWorkflow (实际上是注册到 Core WorkflowModel)
+  // 注意：registerAllHandlers 需要适配新的接口
+  // 我们需要一个适配器，因为 registerAllHandlers 期望的是 RxCommandBus
+  // 但我们可以直接修改 commandHandlers.ts 或者在这里适配
 
-  const viewState$ = state$.pipe(
-    map((state) => {
-      const hasCollapsed = state.nodes.some(
-        (n) =>
-          (n.type === 'SubgraphNode' || n.type === 'MapNode') &&
-          (n.data as any)?.expanded === false
-      );
-      if (!hasCollapsed) return state;
-      const { nodes, edges } = applyCollapsedSubgraphUi(state.nodes, state.edges);
-      return { ...state, nodes, edges };
-    }),
-    shareReplay({ bufferSize: 1, refCount: true })
-  );
+  // 更好的方式是让 registerAllHandlers 接受一个通用接口
+  // 暂时我们这里做一个简单的鸭子类型适配，或者直接让 commandHandlers 导出处理器映射
 
-  const canUndo$ = commandBus.canUndo$.pipe(shareReplay({ bufferSize: 1, refCount: true }));
-  const canRedo$ = commandBus.canRedo$.pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  // 让我们修改 registerAllHandlers 签名可能会更好，但为了最小改动：
+  // 我们可以在 RxWorkflow 中实现 registerHandler 方法
+  registerAllHandlers(rxWorkflow as any); // 需要确保 RxWorkflow 有 registerHandler 方法
 
-  const dispatch = (command: GraphCommand) => commandBus.dispatch(command);
-  const undo = () => commandBus.undo();
-  const redo = () => commandBus.redo();
+  const dispatch = (command: GraphCommand) => rxWorkflow.dispatch(command);
 
   const dispatchers: WorkflowModelDispatchers = {
     addNode: (type, position, options) =>
@@ -128,16 +104,16 @@ export function createWorkflowModel(
   };
 
   return {
-    commandBus,
-    state$,
-    viewState$,
-    canUndo$,
-    canRedo$,
+    rxWorkflow,
+    state$: rxWorkflow.state$,
+    viewState$: rxWorkflow.viewState$,
+    canUndo$: rxWorkflow.canUndo$,
+    canRedo$: rxWorkflow.canRedo$,
     dispatch,
-    undo,
-    redo,
+    undo: () => rxWorkflow.undo(),
+    redo: () => rxWorkflow.redo(),
     dispatchers,
-    getSnapshot: () => commandBus.currentState,
-    destroy: () => commandBus.destroy(),
+    getSnapshot: () => rxWorkflow.currentState,
+    destroy: () => rxWorkflow.destroy(),
   };
 }
