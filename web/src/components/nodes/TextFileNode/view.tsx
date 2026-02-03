@@ -2,7 +2,7 @@ import React from 'react';
 import { Position, type NodeProps } from '@xyflow/react';
 import { FileText, Upload } from 'lucide-react';
 import type { NodeData } from '../../../model/types';
-import { NodeWrapper } from '../NodeWrapper';
+import { NodeWrapper } from '../shared/NodeWrapper';
 import { textFileNodeStyles } from './styles';
 
 const SOURCE_HANDLES = [Position.Right];

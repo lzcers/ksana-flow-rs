@@ -1,4 +1,5 @@
 import type { Edge } from "@xyflow/react";
+import type { Node } from "./model/types";
 
 const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 

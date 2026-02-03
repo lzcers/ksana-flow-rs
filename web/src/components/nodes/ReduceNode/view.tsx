@@ -1,5 +1,5 @@
 import { Position, type NodeProps } from '@xyflow/react';
-import { NodeWrapper } from '../NodeWrapper';
+import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '../../../model/types';
 import { reduceNodeStyles } from './styles';
 import type { ReduceReducer } from './hooks';

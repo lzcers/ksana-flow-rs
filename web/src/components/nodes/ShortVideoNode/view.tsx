@@ -4,7 +4,7 @@ import { FullScreenModal } from '../../ui/FullScreenModal';
 import { ShortVideoCreation } from '../../ShortVideoCreation';
 import type { ProjectData } from '../../ShortVideoCreation/types';
 import type { NodeData } from '../../../model/types';
-import { NodeWrapper } from '../NodeWrapper';
+import { NodeWrapper } from '../shared/NodeWrapper';
 import { shortVideoNodeStyles } from './styles';
 
 const SOURCE_HANDLES = [Position.Right];

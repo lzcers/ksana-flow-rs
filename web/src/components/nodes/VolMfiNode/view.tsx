@@ -1,6 +1,6 @@
 import { Position, type NodeProps } from '@xyflow/react';
 import type { NodeData } from '../../../model/types';
-import { NodeWrapper } from '../NodeWrapper';
+import { NodeWrapper } from '../shared/NodeWrapper';
 import { volMfiNodeStyles } from './styles';
 
 const TARGET_HANDLES = [Position.Left];

@@ -2,7 +2,7 @@ import React from 'react';
 import { Position, type NodeProps } from '@xyflow/react';
 import { Settings, X } from 'lucide-react';
 import type { NodeData } from '../../../model/types';
-import { NodeWrapper } from '../NodeWrapper';
+import { NodeWrapper } from '../shared/NodeWrapper';
 import { FullScreenModal } from '../../ui/FullScreenModal';
 import { imgGenNodeStyles } from './styles';
 

@@ -1,7 +1,7 @@
 import { AutoScrollContainer, Incremark, ThemeProvider } from '@incremark/react';
 import { Maximize2, Eye, Pencil } from 'lucide-react';
 import { Position, type NodeProps } from '@xyflow/react';
-import { NodeWrapper } from '../NodeWrapper';
+import { NodeWrapper } from '../shared/NodeWrapper';
 import { FullScreenModal } from '../../ui/FullScreenModal';
 import { theme } from './theme';
 import type { NodeData } from '../../../model/types';

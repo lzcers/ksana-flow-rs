@@ -14,11 +14,11 @@ import {
   TextFileNode,
   TextMergeNode,
   TextNode,
+  TextSplitNode,
   TimerNode,
   VolMfiNode,
   SubgraphNode,
 } from '../nodes';
-import { TextSplitNode } from '../nodes/TextSplitNode';
 
 export type NodeRegistryItem = {
   type: NodeType;
