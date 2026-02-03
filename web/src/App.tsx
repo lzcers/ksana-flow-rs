@@ -59,7 +59,9 @@ function AppContent() {
     createNewWorkflow,
     importWorkflow,
     getWorkflowBlueprint,
-    groupNodes
+    groupNodes,
+    undo,
+    redo,
   } = workflow;
 
   const [openTabs, setOpenTabs] = useState<{ id: number | null; name: string }[]>([]);
@@ -212,6 +214,10 @@ function AppContent() {
             onResume={resumeWorkflow}
             onStop={stopWorkflow}
             onGroupNodes={groupNodes}
+            onPaste={workflow.onPaste} // Add onPaste if it exists in useWorkflow or derive it
+            onSave={async () => { await saveWorkflow(); }}
+            onUndo={undo}
+            onRedo={redo}
           />
         </ReactFlowProvider>
       </div>

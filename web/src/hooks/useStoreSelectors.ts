@@ -62,7 +62,6 @@ export const canvasActions = {
 
 /** 历史操作方法 - 直接从 store 获取 */
 export const historyActions = {
-  get pushHistory() { return useStore.getState().pushHistory; },
   get undo() { return useStore.getState().undo; },
   get redo() { return useStore.getState().redo; },
   get canUndo() { return useStore.getState().canUndo; },
@@ -110,6 +109,7 @@ export const workflowActions = {
   get deleteWorkflow() { return useStore.getState().deleteWorkflow; },
   get createNewWorkflow() { return useStore.getState().createNewWorkflow; },
   get importWorkflow() { return useStore.getState().importWorkflow; },
+  get getWorkflowBlueprint() { return useStore.getState().getWorkflowBlueprint; },
   get loadMetadata() { return useStore.getState().loadMetadata; },
   get setSpaceId() { return useStore.getState().setSpaceId; },
 };

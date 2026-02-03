@@ -1,6 +1,7 @@
 import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/types';
 import type { Observable } from 'rxjs';
+import type { WorkflowBlueprint } from '../model/adapters/blueprintAdapter';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
@@ -22,10 +23,8 @@ export interface WebSocketFlowMessage {
   event: FlowEvent;
 }
 
-export interface WorkflowBlueprint {
-  nodes: Partial<Node>[];
-  edges: Partial<Edge>[];
-}
+// WorkflowBlueprint type is now imported from adapter
+
 // 处理工作流相关的状态和操作
 export interface Workflow {
   workflows: { id: number; name: string }[];
@@ -72,11 +71,6 @@ export interface Canvas {
   toggleSubgraph: (nodeId: string) => void;
 
   // History
-  history: {
-    past: { nodes: Node[], edges: Edge[] }[];
-    future: { nodes: Node[], edges: Edge[] }[];
-  };
-  pushHistory: () => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;

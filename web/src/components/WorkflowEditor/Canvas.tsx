@@ -21,7 +21,6 @@ import { SelectionToolbar } from './SelectionToolbar';
 import type { Node, Edge } from '../../model/types';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 import type { NodeMetadata } from '../../api';
-import { useStore } from '../../store';
 
 interface CanvasProps {
   nodes: Node[];
@@ -38,6 +37,11 @@ interface CanvasProps {
   onResume: () => void;
   onStop: () => void;
   onGroupNodes?: (nodeIds: string[]) => void;
+  onPaste?: (nodes: Node[], edges: Edge[]) => void;
+  onSave?: () => Promise<void>;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  setConnectionState?: (connecting: boolean, sourceId?: string | null) => void;
 }
 
 const nodeTypes: NodeTypes = {
@@ -79,16 +83,16 @@ export const Canvas: React.FC<CanvasProps> = ({
   onResume,
   onStop,
   onGroupNodes,
+  onPaste,
+  onSave,
+  onUndo,
+  onRedo,
+  setConnectionState,
 }) => {
   const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
-  const { setConnectionState, pasteNodes, saveWorkflow, undo, redo, pushHistory } = useStore();
 
   const spacePressed = useKeyPress('Space');
   const mousePositionRef = React.useRef({ x: 0, y: 0 });
-
-  const onNodeDragStart = React.useCallback(() => {
-    pushHistory();
-  }, [pushHistory]);
 
   const onMouseMove = React.useCallback((event: React.MouseEvent) => {
     mousePositionRef.current = { x: event.clientX, y: event.clientY };
@@ -103,7 +107,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
         if (isInputActive) return;
         e.preventDefault();
-        undo();
+        onUndo?.();
         return;
       }
 
@@ -111,14 +115,14 @@ export const Canvas: React.FC<CanvasProps> = ({
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         if (isInputActive) return;
         e.preventDefault();
-        redo();
+        onRedo?.();
         return;
       }
 
       // Save: Ctrl+S or Cmd+S
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        await saveWorkflow();
+        await onSave?.();
         return;
       }
 
@@ -196,7 +200,7 @@ export const Canvas: React.FC<CanvasProps> = ({
             }
           }));
 
-          pasteNodes(newNodes, data.edges || []);
+          onPaste?.(newNodes, data.edges || []);
         } catch (err) {
           // Ignore invalid JSON or clipboard issues
         }
@@ -205,7 +209,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [getNodes, getEdges, pasteNodes, screenToFlowPosition, saveWorkflow]);
+  }, [getNodes, getEdges, onPaste, screenToFlowPosition, onSave, onUndo, onRedo, onNodesChange]);
 
   const [contextMenu, setContextMenu] = React.useState<{
     visible: boolean;
@@ -286,11 +290,11 @@ export const Canvas: React.FC<CanvasProps> = ({
   );
 
   const onConnectStart: OnConnectStart = React.useCallback((_, { nodeId }) => {
-    setConnectionState(true, nodeId);
+    setConnectionState?.(true, nodeId);
   }, [setConnectionState]);
 
   const onConnectEnd: OnConnectEnd = React.useCallback(() => {
-    setConnectionState(false, null);
+    setConnectionState?.(false, null);
   }, [setConnectionState]);
 
   return (
@@ -306,7 +310,6 @@ export const Canvas: React.FC<CanvasProps> = ({
         onPaneClick={onPaneClick}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onConnectStart={onConnectStart}

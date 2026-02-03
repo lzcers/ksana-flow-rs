@@ -59,13 +59,13 @@ export function useWorkflow() {
     onNodesChange: canvasActions.onNodesChange,
     onEdgesChange: canvasActions.onEdgesChange,
     onNodeDragStop: canvasActions.onNodeDragStop,
-    onNodeDragStart: () => historyActions.pushHistory(),
     onConnect: canvasActions.onConnect,
     addNode: canvasActions.addNode,
     deleteNode: canvasActions.deleteNode,
     updateNodeData: canvasActions.updateNodeData,
     updateNodeDimensions: canvasActions.updateNodeDimensions,
     groupNodes: canvasActions.groupNodes,
+    onPaste: canvasActions.pasteNodes,
 
     // History actions
     undo: historyActions.undo,
@@ -87,6 +87,6 @@ export function useWorkflow() {
     renameWorkflow: workflowActions.renameWorkflow,
     createNewWorkflow: workflowActions.createNewWorkflow,
     importWorkflow: workflowActions.importWorkflow,
-    getWorkflowBlueprint: () => ({ nodes: [], edges: [] }), // 简化实现
+    getWorkflowBlueprint: workflowActions.getWorkflowBlueprint,
   };
 }

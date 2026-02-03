@@ -12,12 +12,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   isConnecting: false,
   connectionSourceId: null,
 
-  history: { past: [], future: [] },
-
-  pushHistory: () => {
-    // Deprecated: History is now managed by WorkflowModel
-  },
-
   undo: () => {
     workflowModel.undo();
   },
