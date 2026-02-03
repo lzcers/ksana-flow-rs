@@ -1,10 +1,10 @@
 import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
-import type { Node, Edge } from '../model/types';
 import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/utils';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 import { workflowModel } from './workflowModel';
+import { fromBlueprint, toBlueprint } from '../model/adapters';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],
@@ -52,43 +52,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const wf = await api.fetchWorkflow(currentSpaceId, id);
       set({ currentWorkflowId: id });
 
-      const nodes: Node[] = wf.blueprint.nodes.map((n: any) => {
-        const { type: _type, ...cleanData } = n.data || {};
-        const expanded = cleanData.expanded !== false;
-        const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
-        let width = n.width;
-        let height = n.height;
-        if (n.type === 'SubgraphNode' || n.type === 'MapNode') {
-          if (preferredSize && typeof preferredSize.width === 'number' && typeof preferredSize.height === 'number') {
-            width = preferredSize.width;
-            height = preferredSize.height;
-          } else if (!expanded) {
-            width = width ?? 180;
-            height = height ?? 80;
-          }
-        }
-        return {
-          id: n.id,
-          type: n.type,
-          position: n.position || { x: 0, y: 0 },
-          width,
-          height,
-          style: width && height ? { width, height } : undefined,
-          parentId: n.parentId,
-          extent: n.extent,
-          hidden: n.hidden,
-          data: cleanData,
-        };
-      });
-
-      const edges: Edge[] = wf.blueprint.edges.map((e: any) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle,
-        targetHandle: e.targetHandle,
-        type: e.type || 'default'
-      }));
+      // Ensure blueprint matches BackendNode type structure or cast appropriately if safe
+      const { nodes, edges } = fromBlueprint(wf.blueprint as any);
 
       const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
       setNodes(preprocessed.nodes);
@@ -134,43 +99,20 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId } = get();
     if (!currentSpaceId) return;
 
-    const blueprint = {
-      nodes: nodes.map(n => {
-        const { type: _, ...cleanData } = (n.data as any) || {};
-        return {
-          id: n.id,
-          type: n.type,
-          data: cleanData,
-          position: n.position,
-          width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-          height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
-          parentId: n.parentId,
-          extent: n.extent,
-          hidden: n.hidden,
-        };
-      }),
-      edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle,
-        targetHandle: e.targetHandle,
-        type: e.type
-      }))
-    };
+    const blueprint = toBlueprint(nodes, edges);
 
     try {
       if (currentWorkflowId) {
         const currentWf = workflows.find(w => w.id === currentWorkflowId);
         const nameToUse = name || currentWf?.name || 'Untitled';
 
-        await api.updateWorkflow(currentSpaceId, currentWorkflowId, nameToUse, blueprint);
+        await api.updateWorkflow(currentSpaceId, currentWorkflowId, nameToUse, blueprint as any);
 
         if (name && name !== currentWf?.name) {
           setWorkflows(workflows.map(w => w.id === currentWorkflowId ? { ...w, name } : w));
         }
       } else {
-        const newWf = await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint);
+        const newWf = await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint as any);
         setCurrentWorkflowId(newWf.id);
         setWorkflows([...workflows, { id: newWf.id, name: name || 'Untitled Workflow' }]);
       }
@@ -187,36 +129,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     try {
       let blueprint;
       if (id === currentWorkflowId) {
-        blueprint = {
-          nodes: nodes.map(n => {
-            const { type: _, ...cleanData } = (n.data as any) || {};
-            return {
-              id: n.id,
-              type: n.type,
-              data: cleanData,
-              position: n.position,
-              width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-              height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
-              parentId: n.parentId,
-              extent: n.extent,
-              hidden: n.hidden,
-            };
-          }),
-          edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
-            id: e.id,
-            source: e.source,
-            target: e.target,
-            sourceHandle: e.sourceHandle,
-            targetHandle: e.targetHandle,
-            type: e.type
-          }))
-        };
+        blueprint = toBlueprint(nodes, edges);
       } else {
         const wf = await api.fetchWorkflow(currentSpaceId, id);
         blueprint = wf.blueprint;
       }
 
-      await api.updateWorkflow(currentSpaceId, id, newName, blueprint);
+      await api.updateWorkflow(currentSpaceId, id, newName, blueprint as any);
       setWorkflows(workflows.map(w => w.id === id ? { ...w, name: newName } : w));
       success('Workflow renamed');
     } catch (e) {
@@ -257,44 +176,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
   importWorkflow: (blueprint: any) => {
     const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId } = get();
     // Transform backend nodes to ReactFlow nodes
-    const nodes: Node[] = (blueprint.nodes || []).map((n: any) => {
-      const { type: _, ...cleanData } = n.data || {};
-      const expanded = cleanData.expanded !== false;
-      const preferredSize = expanded ? cleanData.expandedSize : cleanData.collapsedSize;
-      let width = n.width;
-      let height = n.height;
-      if (n.type === 'SubgraphNode' || n.type === 'MapNode') {
-        if (preferredSize && typeof preferredSize.width === 'number' && typeof preferredSize.height === 'number') {
-          width = preferredSize.width;
-          height = preferredSize.height;
-        } else if (!expanded) {
-          width = width ?? 180;
-          height = height ?? 80;
-        }
-      }
-      return {
-        id: n.id,
-        type: n.type,
-        position: n.position || { x: 0, y: 0 },
-        width,
-        height,
-        style: width && height ? { width, height } : undefined,
-        parentId: n.parentId,
-        extent: n.extent,
-        hidden: n.hidden,
-        data: cleanData,
-      };
-    });
-
-    // Transform backend edges to ReactFlow edges
-    const edges: Edge[] = (blueprint.edges || []).map((e: any) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: e.sourceHandle,
-      targetHandle: e.targetHandle,
-      type: e.type || 'default'
-    }));
+    const { nodes, edges } = fromBlueprint(blueprint);
 
     const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
     setNodes(preprocessed.nodes);
@@ -307,27 +189,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
 
   getWorkflowBlueprint: () => {
     const { nodes, edges } = get();
-    return {
-      nodes: nodes.map(n => ({
-        id: n.id,
-        type: n.type,
-        data: n.data,
-        position: n.position,
-        width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-        height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
-        parentId: n.parentId,
-        extent: n.extent,
-        hidden: n.hidden,
-      })),
-      edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle,
-        targetHandle: e.targetHandle,
-        type: e.type
-      }))
-    };
+    return toBlueprint(nodes, edges);
   },
 
   uploadFile: async (file: File) => {

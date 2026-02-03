@@ -179,6 +179,13 @@ export interface ToggleSubgraphCommand extends BaseCommand {
   };
 }
 
+export interface HandleNodeDragStopCommand extends BaseCommand {
+  type: 'HANDLE_NODE_DRAG_STOP';
+  payload: {
+    nodeId: string;
+  };
+}
+
 export interface ResetExecutionStateCommand extends BaseCommand {
   type: 'RESET_EXECUTION_STATE';
   payload: Record<string, never>; // Empty payload
@@ -232,6 +239,7 @@ export type GraphCommand =
   | PasteNodesCommand
   | GroupNodesCommand
   | ToggleSubgraphCommand
+  | HandleNodeDragStopCommand
   | ResetExecutionStateCommand
   // Batch
   | BatchCommand

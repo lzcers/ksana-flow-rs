@@ -109,7 +109,44 @@ export const getConnectedEdges = (state: WorkflowState, nodeId: string): Edge[] 
   return state.edges.filter((e) => e.source === nodeId || e.target === nodeId);
 };
 
-
 export const isValidConnection = (_connection: Connection, _state: WorkflowState): boolean => {
   return true;
+};
+
+export const sortNodesByParent = (nodes: Node[]): Node[] => {
+  const idSet = new Set(nodes.map((n) => n.id));
+  const childrenByParent = new Map<string, Node[]>();
+
+  nodes.forEach((n) => {
+    if (!n.parentId || !idSet.has(n.parentId)) return;
+    const children = childrenByParent.get(n.parentId);
+    if (children) {
+      children.push(n);
+    } else {
+      childrenByParent.set(n.parentId, [n]);
+    }
+  });
+
+  const result: Node[] = [];
+  const visited = new Set<string>();
+
+  const visit = (node: Node) => {
+    if (visited.has(node.id)) return;
+    visited.add(node.id);
+    result.push(node);
+    const children = childrenByParent.get(node.id);
+    if (children) {
+      children.forEach(visit);
+    }
+  };
+
+  nodes.forEach((n) => {
+    if (!n.parentId || !idSet.has(n.parentId)) {
+      visit(n);
+    }
+  });
+
+  nodes.forEach((n) => visit(n));
+
+  return result;
 };

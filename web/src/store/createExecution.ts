@@ -5,6 +5,7 @@ import type { StoreState, Execution, WebSocketFlowMessage } from './types';
 import * as api from '../api';
 import { workflowModel } from './workflowModel';
 import type { GraphCommand } from '../model/commands';
+import { toBlueprint } from '../model/adapters';
 
 const eventSubject = new Subject<WebSocketFlowMessage>();
 const stateUpdateSubject = new Subject<WebSocketFlowMessage>();
@@ -20,28 +21,6 @@ type ZustandSetState = StoreApi<StoreState>['setState'];
 let stateUpdatePipelineInitialized = false;
 let latestSetState: ZustandSetState | null = null;
 let activeRunNodeExecution: { runId: string; startNodeId: string; workflowId: number | null } | null = null;
-
-const buildExecutionBlueprint = (nodes: any[], edges: any[]) => ({
-  nodes: nodes.map((n) => ({
-    id: n.id,
-    type: n.type,
-    data: n.data,
-    position: n.position,
-    width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-    height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
-    parentId: n.parentId,
-    extent: n.extent,
-    hidden: n.hidden,
-  })),
-  edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    sourceHandle: e.sourceHandle,
-    targetHandle: e.targetHandle,
-    type: e.type,
-  })),
-});
 
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
   latestSetState = set;
@@ -369,13 +348,13 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
       if (!currentSpaceId) return;
 
-      const blueprint = buildExecutionBlueprint(nodes, edges);
+      const blueprint = toBlueprint(nodes, edges);
 
       try {
         workflowModel.dispatch({ type: 'RESET_EXECUTION_STATE', payload: {} });
         setWorkflowStatus('running');
 
-        const res = await api.runWorkflow(currentSpaceId, blueprint, currentWorkflowId || -1);
+        const res = await api.runWorkflow(currentSpaceId, blueprint as any, currentWorkflowId || -1);
         if (res && res.error) {
           throw new Error(res.error);
         }
@@ -434,10 +413,10 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     runNode: async (nodeId: string) => {
       const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId, setWorkflowStatuses } = get();
       if (!currentSpaceId) return;
-      const blueprint = buildExecutionBlueprint(nodes, edges);
+      const blueprint = toBlueprint(nodes, edges);
 
       try {
-        const res = await api.runNode(currentSpaceId, blueprint, nodeId, currentWorkflowId || -1);
+        const res = await api.runNode(currentSpaceId, blueprint as any, nodeId, currentWorkflowId || -1);
         if (res && res.error) {
           throw new Error(res.error);
         }

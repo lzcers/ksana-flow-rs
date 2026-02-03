@@ -27,6 +27,7 @@ export interface WorkflowModelDispatchers {
   pasteNodes: (nodes: WorkflowState['nodes'], edges: WorkflowState['edges']) => void;
   groupNodes: (nodeIds: string[]) => void;
   toggleSubgraph: (nodeId: string) => void;
+  handleNodeDragStop: (nodeId: string) => void;
 }
 
 export interface WorkflowModel {
@@ -122,6 +123,8 @@ export function createWorkflowModel(
       dispatch({ type: 'GROUP_NODES', payload: { nodeIds } }),
     toggleSubgraph: (nodeId) =>
       dispatch({ type: 'TOGGLE_SUBGRAPH', payload: { nodeId } }),
+    handleNodeDragStop: (nodeId) =>
+      dispatch({ type: 'HANDLE_NODE_DRAG_STOP', payload: { nodeId } }),
   };
 
   return {

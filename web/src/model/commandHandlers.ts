@@ -7,6 +7,7 @@ import type { RxCommandBus } from './rx';
 import * as nodeProcessors from './processors/nodeProcessors';
 import * as edgeProcessors from './processors/edgeProcessors';
 import * as graphProcessors from './processors/graphProcessors';
+import { processHandleNodeDragStop } from './processors/layoutProcessors';
 
 /**
  * 注册所有 Command 处理器
@@ -39,6 +40,7 @@ export function registerAllHandlers(commandBus: RxCommandBus): void {
   commandBus.registerHandler('TOGGLE_SUBGRAPH', graphProcessors.processToggleSubgraph);
   commandBus.registerHandler('SET_NODES', graphProcessors.processSetNodes);
   commandBus.registerHandler('RESET_EXECUTION_STATE', graphProcessors.processResetExecutionState);
+  commandBus.registerHandler('HANDLE_NODE_DRAG_STOP', processHandleNodeDragStop);
 
   console.log('[CommandHandlers] All handlers registered');
 }
