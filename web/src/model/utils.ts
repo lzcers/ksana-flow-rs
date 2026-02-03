@@ -1,7 +1,8 @@
+import type { Immutable } from 'immer';
 import type { WorkflowState, Node, Edge, Connection } from './types';
 export { applyNodeChanges as applyNodeChangesXyflow, applyEdgeChanges as applyEdgeChangesXyflow, addEdge as addEdgeXyflow } from '@xyflow/react';
 
-export const getNextNodeId = (nodes: Node[], type: string): string => {
+export const getNextNodeId = (nodes: Immutable<Node[]>, type: string): string => {
   const sameTypeNodes = nodes.filter((n) => n.id.startsWith(`${type}-`));
   let nextNum = 1;
   if (sameTypeNodes.length > 0) {
@@ -16,7 +17,7 @@ export const getNextNodeId = (nodes: Node[], type: string): string => {
   return `${type}-${nextNum}`;
 };
 
-export const applyCollapsedSubgraphUi = (nodes: Node[], edges: Edge[]) => {
+export const applyCollapsedSubgraphUi = (nodes: Immutable<Node[]>, edges: Immutable<Edge[]>) => {
   const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
   const collapsedGroupIds = new Set(
     nodes
@@ -113,9 +114,9 @@ export const isValidConnection = (_connection: Connection, _state: WorkflowState
   return true;
 };
 
-export const sortNodesByParent = (nodes: Node[]): Node[] => {
+export const sortNodesByParent = (nodes: Immutable<Node[]>): Immutable<Node[]> => {
   const idSet = new Set(nodes.map((n) => n.id));
-  const childrenByParent = new Map<string, Node[]>();
+  const childrenByParent = new Map<string, Immutable<Node>[]>();
 
   nodes.forEach((n) => {
     if (!n.parentId || !idSet.has(n.parentId)) return;
@@ -127,10 +128,10 @@ export const sortNodesByParent = (nodes: Node[]): Node[] => {
     }
   });
 
-  const result: Node[] = [];
+  const result: Immutable<Node>[] = [];
   const visited = new Set<string>();
 
-  const visit = (node: Node) => {
+  const visit = (node: Immutable<Node>) => {
     if (visited.has(node.id)) return;
     visited.add(node.id);
     result.push(node);

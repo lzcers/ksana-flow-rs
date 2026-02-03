@@ -1,15 +1,15 @@
 /**
  * RxWorkflow (Reactive Layer)
  * 包装 Core WorkflowModel，提供 RxJS 响应式接口。
- * 替代原有的 RxCommandBus 和 RxState。
  */
 
 import { BehaviorSubject, Subject, Observable } from 'rxjs';
 import { map, distinctUntilChanged, shareReplay } from 'rxjs/operators';
-import type { WorkflowState, Node, Edge } from '../types';
-import type { GraphCommand } from '../commands';
-import { WorkflowModel, type CommandProcessor } from '../core/WorkflowModel';
-import { applyCollapsedSubgraphUi } from '../utils';
+import type { WorkflowState, Node, Edge } from './types';
+import type { GraphCommand } from './commands';
+import { WorkflowModel, type CommandProcessor } from './workflowModel';
+import { applyCollapsedSubgraphUi } from './utils';
+import type { Immutable } from 'immer';
 
 export interface RxWorkflowOptions {
   initialState?: WorkflowState;
@@ -18,22 +18,22 @@ export interface RxWorkflowOptions {
 
 export class RxWorkflow {
   private _model: WorkflowModel;
-  
+
   // Subjects
-  private _state$ = new BehaviorSubject<WorkflowState>({ nodes: [], edges: [], selectedNodeId: null });
+  private _state$ = new BehaviorSubject<Immutable<WorkflowState>>({ nodes: [], edges: [], selectedNodeId: null });
   private _commands$ = new Subject<GraphCommand>();
   private _history$ = new BehaviorSubject<{ canUndo: boolean; canRedo: boolean }>({ canUndo: false, canRedo: false });
 
   // Public Observables
-  public readonly state$: Observable<WorkflowState>;
-  public readonly viewState$: Observable<WorkflowState>; // 处理过 UI 逻辑（如折叠）的状态
+  public readonly state$: Observable<Immutable<WorkflowState>>;
+  public readonly viewState$: Observable<Immutable<WorkflowState>>; // 处理过 UI 逻辑（如折叠）的状态
   public readonly commands$ = this._commands$.asObservable();
   public readonly canUndo$ = this._history$.pipe(map(h => h.canUndo), distinctUntilChanged());
   public readonly canRedo$ = this._history$.pipe(map(h => h.canRedo), distinctUntilChanged());
 
   // Derived Observables (Helper)
-  public readonly nodes$: Observable<Node[]>;
-  public readonly edges$: Observable<Edge[]>;
+  public readonly nodes$: Observable<Immutable<Node[]>>;
+  public readonly edges$: Observable<Immutable<Edge[]>>;
   public readonly selectedNodeId$: Observable<string | null>;
 
   constructor(options: RxWorkflowOptions = {}) {
@@ -85,7 +85,7 @@ export class RxWorkflow {
   dispatch(command: GraphCommand): void {
     // 异步广播 Command
     this._commands$.next(command);
-    
+
     // 同步执行 Core Logic
     // 注意：目前的 Processor 都是同步的。如果有异步需求，应在外部处理完 Promise 后再 dispatch 结果 Command
     this._model.execute(command);
@@ -109,17 +109,17 @@ export class RxWorkflow {
 
   // ===== Helper Methods (for compatibility) =====
 
-  get currentState(): WorkflowState {
+  get currentState(): Immutable<WorkflowState> {
     return this._model.state;
   }
 
-  selectNode$(nodeId: string): Observable<Node | undefined> {
+  selectNode$(nodeId: string): Observable<Immutable<Node> | undefined> {
     return this.nodes$.pipe(
       map(nodes => nodes.find(n => n.id === nodeId)),
       distinctUntilChanged()
     );
   }
-  
+
   destroy(): void {
     this._state$.complete();
     this._commands$.complete();

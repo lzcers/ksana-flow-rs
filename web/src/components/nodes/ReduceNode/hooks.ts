@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 
 export type ReduceReducer =
   | 'sum'

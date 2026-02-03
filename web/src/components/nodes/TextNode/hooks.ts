@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNodeConnections } from '@xyflow/react';
 import { useIncremark } from '@incremark/react';
-import { useStore } from '../../../store';
+import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 
 export function useTextNodeController(id: string, data: NodeData) {
   const { eventsForCurrentRun$, events$ } = useStore();

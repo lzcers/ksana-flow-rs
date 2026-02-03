@@ -10,4 +10,9 @@ export default defineConfig({
   //   port: 5173, // 自定义端口（可选，默认 5173）
   //   open: false, // 是否自动打开浏览器（可选）
   // }
+  resolve: {
+    alias: {
+      '@': '/src',
+    },
+  },
 })

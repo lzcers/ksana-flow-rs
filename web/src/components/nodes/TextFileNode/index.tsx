@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useRef, useState } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import { useStore } from '../../../store';
-import { type NodeData } from '../../../model/types';
+import { useStore } from '@/store';
+import { type NodeData } from '@/model/types';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import { TextFileNodeView } from './view';
 

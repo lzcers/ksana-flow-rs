@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { parse } from 'jsonriver';
-import { useStore } from '../../../store';
+import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 import type { ProjectData } from '../../ShortVideoCreation/types';
 
 export function useShortVideoNodeController(id: string, data: NodeData) {
@@ -27,7 +27,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
     if (streamControllerRef.current) {
       try {
         streamControllerRef.current.close();
-      } catch {}
+      } catch { }
       streamControllerRef.current = null;
     }
     completedRef.current = new WeakMap();
@@ -52,7 +52,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
             setProjectData(value as unknown as ProjectData);
           }
         }
-      } catch {}
+      } catch { }
     })();
   }, []);
 
@@ -87,7 +87,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
             if (streamControllerRef.current) {
               try {
                 streamControllerRef.current.close();
-              } catch {}
+              } catch { }
               streamControllerRef.current = null;
             }
           }
@@ -95,7 +95,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
             const parsed = typeof value === 'string' ? JSON.parse(value) : value;
             setProjectData(parsed);
             updateConfig({ projectData: parsed } as any);
-          } catch {}
+          } catch { }
           isStreamingRef.current = false;
         }
       }
@@ -113,7 +113,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
       try {
         const parsed = typeof data.lastMessage === 'string' ? JSON.parse(data.lastMessage) : data.lastMessage;
         setProjectData(parsed);
-      } catch {}
+      } catch { }
     }
   }, []);
 

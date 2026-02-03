@@ -2,8 +2,8 @@ import { memo, useEffect } from 'react';
 import { type NodeProps, useReactFlow, type Node, Position, useUpdateNodeInternals } from '@xyflow/react';
 import { ChevronDown, ChevronUp, Repeat2 } from 'lucide-react';
 import { NodeWrapper } from '../shared/NodeWrapper';
-import type { NodeData } from '../../../model/types';
-import { cn } from '../../../utils/cn';
+import type { NodeData } from '@/model/types';
+import { cn } from '@/utils/cn';
 import { mapNodeStyles } from './styles';
 import type { MapNodeStreamState } from './hooks';
 

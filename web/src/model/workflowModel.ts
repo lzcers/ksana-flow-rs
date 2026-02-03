@@ -1,119 +1,186 @@
-import type { Observable } from 'rxjs';
-import { RxWorkflow, type RxWorkflowOptions } from './rx/RxWorkflow';
-import { registerAllHandlers } from './commandHandlers';
+/**
+ * WorkflowModel (Core)
+ * 纯粹的、同步的、基于 Immer 的状态管理核心。
+ * 负责：
+ * 1. 持有 WorkflowState
+ * 2. 管理 History (Undo/Redo)
+ * 3. 执行 Command (调用 Processor)
+ */
+
 import type { WorkflowState } from './types';
 import type { GraphCommand } from './commands';
-import type { XYPosition, Connection } from '@xyflow/react';
-import type { Edge } from './types';
+import type { Immutable } from 'immer';
 
-// Re-export RxWorkflow types
-export type { RxWorkflow, RxWorkflowOptions };
+// Command Handler 类型定义
+export type CommandProcessor<T extends GraphCommand = GraphCommand> = (
+  state: Immutable<WorkflowState>,
+  command: T
+) => Immutable<WorkflowState>;
 
-export interface WorkflowModelDispatchers {
-  addNode: (
-    type: string,
-    position: XYPosition,
-    options?: { id?: string; data?: Record<string, any> }
-  ) => void;
-  deleteNode: (id: string) => void;
-  updateNodeData: (id: string, data: Record<string, any>) => void;
-  updateNodePosition: (id: string, position: XYPosition) => void;
-  updateNodeDimensions: (id: string, width: number, height: number) => void;
-  selectNode: (id: string | null) => void;
-  onConnect: (connection: Connection) => void;
-  addEdge: (edge: Edge) => void;
-  removeEdge: (id: string) => void;
-  setNodes: (nodes: WorkflowState['nodes']) => void;
-  setEdges: (edges: WorkflowState['edges']) => void;
-  pasteNodes: (nodes: WorkflowState['nodes'], edges: WorkflowState['edges']) => void;
-  groupNodes: (nodeIds: string[]) => void;
-  toggleSubgraph: (nodeId: string) => void;
-  handleNodeDragStop: (nodeId: string) => void;
+export interface WorkflowModelOptions {
+  initialState?: WorkflowState;
+  maxHistorySize?: number;
+  onStateChange?: (state: Immutable<WorkflowState>) => void;
+  onError?: (error: unknown, command: GraphCommand) => void;
 }
 
-// 保持接口兼容性，虽然内部实现换成了 RxWorkflow
-export interface WorkflowModelInterface {
-  rxWorkflow: RxWorkflow;
-  state$: Observable<WorkflowState>;
-  viewState$: Observable<WorkflowState>;
-  canUndo$: Observable<boolean>;
-  canRedo$: Observable<boolean>;
-  dispatch: (command: GraphCommand) => void;
-  undo: () => void;
-  redo: () => void;
-  dispatchers: WorkflowModelDispatchers;
-  getSnapshot: () => WorkflowState;
-  destroy: () => void;
-}
+const defaultState: WorkflowState = {
+  nodes: [],
+  edges: [],
+  selectedNodeId: null,
+};
 
-export function createWorkflowModel(
-  options: RxWorkflowOptions = {}
-): WorkflowModelInterface {
-  const rxWorkflow = new RxWorkflow(options);
+export class WorkflowModel {
+  private _state: Immutable<WorkflowState>;
+  private _past: Immutable<WorkflowState>[] = [];
+  private _future: Immutable<WorkflowState>[] = [];
+  private _handlers = new Map<string, CommandProcessor>();
+  private _options: WorkflowModelOptions;
 
-  // 注册所有处理器到 RxWorkflow (实际上是注册到 Core WorkflowModel)
-  // 注意：registerAllHandlers 需要适配新的接口
-  // 我们需要一个适配器，因为 registerAllHandlers 期望的是 RxCommandBus
-  // 但我们可以直接修改 commandHandlers.ts 或者在这里适配
+  constructor(options: WorkflowModelOptions = {}) {
+    this._options = options;
+    this._state = options.initialState ?? defaultState;
+  }
 
-  // 更好的方式是让 registerAllHandlers 接受一个通用接口
-  // 暂时我们这里做一个简单的鸭子类型适配，或者直接让 commandHandlers 导出处理器映射
+  // ===== Getters =====
 
-  // 让我们修改 registerAllHandlers 签名可能会更好，但为了最小改动：
-  // 我们可以在 RxWorkflow 中实现 registerHandler 方法
-  registerAllHandlers(rxWorkflow as any); // 需要确保 RxWorkflow 有 registerHandler 方法
+  get state(): Immutable<WorkflowState> {
+    return this._state;
+  }
 
-  const dispatch = (command: GraphCommand) => rxWorkflow.dispatch(command);
+  get canUndo(): boolean {
+    return this._past.length > 0;
+  }
 
-  const dispatchers: WorkflowModelDispatchers = {
-    addNode: (type, position, options) =>
-      dispatch({
-        type: 'ADD_NODE',
-        payload: {
-          id: options?.id,
-          nodeType: type,
-          position,
-          data: options?.data,
-        },
-      }),
-    deleteNode: (id) => dispatch({ type: 'REMOVE_NODE', payload: { id } }),
-    updateNodeData: (id, data) =>
-      dispatch({ type: 'UPDATE_NODE_DATA', payload: { id, data } }),
-    updateNodePosition: (id, position) =>
-      dispatch({ type: 'UPDATE_NODE_POSITION', payload: { id, position } }),
-    updateNodeDimensions: (id, width, height) =>
-      dispatch({
-        type: 'UPDATE_NODE_DIMENSIONS',
-        payload: { id, width, height },
-      }),
-    selectNode: (id) => dispatch({ type: 'SELECT_NODE', payload: { id } }),
-    onConnect: (connection) =>
-      dispatch({ type: 'ON_CONNECT', payload: connection }),
-    addEdge: (edge) => dispatch({ type: 'ADD_EDGE', payload: { edge } }),
-    removeEdge: (id) => dispatch({ type: 'REMOVE_EDGE', payload: { id } }),
-    setNodes: (nodes) => dispatch({ type: 'SET_NODES', payload: { nodes } }),
-    setEdges: (edges) => dispatch({ type: 'SET_EDGES', payload: { edges } }),
-    pasteNodes: (nodes, edges) =>
-      dispatch({ type: 'PASTE_NODES', payload: { nodes, edges } }),
-    groupNodes: (nodeIds) =>
-      dispatch({ type: 'GROUP_NODES', payload: { nodeIds } }),
-    toggleSubgraph: (nodeId) =>
-      dispatch({ type: 'TOGGLE_SUBGRAPH', payload: { nodeId } }),
-    handleNodeDragStop: (nodeId) =>
-      dispatch({ type: 'HANDLE_NODE_DRAG_STOP', payload: { nodeId } }),
-  };
+  get canRedo(): boolean {
+    return this._future.length > 0;
+  }
 
-  return {
-    rxWorkflow,
-    state$: rxWorkflow.state$,
-    viewState$: rxWorkflow.viewState$,
-    canUndo$: rxWorkflow.canUndo$,
-    canRedo$: rxWorkflow.canRedo$,
-    dispatch,
-    undo: () => rxWorkflow.undo(),
-    redo: () => rxWorkflow.redo(),
-    dispatchers,
-    getSnapshot: () => rxWorkflow.currentState,
-    destroy: () => rxWorkflow.destroy(),
-  };
+  // ===== Public API =====
+
+  /**
+   * 注册 Command 处理器
+   */
+  registerHandler(type: string, handler: CommandProcessor): void {
+    this._handlers.set(type, handler);
+  }
+
+  /**
+   * 批量注册处理器
+   */
+  registerHandlers(handlers: Record<string, CommandProcessor>): void {
+    Object.entries(handlers).forEach(([type, handler]) => {
+      this._handlers.set(type, handler);
+    });
+  }
+
+  /**
+   * 执行 Command
+   */
+  execute(command: GraphCommand): void {
+    // 1. 处理 Undo/Redo (Meta Commands)
+    if (command.type === 'UNDO') {
+      this._performUndo();
+      return;
+    }
+    if (command.type === 'REDO') {
+      this._performRedo();
+      return;
+    }
+
+    // 2. 查找 Processor
+    const handler = this._handlers.get(command.type);
+    if (!handler) {
+      console.warn(`[WorkflowModel] No handler for command: ${command.type}`);
+      return;
+    }
+
+    try {
+      // 3. 执行 Processor (Immer produce inside or wrapper)
+      // 注意：Processor 本身已经是 Immer producer，或者返回新状态
+      // 我们假设 Processor 签名是 (state, command) => nextState
+      const nextState = handler(this._state, command);
+
+      // 4. 如果状态未改变，直接返回
+      if (nextState === this._state) {
+        return;
+      }
+
+      // 5. 记录历史 (除非 skipHistory)
+      const shouldSkipHistory =
+        command.meta?.skipHistory === true ||
+        command.type === 'SELECT_NODE' ||
+        command.type === 'UPDATE_NODE_STATUS'; // 运行时状态通常不进历史
+
+      if (!shouldSkipHistory) {
+        this._pushHistory(this._state);
+      }
+
+      // 6. 更新状态
+      this._updateState(nextState);
+
+    } catch (error) {
+      console.error(`[WorkflowModel] Error executing command ${command.type}:`, error);
+      this._options.onError?.(error, command);
+    }
+  }
+
+  /**
+   * 撤销
+   */
+  undo(): void {
+    this.execute({ type: 'UNDO', payload: {} });
+  }
+
+  /**
+   * 重做
+   */
+  redo(): void {
+    this.execute({ type: 'REDO', payload: {} });
+  }
+
+  /**
+   * 直接重置状态 (不记录历史，清空历史)
+   */
+  reset(state: WorkflowState): void {
+    this._past = [];
+    this._future = [];
+    this._updateState(state);
+  }
+
+  // ===== Private Implementation =====
+
+  private _updateState(nextState: Immutable<WorkflowState>): void {
+    this._state = nextState;
+    this._options.onStateChange?.(nextState);
+  }
+
+  private _pushHistory(state: Immutable<WorkflowState>): void {
+    this._past.push(state);
+    const maxSize = this._options.maxHistorySize ?? 50;
+    if (this._past.length > maxSize) {
+      this._past.shift();
+    }
+    this._future = []; // Clear redo stack on new action
+  }
+
+  private _performUndo(): void {
+    if (this._past.length === 0) return;
+
+    const previousState = this._past.pop();
+    if (previousState) {
+      this._future.push(this._state);
+      this._updateState(previousState);
+    }
+  }
+
+  private _performRedo(): void {
+    if (this._future.length === 0) return;
+
+    const nextState = this._future.pop();
+    if (nextState) {
+      this._past.push(this._state);
+      this._updateState(nextState);
+    }
+  }
 }

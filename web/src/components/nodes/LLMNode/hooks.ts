@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIncremark } from '@incremark/react';
-import { useStore } from '../../../store';
+import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = 'auto';

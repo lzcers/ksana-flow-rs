@@ -1,9 +1,9 @@
 import React from 'react';
 import { Handle, NodeResizeControl, Position } from '@xyflow/react';
 import { Play } from 'lucide-react';
-import { cn } from '../../../../utils/cn';
-import type { NodeData } from '../../../../model/types';
-import { useStore } from '../../../../store';
+import { cn } from '@/utils/cn';
+import type { NodeData } from '@/model/types';
+import { useStore } from '@/store';
 import { nodeWrapperStyles } from './styles';
 import { useNodeLabel } from './useNodeLabel';
 import '../node.css';

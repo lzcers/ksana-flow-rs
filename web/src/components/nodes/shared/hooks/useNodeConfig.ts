@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { workflowModel } from '../../../../store/workflowModel';
+import { workflowModel } from '@/store';
 
 export function useNodeConfig<T extends Record<string, unknown>>(id: string, config: T | undefined) {
   const configRef = useRef<T | undefined>(config);

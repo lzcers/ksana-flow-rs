@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 import { useShortVideoNodeController } from './hooks';
 import { ShortVideoNodeView } from './view';
 

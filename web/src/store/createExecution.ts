@@ -3,7 +3,7 @@ import { BehaviorSubject, Subject, interval, animationFrameScheduler, bufferWhen
 import { produce } from 'immer';
 import type { StoreState, Execution, WebSocketFlowMessage } from './types';
 import * as api from '../api';
-import { workflowModel } from './workflowModel';
+import { workflowModel } from '.';
 import type { GraphCommand } from '../model/commands';
 import { toBlueprint } from '../model/adapters';
 

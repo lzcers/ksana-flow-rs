@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
 import { BacktesterNodeView } from './view';

@@ -4,7 +4,7 @@
  */
 
 import type { XYPosition, Connection } from '@xyflow/react';
-import type { Node, NodeData, Edge, NodeChange, EdgeChange } from '../types';
+import type { Node, NodeData, Edge, NodeChange, EdgeChange } from './types';
 
 export interface BaseCommand {
   meta?: {

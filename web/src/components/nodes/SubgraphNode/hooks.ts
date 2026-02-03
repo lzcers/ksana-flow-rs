@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
-import { useStore } from '../../../store';
-import type { NodeData } from '../../../model/types';
+import { useStore } from '@/store';
+import type { NodeData } from '@/model/types';
 
 export function useSubgraphController(id: string, data: NodeData) {
   // @ts-ignore - toggleSubgraph will be added to store later

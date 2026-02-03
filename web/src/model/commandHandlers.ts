@@ -3,7 +3,7 @@
  * 将处理器函数注册到 CommandBus
  */
 
-import type { RxWorkflow } from './rx';
+import type { RxWorkflow } from './workflowRx';
 import * as graphProcessors from './processors/graphProcessors';
 import * as nodeProcessors from './processors/nodeProcessors';
 import * as edgeProcessors from './processors/edgeProcessors';

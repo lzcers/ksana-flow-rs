@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../../../store';
+import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
-import type { NodeData } from '../../../model/types';
+import type { NodeData } from '@/model/types';
 
 const IMG_GEN_MIN_WIDTH = 270;
 const IMG_GEN_MIN_HEIGHT = 480;
