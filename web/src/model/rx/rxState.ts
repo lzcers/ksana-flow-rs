@@ -34,19 +34,12 @@ export class RxWorkflowState {
 
     this.nodes$ = this.state$.pipe(
       map((state) => state.nodes),
-      distinctUntilChanged((prev, curr) => {
-        if (prev.length !== curr.length) return false;
-        // 简化的深度比较，实际使用时可能需要更精确的比较
-        return prev.every((node, index) => node.id === curr[index]?.id);
-      })
+      distinctUntilChanged()
     );
 
     this.edges$ = this.state$.pipe(
       map((state) => state.edges),
-      distinctUntilChanged((prev, curr) => {
-        if (prev.length !== curr.length) return false;
-        return prev.every((edge, index) => edge.id === curr[index]?.id);
-      })
+      distinctUntilChanged()
     );
 
     this.selectedNodeId$ = this.state$.pipe(
@@ -88,11 +81,7 @@ export class RxWorkflowState {
   selectNode$(nodeId: string): Observable<Node | undefined> {
     return this.nodes$.pipe(
       map((nodes) => nodes.find((n) => n.id === nodeId)),
-      distinctUntilChanged((prev, curr) => {
-        if (!prev && !curr) return true;
-        if (!prev || !curr) return false;
-        return prev.id === curr.id; // 简化比较
-      })
+      distinctUntilChanged()
     );
   }
 

@@ -4,9 +4,8 @@
  */
 
 import type { StoreApi } from 'zustand';
-import type { RxCommandBus } from '@/model/rx';
-import type { WorkflowState } from '@/model/types';
-import type { GraphCommand } from '@/model/commands';
+import type { RxCommandBus } from '../model/rx';
+import type { WorkflowState } from '../model/types';
 
 export interface RxConnectorConfig {
   commandBus: RxCommandBus;
@@ -16,14 +15,17 @@ export interface RxConnectorConfig {
 
 export interface CommandDispatchers {
   addNode: (type: string, position: { x: number; y: number }) => void;
+  deleteNode: (id: string) => void;
   removeNode: (id: string) => void;
   updateNodeData: (id: string, data: Record<string, any>) => void;
   updateNodePosition: (id: string, position: { x: number; y: number }) => void;
   updateNodeDimensions: (id: string, width: number, height: number) => void;
   selectNode: (id: string | null) => void;
+  applyNodeChanges: (changes: any[]) => void;
   onConnect: (connection: { source: string; target: string; sourceHandle?: string; targetHandle?: string }) => void;
   addEdge: (edge: any) => void;
   removeEdge: (id: string) => void;
+  applyEdgeChanges: (changes: any[]) => void;
   setNodes: (nodes: any[]) => void;
   setEdges: (edges: any[]) => void;
   pasteNodes: (nodes: any[], edges: any[]) => void;
@@ -34,16 +36,26 @@ export interface CommandDispatchers {
 /**
  * 连接 RxJS CommandBus 到 Zustand Store
  */
-export function connectRxToZustand<T extends { workflow: WorkflowState }>(
+export function connectRxToZustand<
+  T extends {
+    nodes: WorkflowState['nodes'];
+    edges: WorkflowState['edges'];
+    selectedNodeId: WorkflowState['selectedNodeId'];
+  }
+>(
   storeApi: StoreApi<T>,
   config: RxConnectorConfig
 ): () => void {
   const { commandBus, onStateChange } = config;
 
   // 订阅 RxJS State 变化，同步到 Zustand
-  const subscription = commandBus.state$.subscribe((workflowState) => {
+  const subscription = commandBus.state$.subscribe((workflowState: WorkflowState) => {
     // 同步到 Zustand
-    storeApi.setState({ workflow: workflowState } as Partial<T>);
+    storeApi.setState({
+      nodes: workflowState.nodes,
+      edges: workflowState.edges,
+      selectedNodeId: workflowState.selectedNodeId,
+    } as Partial<T>);
 
     // 可选的回调
     onStateChange?.(workflowState);
@@ -71,6 +83,12 @@ export function createCommandDispatchers(
       });
     },
 
+    deleteNode: (id) => {
+      commandBus.dispatch({
+        type: 'REMOVE_NODE',
+        payload: { id },
+      });
+    },
     removeNode: (id) => {
       commandBus.dispatch({
         type: 'REMOVE_NODE',
@@ -105,12 +123,22 @@ export function createCommandDispatchers(
         payload: { id },
       });
     },
+    applyNodeChanges: (changes) => {
+      commandBus.dispatch({
+        type: 'APPLY_NODE_CHANGES',
+        payload: { changes: changes as any },
+      });
+    },
 
     // ===== Edge Commands =====
     onConnect: (connection) => {
       commandBus.dispatch({
         type: 'ON_CONNECT',
-        payload: connection,
+        payload: {
+          ...connection,
+          sourceHandle: connection.sourceHandle ?? null,
+          targetHandle: connection.targetHandle ?? null,
+        } as any,
       });
     },
 
@@ -125,6 +153,12 @@ export function createCommandDispatchers(
       commandBus.dispatch({
         type: 'REMOVE_EDGE',
         payload: { id },
+      });
+    },
+    applyEdgeChanges: (changes) => {
+      commandBus.dispatch({
+        type: 'APPLY_EDGE_CHANGES',
+        payload: { changes: changes as any },
       });
     },
 

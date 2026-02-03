@@ -4,6 +4,7 @@ import { createWorkflow } from './createWorkflow';
 import { createCanvas } from './createCanvas';
 import { createExecution } from './createExecution';
 import { createToast } from './createToast';
+import { attachWorkflowModelToStore } from './workflowModel';
 
 export const useStore = create<StoreState>((set, get, store) => ({
   ...createWorkflow(set, get, store),
@@ -11,3 +12,5 @@ export const useStore = create<StoreState>((set, get, store) => ({
   ...createExecution(set, get, store),
   ...createToast(set, get, store),
 }));
+
+attachWorkflowModelToStore(useStore as any);

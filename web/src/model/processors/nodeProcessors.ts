@@ -4,7 +4,7 @@
  */
 
 import { produce } from 'immer';
-import type { WorkflowState, Node, NodeData } from '../types';
+import type { WorkflowState, Node, NodeData, NodeChange } from '../types';
 import type {
   AddNodeCommand,
   RemoveNodeCommand,
@@ -12,7 +12,9 @@ import type {
   UpdateNodePositionCommand,
   UpdateNodeDimensionsCommand,
   SelectNodeCommand,
+  ApplyNodeChangesCommand,
 } from '../commands';
+import { applyNodeChangesXyflow } from '../utils';
 
 // ===== ID 生成 =====
 
@@ -64,17 +66,18 @@ export const processAddNode = (
   state: WorkflowState,
   command: AddNodeCommand
 ): WorkflowState => {
-  const { nodeType, position } = command.payload;
+  const { id: requestedId, nodeType, position, data } = command.payload;
 
   return produce(state, (draft) => {
-    const id = getNextNodeId(draft.nodes, nodeType);
+    const id = requestedId ?? getNextNodeId(draft.nodes, nodeType);
     const newNode: Node = {
       id,
       type: nodeType,
       position,
       data: {
-        label: id,
         ...getDefaultNodeData(nodeType),
+        ...data,
+        label: (data as any)?.label ?? id,
         status: 'idle',
       },
     };
@@ -168,6 +171,30 @@ export const processSelectNode = (
 
     draft.nodes.forEach((node) => {
       node.selected = node.id === id;
+    });
+
+    syncEdgeHighlighting(draft);
+  });
+};
+
+export const processApplyNodeChanges = (
+  state: WorkflowState,
+  command: ApplyNodeChangesCommand
+): WorkflowState => {
+  const { changes } = command.payload;
+
+  return produce(state, (draft) => {
+    const updatedNodes = applyNodeChangesXyflow(changes as NodeChange[], draft.nodes);
+    draft.nodes = updatedNodes as any[];
+
+    changes.forEach((change) => {
+      if (change.type === 'select') {
+        if ((change as any).selected) {
+          draft.selectedNodeId = change.id;
+        } else if (draft.selectedNodeId === change.id) {
+          draft.selectedNodeId = null;
+        }
+      }
     });
 
     syncEdgeHighlighting(draft);

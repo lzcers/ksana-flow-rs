@@ -5,13 +5,13 @@
 
 // Node 处理器
 export {
-  getNextNodeId,
   processAddNode,
   processRemoveNode,
   processUpdateNodeData,
   processUpdateNodePosition,
   processUpdateNodeDimensions,
   processSelectNode,
+  processApplyNodeChanges,
 } from './nodeProcessors';
 
 // Edge 处理器
@@ -21,6 +21,7 @@ export {
   processOnConnect,
   processUpdateEdge,
   processSetEdges,
+  processApplyEdgeChanges,
 } from './edgeProcessors';
 
 // Graph 处理器

@@ -4,15 +4,17 @@
  */
 
 import type { XYPosition, Connection } from '@xyflow/react';
-import type { Node, NodeData, Edge } from '../types';
+import type { Node, NodeData, Edge, NodeChange, EdgeChange } from '../types';
 
 // ===== Node Commands =====
 
 export interface AddNodeCommand {
   type: 'ADD_NODE';
   payload: {
+    id?: string;
     nodeType: string;
     position: XYPosition;
+    data?: Partial<NodeData>;
   };
 }
 
@@ -55,6 +57,13 @@ export interface SelectNodeCommand {
   };
 }
 
+export interface ApplyNodeChangesCommand {
+  type: 'APPLY_NODE_CHANGES';
+  payload: {
+    changes: NodeChange[];
+  };
+}
+
 // ===== Edge Commands =====
 
 export interface AddEdgeCommand {
@@ -81,6 +90,13 @@ export interface UpdateEdgeCommand {
   payload: {
     id: string;
     updates: Partial<Edge>;
+  };
+}
+
+export interface ApplyEdgeChangesCommand {
+  type: 'APPLY_EDGE_CHANGES';
+  payload: {
+    changes: EdgeChange[];
   };
 }
 
@@ -141,11 +157,13 @@ export type GraphCommand =
   | UpdateNodePositionCommand
   | UpdateNodeDimensionsCommand
   | SelectNodeCommand
+  | ApplyNodeChangesCommand
   // Edge commands
   | AddEdgeCommand
   | RemoveEdgeCommand
   | OnConnectCommand
   | UpdateEdgeCommand
+  | ApplyEdgeChangesCommand
   // Graph commands
   | SetNodesCommand
   | SetEdgesCommand

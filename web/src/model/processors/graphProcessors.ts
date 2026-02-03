@@ -4,7 +4,7 @@
  */
 
 import { produce } from 'immer';
-import type { WorkflowState, Node, Edge, NodeData } from '../types';
+import type { WorkflowState, Node, Edge } from '../types';
 import type {
   PasteNodesCommand,
   GroupNodesCommand,
@@ -13,34 +13,6 @@ import type {
   BatchCommand,
 } from '../commands';
 import { getNextNodeId } from './nodeProcessors';
-
-// ===== 辅助函数 =====
-
-const getDefaultNodeData = (type: string): Partial<NodeData> => {
-  const defaults: Record<string, Partial<NodeData>> = {
-    LLMNode: {
-      label: 'LLM',
-      config: { model: 'gpt-4', temperature: 0.7 },
-    },
-    TextNode: {
-      label: 'Text',
-      config: { content: '' },
-    },
-    SubgraphNode: {
-      label: 'Subgraph',
-      expanded: true,
-      expandedSize: { width: 400, height: 300 },
-      collapsedSize: { width: 200, height: 50 },
-    },
-    MapNode: {
-      label: 'Map',
-      expanded: true,
-      expandedSize: { width: 400, height: 300 },
-      collapsedSize: { width: 200, height: 50 },
-    },
-  };
-  return defaults[type] || { label: type };
-};
 
 // ===== 处理器函数 =====
 
@@ -186,43 +158,12 @@ export const processToggleSubgraph = (
     }
 
     // 更新 expanded 状态
+    const childCount = draft.nodes.filter((n) => n.parentId === nodeId).length;
     subgraphNode.data = {
       ...subgraphNode.data,
       expanded: !isExpanded,
+      childCount,
     };
-
-    // 处理子节点可见性
-    const childNodes = draft.nodes.filter(
-      (n) => (n.data as any)?.parentId === nodeId
-    );
-
-    if (!isExpanded) {
-      // 展开：显示子节点
-      childNodes.forEach((child) => {
-        (child as any).hidden = false;
-      });
-
-      // 显示子节点之间的边
-      const childNodeIds = new Set(childNodes.map((n) => n.id));
-      draft.edges.forEach((edge) => {
-        if (childNodeIds.has(edge.source) && childNodeIds.has(edge.target)) {
-          (edge as any).hidden = false;
-        }
-      });
-    } else {
-      // 折叠：隐藏子节点
-      childNodes.forEach((child) => {
-        (child as any).hidden = true;
-      });
-
-      // 隐藏子节点之间的边
-      const childNodeIds = new Set(childNodes.map((n) => n.id));
-      draft.edges.forEach((edge) => {
-        if (childNodeIds.has(edge.source) && childNodeIds.has(edge.target)) {
-          (edge as any).hidden = true;
-        }
-      });
-    }
   });
 };
 
@@ -239,10 +180,8 @@ export const processSetNodes = (
 
 export const processBatch = (
   state: WorkflowState,
-  command: BatchCommand
+  _command: BatchCommand
 ): WorkflowState => {
-  const { commands } = command.payload;
-
   // 注意：这里需要递归处理批量命令
   // 为避免循环依赖，batch 处理器应该由外部调用时传入处理器映射
   // 或者使用 CommandBus 来分发

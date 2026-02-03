@@ -1,21 +1,8 @@
 import type { StateCreator } from 'zustand';
 import type { StoreState, Canvas } from './types';
-import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/types';
+import type { Node, NodeChange, EdgeChange, Connection } from '../model/types';
 
-import {
-  addNode,
-  removeNode,
-  updateNodeData,
-  updateNodeDimensions,
-  applyNodeChanges,
-  applyEdgeChanges,
-  onConnect,
-  selectNode,
-  setNodes,
-  setEdges,
-  pasteNodes
-} from '../model';
-import { applyCollapsedSubgraphUi } from '../model/utils';
+import { workflowModel } from './workflowModel';
 
 const sortNodesByParent = (nodes: Node[]): Node[] => {
   const idSet = new Set(nodes.map((n) => n.id));
@@ -65,9 +52,12 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   history: { past: [], future: [] },
 
   pushHistory: () => {
-    const { nodes, edges, history } = get();
-    // Limit history to 50 steps to prevent memory issues
-    const newPast = [...history.past, { nodes, edges }].slice(-50);
+    const { history } = get();
+    const snapshot = workflowModel.getSnapshot();
+    const newPast = [
+      ...history.past,
+      { nodes: snapshot.nodes, edges: snapshot.edges },
+    ].slice(-50);
     set({ history: { past: newPast, future: [] } });
   },
 
@@ -78,14 +68,18 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     const previous = history.past[history.past.length - 1];
     const newPast = history.past.slice(0, -1);
 
-    const { nodes, edges } = get();
+    const snapshot = workflowModel.getSnapshot();
 
-    set({
+    workflowModel.commandBus.setState({
       nodes: previous.nodes,
       edges: previous.edges,
+      selectedNodeId: snapshot.selectedNodeId,
+    });
+
+    set({
       history: {
         past: newPast,
-        future: [{ nodes, edges }, ...history.future]
+        future: [{ nodes: snapshot.nodes, edges: snapshot.edges }, ...history.future]
       }
     });
   },
@@ -97,13 +91,17 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     const next = history.future[0];
     const newFuture = history.future.slice(1);
 
-    const { nodes, edges } = get();
+    const snapshot = workflowModel.getSnapshot();
 
-    set({
+    workflowModel.commandBus.setState({
       nodes: next.nodes,
       edges: next.edges,
+      selectedNodeId: snapshot.selectedNodeId,
+    });
+
+    set({
       history: {
-        past: [...history.past, { nodes, edges }],
+        past: [...history.past, { nodes: snapshot.nodes, edges: snapshot.edges }],
         future: newFuture
       }
     });
@@ -112,12 +110,12 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   canUndo: () => get().history.past.length > 0,
   canRedo: () => get().history.future.length > 0,
 
-  setNodes: (nodes) => set(state => ({ ...state, ...setNodes(state, nodes) })),
-  setEdges: (edges) => set(state => ({ ...state, ...setEdges(state, edges) })),
+  setNodes: (nodes) => workflowModel.dispatchers.setNodes(nodes as any),
+  setEdges: (edges) => workflowModel.dispatchers.setEdges(edges as any),
 
   pasteNodes: (nodes, edges) => {
     get().pushHistory();
-    set(state => ({ ...state, ...pasteNodes(state, nodes, edges) }));
+    workflowModel.dispatchers.pasteNodes(nodes as any, edges as any);
   },
 
   onNodesChange: (changes: NodeChange[]) => {
@@ -125,7 +123,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     if (changes.some(c => c.type === 'remove')) {
       get().pushHistory();
     }
-    set(state => ({ ...state, ...applyNodeChanges(state, changes) }));
+    workflowModel.dispatch({
+      type: 'APPLY_NODE_CHANGES',
+      payload: { changes },
+    });
   },
 
   onEdgesChange: (changes: EdgeChange[]) => {
@@ -133,11 +134,41 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     if (changes.some(c => c.type === 'remove')) {
       get().pushHistory();
     }
-    set(state => ({ ...state, ...applyEdgeChanges(state, changes) }));
+    const { edges } = get();
+    const edgeById = new Map(edges.map((e) => [e.id, e] as const));
+
+    const removeOriginalEdgeIds: string[] = [];
+    const coreChanges: EdgeChange[] = [];
+
+    for (const change of changes) {
+      if (!('id' in change)) {
+        coreChanges.push(change);
+        continue;
+      }
+
+      const edge = edgeById.get(change.id) as any;
+      const proxy = edge?.data?.__uiSubgraphEdge;
+      if (proxy) {
+        if (change.type === 'remove' && typeof proxy.originalEdgeId === 'string') {
+          removeOriginalEdgeIds.push(proxy.originalEdgeId);
+        }
+        continue;
+      }
+      coreChanges.push(change);
+    }
+
+    removeOriginalEdgeIds.forEach((id) => workflowModel.dispatchers.removeEdge(id));
+
+    if (coreChanges.length > 0) {
+      workflowModel.dispatch({
+        type: 'APPLY_EDGE_CHANGES',
+        payload: { changes: coreChanges },
+      });
+    }
   },
 
   onNodeDragStop: (_event: any, draggedNode: any) => {
-    const { nodes } = get();
+    const { nodes } = workflowModel.getSnapshot();
     const nodeId = typeof draggedNode?.id === 'string' ? draggedNode.id : null;
     if (!nodeId) return;
 
@@ -268,18 +299,19 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       };
     });
 
-    set({ nodes: sortNodesByParent(nextNodes) });
+    workflowModel.dispatchers.setNodes(sortNodesByParent(nextNodes) as any);
   },
 
   onConnect: (connection: Connection) => {
     get().pushHistory();
-    set(state => ({ ...state, ...onConnect(state, connection) }));
+    workflowModel.dispatchers.onConnect(connection as any);
   },
 
   addNode: (type: string, position: { x: number; y: number } = { x: 300, y: 200 }) => {
     get().pushHistory();
 
-    const { nodes, nodeTypes } = get();
+    const { nodeTypes } = get();
+    const { nodes } = workflowModel.getSnapshot();
     // Find all nodes of the same type and extract their numbers
     const sameTypeNodes = nodes.filter(n => n.id.startsWith(`${type}-`));
     let nextNum = 1;
@@ -294,41 +326,40 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     }
     const id = `${type}-${nextNum}`;
     const meta = nodeTypes.find(t => t.name === type);
-    const newNode: Node = {
+    workflowModel.dispatchers.addNode(type, position as any, {
       id,
-      type: type as any,
-      position,
       data: {
         label: type,
         description: meta?.description || '',
         config: meta?.config || {},
-        status: 'idle'
+        status: 'idle',
       },
-    };
-
-    set(state => {
-      let next = addNode(state, newNode);
-      next = selectNode(next, id);
-      return { ...state, ...next };
     });
+    workflowModel.dispatchers.selectNode(id);
   },
 
   deleteNode: (id: string) => {
     get().pushHistory();
-    set(state => ({ ...state, ...removeNode(state, id) }));
+    workflowModel.dispatchers.deleteNode(id);
   },
 
-  updateNodeData: (id: string, data: Record<string, any>) => set(state => ({ ...state, ...updateNodeData(state, id, data) })),
+  updateNodeData: (id: string, data: Record<string, any>) => {
+    workflowModel.dispatchers.updateNodeData(id, data);
+  },
 
-  updateNodeDimensions: (id: string, width: number, height: number) => set(state => ({ ...state, ...updateNodeDimensions(state, id, width, height) })),
+  updateNodeDimensions: (id: string, width: number, height: number) => {
+    workflowModel.dispatchers.updateNodeDimensions(id, width, height);
+  },
 
-  selectNode: (id: string | null) => set(state => ({ ...state, ...selectNode(state, id) })),
+  selectNode: (id: string | null) => {
+    workflowModel.dispatchers.selectNode(id);
+  },
 
   setConnectionState: (connecting, sourceId = null) => set({ isConnecting: connecting, connectionSourceId: sourceId }),
 
   groupNodes: (nodeIds: string[]) => {
     if (nodeIds.length < 1) return;
-    const { nodes } = get();
+    const { nodes } = workflowModel.getSnapshot();
     const selectedNodes = nodes.filter(n => nodeIds.includes(n.id));
     if (selectedNodes.length === 0) return;
 
@@ -408,111 +439,17 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       return n;
     });
 
-    set({ nodes: sortNodesByParent([...updatedNodes, groupNode]), selectedNodeId: groupId });
+    workflowModel.dispatchers.setNodes(
+      sortNodesByParent([...updatedNodes, groupNode]) as any
+    );
+    workflowModel.dispatchers.selectNode(groupId);
   },
 
   toggleSubgraph: (nodeId: string) => {
-    const { nodes, edges } = get();
-    const node = nodes.find(n => n.id === nodeId);
+    const snapshot = workflowModel.getSnapshot();
+    const node = snapshot.nodes.find((n) => n.id === nodeId);
     if (!node || (node.type !== 'SubgraphNode' && node.type !== 'MapNode')) return;
-
     get().pushHistory();
-
-    const isExpanded = node.data.expanded !== false;
-    const nextExpanded = !isExpanded;
-
-    // Get child nodes count for collapsed display
-    const childCount = nodes.filter(n => n.parentId === nodeId).length;
-
-    const nodeById = new Map(nodes.map(n => [n.id, n] as const));
-    const collapsedGroupIds = new Set(
-      nodes
-        .filter((n) => (n.type === 'SubgraphNode' || n.type === 'MapNode') && n.data?.expanded === false)
-        .map((n) => n.id)
-    );
-    if (nextExpanded) collapsedGroupIds.delete(nodeId);
-    else collapsedGroupIds.add(nodeId);
-
-    const isHiddenByCollapsedAncestor = (n: Node) => {
-      let current = n;
-      while (current.parentId) {
-        if (collapsedGroupIds.has(current.parentId)) return true;
-        const parent = nodeById.get(current.parentId);
-        if (!parent) return false;
-        current = parent;
-      }
-      return false;
-    };
-
-    const updatedNodes = nodes.map(n => {
-      if (n.id === nodeId) {
-        if (nextExpanded) {
-           const currentWidth = node.measured?.width
-             ?? (typeof node.style?.width === 'number' ? node.style.width : undefined)
-             ?? node.width
-             ?? 180;
-           const currentHeight = node.measured?.height
-             ?? (typeof node.style?.height === 'number' ? node.style.height : undefined)
-             ?? node.height
-             ?? 80;
-           const savedSize = node.data.expandedSize as { width: number, height: number } | undefined;
-           const nextSize = savedSize ?? { width: 300, height: 200 };
-           return {
-             ...n,
-             style: {
-                ...n.style,
-                width: nextSize.width,
-                height: nextSize.height,
-             },
-             width: nextSize.width,
-             height: nextSize.height,
-             data: {
-               ...n.data,
-               expanded: true,
-               collapsedSize: { width: currentWidth, height: currentHeight },
-               childCount // Store for display
-             }
-           };
-        } else {
-           const currentWidth = node.measured?.width
-             ?? (typeof node.style?.width === 'number' ? node.style.width : undefined)
-             ?? node.width
-             ?? 300;
-           const currentHeight = node.measured?.height
-             ?? (typeof node.style?.height === 'number' ? node.style.height : undefined)
-             ?? node.height
-             ?? 200;
-           const savedCollapsed = node.data.collapsedSize as { width: number, height: number } | undefined;
-           const nextSize = savedCollapsed ?? { width: 180, height: 80 };
-           return {
-             ...n,
-             style: { ...n.style, width: nextSize.width, height: nextSize.height },
-             width: nextSize.width,
-             height: nextSize.height,
-             data: {
-               ...n.data,
-               expanded: false,
-               expandedSize: { width: currentWidth, height: currentHeight },
-               collapsedSize: nextSize,
-               childCount
-             }
-           };
-        }
-      }
-
-      if (n.parentId) {
-        const hidden = isHiddenByCollapsedAncestor(n);
-        return {
-          ...n,
-          extent: hidden ? undefined : ((n.extent ?? 'parent') as Node['extent']),
-          hidden,
-        };
-      }
-      return n;
-    });
-
-    const baseEdges: Edge[] = edges.filter((e: any) => !e?.data?.__uiSubgraphEdge);
-    const preprocessed = applyCollapsedSubgraphUi(sortNodesByParent(updatedNodes), baseEdges);
-    set({ nodes: sortNodesByParent(preprocessed.nodes), edges: preprocessed.edges });
+    workflowModel.dispatchers.toggleSubgraph(nodeId);
   },
 });

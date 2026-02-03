@@ -4,15 +4,17 @@
  */
 
 import { produce } from 'immer';
-import type { WorkflowState, Edge } from '../types';
+import type { WorkflowState, EdgeChange } from '../types';
 import type {
   AddEdgeCommand,
   RemoveEdgeCommand,
   OnConnectCommand,
   UpdateEdgeCommand,
   SetEdgesCommand,
+  ApplyEdgeChangesCommand,
 } from '../commands';
 import { addEdge as addEdgeXyflow } from '@xyflow/react';
+import { applyEdgeChangesXyflow } from '../utils';
 
 // ===== 处理器函数 =====
 
@@ -71,5 +73,17 @@ export const processSetEdges = (
 
   return produce(state, (draft) => {
     draft.edges = edges as any[];
+  });
+};
+
+export const processApplyEdgeChanges = (
+  state: WorkflowState,
+  command: ApplyEdgeChangesCommand
+): WorkflowState => {
+  const { changes } = command.payload;
+
+  return produce(state, (draft) => {
+    const updatedEdges = applyEdgeChangesXyflow(changes as EdgeChange[], draft.edges);
+    draft.edges = updatedEdges;
   });
 };

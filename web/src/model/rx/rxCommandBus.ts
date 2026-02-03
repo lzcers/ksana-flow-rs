@@ -3,8 +3,8 @@
  * 使用 RxJS Subject 分发 Command，由注册的处理器处理
  */
 
-import { Subject, Observable, of } from 'rxjs';
-import { filter, map, mergeMap, catchError } from 'rxjs/operators';
+import { Subject, Observable, of, from } from 'rxjs';
+import { filter, concatMap, catchError } from 'rxjs/operators';
 import type { WorkflowState } from '../types';
 import type { GraphCommand } from '../commands';
 import { RxWorkflowState } from './rxState';
@@ -23,6 +23,16 @@ export type AsyncCommandHandler<T extends GraphCommand> = (
 export interface RxCommandBusOptions {
   initialState?: WorkflowState;
   enableLogging?: boolean;
+  onAfterCommand?: (args: {
+    command: GraphCommand;
+    prevState: WorkflowState;
+    nextState: WorkflowState;
+  }) => void;
+  onCommandError?: (args: {
+    command: GraphCommand;
+    error: unknown;
+    state: WorkflowState;
+  }) => void;
 }
 
 export class RxCommandBus {
@@ -144,45 +154,47 @@ export class RxCommandBus {
   private _setupCommandProcessing(): void {
     this._commands$
       .pipe(
-        mergeMap((command) => {
+        concatMap((command) => {
           const handler = this._handlers.get(command.type);
+          const prevState = this.currentState;
 
           if (!handler) {
             console.warn(
               `[RxCommandBus] No handler for command type: ${command.type}`
             );
-            return of(this.currentState);
+            return of({ command, prevState, nextState: prevState });
           }
 
           try {
-            const result = handler(this.currentState, command);
-
-            // 处理异步结果
-            if (result instanceof Promise) {
-              return result.then(
-                (newState) => newState,
-                (error) => {
-                  console.error('[RxCommandBus] Async handler error:', error);
-                  return this.currentState;
-                }
-              );
-            }
-
-            return of(result);
+            const result = handler(prevState, command);
+            return from(Promise.resolve(result)).pipe(
+              catchError((error) => {
+                console.error('[RxCommandBus] Handler error:', error);
+                this._options.onCommandError?.({ command, error, state: prevState });
+                return of(prevState);
+              }),
+              concatMap((nextState) => of({ command, prevState, nextState }))
+            );
           } catch (error) {
             console.error('[RxCommandBus] Handler error:', error);
-            return of(this.currentState);
+            this._options.onCommandError?.({ command, error, state: prevState });
+            return of({ command, prevState, nextState: prevState });
           }
         }),
         catchError((error) => {
           console.error('[RxCommandBus] Processing error:', error);
-          return of(this.currentState);
+          return of({
+            command: { type: '__UNKNOWN__', payload: {} } as any,
+            prevState: this.currentState,
+            nextState: this.currentState,
+          });
         })
       )
-      .subscribe((newState) => {
-        if (newState !== this.currentState) {
-          this._state.next(newState);
+      .subscribe(({ command, prevState, nextState }) => {
+        if (nextState !== this.currentState) {
+          this._state.next(nextState);
         }
+        this._options.onAfterCommand?.({ command, prevState, nextState });
       });
   }
 }

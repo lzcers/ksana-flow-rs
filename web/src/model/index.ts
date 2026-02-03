@@ -10,6 +10,7 @@ export * from './rx';
 export * from './commands';
 export * from './processors';
 export { registerAllHandlers } from './commandHandlers';
+export * from './workflowModel';
 
 // 初始状态
 export const initialWorkflowState: WorkflowState = {

@@ -19,6 +19,7 @@ export function registerAllHandlers(commandBus: RxCommandBus): void {
   commandBus.registerHandler('UPDATE_NODE_POSITION', nodeProcessors.processUpdateNodePosition);
   commandBus.registerHandler('UPDATE_NODE_DIMENSIONS', nodeProcessors.processUpdateNodeDimensions);
   commandBus.registerHandler('SELECT_NODE', nodeProcessors.processSelectNode);
+  commandBus.registerHandler('APPLY_NODE_CHANGES', nodeProcessors.processApplyNodeChanges);
 
   // ===== Edge Handlers =====
   commandBus.registerHandler('ADD_EDGE', edgeProcessors.processAddEdge);
@@ -26,6 +27,7 @@ export function registerAllHandlers(commandBus: RxCommandBus): void {
   commandBus.registerHandler('ON_CONNECT', edgeProcessors.processOnConnect);
   commandBus.registerHandler('UPDATE_EDGE', edgeProcessors.processUpdateEdge);
   commandBus.registerHandler('SET_EDGES', edgeProcessors.processSetEdges);
+  commandBus.registerHandler('APPLY_EDGE_CHANGES', edgeProcessors.processApplyEdgeChanges);
 
   // ===== Graph Handlers =====
   commandBus.registerHandler('PASTE_NODES', graphProcessors.processPasteNodes);
