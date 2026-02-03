@@ -19,17 +19,17 @@ export const useStore = create<StoreState>((set, get, store) => ({
 }));
 
 // Workflow Model 实例
-export const workflowModel = createWorkflowModel();
+export const rxWorkflowModel = createWorkflowModel();
 
 // FlowEvent Model 实例
-export const flowEventModel = createFlowEventModel();
+export const rxFlowEventModel = createFlowEventModel();
 
 // 连接 WorkflowModel 到 Store
 let detachWorkflow: (() => void) | null = null;
 export function attachWorkflowModelToStore(storeApi: StoreApi<StoreState>): () => void {
   if (detachWorkflow) return detachWorkflow;
 
-  const subscription = workflowModel.viewState$.subscribe((state: Immutable<WorkflowState>) => {
+  const subscription = rxWorkflowModel.viewState$.subscribe((state: Immutable<WorkflowState>) => {
     storeApi.setState({
       nodes: state.nodes,
       edges: state.edges,
@@ -51,7 +51,7 @@ export function attachFlowEventModelToStore(storeApi: StoreApi<StoreState>): () 
   if (detachFlowEvent) return detachFlowEvent;
 
   // 订阅 FlowEvent 状态变化，同步到 zustand
-  const subscription = flowEventModel.state$.subscribe((state: Immutable<{
+  const subscription = rxFlowEventModel.state$.subscribe((state: Immutable<{
     currentRunId: string | null;
     currentWorkflowId: number | null;
     workflowStatus: import('./types').WorkflowStatus;
@@ -67,7 +67,7 @@ export function attachFlowEventModelToStore(storeApi: StoreApi<StoreState>): () 
   });
 
   // 订阅批量节点更新，转换为 WorkflowModel Commands
-  const batchSubscription = flowEventModel.batchedNodeUpdates$.subscribe((updates: Map<string, NodeExecutionData>) => {
+  const batchSubscription = rxFlowEventModel.batchedNodeUpdates$.subscribe((updates: Map<string, NodeExecutionData>) => {
     const commands: GraphCommand[] = [];
 
     updates.forEach((data: NodeExecutionData, nodeId: string) => {
@@ -86,14 +86,14 @@ export function attachFlowEventModelToStore(storeApi: StoreApi<StoreState>): () 
     });
 
     if (commands.length > 0) {
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'BATCH',
         payload: { commands }
       });
     }
 
     // 清空待处理更新
-    flowEventModel.clearPendingUpdates();
+    rxFlowEventModel.clearPendingUpdates();
   });
 
   detachFlowEvent = () => {

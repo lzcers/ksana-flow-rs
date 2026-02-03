@@ -1,19 +1,12 @@
 import type { StateCreator } from 'zustand';
 import type { StoreState, Execution } from './types';
 import * as api from '@/api';
-import { workflowModel } from '.';
+import { rxWorkflowModel, rxFlowEventModel } from '.';
 import { toBlueprint } from '@/model/workflow/adapters';
-import { RxFlowEvent } from '@/model/flowEvent';
-
-// 在模块级别创建 RxFlowEvent 实例
-const rxFlowEvent = new RxFlowEvent();
-
-// 导出实例供外部使用
-export { rxFlowEvent };
 
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
   // 订阅 FlowEvent 状态变化，同步到 zustand
-  rxFlowEvent.state$.subscribe((state: {
+  rxFlowEventModel.state$.subscribe((state: {
     workflowStatus: import('./types').WorkflowStatus;
     workflowStatuses: Record<number, import('./types').WorkflowStatus>;
     currentRunId: string | null;
@@ -35,15 +28,15 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     currentRunId: null,
 
     // ===== Observables (从 RxFlowEvent 代理) =====
-    events$: rxFlowEvent.events$,
-    eventsForCurrentRun$: rxFlowEvent.events$, // 使用相同的事件流
-    eventsForNode$: rxFlowEvent.eventsForNode$.bind(rxFlowEvent),
+    events$: rxFlowEventModel.events$,
+    eventsForCurrentRun$: rxFlowEventModel.events$, // 使用相同的事件流
+    eventsForNode$: rxFlowEventModel.eventsForNode$.bind(rxFlowEventModel),
 
     // ===== State Setters =====
     setWorkflowStatus: (status) => {
       const { currentWorkflowId } = get();
       if (currentWorkflowId != null) {
-        rxFlowEvent.updateWorkflowStatus(currentWorkflowId, status);
+        rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, status);
       }
     },
 
@@ -51,7 +44,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
 
     setCurrentRunId: (runId) => {
       const { currentWorkflowId } = get();
-      rxFlowEvent.setCurrentRun(runId, currentWorkflowId);
+      rxFlowEventModel.setCurrentRun(runId, currentWorkflowId);
     },
 
     // ===== WebSocket =====
@@ -59,7 +52,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       const { currentSpaceId } = get();
       if (!currentSpaceId) return () => { };
 
-      const subscription = rxFlowEvent.connectWebSocket(currentSpaceId).subscribe({
+      const subscription = rxFlowEventModel.connectWebSocket(currentSpaceId).subscribe({
         error: (err: unknown) => console.error('WS Error', err),
       });
 
@@ -69,7 +62,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     handleWebSocketMessage: (message) => {
       // WebSocket 消息现在由 RxFlowEvent 自动处理
       // 这个方法保留用于兼容性
-      rxFlowEvent.emitEvent(message.event);
+      rxFlowEventModel.emitEvent(message.event);
     },
 
     // ===== Workflow Actions =====
@@ -80,7 +73,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       const blueprint = toBlueprint(nodes, edges);
 
       try {
-        workflowModel.dispatch({ type: 'RESET_EXECUTION_STATE', payload: {} });
+        rxWorkflowModel.dispatch({ type: 'RESET_EXECUTION_STATE', payload: {} });
         setWorkflowStatus('running');
 
         const res = await api.runWorkflow(currentSpaceId, blueprint as never, currentWorkflowId || -1);
@@ -88,9 +81,9 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           throw new Error(res.error);
         }
         if (res && res.run_id) {
-          rxFlowEvent.setCurrentRun(res.run_id, currentWorkflowId);
+          rxFlowEventModel.setCurrentRun(res.run_id, currentWorkflowId);
           if (currentWorkflowId != null) {
-            rxFlowEvent.updateWorkflowStatus(currentWorkflowId, 'running');
+            rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, 'running');
           }
         }
         success('Workflow started');
@@ -98,9 +91,9 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
         console.error("Failed to run workflow", e);
         error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
         setWorkflowStatus('idle');
-        rxFlowEvent.setCurrentRun(null, null);
+        rxFlowEventModel.setCurrentRun(null, null);
         if (currentWorkflowId != null) {
-          rxFlowEvent.updateWorkflowStatus(currentWorkflowId, 'idle');
+          rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, 'idle');
         }
       }
     },
@@ -149,12 +142,12 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           throw new Error(res.error);
         }
         if (res && res.run_id) {
-          rxFlowEvent.setCurrentRun(res.run_id, currentWorkflowId);
+          rxFlowEventModel.setCurrentRun(res.run_id, currentWorkflowId);
           setWorkflowStatus('running');
 
           // 设置 activeRunContext 用于跟踪 RunNode 执行
-          if (rxFlowEvent.currentState) {
-            rxFlowEvent.dispatch({
+          if (rxFlowEventModel.currentState) {
+            rxFlowEventModel.dispatch({
               type: 'SET_ACTIVE_RUN_CONTEXT',
               payload: {
                 runId: res.run_id,
@@ -165,7 +158,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           }
 
           if (currentWorkflowId != null) {
-            rxFlowEvent.updateWorkflowStatus(currentWorkflowId, 'running');
+            rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, 'running');
           }
         }
         success(`Node ${nodeId} execution started`);

@@ -3,7 +3,7 @@ import type { StoreState, Workflow } from './types';
 import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/workflow/utils';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
-import { workflowModel } from '.';
+import { rxWorkflowModel } from '.';
 import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
@@ -203,66 +203,66 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     // 注意：这里不再需要 set()，因为 CommandBus 会更新 RxState，RxState 会同步回 Zustand
     if (event.NodeStarted) {
       const id = event.NodeStarted;
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_STATUS',
         payload: { id, status: 'running' }
       });
     } else if (event.NodeStreamStarted) {
       const id = event.NodeStreamStarted;
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_DATA',
         payload: { id, data: { isOutputStream: true } }
       });
     }
     else if (event.NodeInMessage) {
       const [id, value] = event.NodeInMessage;
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_DATA',
         payload: { id, data: { lastMessage: value } }
       });
       if (typeof value === 'object' && value !== null) {
-        workflowModel.dispatch({
+        rxWorkflowModel.dispatch({
           type: 'UPDATE_NODE_INPUTS',
           payload: { id, inputs: value }
         });
       }
     } else if (event.NodeOutMessage) {
       const [id, value] = event.NodeOutMessage;
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_DATA',
         payload: { id, data: { lastMessage: value, isOutputStream: false } }
       });
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_OUTPUT',
         payload: { id, key: 'output', value }
       });
 
       // Propagate to downstream nodes
-      const { edges } = workflowModel.getSnapshot();
+      const { edges } = rxWorkflowModel.getSnapshot();
       const outEdges = edges.filter(e => e.source === id);
       outEdges.forEach(edge => {
-        workflowModel.dispatch({
+        rxWorkflowModel.dispatch({
           type: 'UPDATE_NODE_DATA',
           payload: { id: edge.target, data: { lastMessage: value } }
         });
-        workflowModel.dispatch({
+        rxWorkflowModel.dispatch({
           type: 'UPDATE_NODE_INPUT',
           payload: { id: edge.target, key: edge.targetHandle || 'default', value }
         });
       });
     } else if (event.NodeCompleted) {
       const id = event.NodeCompleted;
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_STATUS',
         payload: { id, status: 'completed' }
       });
     } else if (event.NodeError) {
       const [id, error] = event.NodeError;
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_STATUS',
         payload: { id, status: 'error', errorMessage: error }
       });
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'UPDATE_NODE_DATA',
         payload: { id, data: { isOutputStream: false } }
       });

@@ -2,7 +2,7 @@ import type { StateCreator } from 'zustand';
 import type { StoreState, Canvas } from './types';
 import type { Node, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import { sortNodesByParent } from '../model/workflow/utils';
-import { workflowModel } from '.';
+import { rxWorkflowModel } from '.';
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => ({
   nodes: [],
@@ -12,26 +12,26 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   connectionSourceId: null,
 
   undo: () => {
-    workflowModel.undo();
+    rxWorkflowModel.undo();
   },
 
   redo: () => {
-    workflowModel.redo();
+    rxWorkflowModel.redo();
   },
 
   canUndo: false,
   canRedo: false,
 
-  setNodes: (nodes) => workflowModel.dispatchers.setNodes(nodes as any),
-  setEdges: (edges) => workflowModel.dispatchers.setEdges(edges as any),
+  setNodes: (nodes) => rxWorkflowModel.dispatchers.setNodes(nodes as any),
+  setEdges: (edges) => rxWorkflowModel.dispatchers.setEdges(edges as any),
 
   pasteNodes: (nodes, edges) => {
-    workflowModel.dispatchers.pasteNodes(nodes as any, edges as any);
+    rxWorkflowModel.dispatchers.pasteNodes(nodes as any, edges as any);
   },
 
   onNodesChange: (changes: NodeChange[]) => {
     // Snapshot on remove (e.g. Backspace key)
-    workflowModel.dispatch({
+    rxWorkflowModel.dispatch({
       type: 'APPLY_NODE_CHANGES',
       payload: { changes },
     });
@@ -62,10 +62,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       coreChanges.push(change);
     }
 
-    removeOriginalEdgeIds.forEach((id) => workflowModel.dispatchers.removeEdge(id));
+    removeOriginalEdgeIds.forEach((id) => rxWorkflowModel.dispatchers.removeEdge(id));
 
     if (coreChanges.length > 0) {
-      workflowModel.dispatch({
+      rxWorkflowModel.dispatch({
         type: 'APPLY_EDGE_CHANGES',
         payload: { changes: coreChanges },
       });
@@ -75,16 +75,16 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   onNodeDragStop: (_event: any, draggedNode: any) => {
     const nodeId = typeof draggedNode?.id === 'string' ? draggedNode.id : null;
     if (!nodeId) return;
-    workflowModel.dispatchers.handleNodeDragStop(nodeId);
+    rxWorkflowModel.dispatchers.handleNodeDragStop(nodeId);
   },
 
   onConnect: (connection: Connection) => {
-    workflowModel.dispatchers.onConnect(connection as any);
+    rxWorkflowModel.dispatchers.onConnect(connection as any);
   },
 
   addNode: (type: string, position: { x: number; y: number } = { x: 300, y: 200 }) => {
     const { nodeTypes } = get();
-    const { nodes } = workflowModel.getSnapshot();
+    const { nodes } = rxWorkflowModel.getSnapshot();
     // Find all nodes of the same type and extract their numbers
     const sameTypeNodes = nodes.filter(n => n.id.startsWith(`${type}-`));
     let nextNum = 1;
@@ -99,7 +99,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     }
     const id = `${type}-${nextNum}`;
     const meta = nodeTypes.find(t => t.name === type);
-    workflowModel.dispatchers.addNode(type, position as any, {
+    rxWorkflowModel.dispatchers.addNode(type, position as any, {
       id,
       data: {
         label: type,
@@ -108,30 +108,30 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
         status: 'idle',
       },
     });
-    workflowModel.dispatchers.selectNode(id);
+    rxWorkflowModel.dispatchers.selectNode(id);
   },
 
   deleteNode: (id: string) => {
-    workflowModel.dispatchers.deleteNode(id);
+    rxWorkflowModel.dispatchers.deleteNode(id);
   },
 
   updateNodeData: (id: string, data: Record<string, any>) => {
-    workflowModel.dispatchers.updateNodeData(id, data);
+    rxWorkflowModel.dispatchers.updateNodeData(id, data);
   },
 
   updateNodeDimensions: (id: string, width: number, height: number) => {
-    workflowModel.dispatchers.updateNodeDimensions(id, width, height);
+    rxWorkflowModel.dispatchers.updateNodeDimensions(id, width, height);
   },
 
   selectNode: (id: string | null) => {
-    workflowModel.dispatchers.selectNode(id);
+    rxWorkflowModel.dispatchers.selectNode(id);
   },
 
   setConnectionState: (connecting, sourceId = null) => set({ isConnecting: connecting, connectionSourceId: sourceId }),
 
   groupNodes: (nodeIds: string[]) => {
     if (nodeIds.length < 1) return;
-    const { nodes } = workflowModel.getSnapshot();
+    const { nodes } = rxWorkflowModel.getSnapshot();
     const selectedNodes = nodes.filter(n => nodeIds.includes(n.id));
     if (selectedNodes.length === 0) return;
 
@@ -209,16 +209,16 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       return n;
     });
 
-    workflowModel.dispatchers.setNodes(
+    rxWorkflowModel.dispatchers.setNodes(
       sortNodesByParent([...updatedNodes, groupNode]) as any
     );
-    workflowModel.dispatchers.selectNode(groupId);
+    rxWorkflowModel.dispatchers.selectNode(groupId);
   },
 
   toggleSubgraph: (nodeId: string) => {
-    const snapshot = workflowModel.getSnapshot();
+    const snapshot = rxWorkflowModel.getSnapshot();
     const node = snapshot.nodes.find((n) => n.id === nodeId);
     if (!node || (node.type !== 'SubgraphNode' && node.type !== 'MapNode')) return;
-    workflowModel.dispatchers.toggleSubgraph(nodeId);
+    rxWorkflowModel.dispatchers.toggleSubgraph(nodeId);
   },
 });
