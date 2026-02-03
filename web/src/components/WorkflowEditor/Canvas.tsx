@@ -18,7 +18,7 @@ import { WorkflowNode } from './WorkflowNode';
 import { NODE_TYPES } from './nodeTypes';
 import { NodeContextMenu } from './NodeContextMenu';
 import { SelectionToolbar } from './SelectionToolbar';
-import type { Node, Edge } from '../../model/types';
+import type { Node, Edge } from '../../model/workflow/types';
 import type { WorkflowStatus } from '../../hooks/useWorkflow';
 import type { NodeMetadata } from '../../api';
 

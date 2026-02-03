@@ -231,7 +231,7 @@ async fn start_execution(
             let _ = tx.send((
                 workspace_id_clone.clone(),
                 run_id_clone.clone(),
-                utils::flow_event_to_value_lossy(&event),
+                utils::flow_event_to_ws_value(&event, &run_id_clone),
             ));
         }
     });
@@ -279,10 +279,10 @@ async fn start_execution(
 
         if let Err(e) = run_result {
             tracing::error!("Flow execution error: {}", e);
-            let event = crate::utils::flow_event_to_value_lossy(&FlowEvent::NodeError(
-                "runner".to_string(),
-                e,
-            ));
+            let event = crate::utils::flow_event_to_ws_value(
+                &FlowEvent::NodeError("runner".to_string(), e),
+                &run_id_for_event,
+            );
             let _ = state_clone.tx.send((
                 workspace_id_for_event.clone(),
                 run_id_for_event.clone(),

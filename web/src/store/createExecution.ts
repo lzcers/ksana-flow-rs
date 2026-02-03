@@ -1,11 +1,12 @@
 import type { StateCreator, StoreApi } from 'zustand';
-import { BehaviorSubject, Subject, interval, animationFrameScheduler, bufferWhen, filter, map, merge, share, timer, withLatestFrom } from 'rxjs';
+import { BehaviorSubject, Subject, interval, animationFrameScheduler, bufferWhen, filter, map, merge, share, timer, withLatestFrom, retry } from 'rxjs';
 import { produce } from 'immer';
 import type { StoreState, Execution, WebSocketFlowMessage } from './types';
 import * as api from '../api';
 import { workflowModel } from '.';
-import type { GraphCommand } from '../model/commands';
-import { toBlueprint } from '../model/adapters';
+import type { GraphCommand } from '../model/workflow/commands';
+import { toBlueprint } from '../model/workflow/adapters';
+import { createFlowSocketObservable } from '../model/flowEvent';
 
 const eventSubject = new Subject<WebSocketFlowMessage>();
 const stateUpdateSubject = new Subject<WebSocketFlowMessage>();
@@ -299,44 +300,17 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     },
 
     initializeWebSocket: () => {
-      let ws: WebSocket | null = null;
-      let reconnectTimeout: number | null = null;
+      const { currentSpaceId, handleWebSocketMessage } = get();
+      if (!currentSpaceId) return () => { };
 
-      const connect = () => {
-        const { currentSpaceId } = get();
-        if (!currentSpaceId) return;
+      const subscription = createFlowSocketObservable(currentSpaceId)
+        .pipe(retry({ delay: 2000 }))
+        .subscribe({
+          next: handleWebSocketMessage,
+          error: (err) => console.error('WS Error', err),
+        });
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = import.meta.env.PROD ? window.location.host : 'localhost:3000';
-        ws = new WebSocket(`${protocol}//${host}/ws?workspace_id=${currentSpaceId}`);
-
-        ws.onmessage = (event) => {
-          try {
-            const wrapper = JSON.parse(event.data);
-            const { handleWebSocketMessage } = get();
-            handleWebSocketMessage(wrapper);
-          } catch (e) {
-            console.error("WS parse error", e);
-          }
-        };
-
-        ws.onclose = () => {
-          console.log('WS closed, reconnecting...');
-          reconnectTimeout = window.setTimeout(connect, 2000);
-        };
-
-        ws.onerror = (err) => {
-          console.error('WS error', err);
-          ws?.close();
-        };
-      };
-
-      connect();
-
-      return () => {
-        if (ws) ws.close();
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      };
+      return () => subscription.unsubscribe();
     },
 
     handleWebSocketMessage: (wrapper: WebSocketFlowMessage) => {

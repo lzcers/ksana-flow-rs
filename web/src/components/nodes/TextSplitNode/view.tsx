@@ -1,6 +1,6 @@
 import { Position, type NodeProps } from '@xyflow/react';
 import { NodeWrapper } from '../shared/NodeWrapper';
-import { type NodeData } from '@/model/types';
+import { type NodeData } from '@/model/workflow/types';
 import { textSplitNodeStyles } from './styles';
 
 const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];

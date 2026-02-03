@@ -3,7 +3,7 @@ import { Position, type NodeProps } from '@xyflow/react';
 import { FullScreenModal } from '../../ui/FullScreenModal';
 import { ShortVideoCreation } from '../../ShortVideoCreation';
 import type { ProjectData } from '../../ShortVideoCreation/types';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { shortVideoNodeStyles } from './styles';
 

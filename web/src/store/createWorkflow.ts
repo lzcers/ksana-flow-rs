@@ -1,10 +1,10 @@
 import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import * as api from '../api';
-import { applyCollapsedSubgraphUi } from '../model/utils';
+import { applyCollapsedSubgraphUi } from '../model/workflow/utils';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 import { workflowModel } from '.';
-import { fromBlueprint, toBlueprint } from '../model/adapters';
+import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],

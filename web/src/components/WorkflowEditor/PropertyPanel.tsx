@@ -1,6 +1,6 @@
 import React from 'react';
 import { Trash2 } from 'lucide-react';
-import type { Node, NodeData } from '../../model/types';
+import type { Node, NodeData } from '../../model/workflow/types';
 
 interface PropertyPanelProps {
   node: Node;

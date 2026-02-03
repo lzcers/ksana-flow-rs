@@ -1,27 +1,11 @@
 import type { NodeMetadata } from '../api';
-import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/types';
+import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import type { Observable } from 'rxjs';
-import type { WorkflowBlueprint } from '../model/adapters/blueprintAdapter';
+import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
+import type { WebSocketFlowMessage } from '@/model/flowEvent/types';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
-export type FlowEvent =
-  | { NodeStarted: string }
-  | { NodeCompleted: string }
-  | { NodeError: [string, string] }
-  | { NodeInMessage: [string, any] }
-  | { NodeOutMessage: [string, any] }
-  | { NodeStreamStarted: string }
-  | { NodeStreamNextMessage: [string, any] }
-  | 'FlowPaused'
-  | 'FlowResumed'
-  | 'FlowStopped'
-  | 'FlowFinished';
-
-export interface WebSocketFlowMessage {
-  runId?: string;
-  event: FlowEvent;
-}
 
 // WorkflowBlueprint type is now imported from adapter
 

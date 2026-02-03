@@ -1,5 +1,5 @@
 import { Position, type NodeProps } from '@xyflow/react';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { sourceNodeStyles } from './styles';
 

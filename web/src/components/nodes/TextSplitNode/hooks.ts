@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 
 export function useTextSplitNodeController(id: string, data: NodeData) {
   const { updateConfig } = useNodeConfig(id, data.config);

@@ -4,7 +4,7 @@ import { Maximize2, Eye, Pencil, Settings, X } from 'lucide-react';
 import { Position, type NodeProps } from '@xyflow/react';
 import { FullScreenModal } from '../../ui/FullScreenModal';
 import { theme } from '../TextNode/theme';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { llmNodeStyles } from './styles';
 

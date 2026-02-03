@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { NodeData, NodeType } from '../../model/types';
+import type { NodeData, NodeType } from '../../model/workflow/types';
 import { NODE_COMPONENTS } from './nodeRegistry';
 
 export const WorkflowNode = memo((props: NodeProps & { data: NodeData }) => {

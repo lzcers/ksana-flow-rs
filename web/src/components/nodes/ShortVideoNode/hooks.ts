@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { parse } from 'jsonriver';
 import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 import type { ProjectData } from '../../ShortVideoCreation/types';
 
 export function useShortVideoNodeController(id: string, data: NodeData) {

@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 import '@incremark/theme/styles.css';
 import { useTextNodeController } from './hooks';
 import { TextNodeView } from './view';

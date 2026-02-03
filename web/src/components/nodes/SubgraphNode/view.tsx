@@ -3,7 +3,7 @@ import { type NodeProps, useReactFlow, type Node, Position, useUpdateNodeInterna
 import { ChevronDown, ChevronUp, Network } from 'lucide-react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { subgraphNodeStyles } from './styles';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 
 interface SubgraphNodeViewProps extends NodeProps {
   data: NodeData;

@@ -4,7 +4,7 @@ import { Position, type NodeProps } from '@xyflow/react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { FullScreenModal } from '../../ui/FullScreenModal';
 import { theme } from './theme';
-import type { NodeData } from '@/model/types';
+import type { NodeData } from '@/model/workflow/types';
 import { textNodeStyles } from './styles';
 
 const SOURCE_HANDLES = [Position.Right];

@@ -5,8 +5,8 @@ import { createWorkflow } from './createWorkflow';
 import { createCanvas } from './createCanvas';
 import { createExecution } from './createExecution';
 import { createToast } from './createToast';
-import { createWorkflowModel } from '../model';
-import type { WorkflowState } from '../model/types';
+import { createWorkflowModel } from '../model/workflow';
+import type { WorkflowState } from '../model/workflow/types';
 
 export const useStore = create<StoreState>((set, get, store) => ({
   ...createWorkflow(set, get, store),

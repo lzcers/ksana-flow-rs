@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand';
 import type { StoreState, Canvas } from './types';
-import type { Node, NodeChange, EdgeChange, Connection } from '../model/types';
-import { sortNodesByParent } from '../model/utils';
+import type { Node, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
+import { sortNodesByParent } from '../model/workflow/utils';
 import { workflowModel } from '.';
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => ({
