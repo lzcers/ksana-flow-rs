@@ -1,6 +1,21 @@
 import type { WorkflowState, Node, Edge, Connection } from './types';
 export { applyNodeChanges as applyNodeChangesXyflow, applyEdgeChanges as applyEdgeChangesXyflow, addEdge as addEdgeXyflow } from '@xyflow/react';
 
+export const getNextNodeId = (nodes: Node[], type: string): string => {
+  const sameTypeNodes = nodes.filter((n) => n.id.startsWith(`${type}-`));
+  let nextNum = 1;
+  if (sameTypeNodes.length > 0) {
+    const nums = sameTypeNodes.map((n) => {
+      const parts = n.id.split('-');
+      const lastPart = parts[parts.length - 1];
+      const num = parseInt(lastPart, 10);
+      return isNaN(num) ? 0 : num;
+    });
+    nextNum = Math.max(...nums) + 1;
+  }
+  return `${type}-${nextNum}`;
+};
+
 export const applyCollapsedSubgraphUi = (nodes: Node[], edges: Edge[]) => {
   const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
   const collapsedGroupIds = new Set(

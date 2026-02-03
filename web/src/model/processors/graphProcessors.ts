@@ -11,8 +11,9 @@ import type {
   ToggleSubgraphCommand,
   SetNodesCommand,
   BatchCommand,
+  ResetExecutionStateCommand,
 } from '../commands';
-import { getNextNodeId } from './nodeProcessors';
+import { getNextNodeId } from '../utils'; './nodeProcessors';
 
 // ===== 处理器函数 =====
 
@@ -175,6 +176,33 @@ export const processSetNodes = (
 
   return produce(state, (draft) => {
     draft.nodes = nodes as any[];
+  });
+};
+
+export const processResetExecutionState = (
+  state: WorkflowState,
+  _command: ResetExecutionStateCommand
+): WorkflowState => {
+  return produce(state, (draft) => {
+    draft.nodes.forEach((node) => {
+      if (node.data) {
+        node.data.status = 'idle';
+        node.data.errorMessage = undefined;
+        node.data.isOutputStream = undefined;
+      }
+    });
+
+    // Clear edge highlighting
+    draft.edges.forEach((edge) => {
+      (edge as any).animated = false;
+      if (edge.style) {
+        delete edge.style.stroke;
+        delete edge.style.strokeWidth;
+        if (Object.keys(edge.style).length === 0) {
+          edge.style = undefined;
+        }
+      }
+    });
   });
 };
 

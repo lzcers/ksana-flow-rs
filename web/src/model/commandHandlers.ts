@@ -20,6 +20,10 @@ export function registerAllHandlers(commandBus: RxCommandBus): void {
   commandBus.registerHandler('UPDATE_NODE_DIMENSIONS', nodeProcessors.processUpdateNodeDimensions);
   commandBus.registerHandler('SELECT_NODE', nodeProcessors.processSelectNode);
   commandBus.registerHandler('APPLY_NODE_CHANGES', nodeProcessors.processApplyNodeChanges);
+  commandBus.registerHandler('UPDATE_NODE_STATUS', nodeProcessors.processUpdateNodeStatus);
+  commandBus.registerHandler('UPDATE_NODE_INPUT', nodeProcessors.processUpdateNodeInput);
+  commandBus.registerHandler('UPDATE_NODE_INPUTS', nodeProcessors.processUpdateNodeInputs);
+  commandBus.registerHandler('UPDATE_NODE_OUTPUT', nodeProcessors.processUpdateNodeOutput);
 
   // ===== Edge Handlers =====
   commandBus.registerHandler('ADD_EDGE', edgeProcessors.processAddEdge);
@@ -34,6 +38,7 @@ export function registerAllHandlers(commandBus: RxCommandBus): void {
   commandBus.registerHandler('GROUP_NODES', graphProcessors.processGroupNodes);
   commandBus.registerHandler('TOGGLE_SUBGRAPH', graphProcessors.processToggleSubgraph);
   commandBus.registerHandler('SET_NODES', graphProcessors.processSetNodes);
+  commandBus.registerHandler('RESET_EXECUTION_STATE', graphProcessors.processResetExecutionState);
 
   console.log('[CommandHandlers] All handlers registered');
 }

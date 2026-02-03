@@ -64,6 +64,41 @@ export interface ApplyNodeChangesCommand {
   };
 }
 
+export interface UpdateNodeStatusCommand {
+  type: 'UPDATE_NODE_STATUS';
+  payload: {
+    id: string;
+    status: 'idle' | 'running' | 'completed' | 'error';
+    errorMessage?: string;
+  };
+}
+
+export interface UpdateNodeInputCommand {
+  type: 'UPDATE_NODE_INPUT';
+  payload: {
+    id: string;
+    key: string;
+    value: any;
+  };
+}
+
+export interface UpdateNodeInputsCommand {
+  type: 'UPDATE_NODE_INPUTS';
+  payload: {
+    id: string;
+    inputs: Record<string, any>;
+  };
+}
+
+export interface UpdateNodeOutputCommand {
+  type: 'UPDATE_NODE_OUTPUT';
+  payload: {
+    id: string;
+    key: string;
+    value: any;
+  };
+}
+
 // ===== Edge Commands =====
 
 export interface AddEdgeCommand {
@@ -138,6 +173,11 @@ export interface ToggleSubgraphCommand {
   };
 }
 
+export interface ResetExecutionStateCommand {
+  type: 'RESET_EXECUTION_STATE';
+  payload: Record<string, never>; // Empty payload
+}
+
 // ===== Batch Commands =====
 
 export interface BatchCommand {
@@ -158,6 +198,10 @@ export type GraphCommand =
   | UpdateNodeDimensionsCommand
   | SelectNodeCommand
   | ApplyNodeChangesCommand
+  | UpdateNodeStatusCommand
+  | UpdateNodeInputCommand
+  | UpdateNodeInputsCommand
+  | UpdateNodeOutputCommand
   // Edge commands
   | AddEdgeCommand
   | RemoveEdgeCommand
@@ -170,5 +214,6 @@ export type GraphCommand =
   | PasteNodesCommand
   | GroupNodesCommand
   | ToggleSubgraphCommand
+  | ResetExecutionStateCommand
   // Batch
   | BatchCommand;

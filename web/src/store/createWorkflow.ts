@@ -3,8 +3,8 @@ import type { StoreState, Workflow } from './types';
 import type { Node, Edge } from '../model/types';
 import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/utils';
-import { updateNodeData, updateNodeStatus, updateNodeInput, updateNodeInputs, updateNodeOutput } from '../model';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
+import { workflowModel } from './workflowModel';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],
@@ -143,10 +143,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           data: cleanData,
           position: n.position,
           width: typeof n.style?.width === 'number' ? n.style.width : (typeof n.style?.width === 'string' ? parseFloat(n.style.width) : (n.width ?? n.measured?.width)),
-            height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
-            parentId: n.parentId,
-            extent: n.extent,
-            hidden: n.hidden,
+          height: typeof n.style?.height === 'number' ? n.style.height : (typeof n.style?.height === 'string' ? parseFloat(n.style.height) : (n.height ?? n.measured?.height)),
+          parentId: n.parentId,
+          extent: n.extent,
+          hidden: n.hidden,
         };
       }),
       edges: edges.filter((e: any) => !e?.data?.__uiSubgraphEdge).map(e => ({
@@ -337,43 +337,73 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
   },
 
   applyExecutionEvent: (event: any) => {
-    set((state) => {
-      let nextState = state;
-      const apply = (opResult: any) => {
-        nextState = { ...nextState, ...opResult };
-      };
-      if (event.NodeStarted) {
-        const id = event.NodeStarted;
-        apply(updateNodeStatus(nextState, id, 'running'));
-      } else if (event.NodeStreamStarted) {
-        const id = event.NodeStreamStarted;
-        apply(updateNodeData(nextState, id, { isOutputStream: true }));
-      }
-      else if (event.NodeInMessage) {
-        const [id, value] = event.NodeInMessage;
-        apply(updateNodeData(nextState, id, { lastMessage: value }));
-        if (typeof value === 'object' && value !== null) {
-          apply(updateNodeInputs(nextState, id, value));
-        }
-      } else if (event.NodeOutMessage) {
-        const [id, value] = event.NodeOutMessage;
-        apply(updateNodeData(nextState, id, { lastMessage: value, isOutputStream: false }));
-        apply(updateNodeOutput(nextState, id, 'output', value));
-        // Propagate to downstream nodes
-        const outEdges = nextState.edges.filter(e => e.source === id);
-        outEdges.forEach(edge => {
-          apply(updateNodeData(nextState, edge.target, { lastMessage: value }));
-          apply(updateNodeInput(nextState, edge.target, edge.targetHandle || 'default', value));
+    // 使用 CommandBus 派发事件，而不是直接修改 state
+    // 注意：这里不再需要 set()，因为 CommandBus 会更新 RxState，RxState 会同步回 Zustand
+    if (event.NodeStarted) {
+      const id = event.NodeStarted;
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_STATUS',
+        payload: { id, status: 'running' }
+      });
+    } else if (event.NodeStreamStarted) {
+      const id = event.NodeStreamStarted;
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_DATA',
+        payload: { id, data: { isOutputStream: true } }
+      });
+    }
+    else if (event.NodeInMessage) {
+      const [id, value] = event.NodeInMessage;
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_DATA',
+        payload: { id, data: { lastMessage: value } }
+      });
+      if (typeof value === 'object' && value !== null) {
+        workflowModel.dispatch({
+          type: 'UPDATE_NODE_INPUTS',
+          payload: { id, inputs: value }
         });
-      } else if (event.NodeCompleted) {
-        const id = event.NodeCompleted;
-        apply(updateNodeStatus(nextState, id, 'completed'));
-      } else if (event.NodeError) {
-        const [id, error] = event.NodeError;
-        apply(updateNodeStatus(nextState, id, 'error', error));
-        apply(updateNodeData(nextState, id, { isOutputStream: false }));
       }
-      return nextState;
-    });
+    } else if (event.NodeOutMessage) {
+      const [id, value] = event.NodeOutMessage;
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_DATA',
+        payload: { id, data: { lastMessage: value, isOutputStream: false } }
+      });
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_OUTPUT',
+        payload: { id, key: 'output', value }
+      });
+
+      // Propagate to downstream nodes
+      const { edges } = workflowModel.getSnapshot();
+      const outEdges = edges.filter(e => e.source === id);
+      outEdges.forEach(edge => {
+        workflowModel.dispatch({
+          type: 'UPDATE_NODE_DATA',
+          payload: { id: edge.target, data: { lastMessage: value } }
+        });
+        workflowModel.dispatch({
+          type: 'UPDATE_NODE_INPUT',
+          payload: { id: edge.target, key: edge.targetHandle || 'default', value }
+        });
+      });
+    } else if (event.NodeCompleted) {
+      const id = event.NodeCompleted;
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_STATUS',
+        payload: { id, status: 'completed' }
+      });
+    } else if (event.NodeError) {
+      const [id, error] = event.NodeError;
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_STATUS',
+        payload: { id, status: 'error', errorMessage: error }
+      });
+      workflowModel.dispatch({
+        type: 'UPDATE_NODE_DATA',
+        payload: { id, data: { isOutputStream: false } }
+      });
+    }
   }
 });

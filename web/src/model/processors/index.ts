@@ -12,6 +12,10 @@ export {
   processUpdateNodeDimensions,
   processSelectNode,
   processApplyNodeChanges,
+  processUpdateNodeStatus,
+  processUpdateNodeInput,
+  processUpdateNodeInputs,
+  processUpdateNodeOutput,
 } from './nodeProcessors';
 
 // Edge 处理器
@@ -31,4 +35,5 @@ export {
   processToggleSubgraph,
   processSetNodes,
   processBatch,
+  processResetExecutionState,
 } from './graphProcessors';

@@ -3,7 +3,8 @@ import { BehaviorSubject, Subject, interval, animationFrameScheduler, bufferWhen
 import { produce } from 'immer';
 import type { StoreState, Execution, WebSocketFlowMessage } from './types';
 import * as api from '../api';
-import { resetWorkflowExecutionState } from '../model';
+import { workflowModel } from './workflowModel';
+import type { GraphCommand } from '../model/commands';
 
 const eventSubject = new Subject<WebSocketFlowMessage>();
 const stateUpdateSubject = new Subject<WebSocketFlowMessage>();
@@ -59,188 +60,231 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
 
         let finalizeRunNodeRunId: string | null = null;
         let nextCurrentRunId: string | null | undefined;
-        setState((state) => {
-          return produce(state, (draft) => {
-            const nodeIndex = new Map<string, any>();
-            for (const node of draft.nodes) nodeIndex.set(node.id, node);
 
-            const outEdgeMap = new Map<string, { target: string; targetHandle?: string | null }[]>();
-            for (const e of draft.edges) {
-              const arr = outEdgeMap.get(e.source);
-              const info = { target: e.target, targetHandle: e.targetHandle };
-              if (arr) arr.push(info);
-              else outEdgeMap.set(e.source, [info]);
+        // 1. 准备数据快照和缓存
+        const snapshot = workflowModel.getSnapshot();
+        const nodeDataCache = new Map<string, any>();
+
+        const getNodeData = (id: string) => {
+          if (nodeDataCache.has(id)) return nodeDataCache.get(id);
+          const node = snapshot.nodes.find(n => n.id === id);
+          const data = node?.data ? { ...node.data } : {}; // Clone data for mutation
+          nodeDataCache.set(id, data);
+          return data;
+        };
+
+        const commands: GraphCommand[] = [];
+
+        // 2. 处理 Store 状态 (currentRunId, workflowStatuses)
+        // 我们仍需 setState 来更新这些非 Model 状态
+        // 但我们要把 Model 更新剥离出来
+
+        let storeUpdates: Partial<StoreState> = {};
+        let runIdToWorkflowIdUpdate: Record<string, number> | undefined;
+        let workflowStatusesUpdate: Record<number, string> | undefined;
+
+        // 辅助函数：获取当前状态（优先取 update，再取 get()）
+        const getCurrentRunId = () => nextCurrentRunId !== undefined ? nextCurrentRunId : get().currentRunId;
+        const getWorkflowStatus = (id: number) => workflowStatusesUpdate?.[id] ?? get().workflowStatuses[id];
+
+        // 3. 遍历批次
+        for (const wrapper of batch) {
+          const { runId, event: msg } = wrapper;
+          const currentRunId = getCurrentRunId();
+
+          let isCurrentRun = !runId || runId === currentRunId;
+          if (
+            activeRunNodeExecution &&
+            runId === activeRunNodeExecution.runId
+          ) {
+            isCurrentRun = true;
+          }
+
+          if (!isCurrentRun) continue;
+
+          // 更新 currentRunId
+          if (runId && runId !== currentRunId) {
+            nextCurrentRunId = runId;
+            const wfId = get().currentWorkflowId;
+            if (wfId != null) {
+              if (!runIdToWorkflowIdUpdate) runIdToWorkflowIdUpdate = {};
+              runIdToWorkflowIdUpdate[runId] = wfId;
+
+              if (getWorkflowStatus(wfId) !== 'running') {
+                if (!workflowStatusesUpdate) workflowStatusesUpdate = {};
+                workflowStatusesUpdate[wfId] = 'running';
+              }
             }
+          }
 
-            const getNodeData = (nodeId: string) => {
-              const node = nodeIndex.get(nodeId);
-              if (!node) return null;
-              if (!node.data) node.data = {};
-              return node.data as any;
-            };
+          if (msg) {
+            if (typeof msg === 'object') {
+              if ('NodeStarted' in msg) {
+                const data = getNodeData(msg.NodeStarted);
+                data.status = 'running';
+              } else if ('NodeStreamStarted' in msg) {
+                const data = getNodeData(msg.NodeStreamStarted);
+                data.isOutputStream = true;
 
-            const setInput = (nodeId: string, key: string, value: any) => {
-              const data = getNodeData(nodeId);
-              if (!data) return;
-              if (!data.inputs) data.inputs = {};
-              if (data.inputs[key] !== value) data.inputs[key] = value;
-            };
+                // 处理下游 upstreamIsStreaming
+                // 这里需要边信息。
+                const outEdges = snapshot.edges.filter(e => e.source === msg.NodeStreamStarted);
+                for (const edge of outEdges) {
+                  const tData = getNodeData(edge.target);
+                  tData.upstreamIsStreaming = true;
+                }
+              } else if ('NodeStreamNextMessage' in msg) {
+                const [nodeId, chunk] = msg.NodeStreamNextMessage;
+                const data = getNodeData(nodeId);
+                if (typeof data.lastMessage !== 'string') data.lastMessage = '';
+                data.lastMessage += chunk;
+              } else if ('NodeInMessage' in msg) {
+                const [nodeId, value] = msg.NodeInMessage;
+                const data = getNodeData(nodeId);
+                data.lastMessage = value;
+                data.lastMessageRunId = runId;
+                if (typeof value === 'object' && value !== null) {
+                  if (!data.inputs) data.inputs = {};
+                  Object.assign(data.inputs, value);
+                }
+              } else if ('NodeOutMessage' in msg) {
+                const [nodeId, value] = msg.NodeOutMessage;
+                const data = getNodeData(nodeId);
+                data.lastMessage = value;
+                data.lastMessageRunId = runId;
+                data.isOutputStream = false;
+                if (!data.outputs) data.outputs = {};
+                data.outputs['output'] = value;
 
-            const setOutput = (nodeId: string, key: string, value: any) => {
-              const data = getNodeData(nodeId);
-              if (!data) return;
-              if (!data.outputs) data.outputs = {};
-              if (data.outputs[key] !== value) data.outputs[key] = value;
-            };
+                const outEdges = snapshot.edges.filter(e => e.source === nodeId);
+                for (const edge of outEdges) {
+                  const tData = getNodeData(edge.target);
+                  tData.lastMessage = value;
+                  tData.lastMessageRunId = runId;
+                  tData.upstreamIsStreaming = false;
 
-            for (const wrapper of batch) {
-              const { runId, event: msg } = wrapper;
+                  if (!tData.inputs) tData.inputs = {};
+                  tData.inputs[edge.targetHandle || 'default'] = value;
+                }
+              } else if ('NodeCompleted' in msg) {
+                const nodeId = msg.NodeCompleted;
+                const data = getNodeData(nodeId);
+                data.status = 'completed';
 
-              let isCurrentRun = !runId || runId === draft.currentRunId;
-              if (
-                !isCurrentRun &&
-                runId &&
-                draft.currentRunId === null &&
-                draft.workflowStatus === 'running'
-              ) {
-                draft.currentRunId = runId;
-                nextCurrentRunId = runId;
-                const wfId = draft.currentWorkflowId;
-                if (wfId != null) {
-                  draft.runIdToWorkflowId[runId] = wfId;
-                  if (draft.workflowStatuses[wfId] !== 'running') {
-                    draft.workflowStatuses[wfId] = 'running';
+                if (
+                  runId &&
+                  activeRunNodeExecution &&
+                  activeRunNodeExecution.runId === runId &&
+                  activeRunNodeExecution.startNodeId === nodeId
+                ) {
+                  // RunNode 完成逻辑
+                  const outEdges = snapshot.edges.filter(e => e.source === nodeId);
+                  if (outEdges.length === 0) {
+                    finalizeRunNodeRunId = runId;
+                    // 重置状态
+                    const wfId = activeRunNodeExecution.workflowId ?? get().currentWorkflowId;
+                    if (wfId != null) {
+                      if (!workflowStatusesUpdate) workflowStatusesUpdate = {};
+                      workflowStatusesUpdate[wfId] = 'idle';
+                    }
+                    storeUpdates.workflowStatus = 'idle';
+                    if (getCurrentRunId() !== null) nextCurrentRunId = null;
+                    // clean runId map? 
                   }
                 }
-                isCurrentRun = true;
-              }
+              } else if ('NodeError' in msg) {
+                const [nodeId, error] = msg.NodeError;
+                const data = getNodeData(nodeId);
+                data.status = 'error';
+                data.errorMessage = error;
+                data.isOutputStream = false;
 
-              if (isCurrentRun) {
-                if (typeof msg === 'object') {
-                  if ('NodeStarted' in msg) {
-                    const id = msg.NodeStarted;
-                    const data = getNodeData(id);
-                    if (data && data.status !== 'running') data.status = 'running';
-                  } else if ('NodeStreamStarted' in msg) {
-                    const id = msg.NodeStreamStarted;
-                    const data = getNodeData(id);
-                    if (data && data.isOutputStream !== true) data.isOutputStream = true;
-
-                    const outEdges = outEdgeMap.get(id) ?? [];
-                    for (const edge of outEdges) {
-                      const targetData = getNodeData(edge.target);
-                      if (targetData && targetData.upstreamIsStreaming !== true) {
-                        targetData.upstreamIsStreaming = true;
-                      }
-                    }
-                  } else if ('NodeStreamNextMessage' in msg) {
-                  } else if ('NodeInMessage' in msg) {
-                    const [id, value] = msg.NodeInMessage;
-                    const data = getNodeData(id);
-                    if (data) {
-                      if (data.lastMessage !== value) data.lastMessage = value;
-                      if (data.lastMessageRunId !== runId) data.lastMessageRunId = runId;
-                    }
-                    if (typeof value === 'object' && value !== null) {
-                      for (const [k, v] of Object.entries(value)) {
-                        setInput(id, k, v);
-                      }
-                    }
-                  } else if ('NodeOutMessage' in msg) {
-                    const [id, value] = msg.NodeOutMessage;
-                    const data = getNodeData(id);
-                    if (data) {
-                      if (data.lastMessage !== value) data.lastMessage = value;
-                      if (data.lastMessageRunId !== runId) data.lastMessageRunId = runId;
-                      if (data.isOutputStream !== false) data.isOutputStream = false;
-                    }
-                    setOutput(id, 'output', value);
-
-                    const outEdges = outEdgeMap.get(id) ?? [];
-                    for (const edge of outEdges) {
-                      const targetData = getNodeData(edge.target);
-                      if (targetData) {
-                        if (targetData.lastMessage !== value) targetData.lastMessage = value;
-                        if (targetData.lastMessageRunId !== runId) targetData.lastMessageRunId = runId;
-                        if (targetData.upstreamIsStreaming !== false) targetData.upstreamIsStreaming = false;
-                      }
-                      setInput(edge.target, edge.targetHandle || 'default', value);
-                    }
-                  } else if ('NodeCompleted' in msg) {
-                    const id = msg.NodeCompleted;
-                    const data = getNodeData(id);
-                    if (data && data.status !== 'completed') data.status = 'completed';
-
-                    if (
-                      runId &&
-                      activeRunNodeExecution &&
-                      activeRunNodeExecution.runId === runId &&
-                      activeRunNodeExecution.startNodeId === id
-                    ) {
-                      const outEdges = outEdgeMap.get(id) ?? [];
-                      if (outEdges.length === 0) {
-                        const wfId = activeRunNodeExecution.workflowId ?? draft.currentWorkflowId;
-                        if (wfId != null) {
-                          if (draft.workflowStatuses[wfId] !== 'idle') draft.workflowStatuses[wfId] = 'idle';
-                        }
-
-                        if (draft.workflowStatus !== 'idle') draft.workflowStatus = 'idle';
-                        if (draft.currentRunId !== null) {
-                          draft.currentRunId = null;
-                          nextCurrentRunId = null;
-                        }
-                        if (runId in draft.runIdToWorkflowId) delete draft.runIdToWorkflowId[runId];
-                        finalizeRunNodeRunId = runId;
-                      }
-                    }
-                  } else if ('NodeError' in msg) {
-                    const [id, error] = msg.NodeError;
-                    const data = getNodeData(id);
-                    if (data) {
-                      if (data.status !== 'error') data.status = 'error';
-                      if (data.errorMessage !== error) data.errorMessage = error;
-                      if (data.isOutputStream !== false) data.isOutputStream = false;
-                    }
-                  }
+                if (
+                  activeRunNodeExecution &&
+                  activeRunNodeExecution.startNodeId === nodeId &&
+                  runId === activeRunNodeExecution.runId
+                ) {
+                  finalizeRunNodeRunId = runId;
                 }
               }
-
-              const workflowId =
-                (runId ? draft.runIdToWorkflowId[runId] : null) ??
-                (runId && runId === draft.currentRunId ? draft.currentWorkflowId : null);
+            } else {
+              // String messages: FlowFinished, FlowStopped, etc.
+              const workflowId = (runId ? (runIdToWorkflowIdUpdate?.[runId] ?? get().runIdToWorkflowId[runId]) : null) ??
+                (runId && runId === getCurrentRunId() ? get().currentWorkflowId : null);
 
               if (msg === 'FlowFinished' || msg === 'FlowStopped') {
                 if (workflowId != null) {
-                  if (draft.workflowStatuses[workflowId] !== 'idle') draft.workflowStatuses[workflowId] = 'idle';
+                  if (!workflowStatusesUpdate) workflowStatusesUpdate = {};
+                  workflowStatusesUpdate[workflowId] = 'idle';
                 }
-                if (runId && runId in draft.runIdToWorkflowId) delete draft.runIdToWorkflowId[runId];
+                // delete runId map... handled in setState below
 
-                if (!runId || runId === draft.currentRunId) {
-                  if (draft.workflowStatus !== 'idle') draft.workflowStatus = 'idle';
-                  if (draft.currentRunId !== null) {
-                    draft.currentRunId = null;
-                    nextCurrentRunId = null;
-                  }
+                if (!runId || runId === getCurrentRunId()) {
+                  storeUpdates.workflowStatus = 'idle';
+                  if (getCurrentRunId() !== null) nextCurrentRunId = null;
                 }
               } else if (msg === 'FlowPaused') {
                 if (workflowId != null) {
-                  if (draft.workflowStatuses[workflowId] !== 'paused') draft.workflowStatuses[workflowId] = 'paused';
+                  if (!workflowStatusesUpdate) workflowStatusesUpdate = {};
+                  workflowStatusesUpdate[workflowId] = 'paused';
                 }
-                if (!runId || runId === draft.currentRunId) {
-                  if (draft.workflowStatus !== 'paused') draft.workflowStatus = 'paused';
+                if (!runId || runId === getCurrentRunId()) {
+                  storeUpdates.workflowStatus = 'paused';
                 }
               } else if (msg === 'FlowResumed') {
                 if (workflowId != null) {
-                  if (draft.workflowStatuses[workflowId] !== 'running') draft.workflowStatuses[workflowId] = 'running';
+                  if (!workflowStatusesUpdate) workflowStatusesUpdate = {};
+                  workflowStatusesUpdate[workflowId] = 'running';
                 }
-                if (!runId || runId === draft.currentRunId) {
-                  if (draft.workflowStatus !== 'running') draft.workflowStatus = 'running';
+                if (!runId || runId === getCurrentRunId()) {
+                  storeUpdates.workflowStatus = 'running';
                 }
+              }
+            }
+          }
+        }
+
+        // 4. 生成 Graph Commands
+        nodeDataCache.forEach((data, id) => {
+          commands.push({
+            type: 'UPDATE_NODE_DATA',
+            payload: { id, data }
+          });
+        });
+
+        if (commands.length > 0) {
+          workflowModel.dispatch({
+            type: 'BATCH',
+            payload: { commands }
+          });
+        }
+
+        // 5. 应用 Store Updates
+        setState((state) => {
+          return produce(state, (draft) => {
+            if (nextCurrentRunId !== undefined) draft.currentRunId = nextCurrentRunId;
+            if (runIdToWorkflowIdUpdate) {
+              Object.assign(draft.runIdToWorkflowId, runIdToWorkflowIdUpdate);
+            }
+            if (workflowStatusesUpdate) {
+              Object.assign(draft.workflowStatuses, workflowStatusesUpdate);
+            }
+            Object.assign(draft, storeUpdates);
+
+            // Clean up runIdToWorkflowId for finished/stopped
+            for (const wrapper of batch) {
+              const { runId, event: msg } = wrapper;
+              if ((msg === 'FlowFinished' || msg === 'FlowStopped' || (typeof msg === 'object' && 'NodeCompleted' in msg && finalizeRunNodeRunId === runId)) && runId) {
+                delete draft.runIdToWorkflowId[runId];
               }
             }
           });
         });
-        if (nextCurrentRunId !== undefined) currentRunIdSubject.next(nextCurrentRunId);
+
+        if (nextCurrentRunId !== undefined) {
+          currentRunIdSubject.next(nextCurrentRunId);
+        }
+
         if (finalizeRunNodeRunId && activeRunNodeExecution?.runId === finalizeRunNodeRunId) {
           activeRunNodeExecution = null;
         }
@@ -328,7 +372,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       const blueprint = buildExecutionBlueprint(nodes, edges);
 
       try {
-        set(state => ({ ...state, ...resetWorkflowExecutionState(state) }));
+        workflowModel.dispatch({ type: 'RESET_EXECUTION_STATE', payload: {} });
         setWorkflowStatus('running');
 
         const res = await api.runWorkflow(currentSpaceId, blueprint, currentWorkflowId || -1);

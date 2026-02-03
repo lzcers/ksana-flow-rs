@@ -13,25 +13,14 @@ import type {
   UpdateNodeDimensionsCommand,
   SelectNodeCommand,
   ApplyNodeChangesCommand,
+  UpdateNodeStatusCommand,
+  UpdateNodeInputCommand,
+  UpdateNodeInputsCommand,
+  UpdateNodeOutputCommand,
 } from '../commands';
-import { applyNodeChangesXyflow } from '../utils';
+import { applyNodeChangesXyflow, getNextNodeId } from '../utils';
 
-// ===== ID 生成 =====
-
-export const getNextNodeId = (nodes: Node[], type: string): string => {
-  const sameTypeNodes = nodes.filter((n) => n.id.startsWith(`${type}-`));
-  let nextNum = 1;
-  if (sameTypeNodes.length > 0) {
-    const nums = sameTypeNodes.map((n) => {
-      const parts = n.id.split('-');
-      const lastPart = parts[parts.length - 1];
-      const num = parseInt(lastPart, 10);
-      return isNaN(num) ? 0 : num;
-    });
-    nextNum = Math.max(...nums) + 1;
-  }
-  return `${type}-${nextNum}`;
-};
+export { getNextNodeId }; // Re-export for compatibility if needed within processors module
 
 // 默认节点数据
 const getDefaultNodeData = (type: string): Partial<NodeData> => {
@@ -156,6 +145,72 @@ export const processUpdateNodeDimensions = (
           collapsedSize: expanded ? (node.data?.collapsedSize as any) : size,
         };
       }
+    }
+  });
+};
+
+export const processUpdateNodeStatus = (
+  state: WorkflowState,
+  command: UpdateNodeStatusCommand
+): WorkflowState => {
+  const { id, status, errorMessage } = command.payload;
+
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === id);
+    if (node) {
+      if (!node.data) node.data = {};
+      node.data.status = status;
+      if (errorMessage !== undefined) {
+        node.data.errorMessage = errorMessage;
+      }
+    }
+    syncEdgeHighlighting(draft);
+  });
+};
+
+export const processUpdateNodeInput = (
+  state: WorkflowState,
+  command: UpdateNodeInputCommand
+): WorkflowState => {
+  const { id, key, value } = command.payload;
+
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === id);
+    if (node) {
+      if (!node.data) node.data = {};
+      if (!node.data.inputs) node.data.inputs = {};
+      node.data.inputs[key] = value;
+    }
+  });
+};
+
+export const processUpdateNodeInputs = (
+  state: WorkflowState,
+  command: UpdateNodeInputsCommand
+): WorkflowState => {
+  const { id, inputs } = command.payload;
+
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === id);
+    if (node) {
+      if (!node.data) node.data = {};
+      node.data.inputs = { ...node.data.inputs, ...inputs };
+    }
+  });
+};
+
+export const processUpdateNodeOutput = (
+  state: WorkflowState,
+  command: UpdateNodeOutputCommand
+): WorkflowState => {
+  const { id, key, value } = command.payload;
+
+  return produce(state, (draft) => {
+    const node = draft.nodes.find((n) => n.id === id);
+    if (node) {
+      if (!node.data) node.data = {};
+      if (!node.data.outputs) node.data.outputs = {};
+      node.data.outputs[key] = value;
     }
   });
 };
