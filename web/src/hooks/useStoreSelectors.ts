@@ -71,11 +71,11 @@ export const historyActions = {
 
 /** 订阅历史状态 - 使用独立选择器避免对象比较问题 */
 export function useCanUndo(): boolean {
-  return useStore(useCallback((state: StoreState) => state.history.past.length > 0, []));
+  return useStore(useCallback((state: StoreState) => state.canUndo, []));
 }
 
 export function useCanRedo(): boolean {
-  return useStore(useCallback((state: StoreState) => state.history.future.length > 0, []));
+  return useStore(useCallback((state: StoreState) => state.canRedo, []));
 }
 
 // ==========================================

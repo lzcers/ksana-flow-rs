@@ -33,7 +33,11 @@ export interface WorkflowModel {
   commandBus: RxCommandBus;
   state$: Observable<WorkflowState>;
   viewState$: Observable<WorkflowState>;
+  canUndo$: Observable<boolean>;
+  canRedo$: Observable<boolean>;
   dispatch: (command: GraphCommand) => void;
+  undo: () => void;
+  redo: () => void;
   dispatchers: WorkflowModelDispatchers;
   getSnapshot: () => WorkflowState;
   destroy: () => void;
@@ -77,7 +81,12 @@ export function createWorkflowModel(
     shareReplay({ bufferSize: 1, refCount: true })
   );
 
+  const canUndo$ = commandBus.canUndo$.pipe(shareReplay({ bufferSize: 1, refCount: true }));
+  const canRedo$ = commandBus.canRedo$.pipe(shareReplay({ bufferSize: 1, refCount: true }));
+
   const dispatch = (command: GraphCommand) => commandBus.dispatch(command);
+  const undo = () => commandBus.undo();
+  const redo = () => commandBus.redo();
 
   const dispatchers: WorkflowModelDispatchers = {
     addNode: (type, position, options) =>
@@ -119,7 +128,11 @@ export function createWorkflowModel(
     commandBus,
     state$,
     viewState$,
+    canUndo$,
+    canRedo$,
     dispatch,
+    undo,
+    redo,
     dispatchers,
     getSnapshot: () => commandBus.currentState,
     destroy: () => commandBus.destroy(),

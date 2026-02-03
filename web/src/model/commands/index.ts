@@ -6,9 +6,15 @@
 import type { XYPosition, Connection } from '@xyflow/react';
 import type { Node, NodeData, Edge, NodeChange, EdgeChange } from '../types';
 
+export interface BaseCommand {
+  meta?: {
+    skipHistory?: boolean;
+  };
+}
+
 // ===== Node Commands =====
 
-export interface AddNodeCommand {
+export interface AddNodeCommand extends BaseCommand {
   type: 'ADD_NODE';
   payload: {
     id?: string;
@@ -18,14 +24,14 @@ export interface AddNodeCommand {
   };
 }
 
-export interface RemoveNodeCommand {
+export interface RemoveNodeCommand extends BaseCommand {
   type: 'REMOVE_NODE';
   payload: {
     id: string;
   };
 }
 
-export interface UpdateNodeDataCommand {
+export interface UpdateNodeDataCommand extends BaseCommand {
   type: 'UPDATE_NODE_DATA';
   payload: {
     id: string;
@@ -33,7 +39,7 @@ export interface UpdateNodeDataCommand {
   };
 }
 
-export interface UpdateNodePositionCommand {
+export interface UpdateNodePositionCommand extends BaseCommand {
   type: 'UPDATE_NODE_POSITION';
   payload: {
     id: string;
@@ -41,7 +47,7 @@ export interface UpdateNodePositionCommand {
   };
 }
 
-export interface UpdateNodeDimensionsCommand {
+export interface UpdateNodeDimensionsCommand extends BaseCommand {
   type: 'UPDATE_NODE_DIMENSIONS';
   payload: {
     id: string;
@@ -50,21 +56,21 @@ export interface UpdateNodeDimensionsCommand {
   };
 }
 
-export interface SelectNodeCommand {
+export interface SelectNodeCommand extends BaseCommand {
   type: 'SELECT_NODE';
   payload: {
     id: string | null;
   };
 }
 
-export interface ApplyNodeChangesCommand {
+export interface ApplyNodeChangesCommand extends BaseCommand {
   type: 'APPLY_NODE_CHANGES';
   payload: {
     changes: NodeChange[];
   };
 }
 
-export interface UpdateNodeStatusCommand {
+export interface UpdateNodeStatusCommand extends BaseCommand {
   type: 'UPDATE_NODE_STATUS';
   payload: {
     id: string;
@@ -73,7 +79,7 @@ export interface UpdateNodeStatusCommand {
   };
 }
 
-export interface UpdateNodeInputCommand {
+export interface UpdateNodeInputCommand extends BaseCommand {
   type: 'UPDATE_NODE_INPUT';
   payload: {
     id: string;
@@ -82,7 +88,7 @@ export interface UpdateNodeInputCommand {
   };
 }
 
-export interface UpdateNodeInputsCommand {
+export interface UpdateNodeInputsCommand extends BaseCommand {
   type: 'UPDATE_NODE_INPUTS';
   payload: {
     id: string;
@@ -90,7 +96,7 @@ export interface UpdateNodeInputsCommand {
   };
 }
 
-export interface UpdateNodeOutputCommand {
+export interface UpdateNodeOutputCommand extends BaseCommand {
   type: 'UPDATE_NODE_OUTPUT';
   payload: {
     id: string;
@@ -101,26 +107,26 @@ export interface UpdateNodeOutputCommand {
 
 // ===== Edge Commands =====
 
-export interface AddEdgeCommand {
+export interface AddEdgeCommand extends BaseCommand {
   type: 'ADD_EDGE';
   payload: {
     edge: Edge;
   };
 }
 
-export interface RemoveEdgeCommand {
+export interface RemoveEdgeCommand extends BaseCommand {
   type: 'REMOVE_EDGE';
   payload: {
     id: string;
   };
 }
 
-export interface OnConnectCommand {
+export interface OnConnectCommand extends BaseCommand {
   type: 'ON_CONNECT';
   payload: Connection;
 }
 
-export interface UpdateEdgeCommand {
+export interface UpdateEdgeCommand extends BaseCommand {
   type: 'UPDATE_EDGE';
   payload: {
     id: string;
@@ -128,7 +134,7 @@ export interface UpdateEdgeCommand {
   };
 }
 
-export interface ApplyEdgeChangesCommand {
+export interface ApplyEdgeChangesCommand extends BaseCommand {
   type: 'APPLY_EDGE_CHANGES';
   payload: {
     changes: EdgeChange[];
@@ -137,21 +143,21 @@ export interface ApplyEdgeChangesCommand {
 
 // ===== Graph Commands =====
 
-export interface SetNodesCommand {
+export interface SetNodesCommand extends BaseCommand {
   type: 'SET_NODES';
   payload: {
     nodes: Node[];
   };
 }
 
-export interface SetEdgesCommand {
+export interface SetEdgesCommand extends BaseCommand {
   type: 'SET_EDGES';
   payload: {
     edges: Edge[];
   };
 }
 
-export interface PasteNodesCommand {
+export interface PasteNodesCommand extends BaseCommand {
   type: 'PASTE_NODES';
   payload: {
     nodes: Node[];
@@ -159,32 +165,44 @@ export interface PasteNodesCommand {
   };
 }
 
-export interface GroupNodesCommand {
+export interface GroupNodesCommand extends BaseCommand {
   type: 'GROUP_NODES';
   payload: {
     nodeIds: string[];
   };
 }
 
-export interface ToggleSubgraphCommand {
+export interface ToggleSubgraphCommand extends BaseCommand {
   type: 'TOGGLE_SUBGRAPH';
   payload: {
     nodeId: string;
   };
 }
 
-export interface ResetExecutionStateCommand {
+export interface ResetExecutionStateCommand extends BaseCommand {
   type: 'RESET_EXECUTION_STATE';
   payload: Record<string, never>; // Empty payload
 }
 
 // ===== Batch Commands =====
 
-export interface BatchCommand {
+export interface BatchCommand extends BaseCommand {
   type: 'BATCH';
   payload: {
     commands: GraphCommand[];
   };
+}
+
+// ===== History Commands =====
+
+export interface UndoCommand extends BaseCommand {
+  type: 'UNDO';
+  payload: Record<string, never>;
+}
+
+export interface RedoCommand extends BaseCommand {
+  type: 'REDO';
+  payload: Record<string, never>;
 }
 
 // ===== Union Type =====
@@ -216,4 +234,7 @@ export type GraphCommand =
   | ToggleSubgraphCommand
   | ResetExecutionStateCommand
   // Batch
-  | BatchCommand;
+  | BatchCommand
+  // History
+  | UndoCommand
+  | RedoCommand;

@@ -3,8 +3,8 @@
  * 使用 RxJS Subject 分发 Command，由注册的处理器处理
  */
 
-import { Subject, Observable, of, from } from 'rxjs';
-import { filter, concatMap, catchError } from 'rxjs/operators';
+import { Subject, Observable, of, from, BehaviorSubject } from 'rxjs';
+import { filter, concatMap, catchError, map } from 'rxjs/operators';
 import type { WorkflowState } from '../types';
 import type { GraphCommand } from '../commands';
 import { RxWorkflowState } from './rxState';
@@ -20,9 +20,17 @@ export type AsyncCommandHandler<T extends GraphCommand> = (
   command: T
 ) => Promise<WorkflowState>;
 
+export interface HistoryState {
+  past: WorkflowState[];
+  future: WorkflowState[];
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
 export interface RxCommandBusOptions {
   initialState?: WorkflowState;
   enableLogging?: boolean;
+  maxHistorySize?: number;
   onAfterCommand?: (args: {
     command: GraphCommand;
     prevState: WorkflowState;
@@ -44,10 +52,29 @@ export class RxCommandBus {
   >();
   private _options: RxCommandBusOptions;
 
+  // History 栈
+  private _past: WorkflowState[] = [];
+  private _future: WorkflowState[] = [];
+  private _history$ = new BehaviorSubject<HistoryState>({
+    past: [],
+    future: [],
+    canUndo: false,
+    canRedo: false,
+  });
+
   // 公共 Observable
   public readonly commands$ = this._commands$.asObservable();
   public get state$(): Observable<WorkflowState> {
     return this._state.state$;
+  }
+  public get history$(): Observable<HistoryState> {
+    return this._history$.asObservable();
+  }
+  public get canUndo$(): Observable<boolean> {
+    return this.history$.pipe(map(h => h.canUndo));
+  }
+  public get canRedo$(): Observable<boolean> {
+    return this.history$.pipe(map(h => h.canRedo));
   }
 
   constructor(options: RxCommandBusOptions = {}) {
@@ -75,6 +102,20 @@ export class RxCommandBus {
       console.log('[RxCommandBus] Dispatch:', command.type, command.payload);
     }
     this._commands$.next(command);
+  }
+
+  /**
+   * 撤销
+   */
+  undo(): void {
+    this.dispatch({ type: 'UNDO', payload: {} });
+  }
+
+  /**
+   * 重做
+   */
+  redo(): void {
+    this.dispatch({ type: 'REDO', payload: {} });
   }
 
   /**
@@ -143,10 +184,23 @@ export class RxCommandBus {
    */
   destroy(): void {
     this._commands$.complete();
+    this._history$.complete();
     this._state.destroy();
   }
 
   // ===== 私有方法 =====
+
+  /**
+   * 更新 History 状态流
+   */
+  private _updateHistoryState(): void {
+    this._history$.next({
+      past: this._past,
+      future: this._future,
+      canUndo: this._past.length > 0,
+      canRedo: this._future.length > 0,
+    });
+  }
 
   /**
    * 设置 Command 处理流程
@@ -155,8 +209,32 @@ export class RxCommandBus {
     this._commands$
       .pipe(
         concatMap((command) => {
-          const handler = this._handlers.get(command.type);
           const prevState = this.currentState;
+
+          // 特殊处理 UNDO/REDO
+          if (command.type === 'UNDO') {
+            if (this._past.length > 0) {
+              const stateToRestore = this._past[this._past.length - 1];
+              this._future.push(prevState);
+              this._past.pop();
+              this._updateHistoryState();
+              return of({ command, prevState, nextState: stateToRestore });
+            }
+            return of({ command, prevState, nextState: prevState });
+          }
+
+          if (command.type === 'REDO') {
+            if (this._future.length > 0) {
+              const stateToRestore = this._future[this._future.length - 1];
+              this._past.push(prevState);
+              this._future.pop();
+              this._updateHistoryState();
+              return of({ command, prevState, nextState: stateToRestore });
+            }
+            return of({ command, prevState, nextState: prevState });
+          }
+
+          const handler = this._handlers.get(command.type);
 
           if (!handler) {
             console.warn(
@@ -192,6 +270,23 @@ export class RxCommandBus {
       )
       .subscribe(({ command, prevState, nextState }) => {
         if (nextState !== this.currentState) {
+          // 处理 History 记录逻辑
+          const isHistoryControl = command.type === 'UNDO' || command.type === 'REDO';
+          const shouldSkipHistory = command.meta?.skipHistory === true || 
+                                  command.type === 'SELECT_NODE' ||
+                                  command.type === 'UPDATE_NODE_STATUS';
+
+          if (!isHistoryControl && !shouldSkipHistory) {
+            // 记录到 past
+            this._past.push(prevState);
+            if (this._past.length > (this._options.maxHistorySize ?? 50)) {
+              this._past.shift();
+            }
+            // 产生新历史，清空 future
+            this._future = [];
+            this._updateHistoryState();
+          }
+
           this._state.next(nextState);
         }
         this._options.onAfterCommand?.({ command, prevState, nextState });

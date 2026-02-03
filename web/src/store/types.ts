@@ -79,8 +79,8 @@ export interface Canvas {
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
-  canUndo: () => boolean;
-  canRedo: () => boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 // 处理执行相关的状态和操作

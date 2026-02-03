@@ -52,77 +52,29 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   history: { past: [], future: [] },
 
   pushHistory: () => {
-    const { history } = get();
-    const snapshot = workflowModel.getSnapshot();
-    const newPast = [
-      ...history.past,
-      { nodes: snapshot.nodes, edges: snapshot.edges },
-    ].slice(-50);
-    set({ history: { past: newPast, future: [] } });
+    // Deprecated: History is now managed by WorkflowModel
   },
 
   undo: () => {
-    const { history } = get();
-    if (history.past.length === 0) return;
-
-    const previous = history.past[history.past.length - 1];
-    const newPast = history.past.slice(0, -1);
-
-    const snapshot = workflowModel.getSnapshot();
-
-    workflowModel.commandBus.setState({
-      nodes: previous.nodes,
-      edges: previous.edges,
-      selectedNodeId: snapshot.selectedNodeId,
-    });
-
-    set({
-      history: {
-        past: newPast,
-        future: [{ nodes: snapshot.nodes, edges: snapshot.edges }, ...history.future]
-      }
-    });
+    workflowModel.undo();
   },
 
   redo: () => {
-    const { history } = get();
-    if (history.future.length === 0) return;
-
-    const next = history.future[0];
-    const newFuture = history.future.slice(1);
-
-    const snapshot = workflowModel.getSnapshot();
-
-    workflowModel.commandBus.setState({
-      nodes: next.nodes,
-      edges: next.edges,
-      selectedNodeId: snapshot.selectedNodeId,
-    });
-
-    set({
-      history: {
-        past: [...history.past, { nodes: snapshot.nodes, edges: snapshot.edges }],
-        future: newFuture
-      }
-    });
+    workflowModel.redo();
   },
 
-  canUndo: () => get().history.past.length > 0,
-  canRedo: () => get().history.future.length > 0,
+  canUndo: false,
+  canRedo: false,
 
   setNodes: (nodes) => workflowModel.dispatchers.setNodes(nodes as any),
   setEdges: (edges) => workflowModel.dispatchers.setEdges(edges as any),
 
   pasteNodes: (nodes, edges) => {
-    get().pushHistory();
     workflowModel.dispatchers.pasteNodes(nodes as any, edges as any);
   },
 
   onNodesChange: (changes: NodeChange[]) => {
     // Snapshot on remove (e.g. Backspace key)
-    if (changes.some(c => c.type === 'remove')) {
-      get().pushHistory();
-    }
     workflowModel.dispatch({
       type: 'APPLY_NODE_CHANGES',
       payload: { changes },
@@ -131,9 +83,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
 
   onEdgesChange: (changes: EdgeChange[]) => {
     // Snapshot on remove (e.g. Backspace key or removing edge)
-    if (changes.some(c => c.type === 'remove')) {
-      get().pushHistory();
-    }
     const { edges } = get();
     const edgeById = new Map(edges.map((e) => [e.id, e] as const));
 
@@ -303,13 +252,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   },
 
   onConnect: (connection: Connection) => {
-    get().pushHistory();
     workflowModel.dispatchers.onConnect(connection as any);
   },
 
   addNode: (type: string, position: { x: number; y: number } = { x: 300, y: 200 }) => {
-    get().pushHistory();
-
     const { nodeTypes } = get();
     const { nodes } = workflowModel.getSnapshot();
     // Find all nodes of the same type and extract their numbers
@@ -339,7 +285,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   },
 
   deleteNode: (id: string) => {
-    get().pushHistory();
     workflowModel.dispatchers.deleteNode(id);
   },
 
@@ -370,8 +315,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       console.warn("Cannot group nodes from different parents");
       return;
     }
-
-    get().pushHistory();
 
     // Calculate bounds
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -449,7 +392,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     const snapshot = workflowModel.getSnapshot();
     const node = snapshot.nodes.find((n) => n.id === nodeId);
     if (!node || (node.type !== 'SubgraphNode' && node.type !== 'MapNode')) return;
-    get().pushHistory();
     workflowModel.dispatchers.toggleSubgraph(nodeId);
   },
 });
