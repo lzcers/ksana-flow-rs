@@ -7,7 +7,7 @@ use std::{
     future::Future,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
 };
 use tokio::{
@@ -39,6 +39,7 @@ pub struct Controller {
     event_tx: mpsc::Sender<FlowEvent>,
     next_runner_id: AtomicU64,
     runners: DashMap<RunnerId, Arc<RunnerRecord>>,
+    max_concurrency: AtomicUsize,
 }
 
 impl Controller {
@@ -51,6 +52,7 @@ impl Controller {
                 event_tx,
                 next_runner_id: AtomicU64::new(1),
                 runners: DashMap::new(),
+                max_concurrency: AtomicUsize::new(0),
             }),
             event_rx,
         )
@@ -63,11 +65,22 @@ impl Controller {
         self.event_tx.clone()
     }
     pub fn set_max_concurrency(&self, max: usize) {
+        if max == 0 {
+            self.clear_max_concurrency();
+            return;
+        }
+        self.max_concurrency.store(max, Ordering::Relaxed);
         let _ = self.cmd_tx.send(RunnerCommand::SetMaxConcurrency(max));
     }
 
     pub fn clear_max_concurrency(&self) {
+        self.max_concurrency.store(0, Ordering::Relaxed);
         let _ = self.cmd_tx.send(RunnerCommand::ClearMaxConcurrency);
+    }
+
+    fn get_max_concurrency_snapshot(&self) -> Option<usize> {
+        let v = self.max_concurrency.load(Ordering::Relaxed);
+        if v == 0 { None } else { Some(v) }
     }
 }
 
@@ -131,7 +144,10 @@ impl ControllerRunners for ControllerHandle {
         parent: Option<RunnerId>,
     ) -> (RunnerId, Runner, RunnerHandle) {
         let runner_id = self.next_runner_id.fetch_add(1, Ordering::Relaxed);
-        let (runner, handle) = Runner::new(graph, initial, self.clone(), runner_id);
+        let (mut runner, handle) = Runner::new(graph, initial, self.clone(), runner_id);
+        if let Some(max) = self.get_max_concurrency_snapshot() {
+            runner.apply_max_concurrency(max);
+        }
         let record = Arc::new(RunnerRecord {
             id: runner_id,
             parent,

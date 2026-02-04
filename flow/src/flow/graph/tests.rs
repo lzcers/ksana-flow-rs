@@ -154,6 +154,57 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
 }
 
 #[tokio::test]
+async fn test_compile_graph_filters_dangling_edges() {
+    let counter = Arc::new(AtomicUsize::new(0));
+
+    let nodes = vec![BlueprintNode {
+        id: "B".to_string(),
+        type_name: "CountNode".to_string(),
+        parent_id: None,
+        config: Value::Null,
+    }];
+
+    let edges = vec![BlueprintEdge {
+        id: "e1".to_string(),
+        source: "Missing".to_string(),
+        target: "B".to_string(),
+        source_handle: None,
+        target_handle: None,
+        condition: None,
+    }];
+
+    let counter_for_factory = counter.clone();
+    let create_leaf_factory = move |node: &BlueprintNode| -> Result<Arc<NodeFactory>, String> {
+        match node.type_name.as_str() {
+            "CountNode" => {
+                let counter = counter_for_factory.clone();
+                Ok(Arc::new(move || {
+                    Ok(Arc::new(RwLock::new(CountNode {
+                        counter: counter.clone(),
+                    })) as Arc<RwLock<dyn AnyNode>>)
+                }))
+            }
+            other => Err(format!("unknown node type: {}", other)),
+        }
+    };
+
+    let (graph, start_nodes) =
+        compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
+
+    assert_eq!(start_nodes, vec!["B".to_string()]);
+    assert!(graph.incoming_nodes.get("B").is_none());
+    assert!(graph.edges.get("Missing").is_none());
+
+    let (controller, _rx) = Controller::new();
+    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
+    for id in start_nodes {
+        runner.set_start_node(&id, Value::Null.into());
+    }
+    runner.run().await.unwrap();
+    assert_eq!(counter.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn test_subgraph_events_forwarded_via_controller() {
     let mut g = Graph::new();
     g.add_node("start", || EchoNode);

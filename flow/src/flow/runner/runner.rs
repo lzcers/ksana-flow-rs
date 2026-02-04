@@ -13,7 +13,7 @@ use crate::{
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{broadcast, mpsc, watch};
-use tracing::{Instrument, trace};
+use tracing::{Instrument, debug, trace, warn};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerState {
@@ -123,6 +123,10 @@ impl Runner {
         self.scheduler.enqueue_start(node_id, inputs);
     }
 
+    pub(crate) fn apply_max_concurrency(&mut self, max: usize) {
+        self.executor.set_max_concurrency(max);
+    }
+
     pub async fn run(&mut self) -> Result<(), String> {
         // 记录 Runner 启动
         self.start_time = Some(Instant::now());
@@ -150,9 +154,26 @@ impl Runner {
 
             // run 只返回最错的报错信息, 如果有
             let mut first_error = None;
+            let mut terminated_by_stop = false;
 
             // 2. 启动阶段
             // 从 scheduler 中弹出初始启动节点
+            loop {
+                match self.cmd_rx.try_recv() {
+                    Ok(cmd) => match cmd {
+                        RunnerCommand::SetMaxConcurrency(max) => {
+                            self.executor.set_max_concurrency(max);
+                        }
+                        RunnerCommand::ClearMaxConcurrency => {
+                            self.executor.clear_max_concurrency();
+                        }
+                        _ => {}
+                    },
+                    Err(broadcast::error::TryRecvError::Empty) => break,
+                    Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::TryRecvError::Closed) => break,
+                }
+            }
             let starts = self.scheduler.pop_initial_starts();
             self.start_by_specs(starts).await?;
 
@@ -185,6 +206,7 @@ impl Runner {
                                     self.executor.cancel();
                                     self.update_runner_state(RunnerState::Terminated)?;
                                     self.send_flow_event(FlowEvent::FlowStopped).await;
+                                    terminated_by_stop = true;
                                     break;
                                 }
                                 RunnerCommand::SetMaxConcurrency(max) => {
@@ -232,6 +254,42 @@ impl Runner {
                     self.update_runner_state(RunnerState::Terminated)?;
                     self.send_flow_event(FlowEvent::FlowFinished).await;
                     break;
+                }
+            }
+
+            let node_ids = self.scheduler.get_node_ids();
+            let mut incomplete_nodes = Vec::new();
+            for node_id in &node_ids {
+                let state = self.exec_ctx.get_state(node_id);
+                let is_done =
+                    matches!(state, Some(NodeState::Completed | NodeState::Failed | NodeState::Skipped));
+                if !is_done {
+                    incomplete_nodes.push((node_id.clone(), state));
+                }
+            }
+
+            if !incomplete_nodes.is_empty() {
+                if !terminated_by_stop && first_error.is_none() {
+                    let incomplete_node_ids: Vec<_> =
+                        incomplete_nodes.iter().map(|(id, _)| id.clone()).collect();
+                    warn!(
+                        runner_id = self.runner_id,
+                        incomplete_nodes = ?incomplete_node_ids,
+                        "Runner terminated with incomplete nodes (graph disconnected, missing edges, or AllUpstreamReady blocked)"
+                    );
+                }
+                for (node_id, state) in &incomplete_nodes {
+                    let parents = self.scheduler.get_parents(node_id);
+                    let parent_states: Vec<_> = parents
+                        .iter()
+                        .map(|p| (p.clone(), self.exec_ctx.get_state(p)))
+                        .collect();
+                    debug!(
+                        node_id,
+                        node_state = ?state,
+                        parent_states = ?parent_states,
+                        "Node did not complete before runner termination"
+                    );
                 }
             }
 

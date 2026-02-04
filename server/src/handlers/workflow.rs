@@ -12,14 +12,13 @@ use axum::{
     response::IntoResponse,
 };
 use flow::{
-    Controller, ControllerRunners, ExecutionContext, FlowEvent, RunnerKind, INPUT_EXTERNAL_START,
-    Input, NodeState,
+    Controller, ControllerRunners, ExecutionContext, FlowEvent, INPUT_EXTERNAL_START, Input,
+    NodeState, RunnerKind,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
 use uuid::Uuid;
 
 #[derive(Deserialize)]

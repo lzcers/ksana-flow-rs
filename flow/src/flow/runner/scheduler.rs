@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::RwLock;
+use tracing::{debug, trace};
 
 type TaskPayload = (Vec<NodeId>, Input);
 
@@ -65,6 +66,10 @@ impl Scheduler {
         self.runtime_nodes.get(node_id).cloned()
     }
 
+    pub fn get_parents(&self, node_id: &str) -> Vec<NodeId> {
+        self.graph.get_parents(node_id)
+    }
+
     pub async fn materialize_nodes(&mut self) -> Result<(), String> {
         self.runtime_nodes.clear();
         self.node_trigger_strategy.clear();
@@ -91,11 +96,30 @@ impl Scheduler {
         runtime_ctx: &Context,
     ) -> Result<Vec<StartSpec>, String> {
         let next_nodes = self.find_next_nodes(from_node_id, output, runtime_ctx)?;
+        if next_nodes.is_empty() {
+            let edges_count = self
+                .graph
+                .edges
+                .get(from_node_id)
+                .map(|e| e.len())
+                .unwrap_or(0);
+            trace!(
+                from_node_id,
+                edges_count,
+                "No downstream nodes scheduled (no matching outgoing edges or all conditions false)"
+            );
+        }
         let mut starts = Vec::new();
         for next_node_id in next_nodes {
             if let Some(spec) = self.check_and_build_start(next_node_id, from_node_id, exec_ctx) {
                 starts.push(spec);
             }
+        }
+        if starts.is_empty() {
+            trace!(
+                from_node_id,
+                "Downstream nodes exist but none are ready to start (trigger strategy/parent states may block)"
+            );
         }
         Ok(starts)
     }
@@ -123,11 +147,25 @@ impl Scheduler {
         let mut next_nodes = vec![];
         let output = Output::new(Some(output.clone()));
         if let Some(edges) = self.graph.edges.get(from_node_id) {
+            trace!(
+                from_node_id,
+                edges_count = edges.len(),
+                "Evaluating outgoing edges"
+            );
             for edge in edges.iter() {
-                if edge.check_condition(runtime_ctx, &output) {
-                    next_nodes.push(edge.to().to_owned())
+                let passed = edge.check_condition(runtime_ctx, &output);
+                trace!(
+                    from_node_id,
+                    to = edge.to(),
+                    passed,
+                    "Edge condition evaluated"
+                );
+                if passed {
+                    next_nodes.push(edge.to().to_owned());
                 }
             }
+        } else {
+            trace!(from_node_id, "No outgoing edges found in graph");
         }
         Ok(next_nodes)
     }
@@ -139,6 +177,11 @@ impl Scheduler {
         exec_ctx: &ExecutionContext,
     ) -> Option<StartSpec> {
         if !self.should_schedule(&node_id, exec_ctx) {
+            trace!(
+                node_id,
+                state = ?exec_ctx.get_state(&node_id),
+                "Skip scheduling because node is already Running/Completed"
+            );
             return None;
         }
 
@@ -147,6 +190,12 @@ impl Scheduler {
                 let mut inputs_map = HashMap::new();
                 if let Some(output) = exec_ctx.get_output(from_node_id) {
                     inputs_map.insert(from_node_id.to_owned(), output);
+                } else {
+                    trace!(
+                        node_id,
+                        from_node_id,
+                        "Upstream output not found in ExecutionContext while scheduling"
+                    );
                 }
                 Some(StartSpec {
                     node_id,
@@ -162,10 +211,22 @@ impl Scheduler {
                         Some(NodeState::Completed) => {
                             if let Some(output) = exec_ctx.get_output(&parent_id) {
                                 inputs_map.insert(parent_id.clone(), output);
+                            } else {
+                                trace!(
+                                    node_id,
+                                    parent_id,
+                                    "Parent is Completed but output is missing in ExecutionContext"
+                                );
                             }
                         }
                         Some(NodeState::Skipped) => {}
                         _ => {
+                            debug!(
+                                node_id,
+                                blocking_parent_id = parent_id,
+                                blocking_parent_state = ?state,
+                                "Downstream node not ready (waiting for all parents Completed/Skipped)"
+                            );
                             return None;
                         }
                     }

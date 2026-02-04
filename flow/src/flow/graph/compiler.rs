@@ -380,6 +380,12 @@ where
     let mut new_graph = Graph::new();
     let mut start_nodes = Vec::new();
 
+    let node_id_set: HashSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
+    let edges: Vec<&BlueprintEdge> = edges
+        .iter()
+        .filter(|e| node_id_set.contains(e.source.as_str()) && node_id_set.contains(e.target.as_str()))
+        .collect();
+
     let mut has_incoming_edges = HashSet::new();
     for edge in &edges {
         has_incoming_edges.insert(edge.target.clone());
