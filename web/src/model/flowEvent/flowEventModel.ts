@@ -12,11 +12,9 @@ import type { WorkflowStatus } from '../../store/types';
 import type { FlowEvent, FlowEventCommand } from './commands';
 import type { NodeExecutionData } from './types';
 import {
-  processFlowEvent,
   processNodeMsgEvent,
   processNodeStatusEvent,
   processControlEvent,
-  processWebSocketMessage,
   processSetCurrentRun,
   processUpdateWorkflowStatus,
   processMapRunToWorkflow,
@@ -76,7 +74,7 @@ export class FlowEventModel {
   constructor(options: FlowEventModelOptions = {}) {
     this._options = options;
     this._state = options.initialState ?? defaultState;
-    
+
     // 注册所有处理器
     this._registerHandlers();
   }
@@ -174,13 +172,10 @@ export class FlowEventModel {
 
   private _registerHandlers(): void {
     this.registerHandlers({
-      // 通用事件处理（向后兼容）
-      'PROCESS_FLOW_EVENT': processFlowEvent as FlowEventProcessor,
-      // 分离的事件处理器
+      // 事件处理器
       'PROCESS_NODE_MSG_EVENT': processNodeMsgEvent as FlowEventProcessor,
       'PROCESS_NODE_STATUS_EVENT': processNodeStatusEvent as FlowEventProcessor,
       'PROCESS_CONTROL_EVENT': processControlEvent as FlowEventProcessor,
-      'PROCESS_WS_MESSAGE': processWebSocketMessage as FlowEventProcessor,
       // Run 管理
       'SET_CURRENT_RUN': processSetCurrentRun as FlowEventProcessor,
       'UPDATE_WORKFLOW_STATUS': processUpdateWorkflowStatus as FlowEventProcessor,

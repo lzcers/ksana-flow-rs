@@ -178,6 +178,18 @@ export class RxFlowEvent {
   // ===== Stream Derivation API =====
 
   /**
+   * 获取指定节点的事件流
+   * 从 events$ 派生，按 nodeId 过滤
+   */
+  eventsForNode$(nodeId: string): Observable<FlowEvent> {
+    return this.events$.pipe(
+      filter((event): event is FlowEvent & { nodeId: string } =>
+        'nodeId' in event && event.nodeId === nodeId
+      )
+    );
+  }
+
+  /**
    * 根流：连接 WebSocket，将消息发送给 _source$
    * 这是所有派生流的源头
    * 注意：此方法将 WebSocket 消息推送到 _source$，所有派生流都基于 _source$

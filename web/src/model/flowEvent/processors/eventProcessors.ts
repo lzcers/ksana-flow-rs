@@ -3,6 +3,10 @@
  * 从各个子模块重新导出所有处理器
  */
 
+import { produce } from 'immer';
+import type { Immutable } from 'immer';
+import type { FlowEventState } from '../flowEventModel';
+
 // ===== 事件处理器 =====
 export {
   processNodeMsgEvent,
@@ -15,120 +19,6 @@ export {
 export {
   processControlEvent,
 } from './controlEventProcessor';
-
-// ===== 向后兼容的通用处理器 =====
-
-import type { Immutable } from 'immer';
-import type { FlowEventState } from '../flowEventModel';
-import type {
-  ProcessFlowEventCommand,
-  ProcessWebSocketMessageCommand,
-} from '../commands';
-import type {
-  FlowControlEvent,
-  FlowNodeMsgEvent,
-  FlowNodeStatusEvent,
-} from '../types';
-import { processNodeMsgEvent } from './nodeMsgEventProcessor';
-import { processNodeStatusEvent } from './nodeStatusEventProcessor';
-import { processControlEvent } from './controlEventProcessor';
-
-/**
- * 通用 FlowEvent 处理器（向后兼容）
- * 根据事件类型分发到对应的处理器
- */
-export const processFlowEvent = (
-  state: Immutable<FlowEventState>,
-  command: ProcessFlowEventCommand
-): Immutable<FlowEventState> => {
-  const { event, runId } = command.payload;
-
-  // 检查是否是当前 run 的事件
-  if (!isCurrentRunEvent(state as FlowEventState, runId, state.activeRunContext)) {
-    return state;
-  }
-
-  // 根据事件类型分发到对应的处理器
-  if ('nodeId' in event) {
-    // 节点相关事件
-    const eventType = event.type;
-
-    // FlowNodeMsgEvent: NodeError, NodeInMessage, NodeOutMessage, NodeStreamNextMessage
-    if (
-      eventType === 'NodeError' ||
-      eventType === 'NodeInMessage' ||
-      eventType === 'NodeOutMessage' ||
-      eventType === 'NodeStreamNextMessage'
-    ) {
-      return processNodeMsgEvent(state, {
-        type: 'PROCESS_NODE_MSG_EVENT',
-        payload: { event: event as FlowNodeMsgEvent, runId },
-      });
-    }
-
-    // FlowNodeStatusEvent: NodeStarted, NodeStreamStarted, NodeCompleted
-    if (
-      eventType === 'NodeStarted' ||
-      eventType === 'NodeStreamStarted' ||
-      eventType === 'NodeCompleted'
-    ) {
-      return processNodeStatusEvent(state, {
-        type: 'PROCESS_NODE_STATUS_EVENT',
-        payload: { event: event as FlowNodeStatusEvent, runId },
-      });
-    }
-  }
-
-  // FlowControlEvent: FlowPaused, FlowResumed, FlowStopped, FlowFinished
-  if ('runId' in event && !('nodeId' in event)) {
-    return processControlEvent(state, {
-      type: 'PROCESS_CONTROL_EVENT',
-      payload: { event: event as FlowControlEvent },
-    });
-  }
-
-  return state;
-};
-
-/**
- * WebSocket 消息处理器
- */
-export const processWebSocketMessage = (
-  state: Immutable<FlowEventState>,
-  command: ProcessWebSocketMessageCommand
-): Immutable<FlowEventState> => {
-  const { message } = command.payload;
-  const flowEventCommand: ProcessFlowEventCommand = {
-    type: 'PROCESS_FLOW_EVENT',
-    payload: {
-      event: message.event,
-      runId: message.runId,
-    },
-  };
-  return processFlowEvent(state, flowEventCommand);
-};
-
-// ===== 辅助函数 =====
-
-const isCurrentRunEvent = (
-  state: FlowEventState,
-  runId: string | undefined,
-  activeContext: typeof state.activeRunContext
- : boolean => {
-  if (!runId) return true;
-  if (runId === state.currentRunId) return true;
-  if (activeContext && runId === activeContext.runId) return true;
-  return false;
-};
-
-const getOrCreateNodeData = (
-  state: FlowEventState,
-  nodeId: string
-): FlowEventState['pendingNodeUpdates'] extends Map<string, infer V> ? V : never => {
-  const existing = state.pendingNodeUpdates.get(nodeId);
-  if (existing) return existing as never;
-  return {} as never;
-};
 
 // ===== Run Management Processors =====
 
@@ -165,7 +55,7 @@ export const processUpdateWorkflowStatus = (
 
   return produce(state, (draft) => {
     draft.workflowStatuses[workflowId] = status;
- 
+
     // 如果是当前 workflow，同步更新 workflowStatus
     if (workflowId === draft.currentWorkflowId) {
       draft.workflowStatus = status;
@@ -271,8 +161,8 @@ export const processClearActiveRunContext = (
 };
 
 // ===== Meta Processors =====
- 
- mport type { ResetFlowEventStateCommand } from '../commands';
+
+import type { ResetFlowEventStateCommand } from '../commands';
 
 export const processResetFlowEventState = (
   _state: Immutable<FlowEventState>,
