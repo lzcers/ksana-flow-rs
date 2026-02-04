@@ -7,7 +7,7 @@ import { BehaviorSubject, Subject, Observable } from 'rxjs';
 import { map, distinctUntilChanged, shareReplay } from 'rxjs/operators';
 import type { WorkflowState, Node, Edge } from './types';
 import type { GraphCommand } from './commands';
-import { WorkflowModel, type CommandProcessor } from './workflowModel';
+import { WorkflowModel } from './workflowModel';
 import { applyCollapsedSubgraphUi } from './utils';
 import type { Immutable } from 'immer';
 
@@ -99,13 +99,6 @@ export class RxWorkflow {
     this.dispatch({ type: 'REDO', payload: {} });
   }
 
-  registerHandler(type: string, handler: CommandProcessor): void {
-    this._model.registerHandler(type, handler);
-  }
-
-  registerHandlers(handlers: Record<string, CommandProcessor>): void {
-    this._model.registerHandlers(handlers);
-  }
 
   // ===== Helper Methods (for compatibility) =====
 

@@ -4,8 +4,8 @@ import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/workflow/utils';
 import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
-import { rxWorkflowModel } from '.';
 import type { FlowEvent } from '@/model/flowEvent/types';
+import { rxWorkflowModel } from '.';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],

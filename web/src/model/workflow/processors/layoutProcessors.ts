@@ -1,13 +1,13 @@
-import { produce } from 'immer';
+import { produce, type Immutable } from 'immer';
 import type { WorkflowState, Node } from '../types';
 import type { HandleNodeDragStopCommand } from '../commands';
 import { sortNodesByParent } from '../utils';
 
 // Helper functions
 export const processHandleNodeDragStop = (
-    state: WorkflowState,
+    state: Immutable<WorkflowState>,
     command: HandleNodeDragStopCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
     const { nodeId } = command.payload;
     if (!nodeId) return state;
 
@@ -15,8 +15,8 @@ export const processHandleNodeDragStop = (
     const node = nodeById.get(nodeId);
     if (!node) return state;
 
-    const isGroup = (n: Node) => n.type === 'SubgraphNode' || n.type === 'MapNode';
-    const isDropTargetGroup = (n: Node) =>
+    const isGroup = (n: Immutable<Node>) => n.type === 'SubgraphNode' || n.type === 'MapNode';
+    const isDropTargetGroup = (n: Immutable<Node>) =>
         isGroup(n) && n.id !== nodeId && n.hidden !== true && (n.data as any)?.expanded !== false;
 
     const toNumber = (v: unknown): number | undefined => {
@@ -28,7 +28,7 @@ export const processHandleNodeDragStop = (
         return undefined;
     };
 
-    const getSize = (n: Node): { width: number; height: number } => {
+    const getSize = (n: Immutable<Node>): { width: number; height: number } => {
         const styleW = toNumber((n.style as any)?.width);
         const styleH = toNumber((n.style as any)?.height);
         const width = (n.measured?.width ?? styleW ?? n.width ?? (isGroup(n) ? 300 : 150)) as number;
@@ -36,10 +36,10 @@ export const processHandleNodeDragStop = (
         return { width, height };
     };
 
-    const getAbsPos = (n: Node): { x: number; y: number } => {
+    const getAbsPos = (n: Immutable<Node>): { x: number; y: number } => {
         let x = n.position.x;
         let y = n.position.y;
-        let cur: Node | undefined = n;
+        let cur: Immutable<Node> | undefined = n;
         const visited = new Set<string>();
         while (cur?.parentId) {
             if (!visited.add(cur.parentId)) break;
@@ -52,9 +52,9 @@ export const processHandleNodeDragStop = (
         return { x, y };
     };
 
-    const depthOf = (n: Node): number => {
+    const depthOf = (n: Immutable<Node>): number => {
         let depth = 0;
-        let cur: Node | undefined = n;
+        let cur: Immutable<Node> | undefined = n;
         const visited = new Set<string>();
         while (cur?.parentId) {
             if (!visited.add(cur.parentId)) break;
@@ -81,7 +81,7 @@ export const processHandleNodeDragStop = (
     const nodeAbs = getAbsPos(node);
     const center = { x: nodeAbs.x + nodeSize.width / 2, y: nodeAbs.y + nodeSize.height / 2 };
 
-    let targetGroup: Node | null = null;
+    let targetGroup: Immutable<Node> | null = null;
     let bestDepth = -1;
     for (const g of state.nodes) {
         if (!isDropTargetGroup(g)) continue;

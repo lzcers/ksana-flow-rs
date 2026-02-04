@@ -1,6 +1,5 @@
 import type { Observable } from 'rxjs';
 import { RxWorkflow, type RxWorkflowOptions } from './workflowRx';
-import { registerAllHandlers } from './commandHandlers';
 import type { WorkflowState } from './types';
 import type { GraphCommand } from './commands';
 import type { XYPosition, Connection } from '@xyflow/react';
@@ -51,18 +50,6 @@ export function createWorkflowModel(
   options: RxWorkflowOptions = {}
 ): WorkflowModelInterface {
   const rxWorkflow = new RxWorkflow(options);
-
-  // 注册所有处理器到 RxWorkflow (实际上是注册到 Core WorkflowModel)
-  // 注意：registerAllHandlers 需要适配新的接口
-  // 我们需要一个适配器，因为 registerAllHandlers 期望的是 RxCommandBus
-  // 但我们可以直接修改 commandHandlers.ts 或者在这里适配
-
-  // 更好的方式是让 registerAllHandlers 接受一个通用接口
-  // 暂时我们这里做一个简单的鸭子类型适配，或者直接让 commandHandlers 导出处理器映射
-
-  // 让我们修改 registerAllHandlers 签名可能会更好，但为了最小改动：
-  // 我们可以在 RxWorkflow 中实现 registerHandler 方法
-  registerAllHandlers(rxWorkflow); // 需要确保 RxWorkflow 有 registerHandler 方法
 
   const dispatch = (command: GraphCommand) => rxWorkflow.dispatch(command);
 

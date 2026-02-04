@@ -3,7 +3,7 @@
  * 纯函数，接收 state 和 command，返回新的 state
  */
 
-import { produce } from 'immer';
+import { produce, type Draft, type Immutable } from 'immer';
 import type { WorkflowState, Node, NodeData, NodeChange } from '../types';
 import type {
   AddNodeCommand,
@@ -52,9 +52,9 @@ const getDefaultNodeData = (type: string): Partial<NodeData> => {
 // ===== 处理器函数 =====
 
 export const processAddNode = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: AddNodeCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id: requestedId, nodeType, position, data } = command.payload;
 
   return produce(state, (draft) => {
@@ -75,9 +75,9 @@ export const processAddNode = (
 };
 
 export const processRemoveNode = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: RemoveNodeCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id } = command.payload;
 
   return produce(state, (draft) => {
@@ -92,9 +92,9 @@ export const processRemoveNode = (
 };
 
 export const processUpdateNodeData = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodeDataCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, data } = command.payload;
 
   return produce(state, (draft) => {
@@ -107,9 +107,9 @@ export const processUpdateNodeData = (
 };
 
 export const processUpdateNodePosition = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodePositionCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, position } = command.payload;
 
   return produce(state, (draft) => {
@@ -121,9 +121,9 @@ export const processUpdateNodePosition = (
 };
 
 export const processUpdateNodeDimensions = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodeDimensionsCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, width, height } = command.payload;
 
   return produce(state, (draft) => {
@@ -150,9 +150,9 @@ export const processUpdateNodeDimensions = (
 };
 
 export const processUpdateNodeStatus = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodeStatusCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, status, errorMessage } = command.payload;
 
   return produce(state, (draft) => {
@@ -169,9 +169,9 @@ export const processUpdateNodeStatus = (
 };
 
 export const processUpdateNodeInput = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodeInputCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, key, value } = command.payload;
 
   return produce(state, (draft) => {
@@ -185,9 +185,9 @@ export const processUpdateNodeInput = (
 };
 
 export const processUpdateNodeInputs = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodeInputsCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, inputs } = command.payload;
 
   return produce(state, (draft) => {
@@ -200,9 +200,9 @@ export const processUpdateNodeInputs = (
 };
 
 export const processUpdateNodeOutput = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateNodeOutputCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, key, value } = command.payload;
 
   return produce(state, (draft) => {
@@ -216,9 +216,9 @@ export const processUpdateNodeOutput = (
 };
 
 export const processSelectNode = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: SelectNodeCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id } = command.payload;
 
   return produce(state, (draft) => {
@@ -233,9 +233,9 @@ export const processSelectNode = (
 };
 
 export const processApplyNodeChanges = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: ApplyNodeChangesCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { changes } = command.payload;
 
   return produce(state, (draft) => {
@@ -258,7 +258,7 @@ export const processApplyNodeChanges = (
 
 // ===== 辅助函数 =====
 
-const syncEdgeHighlighting = (draft: WorkflowState) => {
+const syncEdgeHighlighting = (draft: Draft<WorkflowState>) => {
   const selectedNodeIds = new Set(
     draft.nodes
       .filter((n) => n.selected || n.data?.status === 'running')
@@ -267,7 +267,7 @@ const syncEdgeHighlighting = (draft: WorkflowState) => {
 
   draft.edges.forEach((edge) => {
     if (selectedNodeIds.has(edge.source)) {
-      (edge as any).animated = true;
+      (edge).animated = true;
       edge.style = { ...edge.style, stroke: '#3b82f6', strokeWidth: 3 };
     } else {
       (edge as any).animated = false;

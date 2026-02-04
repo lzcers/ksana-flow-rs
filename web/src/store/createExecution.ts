@@ -1,25 +1,12 @@
 import type { StateCreator } from 'zustand';
 import type { StoreState, Execution } from './types';
 import * as api from '@/api';
-import { rxWorkflowModel, rxFlowEventModel } from '.';
 import { toBlueprint } from '@/model/workflow/adapters';
+import { rxWorkflowModel } from '.';
+import { createFlowEventModel } from '@/model/flowEvent';
 
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
-  // 订阅 FlowEvent 状态变化，同步到 zustand
-  rxFlowEventModel.state$.subscribe((state: {
-    workflowStatus: import('./types').WorkflowStatus;
-    workflowStatuses: Record<number, import('./types').WorkflowStatus>;
-    currentRunId: string | null;
-    runIdToWorkflowId: Record<string, number>;
-  }) => {
-    set({
-      workflowStatus: state.workflowStatus,
-      workflowStatuses: state.workflowStatuses,
-      currentRunId: state.currentRunId,
-      runIdToWorkflowId: state.runIdToWorkflowId,
-    });
-  });
-
+  const rxFlowEventModel = createFlowEventModel();
   return {
     // ===== State =====
     workflowStatus: 'idle',
@@ -28,10 +15,19 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     currentRunId: null,
 
     // ===== Observables (从 RxFlowEvent 代理) =====
-    events$: rxFlowEventModel.events$,
-    eventsForCurrentRun$: rxFlowEventModel.events$, // 使用相同的事件流
-    eventsForNode$: rxFlowEventModel.eventsForNode$.bind(rxFlowEventModel),
-
+    workflowStatusForRunId$: (runId: string) => {
+      return rxFlowEventModel.workflowStatusForRunId$(runId);
+    },
+    nodeStatus$: (nodeId: string) => {
+      const curRunId = get().currentRunId || "";
+      const { flowEventForRunId$, nodeStatus$ } = rxFlowEventModel;
+      return nodeStatus$(nodeId)(flowEventForRunId$(curRunId));
+    },
+    nodeDataUpdate$: (nodeId: string) => {
+      const curRunId = get().currentRunId || "";
+      const { flowEventForRunId$, nodeDataUpdate$ } = rxFlowEventModel;
+      return nodeDataUpdate$(nodeId)(flowEventForRunId$(curRunId));
+    },
     // ===== State Setters =====
     setWorkflowStatus: (status) => {
       const { currentWorkflowId } = get();
@@ -64,7 +60,6 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
 
       return () => subscription.unsubscribe();
     },
-
 
     // ===== Workflow Actions =====
     runWorkflow: async () => {

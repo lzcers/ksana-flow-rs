@@ -3,7 +3,7 @@
  * 纯函数，接收 state 和 command，返回新的 state
  */
 
-import { produce } from 'immer';
+import { produce, type Immutable } from 'immer';
 import type { WorkflowState, EdgeChange } from '../types';
 import type {
   AddEdgeCommand,
@@ -19,9 +19,9 @@ import { applyEdgeChangesXyflow } from '../utils';
 // ===== 处理器函数 =====
 
 export const processAddEdge = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: AddEdgeCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { edge } = command.payload;
 
   return produce(state, (draft) => {
@@ -30,9 +30,9 @@ export const processAddEdge = (
 };
 
 export const processRemoveEdge = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: RemoveEdgeCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id } = command.payload;
 
   return produce(state, (draft) => {
@@ -41,9 +41,9 @@ export const processRemoveEdge = (
 };
 
 export const processOnConnect = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: OnConnectCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const connection = command.payload;
 
   return produce(state, (draft) => {
@@ -52,9 +52,9 @@ export const processOnConnect = (
 };
 
 export const processUpdateEdge = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: UpdateEdgeCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { id, updates } = command.payload;
 
   return produce(state, (draft) => {
@@ -66,9 +66,9 @@ export const processUpdateEdge = (
 };
 
 export const processSetEdges = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: SetEdgesCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { edges } = command.payload;
 
   return produce(state, (draft) => {
@@ -77,9 +77,9 @@ export const processSetEdges = (
 };
 
 export const processApplyEdgeChanges = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: ApplyEdgeChangesCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { changes } = command.payload;
 
   return produce(state, (draft) => {

@@ -10,6 +10,7 @@
 import type { WorkflowState } from './types';
 import type { GraphCommand } from './commands';
 import type { Immutable } from 'immer';
+import { registerAllHandlers } from './commandHandlers';
 
 // Command Handler 类型定义
 export type CommandProcessor<T extends GraphCommand = GraphCommand> = (
@@ -40,6 +41,7 @@ export class WorkflowModel {
   constructor(options: WorkflowModelOptions = {}) {
     this._options = options;
     this._state = options.initialState ?? defaultState;
+    registerAllHandlers(this);
   }
 
   // ===== Getters =====
@@ -61,8 +63,8 @@ export class WorkflowModel {
   /**
    * 注册 Command 处理器
    */
-  registerHandler(type: string, handler: CommandProcessor): void {
-    this._handlers.set(type, handler);
+  registerHandler<T extends GraphCommand>(type: string, handler: CommandProcessor<T>): void {
+    this._handlers.set(type, handler as unknown as CommandProcessor<GraphCommand>);
   }
 
   /**

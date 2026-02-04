@@ -1,152 +1,35 @@
 /**
  * RxFlowEvent (Reactive Layer)
- * 包装 Core FlowEventModel，提供 RxJS 响应式接口。
- * 
- * 流派生结构:
  * connectWebSocket (WebSocketFlowMessage) - 根流
  * ├── workflowStatusForRunId$ (按 runId 过滤的状态流)
  * └── flowEventForRunId$ (按 runId 过滤的事件流)
  *     └── flowEventForNodeId$ (按 nodeId 过滤的事件流)
  *         └── nodeStatus$ (节点状态流)
+ *         └── nodeDataUpdate$ (节点数据更新流)
  */
-
 import {
-  BehaviorSubject,
   Subject,
   Observable,
-  interval,
-  timer,
-  animationFrameScheduler,
-  merge,
 } from 'rxjs';
+
 import {
   map,
   distinctUntilChanged,
-  shareReplay,
   filter,
-  bufferWhen,
   retry,
 } from 'rxjs/operators';
-import type { Immutable } from 'immer';
-import type { WorkflowStatus } from '../../store/types';
-import {
-  FlowEventModel,
-  type FlowEventState,
-  type FlowEventModelOptions,
-} from './flowEventModel';
-import type { FlowEventCommand, NodeExecutionData } from './commands';
-import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent } from './types';
+import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent, FlowNodeMsgEvent, FlowNodeStatusEvent } from './types';
 import { createFlowSocketObservable } from './socket';
+import type { WorkflowStatus } from '@/store/types';
 
-export interface RxFlowEventOptions extends FlowEventModelOptions {
-  enableLogging?: boolean;
-}
 
 export class RxFlowEvent {
-  private _model: FlowEventModel;
-
-  // Subjects
-  private _state$ = new BehaviorSubject<Immutable<FlowEventState>>({
-    currentRunId: null,
-    currentWorkflowId: null,
-    workflowStatus: 'idle' as WorkflowStatus,
-    workflowStatuses: {},
-    runIdToWorkflowId: {},
-    pendingNodeUpdates: new Map(),
-    activeRunContext: null,
-  });
-  private _commands$ = new Subject<FlowEventCommand>();
   private _source$ = new Subject<WebSocketFlowMessage>();
-  private _batchedUpdates$ = new Subject<Map<string, NodeExecutionData>>();
 
-  // Public Observables
-  public readonly state$: Observable<Immutable<FlowEventState>>;
-  public readonly events$: Observable<FlowEvent>;
-  public readonly batchedNodeUpdates$: Observable<Map<string, NodeExecutionData>>;
 
-  // Derived Observables
-  public readonly currentRunId$: Observable<string | null>;
-  public readonly workflowStatus$: Observable<WorkflowStatus>;
-  public readonly currentWorkflowId$: Observable<number | null>;
-  public readonly pendingUpdates$: Observable<Map<string, NodeExecutionData>>;
+  constructor() {
 
-  constructor(options: RxFlowEventOptions = {}) {
-    this._model = new FlowEventModel({
-      ...options,
-      onStateChange: (state) => this._state$.next(state),
-      onNodeUpdates: (updates) => this._batchedUpdates$.next(updates),
-    });
-
-    this._commands$.subscribe(cmd => {
-      this._model.execute(cmd);
-    });
-    // 初始化 State 流
-    this._state$.next(this._model.state);
-    this.state$ = this._state$.asObservable();
-
-    // 初始化 events$ 从 _source$ 派生
-    this.events$ = this._source$.pipe(
-      map(msg => msg.event),
-      shareReplay({ bufferSize: 1, refCount: true })
-    );
-
-    // 批量更新流（使用 bufferWhen 实现批量处理）
-    this.batchedNodeUpdates$ = this._batchedUpdates$.pipe(
-      bufferWhen(() => merge(
-        interval(0, animationFrameScheduler),
-        timer(16)
-      )),
-      filter(batch => batch.length > 0),
-      map(batch => {
-        // 合并多个更新
-        const merged = new Map<string, NodeExecutionData>();
-        batch.forEach(updates => {
-          updates.forEach((data, nodeId) => {
-            const existing = merged.get(nodeId) ?? {};
-            merged.set(nodeId, { ...existing, ...data });
-          });
-        });
-        return merged;
-      }),
-      shareReplay({ bufferSize: 1, refCount: true })
-    );
-
-    // 派生流
-    this.currentRunId$ = this.state$.pipe(
-      map(s => s.currentRunId),
-      distinctUntilChanged()
-    );
-
-    this.workflowStatus$ = this.state$.pipe(
-      map(s => s.workflowStatus),
-      distinctUntilChanged()
-    );
-
-    this.currentWorkflowId$ = this.state$.pipe(
-      map(s => s.currentWorkflowId),
-      distinctUntilChanged()
-    );
-
-    this.pendingUpdates$ = this.state$.pipe(
-      map(s => s.pendingNodeUpdates as Map<string, NodeExecutionData>),
-      distinctUntilChanged()
-    );
   }
-
-  // ===== Stream Derivation API =====
-
-  /**
-   * 获取指定节点的事件流
-   * 从 events$ 派生，按 nodeId 过滤
-   */
-  eventsForNode$(nodeId: string): Observable<FlowEvent> {
-    return this.events$.pipe(
-      filter((event): event is FlowEvent & { nodeId: string } =>
-        'nodeId' in event && event.nodeId === nodeId
-      )
-    );
-  }
-
   /**
    * 根流：连接 WebSocket，将消息发送给 _source$
    * 这是所有派生流的源头
@@ -166,16 +49,17 @@ export class RxFlowEvent {
     return socket$;
   }
 
+  // ===== Stream Derivation API =====
+
   /**
    * 派生流 1：按 runId 过滤的工作流状态流
    * 从 WebSocketFlowMessage 中派生，只关注指定 runId 的状态变化
    * 注意：此流只输出纯数据，不做任何 command 分发
    */
   workflowStatusForRunId$(
-    source$: Observable<WebSocketFlowMessage>,
     runId: string
   ): Observable<WorkflowStatus> {
-    return source$.pipe(
+    return this._source$.pipe(
       filter(msg => msg.runId === runId),
       map(msg => msg.event),
       filter((event): event is FlowControlEvent =>
@@ -202,10 +86,9 @@ export class RxFlowEvent {
    * 注意：此流只输出纯数据，不做任何 command 分发
    */
   flowEventForRunId$(
-    source$: Observable<WebSocketFlowMessage>,
     runId: string
   ): Observable<FlowEvent> {
-    return source$.pipe(
+    return this._source$.pipe(
       filter(msg => msg.runId === runId || !msg.runId),
       map(msg => msg.event)
     );
@@ -216,14 +99,14 @@ export class RxFlowEvent {
    * 从 flowEventForRunId$ 流中进一步派生
    */
   flowEventForNodeId$(
-    source$: Observable<FlowEvent>,
     nodeId: string
-  ): Observable<FlowEvent> {
-    return source$.pipe(
-      filter((event): event is FlowEvent =>
-        'nodeId' in event && event.nodeId === nodeId
-      )
-    );
+  ) {
+    return (flowEventObservable: Observable<FlowEvent>) =>
+      flowEventObservable.pipe(
+        filter((event): event is FlowEvent =>
+          'nodeId' in event && event.nodeId === nodeId
+        )
+      );
   }
 
   /**
@@ -232,40 +115,50 @@ export class RxFlowEvent {
    * 注意：此流只输出纯数据，不做任何 command 分发
    */
   nodeStatus$(
-    source$: Observable<FlowEvent>,
     nodeId: string
   ) {
-    return source$.pipe(
-      filter((event): event is FlowEvent =>
-        'nodeId' in event && event.nodeId === nodeId
-      ),
-      map(event => {
-        const status = event.type === 'NodeStarted' || event.type === 'NodeStreamStarted' ? 'running' :
-          event.type === 'NodeCompleted' ? 'completed' :
-            event.type === 'NodeError' ? 'error' : 'idle';
-        return {
-          status,
-          message: 'msg' in event ? (event as any).msg : undefined
-        };
-      }),
-      distinctUntilChanged((a, b) => a.status === b.status)
-    );
+    const isFlowNodeStatusEvent = (event: FlowEvent): event is FlowNodeStatusEvent =>
+      'nodeId' in event && event.nodeId === nodeId &&
+      event.type === 'NodeStarted' || event.type === 'NodeStreamStarted' ||
+      event.type === 'NodeCompleted';
+
+    return (flowEventObservable: Observable<FlowEvent>): Observable<FlowNodeStatusEvent> =>
+      flowEventObservable.pipe(
+        filter((event): event is FlowEvent =>
+          'nodeId' in event && event.nodeId === nodeId
+        ),
+        filter((event): event is FlowNodeStatusEvent =>
+          isFlowNodeStatusEvent(event)
+        ),
+        distinctUntilChanged((a, b) => a.type === b.type)
+      );
   }
 
   /**
-   * 分发 Command
+   * 派生流 5：节点数据更新流
+   * 从 flowEventForNodeId$ 流中派生，提取节点数据更新事件
+   * 注意：此流只输出纯数据，不做任何 command 分发
    */
-  dispatch(command: FlowEventCommand): void {
-    this._commands$.next(command);
+  nodeDataUpdate$(
+    nodeId: string
+  ) {
+    const isFlowNodeMsgEvent = (event: FlowEvent): event is FlowNodeMsgEvent =>
+      'nodeId' in event && event.nodeId === nodeId && 'msg' in event;
+
+    return (flowEventObservable: Observable<FlowEvent>): Observable<FlowNodeMsgEvent> =>
+      flowEventObservable.pipe(
+        filter((event): event is FlowEvent =>
+          'nodeId' in event && event.nodeId === nodeId
+        ),
+        filter(event => isFlowNodeMsgEvent(event))
+      )
   }
 
+
   /**
-   * 销毁
+   * 销毁：完成 _source$ 流，释放资源
    */
   destroy(): void {
-    this._state$.complete();
-    this._commands$.complete();
     this._source$.complete();
-    this._batchedUpdates$.complete();
   }
 }

@@ -3,7 +3,7 @@
  * 处理复杂的图操作，如分组、粘贴、子图切换等
  */
 
-import { produce } from 'immer';
+import { produce, type Immutable } from 'immer';
 import type { WorkflowState, Node, Edge } from '../types';
 import type {
   PasteNodesCommand,
@@ -18,9 +18,9 @@ import { getNextNodeId } from '../utils';
 // ===== 处理器函数 =====
 
 export const processPasteNodes = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: PasteNodesCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { nodes: newNodes, edges: newEdges } = command.payload;
 
   return produce(state, (draft) => {
@@ -75,9 +75,9 @@ export const processPasteNodes = (
 };
 
 export const processGroupNodes = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: GroupNodesCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { nodeIds } = command.payload;
 
   return produce(state, (draft) => {
@@ -123,9 +123,9 @@ export const processGroupNodes = (
 };
 
 export const processToggleSubgraph = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: ToggleSubgraphCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { nodeId } = command.payload;
 
   return produce(state, (draft) => {
@@ -169,9 +169,9 @@ export const processToggleSubgraph = (
 };
 
 export const processSetNodes = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   command: SetNodesCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   const { nodes } = command.payload;
 
   return produce(state, (draft) => {
@@ -180,9 +180,9 @@ export const processSetNodes = (
 };
 
 export const processResetExecutionState = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   _command: ResetExecutionStateCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   return produce(state, (draft) => {
     draft.nodes.forEach((node) => {
       if (node.data) {
@@ -207,9 +207,9 @@ export const processResetExecutionState = (
 };
 
 export const processBatch = (
-  state: WorkflowState,
+  state: Immutable<WorkflowState>,
   _command: BatchCommand
-): WorkflowState => {
+): Immutable<WorkflowState> => {
   // 注意：这里需要递归处理批量命令
   // 为避免循环依赖，batch 处理器应该由外部调用时传入处理器映射
   // 或者使用 CommandBus 来分发
