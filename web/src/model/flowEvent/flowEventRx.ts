@@ -1,6 +1,13 @@
 /**
  * RxFlowEvent (Reactive Layer)
  * 包装 Core FlowEventModel，提供 RxJS 响应式接口。
+ * 
+ * 流派生结构:
+ * connectWebSocket (WebSocketFlowMessage) - 根流
+ * ├── workflowStatusForRunId$ (按 runId 过滤的状态流)
+ * └── flowEventForRunId$ (按 runId 过滤的事件流)
+ *     └── flowEventForNodeId$ (按 nodeId 过滤的事件流)
+ *         └── nodeStatus$ (节点状态流)
  */
 
 import {
@@ -29,7 +36,7 @@ import {
   type FlowEventModelOptions,
 } from './flowEventModel';
 import type { FlowEventCommand, NodeExecutionData } from './commands';
-import type { FlowEvent, WebSocketFlowMessage } from './types';
+import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent } from './types';
 import { createFlowSocketObservable } from './socket';
 
 export interface RxFlowEventOptions extends FlowEventModelOptions {
@@ -119,7 +126,165 @@ export class RxFlowEvent {
     );
   }
 
-  // ===== Public API =====
+  // ===== Stream Derivation API =====
+
+  /**
+   * 根流：连接 WebSocket，返回 WebSocketFlowMessage 流
+   * 这是所有派生流的源头
+   */
+  connectWebSocket(spaceId: string): Observable<WebSocketFlowMessage> {
+    return createFlowSocketObservable(spaceId).pipe(
+      retry({ delay: 2000 }),
+      tap(message => {
+        // 将原始事件也发送到 events$ Subject
+        this._events$.next(message.event);
+      })
+    );
+  }
+
+  /**
+   * 派生流 1：按 runId 过滤的工作流状态流
+   * 从 WebSocketFlowMessage 中派生，只关注指定 runId 的状态变化
+   */
+  workflowStatusForRunId$(
+    source$: Observable<WebSocketFlowMessage>,
+    runId: string
+  ): Observable<WorkflowStatus> {
+    return source$.pipe(
+      filter(msg => msg.runId === runId),
+      map(msg => msg.event),
+      filter((event): event is FlowControlEvent => 
+        'runId' in event && 
+        ['FlowPaused', 'FlowResumed', 'FlowStopped', 'FlowFinished'].includes(event.type)
+      ),
+      tap(event => {
+        // 分发 Command 更新工作流状态
+        this.dispatch({
+          type: 'PROCESS_CONTROL_EVENT',
+          payload: { event }
+        });
+      }),
+  map(event => {
+          // 根据控制事件类型映射到 WorkflowStatus
+          switch (event.type) {
+            case 'FlowPaused': return 'paused' as WorkflowStatus;
+            case 'FlowResumed': return 'running' as WorkflowStatus;
+            case 'FlowStopped': return 'stopped' as WorkflowStatus;
+            case 'FlowFinished': return 'completed' as WorkflowStatus;
+            default: return 'idle' as WorkflowStatus;
+          }
+          ,
+            inctUntilChanged()
+            
+          
+        
+      *
+     * 派生流 2：按 runId 过滤的 FlowEvent 流
+   * 从 WebSocketFlowMessage 中派生，只关注指定 runId 的事件
+ */
+ lowEventForRunId$(
+  source$: Observable<WebSocketFlowMessage>,
+  runId: string
+   Observable<FlowEvent> {
+    turn source$.pipe(
+    filter(msg => msg.runId === runId || !msg.runId),
+    map(msg => msg.event),
+    tap(event => {
+        // 分发 Command 处理 FlowEvent
+      if ('nodeId' in event) {
+        // 节点相关事件
+        if (['NodeError', 'NodeInMessage', 'NodeOutMessage', 'NodeStreamNextMessage'].includes(event.type)) {
+          this.dispatch({
+            type: 'PROCESS_NODE_MSG_EVENT',
+            payload: { event: event as any }
+          });
+        } else if (['NodeStarted', 'NodeStreamStarted', 'NodeCompleted'].includes(event.type)) {
+          this.dispatch({
+              type: 'PROCESS_NODE_STATUS_EVENT',
+            payload: { event: event as any }
+          });
+        }
+      } else if ('runId' in event) { 
+        // 控制事件
+        this.dispatch({
+          type: 'PROCESS_CONTROL_EVENT',
+          payload: { event: event as any }
+        });
+        }
+    })
+  );
+ 
+
+  *
+    生流 3：按 nodeId 过滤的 FlowEvent 流
+     FlowEventForRunId 流中进一步派生
+  /
+flowEventForNodeId$(
+    source$: Observable<FlowEvent>,
+  nodeId: string
+ : Observable<FlowEvent> {
+  return source$.pipe(
+    filter((event): event is FlowEvent => 
+      'nodeId' in event && event.nodeId === nodeId
+    )
+    );
+}
+          
+ **
+ * 派生流 4：节点状态流
+   从 FlowEventForNodeId 流中派生，提取节点状态
+  /
+  deStatus$(
+  source$: Observable<FlowEvent>,
+  nodeId: string
+  ): Observable<{ status: 'idle' | 'running' | 'completed' | 'error'; message?: any }> {
+    return source$.pipe(
+      filter((event): event is FlowEvent => 
+        'nodeId' in event && ev e nt.nodeId ===  nodeId
+    ),
+    tap(event => {
+        // 分发 Command 更新节点执行数据
+        if (['NodeStarted', 'NodeStreamStarted', 'NodeCompleted', 'NodeError'].includes(event.type)) {
+          const status = event.type === 'NodeStarted' || event.type === 'NodeStreamStarted' ? 'running' :
+                         event.type === 'NodeCompleted' ? 'completed' : 'error';
+          
+          this.dispatch({
+            type: 'UPDATE_NODE_EXECUTION_DATA',
+            payload: {
+              nodeId,
+              data: {
+                status,
+                ...(event.type === 'NodeError' && { errorMessage: (event as any).msg })
+              }
+            }
+          });
+        } else if (['NodeInMessage', 'NodeOutMessage', 'NodeStreamNextMessage'].includes(event.type)) {
+          this.dispatch({
+            type: 'UPDATE_NODE_EXECUTION_DATA',
+            payload: {
+              nodeId,
+              data: {
+                lastMessage: (event as any).msg,
+                isOutputStream: event.type === 'NodeStreamNextMessage' || event.type === 'NodeOutMessage'
+              }
+            }
+          });
+        }
+      }),
+      map(event => {
+        const status = event.type === 'NodeStarted' || event.type === 'NodeStreamStarted' ? 'running' :
+                       event.type === 'NodeCompleted' ? 'completed' :
+                       event.type === 'NodeError' ? 'error' : 'idle';
+        return {
+          status,
+          message: 'msg' in event ? (event as any).msg : undefined
+        };
+      }),
+      distinctUntilChanged((a, b) => a.status === b.status)
+    );
+  }
+
+  // ===== Legacy Public API =====
 
   /**
    * 分发 Command
@@ -137,50 +302,6 @@ export class RxFlowEvent {
     this._model.processFlowEvent(event, this._model.state.currentRunId || undefined);
   }
 
-  /**
-   * 按 runId 过滤的事件流
-   */
-  eventsForRun$(runId: string): Observable<FlowEvent> {
-    return this.events$.pipe(
-      filter(event => {
-        // 从事件中提取 runId（如果有）
-        // FlowControlEvent 有 runId 字段
-        if ('runId' in event) {
-          return event.runId === runId;
-        }
-        return true; // 其他事件（如节点事件）默认匹配当前 run
-      })
-    );
-  }
-
-  /**
-   * 按 nodeId 过滤的事件流
-   */
-  eventsForNode$(nodeId: string): Observable<FlowEvent> {
-    return this.events$.pipe(
-      filter(event => {
-        if (!('nodeId' in event)) return false;
-        return event.nodeId === nodeId;
-      })
-    );
-  }
-                              
-  /**
-   * WebSocket 集成
-   */
-  connectWebSocket(spaceId: string): Observable<WebSocketFlowMessage> {
-    return createFlowSocketObservable(spaceId).pipe(
-      retry({ delay: 2000 }),
-      tap(message => {
-        this._events$.next(message.event);
-        this.dispatch({
-          type: 'PROCESS_FLOW_EVENT',
-          payload: { event: message.event },
-        });
-      })
-    );
-  }
-                        
   /**
    * 快捷方法：设置当前运行
    */
