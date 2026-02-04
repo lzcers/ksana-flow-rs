@@ -100,13 +100,13 @@ export class RxFlowEvent {
     activeRunContext: null,
   });
   private _commands$ = new Subject<FlowEventCommand>();
-  private _events$ = new Subject<FlowEvent>();
+  private _source$ = new Subject<WebSocketFlowMessage>();
   private _batchedUpdates$ = new Subject<Map<string, NodeExecutionData>>();
 
   // Public Observables
   public readonly state$: Observable<Immutable<FlowEventState>>;
   public readonly commands$ = this._commands$.asObservable();
-  public readonly events$ = this._events$.asObservable();
+  public readonly events$: Observable<FlowEvent>;
   public readonly batchedNodeUpdates$: Observable<Map<string, NodeExecutionData>>;
 
   // Derived Observables
@@ -125,6 +125,12 @@ export class RxFlowEvent {
     // 初始化 State 流
     this._state$.next(this._model.state);
     this.state$ = this._state$.asObservable();
+
+    // 初始化 events$ 从 _source$ 派生
+    this.events$ = this._source$.pipe(
+      map(msg => msg.event),
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
 
     // 批量更新流（使用 bufferWhen 实现批量处理）
     this.batchedNodeUpdates$ = this._batchedUpdates$.pipe(
@@ -172,14 +178,22 @@ export class RxFlowEvent {
   // ===== Stream Derivation API =====
 
   /**
-   * 根流：连接 WebSocket，返回 WebSocketFlowMessage 流
+   * 根流：连接 WebSocket，将消息发送给 _source$
    * 这是所有派生流的源头
-   * 注意：此流只输出纯数据，不做任何 command 分发
+   * 注意：此方法将 WebSocket 消息推送到 _source$，所有派生流都基于 _source$
    */
   connectWebSocket(spaceId: string): Observable<WebSocketFlowMessage> {
-    return createFlowSocketObservable(spaceId).pipe(
+    const socket$ = createFlowSocketObservable(spaceId).pipe(
       retry({ delay: 2000 })
     );
+
+    // 订阅 WebSocket 并将消息推送到 _source$
+    socket$.subscribe({
+      next: (message) => this._source$.next(message),
+      error: (err) => console.error('[RxFlowEvent] WebSocket error:', err),
+    });
+
+    return socket$;
   }
 
   /**
@@ -280,9 +294,14 @@ export class RxFlowEvent {
 
   /**
    * 发送事件到事件流
+   * 将事件包装为 WebSocketFlowMessage 发送给 _source$
    */
-  emitEvent(event: FlowEvent): void {
-    this._events$.next(event);
+  emitEvent(event: FlowEvent, runId?: string): void {
+    const message: WebSocketFlowMessage = {
+      runId,
+      event,
+    };
+    this._source$.next(message);
     this._model.processFlowEvent(event, this._model.state.currentRunId || undefined);
   }
 
@@ -339,7 +358,7 @@ export class RxFlowEvent {
   destroy(): void {
     this._state$.complete();
     this._commands$.complete();
-    this._events$.complete();
+    this._source$.complete();
     this._batchedUpdates$.complete();
   }
 
