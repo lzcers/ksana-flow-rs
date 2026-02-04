@@ -201,7 +201,7 @@ export const Canvas: React.FC<CanvasProps> = ({
           }));
 
           onPaste?.(newNodes, data.edges || []);
-        } catch (err) {
+        } catch {
           // Ignore invalid JSON or clipboard issues
         }
       }

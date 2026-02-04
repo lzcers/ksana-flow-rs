@@ -123,7 +123,7 @@ function AppContent() {
         setOpenTabs([{ id: null, name: 'New Workflow' }]);
       }
     }
-  }, []); // Run once on mount
+  }, [currentWorkflowId, openTabs.length, workflows]); // Run once on mount
 
   // Sync tab names when workflows change (e.g. rename)
   useEffect(() => {

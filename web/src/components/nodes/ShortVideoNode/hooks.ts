@@ -85,7 +85,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
           }
           break;
 
-        case 'NodeOutMessage':
+        case 'NodeOutMessage': {
           const value = event.msg;
           if (isStreamingRef.current) {
             if (streamControllerRef.current) {
@@ -102,6 +102,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
           } catch { }
           isStreamingRef.current = false;
           break;
+        }
       }
     });
 
@@ -119,7 +120,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
         setProjectData(parsed);
       } catch { }
     }
-  }, []);
+  }, [data.config?.projectData, data.lastMessage, projectData]);
 
   const onProjectDataChange = useCallback(
     (next: ProjectData) => {

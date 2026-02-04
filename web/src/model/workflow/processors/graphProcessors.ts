@@ -13,7 +13,7 @@ import type {
   BatchCommand,
   ResetExecutionStateCommand,
 } from '../commands';
-import { getNextNodeId } from '../utils'; './nodeProcessors';
+import { getNextNodeId } from '../utils';
 
 // ===== 处理器函数 =====
 

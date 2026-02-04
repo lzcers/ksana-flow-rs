@@ -39,7 +39,7 @@ export function useMapNodeStream(nodeId: string): MapNodeStreamState {
           setState(INITIAL);
           return;
 
-        case 'NodeStreamNextMessage':
+        case 'NodeStreamNextMessage': {
           const value = event.msg;
           if (value == null || typeof value !== 'object') return;
 
@@ -61,8 +61,9 @@ export function useMapNodeStream(nodeId: string): MapNodeStreamState {
             }));
           }
           return;
+        }
 
-        case 'NodeOutMessage':
+        case 'NodeOutMessage': {
           const outValue = event.msg;
           if (Array.isArray(outValue)) {
             setState((prev) => ({
@@ -71,6 +72,7 @@ export function useMapNodeStream(nodeId: string): MapNodeStreamState {
             }));
           }
           return;
+        }
       }
     });
 

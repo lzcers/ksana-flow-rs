@@ -13,13 +13,19 @@ export function useTextNode(id: string, data: NodeData) {
   const { events$, eventsForCurrentRun$ } = useStore();
   const connections = useNodeConnections();
   const connectionsRef = useRef(connections);
-  connectionsRef.current = connections;
+
+  useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
 
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const isStreamingRef = useRef(false);
   const isMarkdownRef = useRef(isMarkdown);
-  isMarkdownRef.current = isMarkdown;
+
+  useEffect(() => {
+    isMarkdownRef.current = isMarkdown;
+  }, [isMarkdown]);
 
   const incremark = useIncremark({
     math: { tex: true },
@@ -77,7 +83,7 @@ export function useTextNode(id: string, data: NodeData) {
               }
             }
             break;
-          case 'NodeOutMessage':
+          case 'NodeOutMessage': {
             isStreamingRef.current = false;
             const next = coerceToText(event.msg);
             if (next !== '') {
@@ -88,6 +94,7 @@ export function useTextNode(id: string, data: NodeData) {
               }
             }
             break;
+          }
         }
       }
     });

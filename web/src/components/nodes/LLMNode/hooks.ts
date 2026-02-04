@@ -164,7 +164,7 @@ export function useLLMNodeController(id: string, data: NodeData) {
           }
           break;
 
-        case 'NodeOutMessage':
+        case 'NodeOutMessage': {
           cancelFlush();
           const value = event.msg;
           if (typeof value === 'string') {
@@ -177,6 +177,7 @@ export function useLLMNodeController(id: string, data: NodeData) {
           isStreamingRef.current = false;
           setIsStreaming(false);
           break;
+        }
 
         case 'NodeCompleted':
           cancelFlush();

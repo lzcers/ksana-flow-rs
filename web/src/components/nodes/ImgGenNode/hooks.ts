@@ -143,10 +143,11 @@ export function useImgGenNodeController({
   const [outputRaw, setOutputRaw] = useState<string>(String(data.config?.output ?? ''));
 
   const initialParsed = useMemo(() => {
-    if (typeof data.config?.output === 'string') return parseImgGenOutput(data.config.output);
+    const configOutput = data.config?.output;
+    if (typeof configOutput === 'string') return parseImgGenOutput(configOutput);
     if (typeof data.lastMessage === 'string') return parseImgGenOutput(data.lastMessage);
     return {};
-  }, []);
+  }, [data.config?.output, data.lastMessage]);
 
   const [imageSrc, setImageSrc] = useState<string | undefined>(initialParsed.imageSrc);
   const [mediaId, setMediaId] = useState<string | undefined>(initialParsed.mediaId);
