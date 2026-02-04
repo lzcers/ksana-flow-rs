@@ -24,7 +24,7 @@ export default defineConfig([
             // Disable unused vars warnings for variables starting with _
             "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
             // Allow empty block statements with comments
-            "no-empty": ["error", { allowEmptyCatch: true, allowEmptyLoopBody: true }],
+            "no-empty": ["error", { allowEmptyCatch: true }],
         },
     },
 ]);
