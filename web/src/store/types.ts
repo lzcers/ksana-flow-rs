@@ -2,7 +2,7 @@ import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import type { Observable } from 'rxjs';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
-import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 

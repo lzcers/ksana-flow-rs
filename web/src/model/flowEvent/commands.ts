@@ -4,7 +4,7 @@
  */
 
 import type { WorkflowStatus } from '../../store/types';
-import type { FlowEvent, WebSocketFlowMessage } from './types';
+import type { FlowEvent, WebSocketFlowMessage, FlowNodeMsgEvent, FlowNodeStatusEvent, FlowControlEvent } from './types';
 
 export interface BaseCommand {
   meta?: {
@@ -22,8 +22,31 @@ export interface ProcessFlowEventCommand extends BaseCommand {
   };
 }
 
+export interface ProcessNodeMsgEventCommand extends BaseCommand {
+  type: 'PROCESS_NODE_MSG_EVENT';
+  payload: {
+    event: FlowNodeMsgEvent;
+    runId?: string;
+  };
+}
+
+export interface ProcessNodeStatusEventCommand extends BaseCommand {
+  type: 'PROCESS_NODE_STATUS_EVENT';
+  payload: {
+    event: FlowNodeStatusEvent;
+    runId?: string;
+  };
+}
+
+export interface ProcessControlEventCommand extends BaseCommand {
+  type: 'PROCESS_CONTROL_EVENT';
+  payload: {
+    event: FlowControlEvent;
+  };
+}
+
 export interface ProcessWebSocketMessageCommand extends BaseCommand {
-  type: 'PROCESS_FLOW_EVENT';
+  type: 'PROCESS_WS_MESSAGE';
   payload: {
     message: WebSocketFlowMessage;
   };
@@ -128,6 +151,9 @@ export interface NodeExecutionData {
 export type FlowEventCommand =
   // Event Processing
   | ProcessFlowEventCommand
+  | ProcessNodeMsgEventCommand
+  | ProcessNodeStatusEventCommand
+  | ProcessControlEventCommand
   | ProcessWebSocketMessageCommand
   // Run Management
   | SetCurrentRunCommand

@@ -31,6 +31,10 @@ import {
 } from './flowEventModel';
 import {
   processFlowEvent,
+  processNodeMsgEvent,
+  processNodeStatusEvent,
+  processControlEvent,
+  processWebSocketMessage,
   processSetCurrentRun,
   processUpdateWorkflowStatus,
   processMapRunToWorkflow,
@@ -88,16 +92,26 @@ export class RxFlowEvent {
 
     // 注册处理器
     this._model.registerHandlers({
+      // 通用事件处理（向后兼容）
       'PROCESS_FLOW_EVENT': processFlowEvent as FlowEventProcessor,
+      // 分离的事件处理器
+      'PROCESS_NODE_MSG_EVENT': processNodeMsgEvent as FlowEventProcessor,
+      'PROCESS_NODE_STATUS_EVENT': processNodeStatusEvent as FlowEventProcessor,
+      'PROCESS_CONTROL_EVENT': processControlEvent as FlowEventProcessor,
+      'PROCESS_WS_MESSAGE': processWebSocketMessage as FlowEventProcessor,
+      // Run 管理
       'SET_CURRENT_RUN': processSetCurrentRun as FlowEventProcessor,
       'UPDATE_WORKFLOW_STATUS': processUpdateWorkflowStatus as FlowEventProcessor,
       'MAP_RUN_TO_WORKFLOW': processMapRunToWorkflow as FlowEventProcessor,
       'UNMAP_RUN': processUnmapRun as FlowEventProcessor,
+      // 节点更新
       'UPDATE_NODE_EXECUTION_DATA': processUpdateNodeExecutionData as FlowEventProcessor,
       'BATCH_UPDATE_NODE_DATA': processBatchUpdateNodeData as FlowEventProcessor,
       'CLEAR_PENDING_UPDATES': processClearPendingUpdates as FlowEventProcessor,
+      // Run Node 执行
       'SET_ACTIVE_RUN_CONTEXT': processSetActiveRunContext as FlowEventProcessor,
       'CLEAR_ACTIVE_RUN_CONTEXT': processClearActiveRunContext as FlowEventProcessor,
+      // Meta
       'RESET_FLOW_EVENT_STATE': processResetFlowEventState as FlowEventProcessor,
     });
 
