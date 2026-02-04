@@ -10,7 +10,8 @@ export function useTextNode(id: string, data: NodeData) {
   const { updateConfig } = useNodeConfig(id, data.config);
   const [text, setText] = useState<string>(() => data.config?.text ?? '');
   const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? true);
-  const { events$, eventsForCurrentRun$ } = useStore();
+  const flowEventForRunId$ = useStore((s) => s.flowEventForRunId$);
+  const currentRunId = useStore((s) => s.currentRunId);
   const connections = useNodeConnections();
   const connectionsRef = useRef(connections);
 
@@ -52,8 +53,8 @@ export function useTextNode(id: string, data: NodeData) {
   }, [data.lastMessageRunId, data.lastMessage, text, updateConfig]);
 
   useEffect(() => {
-    const stream$ = eventsForCurrentRun$ || events$;
-    if (!stream$) return;
+    if (!currentRunId) return;
+    const stream$ = flowEventForRunId$(currentRunId);
 
     const subscription = stream$.subscribe((event: FlowEvent) => {
       const upstreamNodeIds = connectionsRef.current.map((conn) => conn.source);
@@ -100,7 +101,7 @@ export function useTextNode(id: string, data: NodeData) {
     });
 
     return () => subscription.unsubscribe();
-  }, [eventsForCurrentRun$, events$, updateConfig, id]);
+  }, [flowEventForRunId$, currentRunId, updateConfig, id]);
 
   const onChange = useCallback((next: string) => {
     setText(next);

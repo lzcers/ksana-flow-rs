@@ -25,7 +25,7 @@ export const processAddEdge = (
   const { edge } = command.payload;
 
   return produce(state, (draft) => {
-    draft.edges.push(edge as any);
+    draft.edges.push(edge);
   });
 };
 
@@ -72,7 +72,7 @@ export const processSetEdges = (
   const { edges } = command.payload;
 
   return produce(state, (draft) => {
-    draft.edges = edges as any[];
+    draft.edges = edges;
   });
 };
 

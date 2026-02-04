@@ -26,7 +26,7 @@ export const processPasteNodes = (
   return produce(state, (draft) => {
     // 取消所有现有选择
     draft.nodes.forEach((n) => (n.selected = false));
-    draft.edges.forEach((e) => ((e as any).selected = false));
+    draft.edges.forEach((e) => (e.selected = false));
     draft.selectedNodeId = null;
 
     const idMap = new Map<string, string>();
@@ -49,7 +49,7 @@ export const processPasteNodes = (
         },
       };
 
-      draft.nodes.push(newNode as any);
+      draft.nodes.push(newNode);
       draft.selectedNodeId = newId;
     });
 
@@ -112,12 +112,12 @@ export const processGroupNodes = (
       },
     };
 
-    draft.nodes.push(subgraphNode as any);
+    draft.nodes.push(subgraphNode);
 
     // 标记子节点
     nodesToGroup.forEach((node) => {
       if (!node.data) node.data = {};
-      (node.data as any).parentId = subgraphId;
+      (node.data).parentId = subgraphId;
     });
   });
 };
@@ -150,12 +150,12 @@ export const processToggleSubgraph = (
     // 更新节点尺寸
     if (isExpanded) {
       // 折叠
-      (subgraphNode as any).width = collapsedSize.width;
-      (subgraphNode as any).height = collapsedSize.height;
+      (subgraphNode).width = collapsedSize.width;
+      (subgraphNode).height = collapsedSize.height;
     } else {
       // 展开
-      (subgraphNode as any).width = expandedSize.width;
-      (subgraphNode as any).height = expandedSize.height;
+      (subgraphNode).width = expandedSize.width;
+      (subgraphNode).height = expandedSize.height;
     }
 
     // 更新 expanded 状态
@@ -175,7 +175,7 @@ export const processSetNodes = (
   const { nodes } = command.payload;
 
   return produce(state, (draft) => {
-    draft.nodes = nodes as any[];
+    draft.nodes = nodes;
   });
 };
 
@@ -194,7 +194,7 @@ export const processResetExecutionState = (
 
     // Clear edge highlighting
     draft.edges.forEach((edge) => {
-      (edge as any).animated = false;
+      (edge).animated = false;
       if (edge.style) {
         delete edge.style.stroke;
         delete edge.style.strokeWidth;

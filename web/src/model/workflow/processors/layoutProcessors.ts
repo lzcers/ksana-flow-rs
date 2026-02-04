@@ -1,4 +1,4 @@
-import { produce, type Immutable } from 'immer';
+import { produce, castDraft, type Immutable } from 'immer';
 import type { WorkflowState, Node } from '../types';
 import type { HandleNodeDragStopCommand } from '../commands';
 import { sortNodesByParent } from '../utils';
@@ -17,7 +17,7 @@ export const processHandleNodeDragStop = (
 
     const isGroup = (n: Immutable<Node>) => n.type === 'SubgraphNode' || n.type === 'MapNode';
     const isDropTargetGroup = (n: Immutable<Node>) =>
-        isGroup(n) && n.id !== nodeId && n.hidden !== true && (n.data as any)?.expanded !== false;
+        isGroup(n) && n.id !== nodeId && n.hidden !== true && (n.data)?.expanded !== false;
 
     const toNumber = (v: unknown): number | undefined => {
         if (typeof v === 'number' && Number.isFinite(v)) return v;
@@ -29,8 +29,8 @@ export const processHandleNodeDragStop = (
     };
 
     const getSize = (n: Immutable<Node>): { width: number; height: number } => {
-        const styleW = toNumber((n.style as any)?.width);
-        const styleH = toNumber((n.style as any)?.height);
+        const styleW = toNumber((n.style)?.width);
+        const styleH = toNumber((n.style)?.height);
         const width = (n.measured?.width ?? styleW ?? n.width ?? (isGroup(n) ? 300 : 150)) as number;
         const height = (n.measured?.height ?? styleH ?? n.height ?? (isGroup(n) ? 200 : 50)) as number;
         return { width, height };
@@ -139,6 +139,6 @@ export const processHandleNodeDragStop = (
     });
 
     return produce(state, (draft) => {
-        draft.nodes = sortNodesByParent(nextNodes) as any[];
+        draft.nodes = castDraft(sortNodesByParent(nextNodes));
     });
 };

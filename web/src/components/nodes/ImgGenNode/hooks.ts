@@ -120,7 +120,10 @@ export function useImgGenNodeController({
   width?: number | null;
   height?: number | null;
 }) {
-  const { updateNodeDimensions, eventsForNode$, currentSpaceId } = useStore();
+  const updateNodeDimensions = useStore((s) => s.updateNodeDimensions);
+  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
+  const currentRunId = useStore((s) => s.currentRunId);
+  const currentSpaceId = useStore((s) => s.currentSpaceId);
   const { updateConfig } = useNodeConfig(id, data.config);
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -201,12 +204,7 @@ export function useImgGenNodeController({
   }, [isConfigOpen]);
 
   useEffect(() => {
-    const stream$ = eventsForNode$?.(id);
-    if (!stream$) return;
-    const subscription = stream$.subscribe((event: FlowEvent) => {
-      if (!('nodeId' in event)) return;
-      if (event.nodeId !== id) return;
-
+    const subscription = flowEventForNodeId$(id).subscribe((event: FlowEvent) => {
       switch (event.type) {
         case 'NodeStarted':
           setImageSrc(undefined);
@@ -227,7 +225,7 @@ export function useImgGenNodeController({
       }
     });
     return () => subscription.unsubscribe();
-  }, [eventsForNode$, id, updateConfig]);
+  }, [flowEventForNodeId$, currentRunId, id, updateConfig]);
 
   useEffect(() => {
     const run = async () => {
@@ -327,4 +325,3 @@ export function useImgGenNodeController({
     onOpenPreview,
   };
 }
-

@@ -17,11 +17,11 @@ export const getNextNodeId = (nodes: Immutable<Node[]>, type: string): string =>
   return `${type}-${nextNum}`;
 };
 
-export const applyCollapsedSubgraphUi = (nodes: Immutable<Node[]>, edges: Immutable<Edge[]>) => {
+export const applyCollapsedSubgraphUi = (nodes: Immutable<Node[]>, edges: Immutable<Edge[]>): { nodes: Immutable<Node>[]; edges: Immutable<Edge>[] } => {
   const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
   const collapsedGroupIds = new Set(
     nodes
-      .filter((n) => (n.type === 'SubgraphNode' || n.type === 'MapNode') && (n.data as any)?.expanded === false)
+      .filter((n) => (n.type === 'SubgraphNode' || n.type === 'MapNode') && (n.data)?.expanded === false)
       .map((n) => n.id)
   );
 
@@ -53,7 +53,7 @@ export const applyCollapsedSubgraphUi = (nodes: Immutable<Node[]>, edges: Immuta
       ...n,
       hidden: true,
       extent: undefined,
-    } as any;
+    };
   });
 
   const proxyEdges: Edge[] = [];

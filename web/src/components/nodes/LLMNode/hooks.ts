@@ -12,7 +12,8 @@ function adjustTextareaHeight(el: HTMLTextAreaElement) {
 }
 
 export function useLLMNodeController(id: string, data: NodeData) {
-  const { eventsForNode$ } = useStore();
+  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
+  const currentRunId = useStore((s) => s.currentRunId);
   const { updateConfig } = useNodeConfig(id, data.config);
 
   const systemInputRef = useRef<HTMLTextAreaElement>(null);
@@ -129,13 +130,7 @@ export function useLLMNodeController(id: string, data: NodeData) {
   }, [isConfigOpen]);
 
   useEffect(() => {
-    const stream$ = eventsForNode$?.(id);
-    if (!stream$) return;
-
-    const subscription = stream$.subscribe((event: FlowEvent) => {
-      if (!('nodeId' in event)) return;
-      if (event.nodeId !== id) return;
-
+    const subscription = flowEventForNodeId$(id).subscribe((event: FlowEvent) => {
       switch (event.type) {
         case 'NodeStarted':
           cancelFlush();
@@ -197,7 +192,7 @@ export function useLLMNodeController(id: string, data: NodeData) {
       cancelFlush();
       subscription.unsubscribe();
     };
-  }, [eventsForNode$, id, cancelFlush, scheduleFlush, updateConfig]);
+  }, [flowEventForNodeId$, currentRunId, id, cancelFlush, scheduleFlush, updateConfig]);
 
   const onModelChange = useCallback(
     (next: string) => {
@@ -280,16 +275,16 @@ export function useLLMNodeController(id: string, data: NodeData) {
     model,
     stream,
     isConfigOpen,
-    setIsConfigOpen,
     isStreaming,
     isMarkdown,
-    setIsMarkdown,
     isFullScreen,
-    setIsFullScreen,
     isSystemFullScreen,
-    setIsSystemFullScreen,
     outputText,
     incremark,
+    setIsConfigOpen,
+    setIsMarkdown,
+    setIsFullScreen,
+    setIsSystemFullScreen,
     onModelChange,
     onStreamChange,
     onSystemPromptChange,

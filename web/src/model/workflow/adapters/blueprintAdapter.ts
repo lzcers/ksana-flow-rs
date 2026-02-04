@@ -30,7 +30,7 @@ export interface WorkflowBlueprint {
 export const toBlueprint = (nodes: Node[], edges: Edge[]): WorkflowBlueprint => {
     return {
         nodes: nodes.map((n) => {
-            const { type: _, ...cleanData } = (n.data as any) || {};
+            const { type: _, ...cleanData } = (n.data) || {};
             return {
                 id: n.id,
                 type: n.type || 'default', // Ensure type is a string

@@ -2,7 +2,7 @@ import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import type { Observable } from 'rxjs';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
-import type { FlowEvent, FlowNodeMsgEvent, FlowNodeStatusEvent } from '@/model/flowEvent/types';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
@@ -67,6 +67,8 @@ export interface Execution {
   workflowStatuses: Record<number, WorkflowStatus>;
   runIdToWorkflowId: Record<string, number>;
   currentRunId: string | null;
+  flowEventForRunId$: (runId: string) => Observable<FlowEvent>;
+  flowEventForNodeId$: (nodeId: string) => Observable<FlowEvent>;
   runWorkflow: () => Promise<void>;
   pauseWorkflow: () => Promise<void>;
   resumeWorkflow: () => Promise<void>;
@@ -76,9 +78,6 @@ export interface Execution {
   setWorkflowStatuses: (statuses: Record<number, WorkflowStatus>) => void;
   setCurrentRunId: (runId: string | null) => void;
   initializeWebSocket: () => () => void;
-  workflowStatusForRunId$: (runId: string) => Observable<WorkflowStatus>;
-  nodeStatus$: (nodeId: string) => Observable<FlowNodeStatusEvent>;
-  nodeDataUpdate$: (nodeId: string) => Observable<FlowNodeMsgEvent>;
 }
 
 export interface ToastItem {

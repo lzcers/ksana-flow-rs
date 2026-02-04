@@ -127,7 +127,7 @@ impl Runner {
         // 记录 Runner 启动
         self.start_time = Some(Instant::now());
         let node_count = self.scheduler.get_node_ids().len();
-        logger::log_runner_started(self.runner_id, node_count);
+        logger::log_runner_started(self.runner_id, &self.scheduler.get_node_ids(), node_count);
 
         // 创建 runner span 用于追踪整个执行过程
         let runner_span = logger::create_runner_span(self.runner_id, node_count);
@@ -138,7 +138,7 @@ impl Runner {
             // 节点实例化等
 
             if self.scheduler.is_start_queue_empty() {
-                logger::log_runner_terminated(self.runner_id, "No start node set");
+                logger::log_runner_terminated(self.runner_id,"No start node set");
                 return Ok(());
             }
             let init_state = *self.state_tx.borrow();
@@ -148,10 +148,10 @@ impl Runner {
             self.scheduler.materialize_nodes().await?;
             self.exec_ctx.reset_task_count(); // 重置任务计数器
 
-        // run 只返回最错的报错信息, 如果有
-        let mut first_error = None;
+            // run 只返回最错的报错信息, 如果有
+            let mut first_error = None;
 
-        // 2. 启动阶段
+            // 2. 启动阶段
             // 从 scheduler 中弹出初始启动节点
             let starts = self.scheduler.pop_initial_starts();
             self.start_by_specs(starts).await?;

@@ -1,9 +1,9 @@
-import {
-  type EdgeChange,
-  type Connection,
-  type Node as XNode,
-  type NodeChange as XNodeChange,
-  type Edge
+import type {
+  EdgeChange,
+  Connection,
+  Node as XNode,
+  Edge as XEdge,
+  NodeChange as XNodeChange,
 } from '@xyflow/react';
 
 export type NodeType =
@@ -36,12 +36,17 @@ export interface NodeData extends Record<string, unknown> {
   upstreamIsStreaming?: boolean;
 }
 
+export interface EdgeData extends Record<string, unknown> {
+  __uiSubgraphEdge?: { originalEdgeId: string }
+}
 export type Node = XNode<NodeData>;
+export type Edge = XEdge<EdgeData>;
 export type NodeChange = XNodeChange<Node>;
+
 export interface WorkflowState {
   nodes: Node[];
   edges: Edge[];
   selectedNodeId: string | null;
 }
 
-export type { EdgeChange, Connection, Edge };
+export type { EdgeChange, Connection };

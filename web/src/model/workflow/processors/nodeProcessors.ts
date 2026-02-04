@@ -66,11 +66,11 @@ export const processAddNode = (
       data: {
         ...getDefaultNodeData(nodeType),
         ...data,
-        label: (data as any)?.label ?? id,
+        label: (data)?.label ?? id,
         status: 'idle',
       },
     };
-    draft.nodes.push(newNode as any);
+    draft.nodes.push(newNode);
   });
 };
 
@@ -130,8 +130,8 @@ export const processUpdateNodeDimensions = (
     const node = draft.nodes.find((n) => n.id === id);
     if (node) {
       if (!node.style) node.style = {};
-      (node.style as any).width = width;
-      (node.style as any).height = height;
+      (node.style).width = width;
+      (node.style).height = height;
       node.width = width;
       node.height = height;
 
@@ -141,8 +141,8 @@ export const processUpdateNodeDimensions = (
         const size = { width, height };
         node.data = {
           ...node.data,
-          expandedSize: expanded ? size : (node.data?.expandedSize as any),
-          collapsedSize: expanded ? (node.data?.collapsedSize as any) : size,
+          expandedSize: expanded ? size : (node.data?.expandedSize),
+          collapsedSize: expanded ? (node.data?.collapsedSize) : size,
         };
       }
     }
@@ -240,11 +240,11 @@ export const processApplyNodeChanges = (
 
   return produce(state, (draft) => {
     const updatedNodes = applyNodeChangesXyflow(changes as NodeChange[], draft.nodes);
-    draft.nodes = updatedNodes as any[];
+    draft.nodes = updatedNodes;
 
     changes.forEach((change) => {
       if (change.type === 'select') {
-        if ((change as any).selected) {
+        if ((change).selected) {
           draft.selectedNodeId = change.id;
         } else if (draft.selectedNodeId === change.id) {
           draft.selectedNodeId = null;
@@ -270,7 +270,7 @@ const syncEdgeHighlighting = (draft: Draft<WorkflowState>) => {
       (edge).animated = true;
       edge.style = { ...edge.style, stroke: '#3b82f6', strokeWidth: 3 };
     } else {
-      (edge as any).animated = false;
+      (edge).animated = false;
       if (edge.style) {
         delete edge.style.stroke;
         delete edge.style.strokeWidth;

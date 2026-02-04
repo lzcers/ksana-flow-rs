@@ -19,17 +19,12 @@ const INITIAL: MapNodeStreamState = {
 };
 
 export function useMapNodeStream(nodeId: string): MapNodeStreamState {
-  const eventsForNode$ = useStore((s) => s.eventsForNode$);
+  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
+  const currentRunId = useStore((s) => s.currentRunId);
   const [state, setState] = useState<MapNodeStreamState>(INITIAL);
 
   useEffect(() => {
-    const stream$ = eventsForNode$?.(nodeId);
-    if (!stream$) return;
-
-    const subscription = stream$.subscribe((event: FlowEvent) => {
-      if (!('nodeId' in event)) return;
-      if (event.nodeId !== nodeId) return;
-
+    const subscription = flowEventForNodeId$(nodeId).subscribe((event: FlowEvent) => {
       switch (event.type) {
         case 'NodeStarted':
           setState(INITIAL);
@@ -43,10 +38,10 @@ export function useMapNodeStream(nodeId: string): MapNodeStreamState {
           const value = event.msg;
           if (value == null || typeof value !== 'object') return;
 
-          const kind = (value as any).kind;
+          const kind = (value).kind;
           if (kind === 'item') {
-            const index = typeof (value as any).index === 'number' ? (value as any).index : null;
-            const output = (value as any).output;
+            const index = typeof (value).index === 'number' ? (value).index : null;
+            const output = (value).output;
             setState((prev) => ({
               ...prev,
               receivedItems: prev.receivedItems + 1,
@@ -54,7 +49,7 @@ export function useMapNodeStream(nodeId: string): MapNodeStreamState {
               lastItemOutput: output,
             }));
           } else if (kind === 'done') {
-            const count = typeof (value as any).count === 'number' ? (value as any).count : null;
+            const count = typeof (value).count === 'number' ? (value).count : null;
             setState((prev) => ({
               ...prev,
               doneCount: count,
@@ -77,7 +72,7 @@ export function useMapNodeStream(nodeId: string): MapNodeStreamState {
     });
 
     return () => subscription.unsubscribe();
-  }, [eventsForNode$, nodeId]);
+  }, [flowEventForNodeId$, currentRunId, nodeId]);
 
   return state;
 }

@@ -8,6 +8,7 @@ import {
   useWorkflows,
   useCurrentWorkflowId,
   useWorkflowStatus,
+  useWorkflowStatuses,
   useCurrentRunId,
   canvasActions,
   historyActions,
@@ -17,7 +18,7 @@ import {
   useCanRedo,
 } from './useStoreSelectors';
 
-export type WorkflowStatus = 'idle' | 'running' | 'paused';
+export type { WorkflowStatus } from '../store/types';
 
 /**
  * 优化后的 useWorkflow hook
@@ -32,6 +33,7 @@ export function useWorkflow() {
   const workflows = useWorkflows();
   const currentWorkflowId = useCurrentWorkflowId();
   const workflowStatus = useWorkflowStatus();
+  const workflowStatuses = useWorkflowStatuses();
   const currentRunId = useCurrentRunId();
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
@@ -52,7 +54,7 @@ export function useWorkflow() {
     workflows,
     currentWorkflowId,
     workflowStatus,
-    workflowStatuses: {} as Record<number, WorkflowStatus>, // 保持接口兼容
+    workflowStatuses,
     currentRunId,
 
     // Canvas actions

@@ -123,6 +123,10 @@ export function useWorkflowStatus(): import('../store/types').WorkflowStatus {
   return useStore(useCallback((state: StoreState) => state.workflowStatus, []));
 }
 
+export function useWorkflowStatuses(): Record<number, import('../store/types').WorkflowStatus> {
+  return useStore(useCallback((state: StoreState) => state.workflowStatuses, []));
+}
+
 /** 订阅当前运行ID */
 export function useCurrentRunId(): string | null {
   return useStore(useCallback((state: StoreState) => state.currentRunId, []));

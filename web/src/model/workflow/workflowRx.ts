@@ -62,7 +62,7 @@ export class RxWorkflow {
         const hasCollapsed = state.nodes.some(
           (n) =>
             (n.type === 'SubgraphNode' || n.type === 'MapNode') &&
-            (n.data as any)?.expanded === false
+            n.data.expanded === false
         );
         if (!hasCollapsed) return state;
         const { nodes, edges } = applyCollapsedSubgraphUi(state.nodes, state.edges);

@@ -121,9 +121,10 @@ pub fn log_node_execution_error(node_id: &NodeId, runner_id: RunnerId, error: &s
 /// # 字段
 /// - `runner.id`: Runner ID
 /// - `graph.node_count`: 图中节点数量
-pub fn log_runner_started(runner_id: RunnerId, node_count: usize) {
+pub fn log_runner_started(runner_id: RunnerId, node_ids: &[NodeId], node_count: usize) {
     info!(
         runner.id = %runner_id,
+        node_ids = ?node_ids,
         graph.node_count = node_count,
         "Runner started"
     );

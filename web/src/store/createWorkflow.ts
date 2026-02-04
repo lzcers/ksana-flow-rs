@@ -6,6 +6,7 @@ import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 import type { FlowEvent } from '@/model/flowEvent/types';
 import { rxWorkflowModel } from '.';
+import { castDraft } from 'immer';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => ({
   workflows: [],
@@ -26,7 +27,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const wfList = await api.fetchWorkflows(currentSpaceId);
 
       const allowedTypes = new Set(NODE_TYPES.map(nt => nt.type));
-      const filteredTypes = types.filter(t => allowedTypes.has(t.name as any));
+      const filteredTypes = types.filter(t => allowedTypes.has(t.name));
 
       // Inject SubgraphNode manually if not present (frontend-only node)
       if (!filteredTypes.find(t => t.name === 'SubgraphNode')) {
@@ -57,8 +58,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const { nodes, edges } = fromBlueprint(wf.blueprint as any);
 
       const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
-      setNodes(preprocessed.nodes);
-      setEdges(preprocessed.edges);
+      setNodes(castDraft(preprocessed.nodes));
+      setEdges(castDraft(preprocessed.edges));
       selectNode(null);
 
       try {
@@ -72,8 +73,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             if (status === 'completed' || status === 'stopped' || status === 'failed') {
               status = 'idle';
             }
-            setWorkflowStatus(status as any);
-            setWorkflowStatuses({ ...get().workflowStatuses, [id]: status as any });
+            setWorkflowStatus(status);
+            setWorkflowStatuses({ ...get().workflowStatuses, [id]: status });
           }
 
           if (statusRes.events && Array.isArray(statusRes.events)) {
@@ -180,8 +181,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     const { nodes, edges } = fromBlueprint(blueprint);
 
     const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
-    setNodes(preprocessed.nodes);
-    setEdges(preprocessed.edges);
+    setNodes(castDraft(preprocessed.nodes));
+    setEdges(castDraft(preprocessed.edges));
     selectNode(null);
     setCurrentWorkflowId(null);
     setWorkflowStatus('idle');
@@ -203,6 +204,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     // 使用 CommandBus 派发事件，而不是直接修改 state
     // 注意：这里不再需要 set()，因为 CommandBus 会更新 RxState，RxState 会同步回 Zustand
     // 使用类型守卫判断事件类型
+    const runtimeMeta = { meta: { skipHistory: true } } as const;
     if ('nodeId' in event) {
       // 节点相关事件 (FlowNodeMsgEvent | FlowNodeStatusEvent)
       const { nodeId: id } = event;
@@ -210,25 +212,43 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         case 'NodeStarted':
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_STATUS',
-            payload: { id, status: 'running' }
+            payload: { id, status: 'running' },
+            ...runtimeMeta
           });
           break;
         case 'NodeStreamStarted':
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { isOutputStream: true } }
+            payload: { id, data: { isOutputStream: true } },
+            ...runtimeMeta
           });
           break;
+        case 'NodeStreamNextMessage': {
+          const { msg: chunk } = event;
+          const prev = rxWorkflowModel.getSnapshot().nodes.find(n => n.id === id)?.data?.lastMessage;
+          const lastMessage =
+            typeof chunk === 'string'
+              ? `${typeof prev === 'string' ? prev : ''}${chunk}`
+              : chunk;
+          rxWorkflowModel.dispatch({
+            type: 'UPDATE_NODE_DATA',
+            payload: { id, data: { lastMessage } },
+            ...runtimeMeta
+          });
+          break;
+        }
         case 'NodeInMessage': {
           const { msg: value } = event;
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { lastMessage: value } }
+            payload: { id, data: { lastMessage: value } },
+            ...runtimeMeta
           });
           if (typeof value === 'object' && value !== null) {
             rxWorkflowModel.dispatch({
               type: 'UPDATE_NODE_INPUTS',
-              payload: { id, inputs: value }
+              payload: { id, inputs: value },
+              ...runtimeMeta
             });
           }
           break;
@@ -237,11 +257,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           const { msg: value } = event;
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { lastMessage: value, isOutputStream: false } }
+            payload: { id, data: { lastMessage: value, isOutputStream: false } },
+            ...runtimeMeta
           });
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_OUTPUT',
-            payload: { id, key: 'output', value }
+            payload: { id, key: 'output', value },
+            ...runtimeMeta
           });
 
           // Propagate to downstream nodes
@@ -250,11 +272,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           outEdges.forEach(edge => {
             rxWorkflowModel.dispatch({
               type: 'UPDATE_NODE_DATA',
-              payload: { id: edge.target, data: { lastMessage: value } }
+              payload: { id: edge.target, data: { lastMessage: value } },
+              ...runtimeMeta
             });
             rxWorkflowModel.dispatch({
               type: 'UPDATE_NODE_INPUT',
-              payload: { id: edge.target, key: edge.targetHandle || 'default', value }
+              payload: { id: edge.target, key: edge.targetHandle || 'default', value },
+              ...runtimeMeta
             });
           });
           break;
@@ -262,18 +286,21 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         case 'NodeCompleted':
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_STATUS',
-            payload: { id, status: 'completed' }
+            payload: { id, status: 'completed' },
+            ...runtimeMeta
           });
           break;
         case 'NodeError': {
           const { msg: error } = event;
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_STATUS',
-            payload: { id, status: 'error', errorMessage: error }
+            payload: { id, status: 'error', errorMessage: error },
+            ...runtimeMeta
           });
           rxWorkflowModel.dispatch({
             type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { isOutputStream: false } }
+            payload: { id, data: { isOutputStream: false } },
+            ...runtimeMeta
           });
           break;
         }

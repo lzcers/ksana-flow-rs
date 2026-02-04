@@ -7,7 +7,8 @@ import type { FlowEvent } from '@/model/flowEvent/types';
 import type { ProjectData } from '../../ShortVideoCreation/types';
 
 export function useShortVideoNodeController(id: string, data: NodeData) {
-  const { eventsForNode$ } = useStore();
+  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
+  const currentRunId = useStore((s) => s.currentRunId);
   const { updateConfig } = useNodeConfig(id, data.config);
 
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -58,13 +59,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
   }, []);
 
   useEffect(() => {
-    const stream$ = eventsForNode$?.(id);
-    if (!stream$) return;
-
-    const subscription = stream$.subscribe((event: FlowEvent) => {
-      if (!('nodeId' in event)) return;
-      if (event.nodeId !== id) return;
-
+    const subscription = flowEventForNodeId$(id).subscribe((event: FlowEvent) => {
       switch (event.type) {
         case 'NodeStarted':
           isStreamingRef.current = false;
@@ -98,7 +93,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
           try {
             const parsed = typeof value === 'string' ? JSON.parse(value) : value;
             setProjectData(parsed);
-            updateConfig({ projectData: parsed } as any);
+            updateConfig({ projectData: parsed });
           } catch { }
           isStreamingRef.current = false;
           break;
@@ -107,7 +102,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
     });
 
     return () => subscription.unsubscribe();
-  }, [eventsForNode$, id, startNewStream, updateConfig]);
+  }, [flowEventForNodeId$, currentRunId, id, startNewStream, updateConfig]);
 
   useEffect(() => {
     if (data.config?.projectData) {
@@ -125,7 +120,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
   const onProjectDataChange = useCallback(
     (next: ProjectData) => {
       setProjectData(next);
-      updateConfig({ projectData: next } as any);
+      updateConfig({ projectData: next });
     },
     [updateConfig],
   );

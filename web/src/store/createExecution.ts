@@ -4,9 +4,32 @@ import * as api from '@/api';
 import { toBlueprint } from '@/model/workflow/adapters';
 import { rxWorkflowModel } from '.';
 import { createFlowEventModel } from '@/model/flowEvent';
+import { EMPTY, type Observable, type Subscription } from 'rxjs';
+import type { FlowEvent } from '@/model/flowEvent/types';
 
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
   const rxFlowEventModel = createFlowEventModel();
+  let workflowStatusSubscription: Subscription | null = null;
+  let flowEventSubscription: Subscription | null = null;
+
+  const syncWorkflowStatusForRun = (runId: string | null) => {
+    workflowStatusSubscription?.unsubscribe();
+    workflowStatusSubscription = null;
+    if (!runId) return;
+    workflowStatusSubscription = rxFlowEventModel.workflowStatusForRunId$(runId).subscribe((status) => {
+      get().setWorkflowStatus(status);
+    });
+  };
+
+  const syncFlowEventsForRun = (runId: string | null) => {
+    flowEventSubscription?.unsubscribe();
+    flowEventSubscription = null;
+    if (!runId) return;
+    flowEventSubscription = rxFlowEventModel.flowEventForRunId$(runId).subscribe((event) => {
+      get().applyExecutionEvent(event);
+    });
+  };
+
   return {
     // ===== State =====
     workflowStatus: 'idle',
@@ -14,39 +37,46 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     runIdToWorkflowId: {},
     currentRunId: null,
 
-    // ===== Observables (从 RxFlowEvent 代理) =====
-    workflowStatusForRunId$: (runId: string) => {
-      return rxFlowEventModel.workflowStatusForRunId$(runId);
+    flowEventForRunId$: (runId: string) => {
+      return rxFlowEventModel.flowEventForRunId$(runId);
     },
-    nodeStatus$: (nodeId: string) => {
-      const curRunId = get().currentRunId || "";
-      const { flowEventForRunId$, nodeStatus$ } = rxFlowEventModel;
-      return nodeStatus$(nodeId)(flowEventForRunId$(curRunId));
+    flowEventForNodeId$: (nodeId: string) => {
+      const runId = get().currentRunId;
+      if (!runId) return EMPTY as Observable<FlowEvent>;
+      return rxFlowEventModel.flowEventForNodeId$(nodeId)(
+        rxFlowEventModel.flowEventForRunId$(runId)
+      );
     },
-    nodeDataUpdate$: (nodeId: string) => {
-      const curRunId = get().currentRunId || "";
-      const { flowEventForRunId$, nodeDataUpdate$ } = rxFlowEventModel;
-      return nodeDataUpdate$(nodeId)(flowEventForRunId$(curRunId));
-    },
+
     // ===== State Setters =====
     setWorkflowStatus: (status) => {
-      const { currentWorkflowId } = get();
-      if (currentWorkflowId != null) {
-        rxFlowEventModel.dispatch({
-          type: 'UPDATE_WORKFLOW_STATUS',
-          payload: { workflowId: currentWorkflowId, status },
-        });
-      }
+      set((state) => {
+        const currentWorkflowId = state.currentWorkflowId;
+        if (currentWorkflowId == null) {
+          return { workflowStatus: status } as Partial<StoreState>;
+        }
+        return {
+          workflowStatus: status,
+          workflowStatuses: { ...state.workflowStatuses, [currentWorkflowId]: status },
+        } as Partial<StoreState>;
+      });
     },
 
     setWorkflowStatuses: (statuses) => set({ workflowStatuses: statuses }),
 
     setCurrentRunId: (runId) => {
-      const { currentWorkflowId } = get();
-      rxFlowEventModel.dispatch({
-        type: 'SET_CURRENT_RUN',
-        payload: { runId, workflowId: currentWorkflowId },
+      set((state) => {
+        const currentWorkflowId = state.currentWorkflowId;
+        if (!runId || currentWorkflowId == null) {
+          return { currentRunId: runId } as Partial<StoreState>;
+        }
+        return {
+          currentRunId: runId,
+          runIdToWorkflowId: { ...state.runIdToWorkflowId, [runId]: currentWorkflowId },
+        } as Partial<StoreState>;
       });
+      syncWorkflowStatusForRun(runId);
+      syncFlowEventsForRun(runId);
     },
 
     // ===== WebSocket =====
@@ -54,16 +84,20 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       const { currentSpaceId } = get();
       if (!currentSpaceId) return () => { };
 
-      const subscription = rxFlowEventModel.connectWebSocket(currentSpaceId).subscribe({
-        error: (err: unknown) => console.error('WS Error', err),
-      });
+      rxFlowEventModel.connectWebSocket(currentSpaceId);
 
-      return () => subscription.unsubscribe();
+      return () => {
+        workflowStatusSubscription?.unsubscribe();
+        workflowStatusSubscription = null;
+        flowEventSubscription?.unsubscribe();
+        flowEventSubscription = null;
+        rxFlowEventModel.disconnectWebSocket();
+      };
     },
 
     // ===== Workflow Actions =====
     runWorkflow: async () => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId } = get();
       if (!currentSpaceId) return;
 
       const blueprint = toBlueprint(nodes, edges);
@@ -77,32 +111,14 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           throw new Error(res.error);
         }
         if (res && res.run_id) {
-          rxFlowEventModel.dispatch({
-            type: 'SET_CURRENT_RUN',
-            payload: { runId: res.run_id, workflowId: currentWorkflowId },
-          });
-          if (currentWorkflowId != null) {
-            rxFlowEventModel.dispatch({
-              type: 'UPDATE_WORKFLOW_STATUS',
-              payload: { workflowId: currentWorkflowId, status: 'running' },
-            });
-          }
+          setCurrentRunId(res.run_id);
         }
         success('Workflow started');
       } catch (e) {
         console.error("Failed to run workflow", e);
         error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
         setWorkflowStatus('idle');
-        rxFlowEventModel.dispatch({
-          type: 'SET_CURRENT_RUN',
-          payload: { runId: null, workflowId: null },
-        });
-        if (currentWorkflowId != null) {
-          rxFlowEventModel.dispatch({
-            type: 'UPDATE_WORKFLOW_STATUS',
-            payload: { workflowId: currentWorkflowId, status: 'idle' },
-          });
-        }
+        setCurrentRunId(null);
       }
     },
 
@@ -140,7 +156,7 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     },
 
     runNode: async (nodeId: string) => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error, setWorkflowStatus, setCurrentRunId } = get();
       if (!currentSpaceId) return;
       const blueprint = toBlueprint(nodes, edges);
 
@@ -150,28 +166,8 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           throw new Error(res.error);
         }
         if (res && res.run_id) {
-          rxFlowEventModel.dispatch({
-            type: 'SET_CURRENT_RUN',
-            payload: { runId: res.run_id, workflowId: currentWorkflowId },
-          });
+          setCurrentRunId(res.run_id);
           setWorkflowStatus('running');
-
-          // 设置 activeRunContext 用于跟踪 RunNode 执行
-          rxFlowEventModel.dispatch({
-            type: 'SET_ACTIVE_RUN_CONTEXT',
-            payload: {
-              runId: res.run_id,
-              startNodeId: res.start_node ?? nodeId,
-              workflowId: currentWorkflowId,
-            },
-          });
-
-          if (currentWorkflowId != null) {
-            rxFlowEventModel.dispatch({
-              type: 'UPDATE_WORKFLOW_STATUS',
-              payload: { workflowId: currentWorkflowId, status: 'running' },
-            });
-          }
         }
         success(`Node ${nodeId} execution started`);
       } catch (e) {

@@ -4,12 +4,11 @@
  * ├── workflowStatusForRunId$ (按 runId 过滤的状态流)
  * └── flowEventForRunId$ (按 runId 过滤的事件流)
  *     └── flowEventForNodeId$ (按 nodeId 过滤的事件流)
- *         └── nodeStatus$ (节点状态流)
- *         └── nodeDataUpdate$ (节点数据更新流)
  */
 import {
   Subject,
   Observable,
+  type Subscription,
 } from 'rxjs';
 
 import {
@@ -18,13 +17,15 @@ import {
   filter,
   retry,
 } from 'rxjs/operators';
-import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent, FlowNodeMsgEvent, FlowNodeStatusEvent } from './types';
+import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent, FlowNodeStatusEvent, FlowNodeMsgEvent } from './types';
 import { createFlowSocketObservable } from './socket';
 import type { WorkflowStatus } from '@/store/types';
 
 
 export class RxFlowEvent {
   private _source$ = new Subject<WebSocketFlowMessage>();
+  private _socketSubscription: Subscription | null = null;
+  private _currentSpaceId: string | null = null;
 
 
   constructor() {
@@ -35,18 +36,25 @@ export class RxFlowEvent {
    * 这是所有派生流的源头
    * 注意：此方法将 WebSocket 消息推送到 _source$，所有派生流都基于 _source$
    */
-  connectWebSocket(spaceId: string): Observable<WebSocketFlowMessage> {
+  connectWebSocket(spaceId: string): void {
+    if (this._currentSpaceId === spaceId && this._socketSubscription) return;
+    this.disconnectWebSocket();
+    this._currentSpaceId = spaceId;
+
     const socket$ = createFlowSocketObservable(spaceId).pipe(
       retry({ delay: 2000 })
     );
 
-    // 订阅 WebSocket 并将消息推送到 _source$
-    socket$.subscribe({
+    this._socketSubscription = socket$.subscribe({
       next: (message) => this._source$.next(message),
       error: (err) => console.error('[RxFlowEvent] WebSocket error:', err),
     });
+  }
 
-    return socket$;
+  disconnectWebSocket(): void {
+    this._socketSubscription?.unsubscribe();
+    this._socketSubscription = null;
+    this._currentSpaceId = null;
   }
 
   // ===== Stream Derivation API =====
@@ -71,8 +79,8 @@ export class RxFlowEvent {
         switch (event.type) {
           case 'FlowPaused': return 'paused' as WorkflowStatus;
           case 'FlowResumed': return 'running' as WorkflowStatus;
-          case 'FlowStopped': return 'stopped' as WorkflowStatus;
-          case 'FlowFinished': return 'completed' as WorkflowStatus;
+          case 'FlowStopped': return 'idle' as WorkflowStatus;
+          case 'FlowFinished': return 'idle' as WorkflowStatus;
           default: return 'idle' as WorkflowStatus;
         }
       }),
@@ -118,9 +126,11 @@ export class RxFlowEvent {
     nodeId: string
   ) {
     const isFlowNodeStatusEvent = (event: FlowEvent): event is FlowNodeStatusEvent =>
-      'nodeId' in event && event.nodeId === nodeId &&
-      event.type === 'NodeStarted' || event.type === 'NodeStreamStarted' ||
-      event.type === 'NodeCompleted';
+      'nodeId' in event &&
+      event.nodeId === nodeId &&
+      (event.type === 'NodeStarted' ||
+        event.type === 'NodeStreamStarted' ||
+        event.type === 'NodeCompleted');
 
     return (flowEventObservable: Observable<FlowEvent>): Observable<FlowNodeStatusEvent> =>
       flowEventObservable.pipe(
@@ -153,12 +163,11 @@ export class RxFlowEvent {
         filter(event => isFlowNodeMsgEvent(event))
       )
   }
-
-
   /**
    * 销毁：完成 _source$ 流，释放资源
    */
   destroy(): void {
+    this.disconnectWebSocket();
     this._source$.complete();
   }
 }

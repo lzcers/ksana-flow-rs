@@ -23,11 +23,11 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     canUndo: false,
     canRedo: false,
 
-    setNodes: (nodes) => rxWorkflowModel.dispatchers.setNodes(nodes as any),
-    setEdges: (edges) => rxWorkflowModel.dispatchers.setEdges(edges as any),
+    setNodes: (nodes) => rxWorkflowModel.dispatchers.setNodes(nodes),
+    setEdges: (edges) => rxWorkflowModel.dispatchers.setEdges(edges),
 
     pasteNodes: (nodes, edges) => {
-      rxWorkflowModel.dispatchers.pasteNodes(nodes as any, edges as any);
+      rxWorkflowModel.dispatchers.pasteNodes(nodes, edges);
     },
 
     onNodesChange: (changes: NodeChange[]) => {
@@ -52,10 +52,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
           continue;
         }
 
-        const edge = edgeById.get(change.id) as any;
+        const edge = edgeById.get(change.id);
         const proxy = edge?.data?.__uiSubgraphEdge;
         if (proxy) {
-          if (change.type === 'remove' && typeof proxy.originalEdgeId === 'string') {
+          if (change.type === 'remove' && proxy.originalEdgeId) {
             removeOriginalEdgeIds.push(proxy.originalEdgeId);
           }
           continue;
@@ -80,7 +80,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     },
 
     onConnect: (connection: Connection) => {
-      rxWorkflowModel.dispatchers.onConnect(connection as any);
+      rxWorkflowModel.dispatchers.onConnect(connection);
     },
 
     addNode: (type: string, position: { x: number; y: number } = { x: 300, y: 200 }) => {
@@ -100,7 +100,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       }
       const id = `${type}-${nextNum}`;
       const meta = nodeTypes.find(t => t.name === type);
-      rxWorkflowModel.dispatchers.addNode(type, position as any, {
+      rxWorkflowModel.dispatchers.addNode(type, position, {
         id,
         data: {
           label: type,
@@ -211,7 +211,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       });
 
       rxWorkflowModel.dispatchers.setNodes(
-        sortNodesByParent([...updatedNodes, groupNode]) as any
+        sortNodesByParent([...updatedNodes, groupNode]) as unknown as Node[]
       );
       rxWorkflowModel.dispatchers.selectNode(groupId);
     },
