@@ -92,9 +92,6 @@ export function attachFlowEventModelToStore(storeApi: StoreApi<StoreState>): () 
         payload: { commands }
       });
     }
-
-    // 清空待处理更新
-    rxFlowEventModel.clearPendingUpdates();
   });
 
   detachFlowEvent = () => {

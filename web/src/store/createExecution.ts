@@ -36,7 +36,10 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     setWorkflowStatus: (status) => {
       const { currentWorkflowId } = get();
       if (currentWorkflowId != null) {
-        rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, status);
+        rxFlowEventModel.dispatch({
+          type: 'UPDATE_WORKFLOW_STATUS',
+          payload: { workflowId: currentWorkflowId, status },
+        });
       }
     },
 
@@ -44,7 +47,10 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
 
     setCurrentRunId: (runId) => {
       const { currentWorkflowId } = get();
-      rxFlowEventModel.setCurrentRun(runId, currentWorkflowId);
+      rxFlowEventModel.dispatch({
+        type: 'SET_CURRENT_RUN',
+        payload: { runId, workflowId: currentWorkflowId },
+      });
     },
 
     // ===== WebSocket =====
@@ -76,9 +82,15 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           throw new Error(res.error);
         }
         if (res && res.run_id) {
-          rxFlowEventModel.setCurrentRun(res.run_id, currentWorkflowId);
+          rxFlowEventModel.dispatch({
+            type: 'SET_CURRENT_RUN',
+            payload: { runId: res.run_id, workflowId: currentWorkflowId },
+          });
           if (currentWorkflowId != null) {
-            rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, 'running');
+            rxFlowEventModel.dispatch({
+              type: 'UPDATE_WORKFLOW_STATUS',
+              payload: { workflowId: currentWorkflowId, status: 'running' },
+            });
           }
         }
         success('Workflow started');
@@ -86,9 +98,15 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
         console.error("Failed to run workflow", e);
         error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
         setWorkflowStatus('idle');
-        rxFlowEventModel.setCurrentRun(null, null);
+        rxFlowEventModel.dispatch({
+          type: 'SET_CURRENT_RUN',
+          payload: { runId: null, workflowId: null },
+        });
         if (currentWorkflowId != null) {
-          rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, 'idle');
+          rxFlowEventModel.dispatch({
+            type: 'UPDATE_WORKFLOW_STATUS',
+            payload: { workflowId: currentWorkflowId, status: 'idle' },
+          });
         }
       }
     },
@@ -137,23 +155,27 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
           throw new Error(res.error);
         }
         if (res && res.run_id) {
-          rxFlowEventModel.setCurrentRun(res.run_id, currentWorkflowId);
+          rxFlowEventModel.dispatch({
+            type: 'SET_CURRENT_RUN',
+            payload: { runId: res.run_id, workflowId: currentWorkflowId },
+          });
           setWorkflowStatus('running');
 
           // 设置 activeRunContext 用于跟踪 RunNode 执行
-          if (rxFlowEventModel.currentState) {
-            rxFlowEventModel.dispatch({
-              type: 'SET_ACTIVE_RUN_CONTEXT',
-              payload: {
-                runId: res.run_id,
-                startNodeId: res.start_node ?? nodeId,
-                workflowId: currentWorkflowId,
-              },
-            });
-          }
+          rxFlowEventModel.dispatch({
+            type: 'SET_ACTIVE_RUN_CONTEXT',
+            payload: {
+              runId: res.run_id,
+              startNodeId: res.start_node ?? nodeId,
+              workflowId: currentWorkflowId,
+            },
+          });
 
           if (currentWorkflowId != null) {
-            rxFlowEventModel.updateWorkflowStatus(currentWorkflowId, 'running');
+            rxFlowEventModel.dispatch({
+              type: 'UPDATE_WORKFLOW_STATUS',
+              payload: { workflowId: currentWorkflowId, status: 'running' },
+            });
           }
         }
         success(`Node ${nodeId} execution started`);

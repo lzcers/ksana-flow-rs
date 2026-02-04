@@ -178,3 +178,47 @@ export type {
   FlowEvent,
   WebSocketFlowMessage,
 } from './types';
+
+// ===== Command Factory Functions =====
+
+/**
+ * 将 FlowEvent 转换为对应的 FlowEventCommand
+ * 纯函数，无副作用
+ */
+export function flowEventToCommand(event: FlowEvent): FlowEventCommand | null {
+  // 节点相关事件
+  if ('nodeId' in event) {
+    // 节点消息事件
+    if (['NodeError', 'NodeInMessage', 'NodeOutMessage', 'NodeStreamNextMessage'].includes(event.type)) {
+      return {
+        type: 'PROCESS_NODE_MSG_EVENT',
+        payload: { event: event as FlowNodeMsgEvent }
+      };
+    }
+    // 节点状态事件
+    if (['NodeStarted', 'NodeStreamStarted', 'NodeCompleted'].includes(event.type)) {
+      return {
+        type: 'PROCESS_NODE_STATUS_EVENT',
+        payload: { event: event as FlowNodeStatusEvent }
+      };
+    }
+  }
+
+  // 控制事件
+  if ('runId' in event) {
+    return {
+      type: 'PROCESS_CONTROL_EVENT',
+      payload: { event: event as FlowControlEvent }
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 将 WebSocketFlowMessage 转换为 Command
+ * 纯函数，无副作用
+ */
+export function wsMessageToCommand(message: WebSocketFlowMessage): FlowEventCommand | null {
+  return flowEventToCommand(message.event);
+}

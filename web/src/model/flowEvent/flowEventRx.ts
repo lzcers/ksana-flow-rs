@@ -35,52 +35,8 @@ import {
   type FlowEventModelOptions,
 } from './flowEventModel';
 import type { FlowEventCommand, NodeExecutionData } from './commands';
-import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent, FlowNodeMsgEvent, FlowNodeStatusEvent } from './types';
+import type { FlowEvent, WebSocketFlowMessage, FlowControlEvent } from './types';
 import { createFlowSocketObservable } from './socket';
-
-// ===== Command Factory Functions =====
-
-/**
- * 将 FlowEvent 转换为对应的 FlowEventCommand
- * 纯函数，无副作用
- */
-export function flowEventToCommand(event: FlowEvent): FlowEventCommand | null {
-  // 节点相关事件
-  if ('nodeId' in event) {
-    // 节点消息事件
-    if (['NodeError', 'NodeInMessage', 'NodeOutMessage', 'NodeStreamNextMessage'].includes(event.type)) {
-      return {
-        type: 'PROCESS_NODE_MSG_EVENT',
-        payload: { event: event as FlowNodeMsgEvent }
-      };
-    }
-    // 节点状态事件
-    if (['NodeStarted', 'NodeStreamStarted', 'NodeCompleted'].includes(event.type)) {
-      return {
-        type: 'PROCESS_NODE_STATUS_EVENT',
-        payload: { event: event as FlowNodeStatusEvent }
-      };
-    }
-  }
-
-  // 控制事件
-  if ('runId' in event) {
-    return {
-      type: 'PROCESS_CONTROL_EVENT',
-      payload: { event: event as FlowControlEvent }
-    };
-  }
-
-  return null;
-}
-
-/**
- * 将 WebSocketFlowMessage 转换为 Command
- * 纯函数，无副作用
- */
-export function wsMessageToCommand(message: WebSocketFlowMessage): FlowEventCommand | null {
-  return flowEventToCommand(message.event);
-}
 
 export interface RxFlowEventOptions extends FlowEventModelOptions {
   enableLogging?: boolean;
@@ -105,7 +61,6 @@ export class RxFlowEvent {
 
   // Public Observables
   public readonly state$: Observable<Immutable<FlowEventState>>;
-  public readonly commands$ = this._commands$.asObservable();
   public readonly events$: Observable<FlowEvent>;
   public readonly batchedNodeUpdates$: Observable<Map<string, NodeExecutionData>>;
 
@@ -122,6 +77,9 @@ export class RxFlowEvent {
       onNodeUpdates: (updates) => this._batchedUpdates$.next(updates),
     });
 
+    this._commands$.subscribe(cmd => {
+      this._model.execute(cmd);
+    });
     // 初始化 State 流
     this._state$.next(this._model.state);
     this.state$ = this._state$.asObservable();
@@ -294,74 +252,11 @@ export class RxFlowEvent {
     );
   }
 
-  // ===== Legacy Public API =====
-
   /**
    * 分发 Command
    */
   dispatch(command: FlowEventCommand): void {
     this._commands$.next(command);
-    this._model.execute(command);
-  }
-
-  /**
-   * 发送事件到事件流
-   * 将事件包装为 WebSocketFlowMessage 发送给 _source$
-   */
-  emitEvent(event: FlowEvent, runId?: string): void {
-    const message: WebSocketFlowMessage = {
-      runId,
-      event,
-    };
-    this._source$.next(message);
-    this._model.processFlowEvent(event, this._model.state.currentRunId || undefined);
-  }
-
-  /**
-   * 快捷方法：设置当前运行
-   */
-  setCurrentRun(runId: string | null, workflowId: number | null): void {
-    this.dispatch({
-      type: 'SET_CURRENT_RUN',
-      payload: { runId, workflowId },
-    });
-  }
-
-  /**
-   * 快捷方法：更新工作流状态
-   */
-  updateWorkflowStatus(workflowId: number, status: WorkflowStatus): void {
-    this.dispatch({
-      type: 'UPDATE_WORKFLOW_STATUS',
-      payload: { workflowId, status },
-    });
-  }
-
-  /**
-   * 快捷方法：处理 FlowEvent
-   */
-  processFlowEvent(event: FlowEvent, runId?: string): void {
-    this.dispatch({
-      type: 'PROCESS_FLOW_EVENT',
-      payload: { event, runId },
-    });
-  }
-
-  /**
-   * 快捷方法：清空待处理更新
-   */
-  clearPendingUpdates(): void {
-    this.dispatch({
-      type: 'CLEAR_PENDING_UPDATES',
-      payload: {},
-    });
-  }
-
-  /**
-   * 注册处理器
-   */
-  registerHandler<T extends FlowEventCommand>(type: string, handler: (state: Immutable<FlowEventState>, command: T) => Immutable<FlowEventState>): void {
-    this._model.registerHandler(type, handler as never);
   }
 
   /**
@@ -372,11 +267,5 @@ export class RxFlowEvent {
     this._commands$.complete();
     this._source$.complete();
     this._batchedUpdates$.complete();
-  }
-
-  // ===== Getters =====
-
-  get currentState(): Immutable<FlowEventState> {
-    return this._model.state;
   }
 }
