@@ -15,7 +15,6 @@ export interface FlowNodeStatusEvent {
 
 export interface FlowControlEvent {
   type: FlowControlEventType;
-  runId: string;
 }
 
 export type FlowEvent = FlowNodeMsgEvent | FlowNodeStatusEvent | FlowControlEvent;

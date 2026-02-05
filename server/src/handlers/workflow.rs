@@ -18,7 +18,8 @@ use flow::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -289,18 +290,19 @@ async fn start_execution(
             ));
         }
 
+        {
+            let mut executions = state_clone.executions.write().expect("lock poisoned");
+            executions.remove(&run_id_for_task);
+        }
+
+        drop(controller_for_runner_task);
+
         let bridge_task = {
             let mut t = tasks_for_runner_task.lock().await;
             t.bridge_task.take()
         };
         if let Some(bridge_task) = bridge_task {
             let _ = bridge_task.await;
-        }
-
-        // Remove from executions
-        {
-            let mut executions = state_clone.executions.write().expect("lock poisoned");
-            executions.remove(&run_id_for_task);
         }
     });
 
@@ -505,23 +507,46 @@ pub async fn stop_workflow(
         executions.remove(&id)
     };
 
+    // - 先 runner_handle.stop().await 发优雅停止信号；
+    // - 后台等待 runner_task / bridge_task 自然收敛；
+    // - 超时（2s）才升级为 abort/abort_runner 兜底，避免提前 abort 导致 FlowStopped 丢失。
     if let Some(handle) = handle {
-        handle.controller.stop_all();
-        handle.controller.abort_runner(handle.root_runner_id);
+        let controller_weak: Weak<Controller> = Arc::downgrade(&handle.controller);
+        let root_runner_id = handle.root_runner_id;
+        let tasks = handle.tasks.clone();
+        let runner_handle = handle.runner_handle.clone();
 
-        let (runner_task, bridge_task) = {
-            let mut t = handle.tasks.lock().await;
-            (t.runner_task.take(), t.bridge_task.take())
-        };
+        runner_handle.stop().await;
 
-        if let Some(runner_task) = runner_task {
-            runner_task.abort();
-            let _ = runner_task.await;
-        }
-        if let Some(bridge_task) = bridge_task {
-            bridge_task.abort();
-            let _ = bridge_task.await;
-        }
+        tokio::spawn(async move {
+            let (runner_task, bridge_task) = {
+                let mut t = tasks.lock().await;
+                (t.runner_task.take(), t.bridge_task.take())
+            };
+
+            if let Some(mut runner_task) = runner_task {
+                tokio::select! {
+                    _ = &mut runner_task => {}
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                        if let Some(controller) = controller_weak.upgrade() {
+                            controller.abort_runner(root_runner_id);
+                        }
+                        runner_task.abort();
+                        let _ = runner_task.await;
+                    }
+                }
+            }
+
+            if let Some(mut bridge_task) = bridge_task {
+                tokio::select! {
+                    _ = &mut bridge_task => {}
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                        bridge_task.abort();
+                        let _ = bridge_task.await;
+                    }
+                }
+            }
+        });
 
         Json(json!({ "status": "stopped" }))
     } else {

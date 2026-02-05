@@ -201,9 +201,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
   },
 
   applyExecutionEvent: (event: FlowEvent) => {
-    // 使用 CommandBus 派发事件，而不是直接修改 state
-    // 注意：这里不再需要 set()，因为 CommandBus 会更新 RxState，RxState 会同步回 Zustand
-    // 使用类型守卫判断事件类型
     const runtimeMeta = { meta: { skipHistory: true } } as const;
     if ('nodeId' in event) {
       // 节点相关事件 (FlowNodeMsgEvent | FlowNodeStatusEvent)

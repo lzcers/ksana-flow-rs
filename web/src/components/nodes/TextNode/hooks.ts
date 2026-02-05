@@ -8,7 +8,7 @@ import type { FlowEvent } from '@/model/flowEvent/types';
 
 export function useTextNode(id: string, data: NodeData) {
   const { updateConfig } = useNodeConfig(id, data.config);
-  const [text, setText] = useState<string>(() => data.config?.text ?? '');
+  const [text, setText] = useState<string>("");
   const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? true);
   const flowEventForRunId$ = useStore((s) => s.flowEventForRunId$);
   const currentRunId = useStore((s) => s.currentRunId);
@@ -40,22 +40,21 @@ export function useTextNode(id: string, data: NodeData) {
 
 
   useEffect(() => {
-    if (data.lastMessage !== undefined && data.lastMessage !== text) {
-      const next = typeof data.lastMessage === 'string' ? data.lastMessage : JSON.stringify(data.lastMessage);
-      if (next !== text) {
-        setText(next);
-        updateConfig({ text: next });
-        if (isMarkdownRef.current) {
-          incremarkRef.current.render(next);
-        }
-      }
+    let initText = ''
+    if (data.config?.text !== '') {
+      initText = data.config?.text
+    } else if (data?.lastMessage !== '') {
+      initText = data?.lastMessage
     }
-  }, [data.lastMessageRunId, data.lastMessage, text, updateConfig]);
+    setText(initText);
+    if (isMarkdownRef.current) {
+      incremarkRef.current?.render(initText);
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentRunId) return;
     const stream$ = flowEventForRunId$(currentRunId);
-
     const subscription = stream$.subscribe((event: FlowEvent) => {
       const upstreamNodeIds = connectionsRef.current.map((conn) => conn.source);
       const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
@@ -69,11 +68,8 @@ export function useTextNode(id: string, data: NodeData) {
             isStreamingRef.current = false;
             break;
           case 'NodeStreamStarted':
+            resetText();
             isStreamingRef.current = true;
-            setText('');
-            setIsMarkdown(true);
-            incremarkRef.current.reset();
-            updateConfig({ text: '' });
             break;
           case 'NodeStreamNextMessage':
             if (isStreamingRef.current) {
@@ -131,6 +127,7 @@ export function useTextNode(id: string, data: NodeData) {
 
   return {
     text,
+    setText,
     isMarkdown,
     onChange,
     onSave,

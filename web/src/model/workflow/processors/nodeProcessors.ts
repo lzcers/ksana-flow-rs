@@ -17,6 +17,7 @@ import type {
   UpdateNodeInputCommand,
   UpdateNodeInputsCommand,
   UpdateNodeOutputCommand,
+  ResetAllNodeStatusCommand,
 } from '../commands';
 import { applyNodeChangesXyflow, getNextNodeId } from '../utils';
 
@@ -256,6 +257,20 @@ export const processApplyNodeChanges = (
   });
 };
 
+export const processResetAllNodeStatus = (
+  state: Immutable<WorkflowState>,
+  command: ResetAllNodeStatusCommand
+): Immutable<WorkflowState> => {
+  return produce(state, (draft) => {
+    draft.nodes.forEach((node) => {
+      if (!node.data) node.data = {};
+      node.data.status = 'idle';
+      delete node.data.errorMessage;
+    });
+    syncEdgeHighlighting(draft);
+  });
+};
+
 // ===== 辅助函数 =====
 
 const syncEdgeHighlighting = (draft: Draft<WorkflowState>) => {
@@ -281,3 +296,5 @@ const syncEdgeHighlighting = (draft: Draft<WorkflowState>) => {
     }
   });
 };
+
+

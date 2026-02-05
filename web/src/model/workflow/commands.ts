@@ -105,6 +105,10 @@ export interface UpdateNodeOutputCommand extends BaseCommand {
   };
 }
 
+export interface ResetAllNodeStatusCommand extends BaseCommand {
+  type: 'RESET_ALL_NODE_STATUS';
+}
+
 // ===== Edge Commands =====
 
 export interface AddEdgeCommand extends BaseCommand {
@@ -227,6 +231,7 @@ export type GraphCommand =
   | UpdateNodeInputCommand
   | UpdateNodeInputsCommand
   | UpdateNodeOutputCommand
+  | ResetAllNodeStatusCommand
   // Edge commands
   | AddEdgeCommand
   | RemoveEdgeCommand

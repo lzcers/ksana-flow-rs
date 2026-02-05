@@ -25,6 +25,7 @@ export function registerAllHandlers(workflow: WorkflowModel): void {
   workflow.registerHandler('UPDATE_NODE_OUTPUT', nodeProcessors.processUpdateNodeOutput);
   workflow.registerHandler('SELECT_NODE', nodeProcessors.processSelectNode);
   workflow.registerHandler('APPLY_NODE_CHANGES', nodeProcessors.processApplyNodeChanges);
+  workflow.registerHandler('RESET_ALL_NODE_STATUS', nodeProcessors.processResetAllNodeStatus);
 
   // ===== Edge Handlers =====
   workflow.registerHandler('ADD_EDGE', edgeProcessors.processAddEdge);
@@ -42,5 +43,4 @@ export function registerAllHandlers(workflow: WorkflowModel): void {
   workflow.registerHandler('RESET_EXECUTION_STATE', graphProcessors.processResetExecutionState);
   workflow.registerHandler('HANDLE_NODE_DRAG_STOP', processHandleNodeDragStop);
 
-  console.log('[CommandHandlers] All handlers registered');
 }

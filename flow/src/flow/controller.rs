@@ -159,6 +159,8 @@ impl ControllerRunners for ControllerHandle {
         (runner_id, runner, handle)
     }
 
+    // runner 注册与执行分离
+    // 从而允许更灵活的控制资源与作用域，方便将 controller_for_scope 与 runner_id 绑定
     fn spawn_runner(&self, runner_id: RunnerId, runner: Runner) -> JoinHandle<Result<(), String>> {
         let controller_for_scope = self.clone();
         let controller_for_cleanup = self.clone();
@@ -181,6 +183,8 @@ impl ControllerRunners for ControllerHandle {
         task
     }
 
+    // 强制终止 runner，不等待 runner 事件通道关闭
+    // 主要用于处理异常情况，如 runner 死锁、panic 等
     fn abort_runner(&self, runner_id: RunnerId) -> bool {
         let record = self.runners.remove(&runner_id).map(|(_, v)| v);
         if let Some(record) = record {
@@ -199,12 +203,9 @@ impl ControllerRunners for ControllerHandle {
         self.runners.remove(&runner_id).is_some()
     }
 
+    // 通过 cmd 发送 Stop 命令，停止所有 runner
     fn stop_all(&self) {
         let _ = self.cmd_tx.send(RunnerCommand::Stop);
-        let runner_ids: Vec<RunnerId> = self.runners.iter().map(|r| *r.key()).collect();
-        for runner_id in runner_ids {
-            self.abort_runner(runner_id);
-        }
     }
 
     fn get_runner_handle(&self, runner_id: RunnerId) -> Option<RunnerHandle> {

@@ -158,22 +158,6 @@ impl Runner {
 
             // 2. 启动阶段
             // 从 scheduler 中弹出初始启动节点
-            loop {
-                match self.cmd_rx.try_recv() {
-                    Ok(cmd) => match cmd {
-                        RunnerCommand::SetMaxConcurrency(max) => {
-                            self.executor.set_max_concurrency(max);
-                        }
-                        RunnerCommand::ClearMaxConcurrency => {
-                            self.executor.clear_max_concurrency();
-                        }
-                        _ => {}
-                    },
-                    Err(broadcast::error::TryRecvError::Empty) => break,
-                    Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
-                    Err(broadcast::error::TryRecvError::Closed) => break,
-                }
-            }
             let starts = self.scheduler.pop_initial_starts();
             self.start_by_specs(starts).await?;
 
@@ -257,6 +241,8 @@ impl Runner {
                 }
             }
 
+            // 存在未完成的节点
+            // 如果有未完成节点，且未被停止，则记录警告日志
             let node_ids = self.scheduler.get_node_ids();
             let mut incomplete_nodes = Vec::new();
             for node_id in &node_ids {

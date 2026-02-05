@@ -94,6 +94,16 @@ impl Node for CountNode {
     }
 }
 
+struct SleepNode;
+
+#[async_trait]
+impl Node for SleepNode {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        Ok(Value::Null.into())
+    }
+}
+
 #[tokio::test]
 async fn test_compile_graph_bool_condition_blocks_edge() {
     let counter = Arc::new(AtomicUsize::new(0));
@@ -418,8 +428,38 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
     assert_eq!(out, json!({"X": "va", "Y": "va"}));
 }
 
+#[tokio::test]
+async fn test_stop_emits_flow_stopped() {
+    let mut g = Graph::new();
+    g.add_node("start", || SleepNode);
+
+    let graph = Arc::new(g);
+    let (controller, mut rx) = Controller::new();
+    let (runner_id, mut runner, handle) =
+        controller.create_runner(graph, None, RunnerKind::Root, None);
+    runner.set_start_node("start", Value::Null.into());
+
+    let join = controller.spawn_runner(runner_id, runner);
+
+    handle.stop().await;
+
+    let mut saw_stopped = false;
+    for _ in 0..40 {
+        if let Ok(Some(event)) =
+            tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await
+        {
+            if matches!(event, FlowEvent::FlowStopped) {
+                saw_stopped = true;
+                break;
+            }
+        }
+    }
+
+    assert!(saw_stopped);
+    let _ = join.await;
+}
+
 #[test]
-#[ignore]
 fn bench_compile_graph_200_nodes() {
     let nodes: Vec<BlueprintNode> = (0..200)
         .map(|i| BlueprintNode {

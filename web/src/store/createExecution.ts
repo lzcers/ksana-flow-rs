@@ -18,6 +18,12 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     if (!runId) return;
     workflowStatusSubscription = rxFlowEventModel.workflowStatusForRunId$(runId).subscribe((status) => {
       get().setWorkflowStatus(status);
+      // 工作流完成或者终止时重置所有节点状态
+      if (status === 'idle') {
+        rxWorkflowModel.dispatch({
+          type: 'RESET_ALL_NODE_STATUS',
+        });
+      }
     });
   };
 

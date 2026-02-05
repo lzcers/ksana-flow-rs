@@ -56,10 +56,10 @@ pub fn flow_event_to_ws_value(event: &FlowEvent, run_id: &str) -> Value {
             "nodeId": node_id,
             "msg": payload
         }),
-        FlowEvent::FlowPaused => json!({ "type": "FlowPaused", "runId": run_id }),
-        FlowEvent::FlowResumed => json!({ "type": "FlowResumed", "runId": run_id }),
-        FlowEvent::FlowStopped => json!({ "type": "FlowStopped", "runId": run_id }),
-        FlowEvent::FlowFinished => json!({ "type": "FlowFinished", "runId": run_id }),
+        FlowEvent::FlowPaused => json!({ "type": "FlowPaused"  }),
+        FlowEvent::FlowResumed => json!({ "type": "FlowResumed" }),
+        FlowEvent::FlowStopped => json!({ "type": "FlowStopped" }),
+        FlowEvent::FlowFinished => json!({ "type": "FlowFinished" }),
     }
 }
 
