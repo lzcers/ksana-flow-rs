@@ -6,9 +6,9 @@
  *     └── flowEventForNodeId$ (按 nodeId 过滤的事件流)
  */
 import {
-  Subject,
   Observable,
   type Subscription,
+  ReplaySubject,
 } from 'rxjs';
 
 import {
@@ -23,7 +23,7 @@ import type { WorkflowStatus } from '@/store/types';
 
 
 export class RxFlowEvent {
-  private _source$ = new Subject<WebSocketFlowMessage>();
+  private _source$ = new ReplaySubject<WebSocketFlowMessage>(20);
   private _socketSubscription: Subscription | null = null;
   private _currentSpaceId: string | null = null;
 
