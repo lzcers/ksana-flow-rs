@@ -107,11 +107,9 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
       if (!currentSpaceId) return;
 
       const blueprint = toBlueprint(nodes, edges);
-
       try {
         rxWorkflowModel.dispatch({ type: 'RESET_EXECUTION_STATE', payload: {} });
         setWorkflowStatus('running');
-
         const res = await api.runWorkflow(currentSpaceId, blueprint as never, currentWorkflowId || -1);
         if (res && res.error) {
           throw new Error(res.error);
