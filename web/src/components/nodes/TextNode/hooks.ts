@@ -41,9 +41,9 @@ export function useTextNode(id: string, data: NodeData) {
 
   useEffect(() => {
     let initText = ''
-    if (data.config?.text !== '') {
+    if (data.config?.text) {
       initText = data.config?.text
-    } else if (data?.lastMessage !== '') {
+    } else if (data?.lastMessage) {
       initText = data?.lastMessage
     }
     setText(initText);

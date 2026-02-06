@@ -71,7 +71,6 @@ export class RxFlowEvent {
       filter(msg => msg.runId === runId),
       map(msg => msg.event),
       filter((event): event is FlowControlEvent =>
-        'runId' in event &&
         ['FlowPaused', 'FlowResumed', 'FlowStopped', 'FlowFinished'].includes(event.type)
       ),
       map(event => {
