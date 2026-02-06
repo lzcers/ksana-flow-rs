@@ -87,6 +87,14 @@ export class RxFlowEvent {
     );
   }
 
+  flowMessageForRunId$(
+    runId: string
+  ): Observable<WebSocketFlowMessage> {
+    return this._source$.pipe(
+      filter(msg => msg.runId === runId)
+    );
+  }
+
   /**
    * 派生流 2：按 runId 过滤的 FlowEvent 流
    * 从 WebSocketFlowMessage 中派生，只关注指定 runId 的事件
@@ -96,7 +104,8 @@ export class RxFlowEvent {
     runId: string
   ): Observable<FlowEvent> {
     return this._source$.pipe(
-      filter(msg => msg.runId === runId || !msg.runId),
+      filter(msg => msg.runId === runId),
+      filter(msg => msg.runnerKind === 'Root' || !msg.runnerKind),
       map(msg => msg.event)
     );
   }
@@ -113,6 +122,24 @@ export class RxFlowEvent {
         filter((event): event is FlowEvent =>
           'nodeId' in event && event.nodeId === nodeId
         )
+      );
+  }
+
+  flowMessageForRunnerId$(
+    runnerId: number
+  ) {
+    return (flowMessageObservable: Observable<WebSocketFlowMessage>) =>
+      flowMessageObservable.pipe(
+        filter((msg) => msg.runnerId === runnerId)
+      );
+  }
+
+  flowMessageForSubgraphNodeId$(
+    parentNodeId: string
+  ) {
+    return (flowMessageObservable: Observable<WebSocketFlowMessage>) =>
+      flowMessageObservable.pipe(
+        filter((msg) => msg.parentNodeId === parentNodeId)
       );
   }
 

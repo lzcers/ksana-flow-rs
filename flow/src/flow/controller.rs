@@ -1,7 +1,8 @@
 use crate::flow::{
     graph::Graph,
-    runner::{ExecutionContext, FlowEvent, Runner, RunnerCommand, RunnerHandle},
+    runner::{ExecutionContext, FlowEventEnvelope, Runner, RunnerCommand, RunnerHandle, SubgraphFrame},
 };
+use crate::NodeId;
 use dashmap::DashMap;
 use std::{
     future::Future,
@@ -28,6 +29,7 @@ pub enum RunnerKind {
 pub struct RunnerRecord {
     pub id: RunnerId,
     pub parent: Option<RunnerId>,
+    pub parent_node_id: Option<NodeId>,
     pub kind: RunnerKind,
     pub handle: RunnerHandle,
     abort: Mutex<Option<AbortHandle>>,
@@ -36,14 +38,14 @@ pub struct RunnerRecord {
 // Runner 的控制面，用于发送命令和接收事件
 pub struct Controller {
     cmd_tx: broadcast::Sender<RunnerCommand>,
-    event_tx: mpsc::Sender<FlowEvent>,
+    event_tx: mpsc::Sender<FlowEventEnvelope>,
     next_runner_id: AtomicU64,
     runners: DashMap<RunnerId, Arc<RunnerRecord>>,
     max_concurrency: AtomicUsize,
 }
 
 impl Controller {
-    pub fn new() -> (ControllerHandle, mpsc::Receiver<FlowEvent>) {
+    pub fn new() -> (ControllerHandle, mpsc::Receiver<FlowEventEnvelope>) {
         let (event_tx, event_rx) = mpsc::channel(100);
         let (cmd_tx, _) = broadcast::channel(32);
         (
@@ -61,7 +63,7 @@ impl Controller {
     pub fn cmd_tx(&self) -> broadcast::Sender<RunnerCommand> {
         self.cmd_tx.clone()
     }
-    pub fn get_flow_event_sender(&self) -> mpsc::Sender<FlowEvent> {
+    pub fn get_flow_event_sender(&self) -> mpsc::Sender<FlowEventEnvelope> {
         self.event_tx.clone()
     }
     pub fn set_max_concurrency(&self, max: usize) {
@@ -82,11 +84,50 @@ impl Controller {
         let v = self.max_concurrency.load(Ordering::Relaxed);
         if v == 0 { None } else { Some(v) }
     }
+
+    pub fn describe_runner(
+        &self,
+        runner_id: RunnerId,
+    ) -> (RunnerKind, Option<RunnerId>, Option<NodeId>, Vec<SubgraphFrame>) {
+        let mut kind = RunnerKind::Root;
+        let mut parent_runner_id = None;
+        let mut parent_node_id = None;
+        let mut frames = Vec::new();
+
+        let mut current = Some(runner_id);
+        while let Some(id) = current {
+            let record = match self.runners.get(&id) {
+                Some(r) => r,
+                None => break,
+            };
+
+            if id == runner_id {
+                kind = record.kind;
+                parent_runner_id = record.parent;
+                parent_node_id = record.parent_node_id.clone();
+            }
+
+            if record.kind == RunnerKind::Subgraph {
+                if let Some(node_id) = record.parent_node_id.clone() {
+                    frames.push(SubgraphFrame {
+                        runner_id: record.id,
+                        parent_node_id: node_id,
+                    });
+                }
+            }
+
+            current = record.parent;
+        }
+
+        frames.reverse();
+        (kind, parent_runner_id, parent_node_id, frames)
+    }
 }
 
 tokio::task_local! {
     static CONTROLLER: ControllerHandle;
     static RUNNER_ID: RunnerId;
+    static CURRENT_NODE_ID: NodeId;
 }
 
 pub fn scope_controller<F, R>(controller: ControllerHandle, fut: F) -> impl Future<Output = R>
@@ -107,12 +148,23 @@ where
     CONTROLLER.scope(controller, RUNNER_ID.scope(runner_id, fut))
 }
 
+pub fn scope_current_node<F, R>(node_id: NodeId, fut: F) -> impl Future<Output = R>
+where
+    F: Future<Output = R>,
+{
+    CURRENT_NODE_ID.scope(node_id, fut)
+}
+
 pub fn try_controller() -> Option<ControllerHandle> {
     CONTROLLER.try_with(|c| c.clone()).ok()
 }
 
 pub fn try_runner_id() -> Option<RunnerId> {
     RUNNER_ID.try_with(|id| *id).ok()
+}
+
+pub fn try_current_node_id() -> Option<NodeId> {
+    CURRENT_NODE_ID.try_with(|id| id.clone()).ok()
 }
 
 pub trait ControllerRunners {
@@ -122,6 +174,7 @@ pub trait ControllerRunners {
         initial: Option<ExecutionContext>,
         kind: RunnerKind,
         parent: Option<RunnerId>,
+        parent_node_id: Option<NodeId>,
     ) -> (RunnerId, Runner, RunnerHandle);
 
     fn spawn_runner(&self, runner_id: RunnerId, runner: Runner) -> JoinHandle<Result<(), String>>;
@@ -142,6 +195,7 @@ impl ControllerRunners for ControllerHandle {
         initial: Option<ExecutionContext>,
         kind: RunnerKind,
         parent: Option<RunnerId>,
+        parent_node_id: Option<NodeId>,
     ) -> (RunnerId, Runner, RunnerHandle) {
         let runner_id = self.next_runner_id.fetch_add(1, Ordering::Relaxed);
         let (mut runner, handle) = Runner::new(graph, initial, self.clone(), runner_id);
@@ -151,6 +205,7 @@ impl ControllerRunners for ControllerHandle {
         let record = Arc::new(RunnerRecord {
             id: runner_id,
             parent,
+            parent_node_id,
             kind,
             handle: handle.clone(),
             abort: Mutex::new(None),

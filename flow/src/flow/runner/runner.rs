@@ -1,5 +1,5 @@
 use super::{
-    event::{FlowEvent, TaskEvent},
+    event::{FlowEvent, FlowEventEnvelope, TaskEvent},
     exec_context::{ExecutionContext, NodeState},
     executor::Executor,
     logger,
@@ -8,7 +8,7 @@ use super::{
 use crate::{
     Context, ControllerHandle, RunnerId,
     flow::graph::{Graph, Input, NodeId},
-    scope_runner,
+    scope_current_node, scope_runner,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -72,7 +72,7 @@ pub struct Runner {
     // 外部命令接收通道
     controller: ControllerHandle,
     cmd_rx: broadcast::Receiver<RunnerCommand>,
-    flow_event_tx: mpsc::Sender<FlowEvent>,
+    flow_event_tx: mpsc::Sender<FlowEventEnvelope>,
 }
 
 impl Runner {
@@ -321,10 +321,15 @@ impl Runner {
                 let runtime_ctx = self.executor.get_runtime_context();
                 let controller = self.controller.clone();
                 let node_id_for_sub = node_id.clone();
+                let node_id_for_scope = node_id.clone();
                 let runner_id = self.runner_id;
-                let sub = scope_runner(controller, runner_id, async move {
-                    subscribe_fn(guard, task_sender, node_id_for_sub, runtime_ctx)
-                })
+                let sub = scope_runner(
+                    controller,
+                    runner_id,
+                    scope_current_node(node_id_for_scope, async move {
+                        subscribe_fn(guard, task_sender, node_id_for_sub, runtime_ctx)
+                    }),
+                )
                 .await;
                 self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
                 self.send_flow_event(FlowEvent::NodeStreamStarted(node_id))
@@ -446,6 +451,16 @@ impl Runner {
     }
 
     async fn send_flow_event(&self, event: FlowEvent) {
-        let _ = self.flow_event_tx.send(event).await;
+        let (runner_kind, parent_runner_id, parent_node_id, subgraph_path) =
+            self.controller.describe_runner(self.runner_id);
+        let envelope = FlowEventEnvelope {
+            runner_id: self.runner_id,
+            runner_kind,
+            parent_runner_id,
+            parent_node_id,
+            subgraph_path,
+            event,
+        };
+        let _ = self.flow_event_tx.send(envelope).await;
     }
 }

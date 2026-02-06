@@ -1,7 +1,7 @@
 use anyhow::Result;
-use flow::FlowEvent;
+use flow::{FlowEvent, FlowEventEnvelope, RunnerKind};
 use rusqlite::{Connection, params};
-use serde_json::Value;
+use serde_json::{Map, Value, json};
 
 pub struct Db {
     conn: Connection,
@@ -34,15 +34,7 @@ impl Db {
             [],
         )?;
 
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS execution_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id TEXT NOT NULL,
-                event TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )",
-            [],
-        )?;
+        Self::migrate_execution_events_table(&conn)?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS uploaded_files (
@@ -78,6 +70,57 @@ impl Db {
         Self::migrate_uploaded_files_blob_column(&conn)?;
 
         Ok(Self { conn })
+    }
+
+    fn migrate_execution_events_table(conn: &Connection) -> Result<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(execution_events)")?;
+        let rows = stmt.query_map([], |row| {
+            let name: String = row.get(1)?;
+            Ok(name)
+        })?;
+
+        let mut has_runner_id = false;
+        let mut has_event_type = false;
+        for row in rows {
+            match row?.as_str() {
+                "runner_id" => has_runner_id = true,
+                "event_type" => has_event_type = true,
+                _ => {}
+            }
+        }
+
+        if !(has_runner_id && has_event_type) {
+            conn.execute("DROP TABLE IF EXISTS execution_events", [])?;
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS execution_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    runner_id INTEGER NOT NULL,
+                    runner_kind TEXT NOT NULL,
+                    parent_runner_id INTEGER,
+                    parent_node_id TEXT,
+                    event_type TEXT NOT NULL,
+                    node_id TEXT,
+                    payload_json TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_execution_events_run_id_id ON execution_events(run_id, id)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_execution_events_run_id_runner_id ON execution_events(run_id, runner_id)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_execution_events_run_id_parent_node_id ON execution_events(run_id, parent_node_id)",
+                [],
+            )?;
+        }
+
+        Ok(())
     }
 
     fn migrate_workspace_column(conn: &Connection, table: &str) -> Result<()> {
@@ -292,15 +335,67 @@ impl Db {
         Ok(())
     }
 
-    pub fn add_execution_event(&self, run_id: &str, event: &FlowEvent) -> Result<()> {
-        let event_json = serde_json::to_string(&crate::utils::flow_event_to_value_lossy(event))?;
+    pub fn add_execution_event(&self, run_id: &str, envelope: &FlowEventEnvelope) -> Result<()> {
+        if matches!(envelope.event, FlowEvent::NodeStreamNextMessage(_, _)) {
+            return Ok(());
+        }
+
+        let (event_type, node_id, payload_json) = match &envelope.event {
+            FlowEvent::NodeStarted(node_id) => ("NodeStarted", Some(node_id.clone()), None),
+            FlowEvent::NodeCompleted(node_id) => ("NodeCompleted", Some(node_id.clone()), None),
+            FlowEvent::NodeStreamStarted(node_id) => ("NodeStreamStarted", Some(node_id.clone()), None),
+            FlowEvent::NodeError(node_id, msg) => (
+                "NodeError",
+                Some(node_id.clone()),
+                Some(serde_json::to_string(&Value::String(msg.clone()))?),
+            ),
+            FlowEvent::NodeInMessage(node_id, inputs) => (
+                "NodeInMessage",
+                Some(node_id.clone()),
+                Some(serde_json::to_string(&crate::utils::node_inputs_to_value_lossy(inputs))?),
+            ),
+            FlowEvent::NodeOutMessage(node_id, payload) => (
+                "NodeOutMessage",
+                Some(node_id.clone()),
+                Some(serde_json::to_string(payload)?),
+            ),
+            FlowEvent::NodeStreamNextMessage(_, _) => unreachable!(),
+            FlowEvent::FlowPaused => ("FlowPaused", None, None),
+            FlowEvent::FlowResumed => ("FlowResumed", None, None),
+            FlowEvent::FlowStopped => ("FlowStopped", None, None),
+            FlowEvent::FlowFinished => ("FlowFinished", None, None),
+        };
+
+        let runner_kind = match envelope.runner_kind {
+            RunnerKind::Root => "Root",
+            RunnerKind::Subgraph => "Subgraph",
+        };
+
         self.conn.execute(
-            "INSERT INTO execution_events (run_id, event) VALUES (?1, ?2)",
-            params![run_id, event_json],
+            "INSERT INTO execution_events (
+                run_id,
+                runner_id,
+                runner_kind,
+                parent_runner_id,
+                parent_node_id,
+                event_type,
+                node_id,
+                payload_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                run_id,
+                envelope.runner_id,
+                runner_kind,
+                envelope.parent_runner_id,
+                envelope.parent_node_id,
+                event_type,
+                node_id,
+                payload_json
+            ],
         )?;
 
         // Update status based on event
-        let status = match event {
+        let status = match &envelope.event {
             FlowEvent::FlowFinished => Some("completed"),
             FlowEvent::FlowStopped => Some("stopped"),
             FlowEvent::FlowPaused => Some("paused"),
@@ -334,15 +429,49 @@ impl Db {
             let status: String = row.get(1)?;
 
             // Get events
-            let mut event_stmt = self
-                .conn
-                .prepare("SELECT event FROM execution_events WHERE run_id = ?1 ORDER BY id ASC")?;
-            let event_rows =
-                event_stmt.query_map(params![run_id], |row| {
-                    let event_str: String = row.get(0)?;
-                    Ok(serde_json::from_str::<Value>(&event_str)
-                        .unwrap_or(Value::String("FlowFinished".to_string())))
-                })?;
+            let mut event_stmt = self.conn.prepare(
+                "SELECT
+                    runner_id,
+                    runner_kind,
+                    parent_runner_id,
+                    parent_node_id,
+                    event_type,
+                    node_id,
+                    payload_json,
+                    created_at
+                 FROM execution_events
+                 WHERE run_id = ?1
+                 ORDER BY id ASC",
+            )?;
+            let event_rows = event_stmt.query_map(params![run_id], |row| {
+                let runner_id: i64 = row.get(0)?;
+                let runner_kind: String = row.get(1)?;
+                let parent_runner_id: Option<i64> = row.get(2)?;
+                let parent_node_id: Option<String> = row.get(3)?;
+                let event_type: String = row.get(4)?;
+                let node_id: Option<String> = row.get(5)?;
+                let payload_json: Option<String> = row.get(6)?;
+                let created_at: String = row.get(7)?;
+
+                let mut event_obj = Map::new();
+                event_obj.insert("type".to_string(), Value::String(event_type));
+                if let Some(node_id) = node_id {
+                    event_obj.insert("nodeId".to_string(), Value::String(node_id));
+                }
+                if let Some(payload_json) = payload_json {
+                    let msg = serde_json::from_str::<Value>(&payload_json).unwrap_or(Value::Null);
+                    event_obj.insert("msg".to_string(), msg);
+                }
+
+                Ok(json!({
+                    "runnerId": runner_id as u64,
+                    "runnerKind": runner_kind,
+                    "parentRunnerId": parent_runner_id.map(|v| v as u64),
+                    "parentNodeId": parent_node_id,
+                    "createdAt": created_at,
+                    "event": Value::Object(event_obj),
+                }))
+            })?;
 
             let mut events = Vec::new();
             for event in event_rows {

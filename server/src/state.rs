@@ -323,6 +323,7 @@ mod tests {
                 Some(ExecutionContext::new()),
                 RunnerKind::Root,
                 None,
+                None,
             );
             for id in start_nodes {
                 runner.set_start_node(&id, Value::Null.into());

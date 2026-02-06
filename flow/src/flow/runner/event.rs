@@ -1,6 +1,7 @@
-use crate::{Input, NodeId, StreamSubscriptionFn};
+use crate::{Input, NodeId, RunnerId, RunnerKind, StreamSubscriptionFn};
 use serde_json::Value;
 
+#[derive(Debug, Clone)]
 pub enum FlowEvent {
     NodeStarted(String),
     NodeCompleted(String),
@@ -13,6 +14,22 @@ pub enum FlowEvent {
     FlowResumed,
     FlowStopped,
     FlowFinished,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubgraphFrame {
+    pub runner_id: RunnerId,
+    pub parent_node_id: NodeId,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlowEventEnvelope {
+    pub runner_id: RunnerId,
+    pub runner_kind: RunnerKind,
+    pub parent_runner_id: Option<RunnerId>,
+    pub parent_node_id: Option<NodeId>,
+    pub subgraph_path: Vec<SubgraphFrame>,
+    pub event: FlowEvent,
 }
 
 pub enum TaskEvent {

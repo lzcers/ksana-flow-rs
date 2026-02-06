@@ -31,7 +31,7 @@ pub fn flow_event_to_value_lossy(event: &FlowEvent) -> Value {
     }
 }
 
-pub fn flow_event_to_ws_value(event: &FlowEvent, run_id: &str) -> Value {
+pub fn flow_event_to_ws_value(event: &FlowEvent, _run_id: &str) -> Value {
     match event {
         FlowEvent::NodeStarted(node_id) => json!({ "type": "NodeStarted", "nodeId": node_id }),
         FlowEvent::NodeCompleted(node_id) => json!({ "type": "NodeCompleted", "nodeId": node_id }),
@@ -86,6 +86,5 @@ mod tests {
 
         let v2 = flow_event_to_ws_value(&FlowEvent::FlowPaused, run_id);
         assert_eq!(v2["type"], Value::String("FlowPaused".to_string()));
-        assert_eq!(v2["runId"], Value::String("r1".to_string()));
     }
 }

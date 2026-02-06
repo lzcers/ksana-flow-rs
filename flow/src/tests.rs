@@ -80,7 +80,7 @@ async fn test_complex_graph_connections() {
 
     let (controller, _rx) = Controller::new();
     let (_id, mut runner, _handle) =
-        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None, None);
     runner.set_start_node("input", json!("Test").into());
     runner
         .run()
@@ -113,7 +113,7 @@ async fn test_build_flow_macro_with_condition() {
 
     let (controller, _rx) = Controller::new();
     let (_id, mut runner, _handle) =
-        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None, None);
     runner.set_start_node("node1", json!("Start").into());
     runner.run().await.expect("Flow should succeed");
     runner.run().await.expect("Flow should succeed");
@@ -181,7 +181,7 @@ async fn test_conditional_branching() {
 
     let (controller, _rx) = Controller::new();
     let (_id, mut runner, _handle) =
-        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None);
+        controller.create_runner(Arc::new(graph), None, RunnerKind::Root, None, None);
     runner.set_start_node("input", json!(42).into());
     runner
         .run()

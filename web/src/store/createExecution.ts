@@ -5,7 +5,7 @@ import { toBlueprint } from '@/model/workflow/adapters';
 import { rxWorkflowModel } from '.';
 import { createFlowEventModel } from '@/model/flowEvent';
 import { EMPTY, type Observable, type Subscription } from 'rxjs';
-import type { FlowEvent } from '@/model/flowEvent/types';
+import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
 
 export const createExecution: StateCreator<StoreState, [], [], Execution> = (set, get) => {
   const rxFlowEventModel = createFlowEventModel();
@@ -31,8 +31,8 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
     flowEventSubscription?.unsubscribe();
     flowEventSubscription = null;
     if (!runId) return;
-    flowEventSubscription = rxFlowEventModel.flowEventForRunId$(runId).subscribe((event) => {
-      get().applyExecutionEvent(event);
+    flowEventSubscription = rxFlowEventModel.flowMessageForRunId$(runId).subscribe((message) => {
+      get().applyExecutionMessage(message);
     });
   };
 
@@ -45,6 +45,16 @@ export const createExecution: StateCreator<StoreState, [], [], Execution> = (set
 
     flowEventForRunId$: (runId: string) => {
       return rxFlowEventModel.flowEventForRunId$(runId);
+    },
+    flowMessageForRunId$: (runId: string) => {
+      return rxFlowEventModel.flowMessageForRunId$(runId);
+    },
+    flowMessageForSubgraphNodeId$: (parentNodeId: string) => {
+      const runId = get().currentRunId;
+      if (!runId) return EMPTY as Observable<WebSocketFlowMessage>;
+      return rxFlowEventModel.flowMessageForSubgraphNodeId$(parentNodeId)(
+        rxFlowEventModel.flowMessageForRunId$(runId)
+      );
     },
     flowEventForNodeId$: (nodeId: string) => {
       const runId = get().currentRunId;

@@ -12,8 +12,8 @@ use axum::{
     response::IntoResponse,
 };
 use flow::{
-    Controller, ControllerRunners, ExecutionContext, FlowEvent, INPUT_EXTERNAL_START, Input,
-    NodeState, RunnerKind,
+    Controller, ControllerRunners, ExecutionContext, FlowEvent, FlowEventEnvelope,
+    INPUT_EXTERNAL_START, Input, NodeState, RunnerKind,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -206,7 +206,7 @@ async fn start_execution(
 
     // Prepare Runner
     let (root_runner_id, mut runner, handle) =
-        controller.create_runner(graph, init_execution_ctx, RunnerKind::Root, None);
+        controller.create_runner(graph, init_execution_ctx, RunnerKind::Root, None, None);
 
     // Setup bridge
     let tx = state.tx.clone();
@@ -220,18 +220,39 @@ async fn start_execution(
     }));
 
     let bridge_task = tokio::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
+        while let Some(envelope) = event_rx.recv().await {
             // Save event to DB
             {
                 if let Ok(db) = db_clone.lock() {
-                    let _ = db.add_execution_event(&run_id_clone, &event);
+                    let _ = db.add_execution_event(&run_id_clone, &envelope);
                 }
             }
             // Broadcast
+            let runner_kind = match envelope.runner_kind {
+                RunnerKind::Root => "Root",
+                RunnerKind::Subgraph => "Subgraph",
+            };
+            let subgraph_path: Vec<Value> = envelope
+                .subgraph_path
+                .iter()
+                .map(|f| {
+                    json!({
+                        "runnerId": f.runner_id,
+                        "parentNodeId": f.parent_node_id
+                    })
+                })
+                .collect();
             let _ = tx.send((
                 workspace_id_clone.clone(),
                 run_id_clone.clone(),
-                utils::flow_event_to_ws_value(&event, &run_id_clone),
+                json!({
+                    "runnerId": envelope.runner_id,
+                    "runnerKind": runner_kind,
+                    "parentRunnerId": envelope.parent_runner_id,
+                    "parentNodeId": envelope.parent_node_id,
+                    "subgraphPath": subgraph_path,
+                    "event": utils::flow_event_to_ws_value(&envelope.event, &run_id_clone),
+                }),
             ));
         }
     });
@@ -279,10 +300,29 @@ async fn start_execution(
 
         if let Err(e) = run_result {
             tracing::error!("Flow execution error: {}", e);
-            let event = crate::utils::flow_event_to_ws_value(
-                &FlowEvent::NodeError("runner".to_string(), e),
-                &run_id_for_event,
-            );
+            let envelope = FlowEventEnvelope {
+                runner_id: root_runner_id_for_runner_task,
+                runner_kind: RunnerKind::Root,
+                parent_runner_id: None,
+                parent_node_id: None,
+                subgraph_path: vec![],
+                event: FlowEvent::NodeError("runner".to_string(), e),
+            };
+
+            {
+                if let Ok(db) = state_clone.db.lock() {
+                    let _ = db.add_execution_event(&run_id_for_event, &envelope);
+                }
+            }
+
+            let event = json!({
+                "runnerId": envelope.runner_id,
+                "runnerKind": "Root",
+                "parentRunnerId": null,
+                "parentNodeId": null,
+                "subgraphPath": [],
+                "event": crate::utils::flow_event_to_ws_value(&envelope.event, &run_id_for_event),
+            });
             let _ = state_clone.tx.send((
                 workspace_id_for_event.clone(),
                 run_id_for_event.clone(),
@@ -566,10 +606,15 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, workspace_id: Str
     let mut rx = state.tx.subscribe();
     while let Ok((msg_workspace_id, run_id, event)) = rx.recv().await {
         if msg_workspace_id == workspace_id {
-            let wrapper = json!({
-                "runId": run_id,
-                "event": event
-            });
+            let wrapper = if let Value::Object(mut map) = event {
+                map.insert("runId".to_string(), Value::String(run_id));
+                Value::Object(map)
+            } else {
+                json!({
+                    "runId": run_id,
+                    "event": event
+                })
+            };
             if let Ok(json) = serde_json::to_string(&wrapper) {
                 if socket.send(Message::Text(json.into())).await.is_err() {
                     break;

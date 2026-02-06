@@ -154,7 +154,8 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
     let (controller, _rx) = Controller::new();
-    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(graph, None, RunnerKind::Root, None, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -206,7 +207,8 @@ async fn test_compile_graph_filters_dangling_edges() {
     assert!(graph.edges.get("Missing").is_none());
 
     let (controller, _rx) = Controller::new();
-    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(graph, None, RunnerKind::Root, None, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -248,7 +250,7 @@ async fn test_subgraph_events_forwarded_via_controller() {
     let mut saw_mid_started = false;
     let mut saw_flow_finished = false;
     while let Some(ev) = rx.recv().await {
-        match ev {
+        match ev.event {
             FlowEvent::NodeStarted(id) if id == "mid" => {
                 saw_mid_started = true;
             }
@@ -339,7 +341,8 @@ async fn test_subgraph_inbound_proxy_routes_by_source_id() {
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
     let (controller, _rx) = Controller::new();
-    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(graph, None, RunnerKind::Root, None, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -418,7 +421,8 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
         compile_graph(&nodes, &edges, "SubgraphNode", create_leaf_factory).unwrap();
 
     let (controller, _rx) = Controller::new();
-    let (_id, mut runner, _handle) = controller.create_runner(graph, None, RunnerKind::Root, None);
+    let (_id, mut runner, _handle) =
+        controller.create_runner(graph, None, RunnerKind::Root, None, None);
     for id in start_nodes {
         runner.set_start_node(&id, Value::Null.into());
     }
@@ -436,7 +440,7 @@ async fn test_stop_emits_flow_stopped() {
     let graph = Arc::new(g);
     let (controller, mut rx) = Controller::new();
     let (runner_id, mut runner, handle) =
-        controller.create_runner(graph, None, RunnerKind::Root, None);
+        controller.create_runner(graph, None, RunnerKind::Root, None, None);
     runner.set_start_node("start", Value::Null.into());
 
     let join = controller.spawn_runner(runner_id, runner);
@@ -448,7 +452,7 @@ async fn test_stop_emits_flow_stopped() {
         if let Ok(Some(event)) =
             tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv()).await
         {
-            if matches!(event, FlowEvent::FlowStopped) {
+            if matches!(event.event, FlowEvent::FlowStopped) {
                 saw_stopped = true;
                 break;
             }

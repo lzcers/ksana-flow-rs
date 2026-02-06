@@ -5,7 +5,7 @@ use crate::{
         AnyNode,
         graph::{Input, Output},
     },
-    scope_runner,
+    scope_current_node, scope_runner,
 };
 use futures::FutureExt;
 use std::{
@@ -105,8 +105,9 @@ impl Executor {
         let semaphore = self.semaphore.clone();
         let task_sender = self.get_task_sender();
         let cancel = self.cancel.clone();
+        let node_id_for_scope = node_id.clone();
 
-        let fut = scope_runner(controller, runner_id, async move {
+        let fut = scope_runner(controller, runner_id, scope_current_node(node_id_for_scope, async move {
             let _keep_alive = _guard; // Force capture
             let node_id_for_cancel = node_id.clone();
             tokio::select! {
@@ -186,7 +187,7 @@ impl Executor {
                     }
                 } => {}
             }
-        });
+        }));
 
         if let Ok(mut tasks) = self.tasks.lock() {
             tasks.spawn(fut);

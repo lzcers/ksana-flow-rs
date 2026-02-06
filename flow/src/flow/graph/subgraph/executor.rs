@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     Context, ControllerHandle, ControllerRunners, RunnerId, RunnerKind,
-    flow::runner::ExecutionContext, scope_runner, try_controller, try_runner_id,
+    flow::runner::ExecutionContext, scope_runner, try_controller, try_current_node_id, try_runner_id,
 };
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -102,12 +102,14 @@ impl SubgraphExecutor {
         parent_runner_id: Option<RunnerId>,
     ) -> Result<Value, SubgraphError> {
         let subgraph_ctx = self.create_context(input.clone(), parent_ctx);
+        let parent_node_id = try_current_node_id();
 
         let (runner_id, mut runner, _handle) = controller.create_runner(
             self.subgraph.clone(),
             Some(ExecutionContext::new()),
             RunnerKind::Subgraph,
             parent_runner_id,
+            parent_node_id,
         );
 
         runner.set_runtime_context(subgraph_ctx);

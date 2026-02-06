@@ -2,7 +2,7 @@ import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import type { Observable } from 'rxjs';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
-import type { FlowEvent } from '@/model/flowEvent/types';
+import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
 
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
@@ -28,6 +28,7 @@ export interface Workflow {
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
   setNodeTypes: (types: NodeMetadata[]) => void;
+  applyExecutionMessage: (message: WebSocketFlowMessage) => void;
   applyExecutionEvent: (event: FlowEvent) => void;
 }
 
@@ -67,6 +68,8 @@ export interface Execution {
   workflowStatuses: Record<number, WorkflowStatus>;
   runIdToWorkflowId: Record<string, number>;
   currentRunId: string | null;
+  flowMessageForRunId$: (runId: string) => Observable<WebSocketFlowMessage>;
+  flowMessageForSubgraphNodeId$: (parentNodeId: string) => Observable<WebSocketFlowMessage>;
   flowEventForRunId$: (runId: string) => Observable<FlowEvent>;
   flowEventForNodeId$: (nodeId: string) => Observable<FlowEvent>;
   runWorkflow: () => Promise<void>;

@@ -19,8 +19,21 @@ export interface FlowControlEvent {
 
 export type FlowEvent = FlowNodeMsgEvent | FlowNodeStatusEvent | FlowControlEvent;
 
+export type RunnerKind = 'Root' | 'Subgraph';
+
+export interface SubgraphFrame {
+  runnerId: number;
+  parentNodeId: string;
+}
+
 export interface WebSocketFlowMessage {
   runId?: string;
+  runnerId?: number;
+  runnerKind?: RunnerKind;
+  parentRunnerId?: number;
+  parentNodeId?: string;
+  subgraphPath?: SubgraphFrame[];
+  createdAt?: string;
   event: FlowEvent;
 }
 
