@@ -66,19 +66,19 @@ export function createWorkflowModel(
       }),
     deleteNode: (id) => dispatch({ type: 'REMOVE_NODE', payload: { id } }),
     updateNodeData: (id, data) =>
-      dispatch({ type: 'UPDATE_NODE_DATA', payload: { id, data } }),
+      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { data } } }),
     updateNodePosition: (id, position) =>
-      dispatch({ type: 'UPDATE_NODE_POSITION', payload: { id, position } }),
+      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { position } } }),
     updateNodeDimensions: (id, width, height) =>
       dispatch({
-        type: 'UPDATE_NODE_DIMENSIONS',
-        payload: { id, width, height },
+        type: 'UPDATE_NODE',
+        payload: { id, updates: { dimensions: { width, height } } },
       }),
     selectNode: (id) => dispatch({ type: 'SELECT_NODE', payload: { id } }),
-    onConnect: (connection) =>
-      dispatch({ type: 'ON_CONNECT', payload: connection }),
-    addEdge: (edge) => dispatch({ type: 'ADD_EDGE', payload: { edge } }),
-    removeEdge: (id) => dispatch({ type: 'REMOVE_EDGE', payload: { id } }),
+    onConnect: (connection: Connection) =>
+      dispatch({ type: 'UPDATE_EDGES', payload: { connect: connection } }),
+    addEdge: (edge) => dispatch({ type: 'UPDATE_EDGES', payload: { add: [edge] } }),
+    removeEdge: (id) => dispatch({ type: 'UPDATE_EDGES', payload: { remove: [id] } }),
     setNodes: (nodes) => dispatch({ type: 'SET_NODES', payload: { nodes } }),
     setEdges: (edges) => dispatch({ type: 'SET_EDGES', payload: { edges } }),
     pasteNodes: (nodes, edges) =>

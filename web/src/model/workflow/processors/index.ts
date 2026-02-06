@@ -1,5 +1,5 @@
 /**
- * Processors 入口
+ * Processors 入口 - 简化版
  * 导出所有处理器函数
  */
 
@@ -7,25 +7,12 @@
 export {
   processAddNode,
   processRemoveNode,
-  processUpdateNodeData,
-  processUpdateNodePosition,
-  processUpdateNodeDimensions,
-  processSelectNode,
-  processApplyNodeChanges,
-  processUpdateNodeStatus,
-  processUpdateNodeInput,
-  processUpdateNodeInputs,
-  processUpdateNodeOutput,
+  processUpdateNode,
 } from './nodeProcessors';
 
 // Edge 处理器
 export {
-  processAddEdge,
-  processRemoveEdge,
-  processOnConnect,
-  processUpdateEdge,
-  processSetEdges,
-  processApplyEdgeChanges,
+  processUpdateEdges,
 } from './edgeProcessors';
 
 // Graph 处理器

@@ -1,66 +1,49 @@
-/**
- * Edge 处理器函数
- * 纯函数，接收 state 和 command，返回新的 state
- */
-
 import { produce, type Immutable } from 'immer';
 import type { WorkflowState, EdgeChange } from '../types';
 import type {
-  AddEdgeCommand,
-  RemoveEdgeCommand,
-  OnConnectCommand,
-  UpdateEdgeCommand,
+  UpdateEdgesCommand,
   SetEdgesCommand,
-  ApplyEdgeChangesCommand,
 } from '../commands';
 import { addEdge as addEdgeXyflow } from '@xyflow/react';
 import { applyEdgeChangesXyflow } from '../utils';
 
-// ===== 处理器函数 =====
 
-export const processAddEdge = (
+export const processUpdateEdges = (
   state: Immutable<WorkflowState>,
-  command: AddEdgeCommand
+  command: UpdateEdgesCommand
 ): Immutable<WorkflowState> => {
-  const { edge } = command.payload;
+  const { add, remove, update, changes, connect } = command.payload;
 
   return produce(state, (draft) => {
-    draft.edges.push(edge);
-  });
-};
+    // 处理连接
+    if (connect) {
+      draft.edges = addEdgeXyflow(connect, draft.edges);
+    }
 
-export const processRemoveEdge = (
-  state: Immutable<WorkflowState>,
-  command: RemoveEdgeCommand
-): Immutable<WorkflowState> => {
-  const { id } = command.payload;
+    // 处理批量添加
+    if (add && add.length > 0) {
+      draft.edges.push(...add);
+    }
 
-  return produce(state, (draft) => {
-    draft.edges = draft.edges.filter((e) => e.id !== id);
-  });
-};
+    // 处理删除
+    if (remove && remove.length > 0) {
+      const removeSet = new Set(remove);
+      draft.edges = draft.edges.filter((e) => !removeSet.has(e.id));
+    }
 
-export const processOnConnect = (
-  state: Immutable<WorkflowState>,
-  command: OnConnectCommand
-): Immutable<WorkflowState> => {
-  const connection = command.payload;
+    // 处理更新
+    if (update && update.length > 0) {
+      update.forEach(({ id, updates }) => {
+        const edge = draft.edges.find((e) => e.id === id);
+        if (edge) {
+          Object.assign(edge, updates);
+        }
+      });
+    }
 
-  return produce(state, (draft) => {
-    draft.edges = addEdgeXyflow(connection, draft.edges);
-  });
-};
-
-export const processUpdateEdge = (
-  state: Immutable<WorkflowState>,
-  command: UpdateEdgeCommand
-): Immutable<WorkflowState> => {
-  const { id, updates } = command.payload;
-
-  return produce(state, (draft) => {
-    const edge = draft.edges.find((e) => e.id === id);
-    if (edge) {
-      Object.assign(edge, updates);
+    // 处理 changes (xyflow 格式)
+    if (changes && changes.length > 0) {
+      draft.edges = applyEdgeChangesXyflow(changes as EdgeChange[], draft.edges);
     }
   });
 };
@@ -73,17 +56,5 @@ export const processSetEdges = (
 
   return produce(state, (draft) => {
     draft.edges = edges;
-  });
-};
-
-export const processApplyEdgeChanges = (
-  state: Immutable<WorkflowState>,
-  command: ApplyEdgeChangesCommand
-): Immutable<WorkflowState> => {
-  const { changes } = command.payload;
-
-  return produce(state, (draft) => {
-    const updatedEdges = applyEdgeChangesXyflow(changes as EdgeChange[], draft.edges);
-    draft.edges = updatedEdges;
   });
 };

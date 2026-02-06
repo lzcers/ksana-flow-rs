@@ -208,15 +208,15 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       switch (event.type) {
         case 'NodeStarted':
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_STATUS',
-            payload: { id, status: 'running' },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { status: 'running' } },
             ...runtimeMeta
           });
           break;
         case 'NodeStreamStarted':
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { isOutputStream: true } },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { isOutputStream: true } },
             ...runtimeMeta
           });
           break;
@@ -228,8 +228,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
               ? `${typeof prev === 'string' ? prev : ''}${chunk}`
               : chunk;
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { lastMessage } },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { lastMessage } },
             ...runtimeMeta
           });
           break;
@@ -237,14 +237,14 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         case 'NodeInMessage': {
           const { msg: value } = event;
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { lastMessage: value } },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { lastMessage: value } },
             ...runtimeMeta
           });
           if (typeof value === 'object' && value !== null) {
             rxWorkflowModel.dispatch({
-              type: 'UPDATE_NODE_INPUTS',
-              payload: { id, inputs: value },
+              type: 'UPDATE_NODE',
+              payload: { id, updates: { inputs: value } },
               ...runtimeMeta
             });
           }
@@ -253,13 +253,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         case 'NodeOutMessage': {
           const { msg: value } = event;
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { lastMessage: value, isOutputStream: false } },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { lastMessage: value, isOutputStream: false } },
             ...runtimeMeta
           });
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_OUTPUT',
-            payload: { id, key: 'output', value },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { outputs: { output: value } } },
             ...runtimeMeta
           });
 
@@ -268,13 +268,16 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           const outEdges = edges.filter(e => e.source === id);
           outEdges.forEach(edge => {
             rxWorkflowModel.dispatch({
-              type: 'UPDATE_NODE_DATA',
-              payload: { id: edge.target, data: { lastMessage: value } },
+              type: 'UPDATE_NODE',
+              payload: { id: edge.target, updates: { lastMessage: value } },
               ...runtimeMeta
             });
             rxWorkflowModel.dispatch({
-              type: 'UPDATE_NODE_INPUT',
-              payload: { id: edge.target, key: edge.targetHandle || 'default', value },
+              type: 'UPDATE_NODE',
+              payload: {
+                id: edge.target,
+                updates: { inputs: { [edge.targetHandle || 'default']: value } }
+              },
               ...runtimeMeta
             });
           });
@@ -282,21 +285,21 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         }
         case 'NodeCompleted':
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_STATUS',
-            payload: { id, status: 'completed' },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { status: 'completed' } },
             ...runtimeMeta
           });
           break;
         case 'NodeError': {
           const { msg: error } = event;
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_STATUS',
-            payload: { id, status: 'error', errorMessage: error },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { status: 'error', errorMessage: error } },
             ...runtimeMeta
           });
           rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE_DATA',
-            payload: { id, data: { isOutputStream: false } },
+            type: 'UPDATE_NODE',
+            payload: { id, updates: { isOutputStream: false } },
             ...runtimeMeta
           });
           break;

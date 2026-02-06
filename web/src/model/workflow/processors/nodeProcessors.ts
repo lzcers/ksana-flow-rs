@@ -1,5 +1,5 @@
 /**
- * Node 处理器函数
+ * Node 处理器函数 - 简化版
  * 纯函数，接收 state 和 command，返回新的 state
  */
 
@@ -8,20 +8,13 @@ import type { WorkflowState, Node, NodeData, NodeChange } from '../types';
 import type {
   AddNodeCommand,
   RemoveNodeCommand,
-  UpdateNodeDataCommand,
-  UpdateNodePositionCommand,
-  UpdateNodeDimensionsCommand,
-  SelectNodeCommand,
+  UpdateNodeCommand,
   ApplyNodeChangesCommand,
-  UpdateNodeStatusCommand,
-  UpdateNodeInputCommand,
-  UpdateNodeInputsCommand,
-  UpdateNodeOutputCommand,
   ResetAllNodeStatusCommand,
 } from '../commands';
 import { applyNodeChangesXyflow, getNextNodeId } from '../utils';
 
-export { getNextNodeId }; // Re-export for compatibility if needed within processors module
+export { getNextNodeId };
 
 // 默认节点数据
 const getDefaultNodeData = (type: string): Partial<NodeData> => {
@@ -92,47 +85,35 @@ export const processRemoveNode = (
   });
 };
 
-export const processUpdateNodeData = (
+/**
+ * 统一的节点更新处理器 - 合并所有 update 操作
+ */
+export const processUpdateNode = (
   state: Immutable<WorkflowState>,
-  command: UpdateNodeDataCommand
+  command: UpdateNodeCommand
 ): Immutable<WorkflowState> => {
-  const { id, data } = command.payload;
+  const { id, updates } = command.payload;
 
   return produce(state, (draft) => {
     const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
-      node.data = { ...node.data, ...data };
+    if (!node) return;
+
+    // 更新 data
+    if (updates.data) {
+      node.data = { ...node.data, ...updates.data };
     }
-    syncEdgeHighlighting(draft);
-  });
-};
 
-export const processUpdateNodePosition = (
-  state: Immutable<WorkflowState>,
-  command: UpdateNodePositionCommand
-): Immutable<WorkflowState> => {
-  const { id, position } = command.payload;
-
-  return produce(state, (draft) => {
-    const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
-      node.position = position;
+    // 更新 position
+    if (updates.position) {
+      node.position = updates.position;
     }
-  });
-};
 
-export const processUpdateNodeDimensions = (
-  state: Immutable<WorkflowState>,
-  command: UpdateNodeDimensionsCommand
-): Immutable<WorkflowState> => {
-  const { id, width, height } = command.payload;
-
-  return produce(state, (draft) => {
-    const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
+    // 更新 dimensions (同时更新 style 和 width/height)
+    if (updates.dimensions) {
+      const { width, height } = updates.dimensions;
       if (!node.style) node.style = {};
-      (node.style).width = width;
-      (node.style).height = height;
+      (node.style as any).width = width;
+      (node.style as any).height = height;
       node.width = width;
       node.height = height;
 
@@ -147,91 +128,43 @@ export const processUpdateNodeDimensions = (
         };
       }
     }
-  });
-};
 
-export const processUpdateNodeStatus = (
-  state: Immutable<WorkflowState>,
-  command: UpdateNodeStatusCommand
-): Immutable<WorkflowState> => {
-  const { id, status, errorMessage } = command.payload;
-
-  return produce(state, (draft) => {
-    const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
+    // 更新 status
+    if (updates.status) {
       if (!node.data) node.data = {};
-      node.data.status = status;
-      if (errorMessage !== undefined) {
-        node.data.errorMessage = errorMessage;
+      node.data.status = updates.status;
+      if (updates.errorMessage !== undefined) {
+        node.data.errorMessage = updates.errorMessage;
       }
     }
+
+    // 更新 inputs
+    if (updates.inputs) {
+      if (!node.data) node.data = {};
+      node.data.inputs = { ...node.data.inputs, ...updates.inputs };
+    }
+
+    // 更新 outputs
+    if (updates.outputs) {
+      if (!node.data) node.data = {};
+      node.data.outputs = { ...node.data.outputs, ...updates.outputs };
+    }
+
+    // 更新其他字段 (如 isOutputStream, lastMessage 等)
+    if (updates.isOutputStream !== undefined) {
+      if (!node.data) node.data = {};
+      node.data.isOutputStream = updates.isOutputStream;
+    }
+    if (updates.lastMessage !== undefined) {
+      if (!node.data) node.data = {};
+      node.data.lastMessage = updates.lastMessage;
+    }
+
     syncEdgeHighlighting(draft);
   });
 };
 
-export const processUpdateNodeInput = (
-  state: Immutable<WorkflowState>,
-  command: UpdateNodeInputCommand
-): Immutable<WorkflowState> => {
-  const { id, key, value } = command.payload;
 
-  return produce(state, (draft) => {
-    const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
-      if (!node.data) node.data = {};
-      if (!node.data.inputs) node.data.inputs = {};
-      node.data.inputs[key] = value;
-    }
-  });
-};
-
-export const processUpdateNodeInputs = (
-  state: Immutable<WorkflowState>,
-  command: UpdateNodeInputsCommand
-): Immutable<WorkflowState> => {
-  const { id, inputs } = command.payload;
-
-  return produce(state, (draft) => {
-    const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
-      if (!node.data) node.data = {};
-      node.data.inputs = { ...node.data.inputs, ...inputs };
-    }
-  });
-};
-
-export const processUpdateNodeOutput = (
-  state: Immutable<WorkflowState>,
-  command: UpdateNodeOutputCommand
-): Immutable<WorkflowState> => {
-  const { id, key, value } = command.payload;
-
-  return produce(state, (draft) => {
-    const node = draft.nodes.find((n) => n.id === id);
-    if (node) {
-      if (!node.data) node.data = {};
-      if (!node.data.outputs) node.data.outputs = {};
-      node.data.outputs[key] = value;
-    }
-  });
-};
-
-export const processSelectNode = (
-  state: Immutable<WorkflowState>,
-  command: SelectNodeCommand
-): Immutable<WorkflowState> => {
-  const { id } = command.payload;
-
-  return produce(state, (draft) => {
-    draft.selectedNodeId = id;
-
-    draft.nodes.forEach((node) => {
-      node.selected = node.id === id;
-    });
-
-    syncEdgeHighlighting(draft);
-  });
-};
 
 export const processApplyNodeChanges = (
   state: Immutable<WorkflowState>,
@@ -240,40 +173,30 @@ export const processApplyNodeChanges = (
   const { changes } = command.payload;
 
   return produce(state, (draft) => {
-    const updatedNodes = applyNodeChangesXyflow(changes as NodeChange[], draft.nodes);
-    draft.nodes = updatedNodes;
-
-    changes.forEach((change) => {
-      if (change.type === 'select') {
-        if ((change).selected) {
-          draft.selectedNodeId = change.id;
-        } else if (draft.selectedNodeId === change.id) {
-          draft.selectedNodeId = null;
-        }
-      }
-    });
-
-    syncEdgeHighlighting(draft);
+    const updatedNodes = applyNodeChangesXyflow(changes as NodeChange[], draft.nodes as any[]);
+    draft.nodes = updatedNodes as Draft<Node>[];
   });
 };
 
 export const processResetAllNodeStatus = (
   state: Immutable<WorkflowState>,
-  command: ResetAllNodeStatusCommand
+  _command: ResetAllNodeStatusCommand
 ): Immutable<WorkflowState> => {
   return produce(state, (draft) => {
     draft.nodes.forEach((node) => {
-      if (!node.data) node.data = {};
-      node.data.status = 'idle';
-      delete node.data.errorMessage;
+      if (node.data) {
+        node.data.status = 'idle';
+        node.data.errorMessage = undefined;
+      }
     });
     syncEdgeHighlighting(draft);
   });
 };
 
-// ===== 辅助函数 =====
+// ===== 内部工具函数 =====
 
-const syncEdgeHighlighting = (draft: Draft<WorkflowState>) => {
+function syncEdgeHighlighting(draft: Draft<WorkflowState>): void {
+  // 根据节点状态同步边的样式
   const selectedNodeIds = new Set(
     draft.nodes
       .filter((n) => n.selected || n.data?.status === 'running')
@@ -295,6 +218,4 @@ const syncEdgeHighlighting = (draft: Draft<WorkflowState>) => {
       }
     }
   });
-};
-
-
+}

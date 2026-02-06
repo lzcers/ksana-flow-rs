@@ -112,7 +112,7 @@ export class WorkflowModel {
       const shouldSkipHistory =
         command.meta?.skipHistory === true ||
         command.type === 'SELECT_NODE' ||
-        command.type === 'UPDATE_NODE_STATUS'; // 运行时状态通常不进历史
+        command.type === 'UPDATE_NODE'; // 运行时状态更新通常不进历史
 
       if (!shouldSkipHistory) {
         this._pushHistory(this._state);

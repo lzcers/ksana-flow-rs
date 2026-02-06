@@ -1,5 +1,5 @@
 /**
- * Command Handlers 注册
+ * Command Handlers 注册 - 简化版
  * 将处理器函数注册到 CommandBus
  */
 
@@ -16,25 +16,12 @@ export function registerAllHandlers(workflow: WorkflowModel): void {
   // ===== Node Handlers =====
   workflow.registerHandler('ADD_NODE', nodeProcessors.processAddNode);
   workflow.registerHandler('REMOVE_NODE', nodeProcessors.processRemoveNode);
-  workflow.registerHandler('UPDATE_NODE_DATA', nodeProcessors.processUpdateNodeData);
-  workflow.registerHandler('UPDATE_NODE_POSITION', nodeProcessors.processUpdateNodePosition);
-  workflow.registerHandler('UPDATE_NODE_DIMENSIONS', nodeProcessors.processUpdateNodeDimensions);
-  workflow.registerHandler('UPDATE_NODE_STATUS', nodeProcessors.processUpdateNodeStatus);
-  workflow.registerHandler('UPDATE_NODE_INPUT', nodeProcessors.processUpdateNodeInput);
-  workflow.registerHandler('UPDATE_NODE_INPUTS', nodeProcessors.processUpdateNodeInputs);
-  workflow.registerHandler('UPDATE_NODE_OUTPUT', nodeProcessors.processUpdateNodeOutput);
-  workflow.registerHandler('SELECT_NODE', nodeProcessors.processSelectNode);
-  workflow.registerHandler('APPLY_NODE_CHANGES', nodeProcessors.processApplyNodeChanges);
-  workflow.registerHandler('RESET_ALL_NODE_STATUS', nodeProcessors.processResetAllNodeStatus);
-
+  // 新的统一 UPDATE_NODE 处理器
+  workflow.registerHandler('UPDATE_NODE', nodeProcessors.processUpdateNode);
   // ===== Edge Handlers =====
-  workflow.registerHandler('ADD_EDGE', edgeProcessors.processAddEdge);
-  workflow.registerHandler('REMOVE_EDGE', edgeProcessors.processRemoveEdge);
-  workflow.registerHandler('ON_CONNECT', edgeProcessors.processOnConnect);
-  workflow.registerHandler('UPDATE_EDGE', edgeProcessors.processUpdateEdge);
+  // 新的统一 UPDATE_EDGES 处理器
+  workflow.registerHandler('UPDATE_EDGES', edgeProcessors.processUpdateEdges);
   workflow.registerHandler('SET_EDGES', edgeProcessors.processSetEdges);
-  workflow.registerHandler('APPLY_EDGE_CHANGES', edgeProcessors.processApplyEdgeChanges);
-
   // ===== Graph Handlers =====
   workflow.registerHandler('PASTE_NODES', graphProcessors.processPasteNodes);
   workflow.registerHandler('GROUP_NODES', graphProcessors.processGroupNodes);

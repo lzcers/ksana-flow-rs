@@ -67,7 +67,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
 
       if (coreChanges.length > 0) {
         rxWorkflowModel.dispatch({
-          type: 'APPLY_EDGE_CHANGES',
+          type: 'UPDATE_EDGES',
           payload: { changes: coreChanges },
         });
       }
