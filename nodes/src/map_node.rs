@@ -130,6 +130,7 @@ impl MapNode {
         let controller = flow::try_controller()
             .ok_or_else(|| "Missing Controller in current task scope".to_string())?;
         let parent_runner_id = flow::try_runner_id();
+        let parent_node_id = flow::try_current_node_id();
 
         // 如果没有输入，直接返回空数组
         if items.is_empty() {
@@ -159,17 +160,24 @@ impl MapNode {
             let executor = self.executor.clone();
             let parent_ctx = ctx.clone();
             let controller = controller.clone();
+            let parent_node_id = parent_node_id.clone();
 
             // 创建异步任务
             let handle = tokio::spawn(async move {
-                let result = executor
-                    .execute_with_controller_and_parent(
-                        item,
-                        &parent_ctx,
-                        controller,
-                        parent_runner_id,
-                    )
-                    .await;
+                let fut = async {
+                    executor
+                        .execute_with_controller_and_parent(
+                            item,
+                            &parent_ctx,
+                            controller,
+                            parent_runner_id,
+                        )
+                        .await
+                };
+                let result = match parent_node_id {
+                    Some(node_id) => flow::scope_current_node(node_id, fut).await,
+                    None => fut.await,
+                };
                 drop(permit); // 释放许可
                 (idx, result)
             });
@@ -251,28 +259,35 @@ impl MapNode {
                         let executor = executor.clone();
                         let ctx = ctx.clone();
                         let tx = tx.clone();
-                        let node_id = node_id.clone();
-                            let controller = controller.clone();
+                        let node_id_for_events = node_id.clone();
+                        let node_id_for_scope = node_id.clone();
+                        let controller = controller.clone();
                         join_set.spawn(async move {
                             let permit = semaphore
                                 .acquire_owned()
                                 .await
                                 .map_err(|e| format!("Failed to acquire permit: {}", e))?;
-                            let result: Result<Value, String> = executor
-                                .execute_with_controller_and_parent(
-                                    item,
-                                    ctx.as_ref(),
-                                    controller,
-                                    parent_runner_id,
-                                )
-                                .await
-                                .map_err(|e| e.to_string());
+                            let result: Result<Value, String> = flow::scope_current_node(
+                                node_id_for_scope,
+                                async move {
+                                    executor
+                                        .execute_with_controller_and_parent(
+                                            item,
+                                            ctx.as_ref(),
+                                            controller,
+                                            parent_runner_id,
+                                        )
+                                        .await
+                                        .map_err(|e| e.to_string())
+                                },
+                            )
+                            .await;
                             drop(permit);
                             match result {
                                 Ok(output) => {
                                     let _ = tx
                                         .send(TaskEvent::Next(
-                                            node_id,
+                                            node_id_for_events,
                                             json!({"kind":"item","index":idx,"output":output}),
                                         ))
                                         .await;
