@@ -1,4 +1,5 @@
 import { castDraft } from 'immer';
+import { EMPTY } from 'rxjs';
 import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import * as api from '../api';
@@ -8,17 +9,24 @@ import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 import { makeGraphKey, workflowManager } from './workflowManager';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => {
-  const getActiveWorkflowInstance = () => {
-    const activeModel = workflowManager.activeModel;
-    if (!activeModel) {
-      throw new Error('No active Model');
-    }
-    return activeModel;
-  };
+  workflowManager.subscribeRuntimeState((runtime) => {
+    set({
+      activeGraphKey: runtime.activeGraphKey,
+      currentRunId: runtime.activeRunId,
+      workflowStatus: runtime.activeWorkflowStatus,
+      workflowStatuses: runtime.workflowStatuses,
+    });
+  });
 
   return ({
     workflows: [],
     nodeTypes: [],
+    currentWorkflowId: null,
+    currentSpaceId: null,
+    currentRunId: null,
+    activeGraphKey: null,
+    workflowStatus: 'idle',
+    workflowStatuses: {},
     setSpaceId: (id) => {
       set({ currentSpaceId: id });
     },
@@ -26,6 +34,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     setWorkflows: (workflows) => set({ workflows }),
 
     setNodeTypes: (nodeTypes) => set({ nodeTypes }),
+
+    setCurrentWorkflowId: (id) => set({ currentWorkflowId: id }),
 
     loadMetadata: async () => {
       const { currentSpaceId } = get();
@@ -63,6 +73,9 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         try {
           const statusRes = await api.getWorkflowStatus(currentSpaceId, id);
           if (statusRes) {
+            if (typeof statusRes.run_id === 'string') {
+              workflowManager.setRunId(graphKey, statusRes.run_id);
+            }
             if (statusRes.events && Array.isArray(statusRes.events)) {
               statusRes.events.forEach((message: any) => {
                 rxWorkflowInstance.applyFlowEvent(message);
@@ -134,7 +147,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       try {
         await api.deleteWorkflow(currentSpaceId, id);
         const graphKey = makeGraphKey(currentSpaceId, id);
-        if (graphKey) workflowModelManager.destroy(graphKey);
+        if (graphKey) workflowManager.destroy(graphKey);
         setWorkflows(workflows.filter(w => w.id !== id));
         if (currentWorkflowId === id) {
           setCurrentWorkflowId(null);
@@ -150,7 +163,16 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     createNewWorkflow: async () => {
-
+      const { currentSpaceId, switchCanvas, setNodes, setEdges, selectNode } = get();
+      if (!currentSpaceId) return;
+      const graphKey = `${currentSpaceId}:draft`;
+      workflowManager.getOrCreate(graphKey);
+      workflowManager.activate(graphKey);
+      set({ currentWorkflowId: null });
+      setNodes([]);
+      setEdges([]);
+      selectNode([]);
+      switchCanvas(graphKey);
     },
 
     importWorkflow: (blueprint: any) => {
@@ -160,6 +182,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
       setNodes(castDraft(preprocessed.nodes));
       setEdges(castDraft(preprocessed.edges));
+      selectNode([]);
+      setCurrentWorkflowId(null);
 
     },
 
@@ -174,9 +198,30 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       return api.uploadFile(currentSpaceId, file);
     },
 
+    initializeWebSocket: () => {
+      const { currentSpaceId } = get();
+      if (currentSpaceId) {
+        workflowManager.connectWebSocket(currentSpaceId);
+      }
+      return () => {
+        workflowManager.disconnectWebSocket();
+      };
+    },
+
+    flowEventForRunId$: (runId: string) => {
+      if (!runId) return EMPTY;
+      return workflowManager.flowEventForRunId$(runId);
+    },
+
+    flowEventForNodeId$: (nodeId: string) => {
+      const { currentRunId } = get();
+      if (!currentRunId) return EMPTY;
+      return workflowManager.flowEventForNodeId$(currentRunId, nodeId);
+    },
+
     // ===== Workflow Actions =====
     runWorkflow: async () => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, activeGraphKey, success, error } = get();
       if (!currentSpaceId) return;
 
       const blueprint = toBlueprint(nodes, edges);
@@ -186,6 +231,11 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           throw new Error(res.error);
         }
         if (res && res.run_id) {
+          const graphKey = activeGraphKey ?? (currentWorkflowId != null ? makeGraphKey(currentSpaceId, currentWorkflowId) : null);
+          if (graphKey) {
+            workflowManager.setRunId(graphKey, res.run_id);
+            workflowManager.setWorkflowStatus(graphKey, 'running');
+          }
           success('Workflow started');
         }
       } catch (e) {
@@ -195,10 +245,11 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     pauseWorkflow: async () => {
-      const { currentSpaceId, currentRunId, error } = get();
+      const { currentSpaceId, currentRunId, activeGraphKey, error } = get();
       if (!currentRunId || !currentSpaceId) return;
       try {
         await api.pauseWorkflow(currentSpaceId, currentRunId);
+        if (activeGraphKey) workflowManager.setWorkflowStatus(activeGraphKey, 'paused');
       } catch (e) {
         console.error("Failed to pause workflow", e);
         error("Failed to pause workflow");
@@ -206,10 +257,11 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     resumeWorkflow: async () => {
-      const { currentSpaceId, currentRunId, error } = get();
+      const { currentSpaceId, currentRunId, activeGraphKey, error } = get();
       if (!currentRunId || !currentSpaceId) return;
       try {
         await api.resumeWorkflow(currentSpaceId, currentRunId);
+        if (activeGraphKey) workflowManager.setWorkflowStatus(activeGraphKey, 'running');
       } catch (e) {
         console.error("Failed to resume workflow", e);
         error("Failed to resume workflow");
@@ -217,10 +269,14 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     stopWorkflow: async () => {
-      const { currentSpaceId, currentRunId, error } = get();
+      const { currentSpaceId, currentRunId, activeGraphKey, error } = get();
       if (!currentRunId || !currentSpaceId) return;
       try {
         await api.stopWorkflow(currentSpaceId, currentRunId);
+        if (activeGraphKey) {
+          workflowManager.setRunId(activeGraphKey, null);
+          workflowManager.setWorkflowStatus(activeGraphKey, 'idle');
+        }
       } catch (e) {
         console.error("Failed to stop workflow", e);
         error("Failed to stop workflow");
@@ -228,7 +284,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     runNode: async (nodeId: string) => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, activeGraphKey, success, error } = get();
       if (!currentSpaceId) return;
       const blueprint = toBlueprint(nodes, edges);
 
@@ -238,6 +294,11 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           throw new Error(res.error);
         }
         if (res && res.run_id) {
+          const graphKey = activeGraphKey ?? (currentWorkflowId != null ? makeGraphKey(currentSpaceId, currentWorkflowId) : null);
+          if (graphKey) {
+            workflowManager.setRunId(graphKey, res.run_id);
+            workflowManager.setWorkflowStatus(graphKey, 'running');
+          }
         }
         success(`Node ${nodeId} execution started`);
       } catch (e) {

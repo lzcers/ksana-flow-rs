@@ -1,6 +1,8 @@
 import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection, WorkflowStatus } from '../model/workflow/types';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
+import type { Observable } from 'rxjs';
+import type { FlowEvent } from '../model/flowEvent/types';
 import type { GraphKey } from './workflowManager';
 
 
@@ -14,7 +16,9 @@ export interface Workflow {
   currentWorkflowId: number | null;
   currentSpaceId: string | null;
   currentRunId: string | null;
-  currentWorkflowStatus: WorkflowStatus;
+  activeGraphKey: GraphKey | null;
+  workflowStatus: WorkflowStatus;
+  workflowStatuses: Record<number, WorkflowStatus>;
   setSpaceId: (id: string) => void;
   loadMetadata: () => Promise<void>;
   loadWorkflow: (id: number) => Promise<void>;
@@ -28,12 +32,21 @@ export interface Workflow {
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
   setNodeTypes: (types: NodeMetadata[]) => void;
+  runWorkflow: () => Promise<void>;
+  pauseWorkflow: () => Promise<void>;
+  resumeWorkflow: () => Promise<void>;
+  stopWorkflow: () => Promise<void>;
+  runNode: (nodeId: string) => Promise<void>;
+  initializeWebSocket: () => () => void;
+  flowEventForRunId$: (runId: string) => Observable<FlowEvent>;
+  flowEventForNodeId$: (nodeId: string) => Observable<FlowEvent>;
 }
 
 // 处理画布相关的状态和操作
 export interface Canvas {
   nodes: Node[];
   edges: Edge[];
+  graphsByKey: Record<GraphKey, { nodes: Node[]; edges: Edge[]; selectedNodeId: string[] }>;
   selectedNodeId: string[];
   isConnecting: boolean;
   connectionSourceId: string | null;
@@ -80,3 +93,5 @@ export interface Toast {
 }
 
 export type StoreState = Workflow & Canvas & Toast;
+
+export type { WorkflowStatus } from '../model/workflow/types';

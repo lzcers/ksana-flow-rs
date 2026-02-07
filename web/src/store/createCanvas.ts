@@ -30,6 +30,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   return {
     nodes: [],
     edges: [],
+    graphsByKey: {},
     selectedNodeId: [],
     isConnecting: false,
     connectionSourceId: null,

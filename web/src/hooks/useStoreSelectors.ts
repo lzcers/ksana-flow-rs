@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useStore } from '../store';
 import type { StoreState } from '../store/types';
-import type { Node, Edge } from '@xyflow/react';
+import type { Node, Edge } from '../model/workflow/types';
 import type { NodeMetadata } from '../api';
 
 // ==========================================
@@ -31,7 +31,7 @@ export function useEdges(): Edge[] {
 }
 
 /** 只订阅选中节点ID */
-export function useSelectedNodeId(): string | null {
+export function useSelectedNodeId(): string[] {
   return useStore(
     useCallback((state: StoreState) => {
       const key = state.activeGraphKey;
