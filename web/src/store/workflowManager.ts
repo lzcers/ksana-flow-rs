@@ -152,6 +152,8 @@ export class WorkflowManager {
 
   activate(graphKey: GraphKey): void {
     const entry = this.models.get(graphKey);
+    const spaceId = graphKey.split(':')[0];
+    this.rxFlowEvent$.connectWebSocket(spaceId);
     if (!entry) return;
     this.activeGraphKey = graphKey;
   }

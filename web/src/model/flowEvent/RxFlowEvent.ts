@@ -19,7 +19,6 @@ export class RxFlowEvent {
   private _currentSpaceId: string | null = null;
 
   constructor() {
-
   }
   /**
    * 根流：连接 WebSocket，将消息发送给 _source$
