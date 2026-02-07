@@ -27,7 +27,6 @@ export const processPasteNodes = (
     // 取消所有现有选择
     draft.nodes.forEach((n) => (n.selected = false));
     draft.edges.forEach((e) => (e.selected = false));
-    draft.selectedNodeId = null;
 
     const idMap = new Map<string, string>();
 
@@ -50,7 +49,6 @@ export const processPasteNodes = (
       };
 
       draft.nodes.push(newNode);
-      draft.selectedNodeId = newId;
     });
 
     // 处理边

@@ -1,20 +1,20 @@
 import type { NodeMetadata } from '../api';
-import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
-import type { Observable } from 'rxjs';
+import type { Node, Edge, NodeChange, EdgeChange, Connection, WorkflowStatus } from '../model/workflow/types';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
-import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
+import type { GraphKey } from './workflowManager';
 
-export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
 
 // WorkflowBlueprint type is now imported from adapter
 
 // 处理工作流相关的状态和操作
 export interface Workflow {
+  nodeTypes: NodeMetadata[];
   workflows: { id: number; name: string }[];
   currentWorkflowId: number | null;
   currentSpaceId: string | null;
-  nodeTypes: NodeMetadata[];
+  currentRunId: string | null;
+  currentWorkflowStatus: WorkflowStatus;
   setSpaceId: (id: string) => void;
   loadMetadata: () => Promise<void>;
   loadWorkflow: (id: number) => Promise<void>;
@@ -28,15 +28,18 @@ export interface Workflow {
   setWorkflows: (workflows: { id: number; name: string }[]) => void;
   setCurrentWorkflowId: (id: number | null) => void;
   setNodeTypes: (types: NodeMetadata[]) => void;
-  applyExecutionMessage: (message: WebSocketFlowMessage) => void;
-  applyExecutionEvent: (event: FlowEvent) => void;
 }
 
 // 处理画布相关的状态和操作
 export interface Canvas {
   nodes: Node[];
   edges: Edge[];
-  selectedNodeId: string | null;
+  selectedNodeId: string[];
+  isConnecting: boolean;
+  connectionSourceId: string | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  switchCanvas: (graphKey: GraphKey) => void;
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onNodeDragStop: (event: any, node: any) => void;
@@ -45,45 +48,20 @@ export interface Canvas {
   deleteNode: (id: string) => void;
   updateNodeData: (id: string, data: Record<string, any>) => void;
   updateNodeDimensions: (id: string, width: number, height: number) => void;
-  selectNode: (id: string | null) => void;
+  selectNode: (id: string[]) => void;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
   pasteNodes: (nodes: Node[], edges: Edge[]) => void;
-  isConnecting: boolean;
-  connectionSourceId: string | null;
   setConnectionState: (connecting: boolean, sourceId?: string | null) => void;
   groupNodes: (nodeIds: string[]) => void;
   toggleSubgraph: (nodeId: string) => void;
-
   // History
   undo: () => void;
   redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
+
 }
 
 
-// 处理执行相关的状态和操作
-export interface Execution {
-  workflowStatuses: Record<number, WorkflowStatus>;
-  runIdToWorkflowId: Record<string, number>;
-  // 当前工作流状态和 runId
-  workflowStatus: WorkflowStatus;
-  currentRunId: string | null;
-  flowMessageForRunId$: (runId: string) => Observable<WebSocketFlowMessage>;
-  flowMessageForSubgraphNodeId$: (parentNodeId: string) => Observable<WebSocketFlowMessage>;
-  flowEventForRunId$: (runId: string) => Observable<FlowEvent>;
-  flowEventForNodeId$: (nodeId: string) => Observable<FlowEvent>;
-  runWorkflow: () => Promise<void>;
-  pauseWorkflow: () => Promise<void>;
-  resumeWorkflow: () => Promise<void>;
-  stopWorkflow: () => Promise<void>;
-  runNode: (nodeId: string) => Promise<void>;
-  setWorkflowStatus: (status: WorkflowStatus) => void;
-  setWorkflowStatuses: (statuses: Record<number, WorkflowStatus>) => void;
-  setCurrentRunId: (runId: string | null) => void;
-  initializeWebSocket: () => () => void;
-}
 
 export interface ToastItem {
   id: string;
@@ -101,4 +79,4 @@ export interface Toast {
   info: (message: string, duration?: number) => void;
 }
 
-export type StoreState = Workflow & Canvas & Execution & Toast;
+export type StoreState = Workflow & Canvas & Toast;

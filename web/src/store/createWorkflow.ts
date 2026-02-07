@@ -1,138 +1,30 @@
+import { castDraft } from 'immer';
 import { type StateCreator } from 'zustand';
 import type { StoreState, Workflow } from './types';
 import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/workflow/utils';
 import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
-import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
-import { rxWorkflowModel } from '.';
-import { castDraft } from 'immer';
-import { unstable_batchedUpdates } from 'react-dom';
+import { makeGraphKey, workflowManager } from './workflowManager';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => {
-  const applyExecutionEventImpl = (event: FlowEvent) => {
-    const runtimeMeta = { meta: { skipHistory: true } } as const;
-    if ('nodeId' in event) {
-      const { nodeId: id } = event;
-      switch (event.type) {
-        case 'NodeStarted':
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { status: 'running' } },
-            ...runtimeMeta
-          });
-          break;
-        case 'NodeStreamStarted':
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { isOutputStream: true } },
-            ...runtimeMeta
-          });
-          break;
-        case 'NodeStreamNextMessage': {
-          const { msg: chunk } = event;
-          const prev = rxWorkflowModel.getSnapshot().nodes.find(n => n.id === id)?.data?.lastMessage;
-          const lastMessage =
-            typeof chunk === 'string'
-              ? `${typeof prev === 'string' ? prev : ''}${chunk}`
-              : chunk;
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { lastMessage } },
-            ...runtimeMeta
-          });
-          break;
-        }
-        case 'NodeInMessage': {
-          const { msg: value } = event;
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { lastMessage: value } },
-            ...runtimeMeta
-          });
-          if (typeof value === 'object' && value !== null) {
-            rxWorkflowModel.dispatch({
-              type: 'UPDATE_NODE',
-              payload: { id, updates: { inputs: value } },
-              ...runtimeMeta
-            });
-          }
-          break;
-        }
-        case 'NodeOutMessage': {
-          const { msg: value } = event;
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { lastMessage: value, isOutputStream: false } },
-            ...runtimeMeta
-          });
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { outputs: { output: value } } },
-            ...runtimeMeta
-          });
-
-          const { edges } = rxWorkflowModel.getSnapshot();
-          const outEdges = edges.filter(e => e.source === id);
-          outEdges.forEach(edge => {
-            rxWorkflowModel.dispatch({
-              type: 'UPDATE_NODE',
-              payload: { id: edge.target, updates: { lastMessage: value } },
-              ...runtimeMeta
-            });
-            rxWorkflowModel.dispatch({
-              type: 'UPDATE_NODE',
-              payload: {
-                id: edge.target,
-                updates: { inputs: { [edge.targetHandle || 'default']: value } }
-              },
-              ...runtimeMeta
-            });
-          });
-          break;
-        }
-        case 'NodeCompleted':
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { status: 'completed' } },
-            ...runtimeMeta
-          });
-          break;
-        case 'NodeError': {
-          const { msg: error } = event;
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { status: 'error', errorMessage: error } },
-            ...runtimeMeta
-          });
-          rxWorkflowModel.dispatch({
-            type: 'UPDATE_NODE',
-            payload: { id, updates: { isOutputStream: false } },
-            ...runtimeMeta
-          });
-          break;
-        }
-      }
-    } else {
-      switch (event.type) {
-        case 'FlowFinished':
-        case 'FlowStopped':
-        case 'FlowPaused':
-        case 'FlowResumed':
-          break;
-      }
+  const getActiveWorkflowInstance = () => {
+    const activeModel = workflowManager.activeModel;
+    if (!activeModel) {
+      throw new Error('No active Model');
     }
+    return activeModel;
   };
 
   return ({
     workflows: [],
-    currentWorkflowId: null,
-    currentSpaceId: null,
     nodeTypes: [],
+    setSpaceId: (id) => {
+      set({ currentSpaceId: id });
+    },
 
-    setSpaceId: (id) => set({ currentSpaceId: id }),
     setWorkflows: (workflows) => set({ workflows }),
-    setCurrentWorkflowId: (currentWorkflowId) => set({ currentWorkflowId }),
+
     setNodeTypes: (nodeTypes) => set({ nodeTypes }),
 
     loadMetadata: async () => {
@@ -145,18 +37,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         const allowedTypes = new Set(NODE_TYPES.map(nt => nt.type));
         const filteredTypes = types.filter(t => allowedTypes.has(t.name));
 
-        // Inject SubgraphNode manually if not present (frontend-only node)
-        if (!filteredTypes.find(t => t.name === 'SubgraphNode')) {
-          filteredTypes.push({
-            name: 'SubgraphNode',
-            description: 'A group of nodes (Subgraph)',
-            category: 'Logic',
-            inputs: [],
-            outputs: [],
-            config: {},
-          });
-        }
-
         set({ nodeTypes: filteredTypes, workflows: wfList });
       } catch (e) {
         console.error("Failed to load metadata", e);
@@ -164,43 +44,35 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     loadWorkflow: async (id: number) => {
-      const { currentSpaceId, error, setNodes, setEdges, selectNode, setWorkflowStatus, setWorkflowStatuses, setCurrentRunId } = get();
+      const { currentSpaceId, switchCanvas, error, setNodes, setEdges, selectNode } = get();
       if (!currentSpaceId) return;
       try {
+        // 1. 获取或创建工作实例
+        const graphKey = makeGraphKey(currentSpaceId, id);
+        const rxWorkflowInstance = workflowManager.getOrCreate(graphKey);
+        workflowManager.activate(graphKey);
+        // 2. 从 API 获取工作流定义并初始化
         const wf = await api.fetchWorkflow(currentSpaceId, id);
         const { nodes, edges } = fromBlueprint(wf.blueprint as any);
-
         const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
         setNodes(castDraft(preprocessed.nodes));
         setEdges(castDraft(preprocessed.edges));
-        selectNode(null);
+        selectNode([]);
         set({ currentWorkflowId: id });
 
         try {
           const statusRes = await api.getWorkflowStatus(currentSpaceId, id);
           if (statusRes) {
-            if (statusRes.run_id) {
-              setCurrentRunId(statusRes.run_id);
-            }
-            if (statusRes.status) {
-              let status = statusRes.status.toLowerCase();
-              if (status === 'completed' || status === 'stopped' || status === 'failed') {
-                status = 'idle';
-              }
-              setWorkflowStatus(status);
-              setWorkflowStatuses({ ...get().workflowStatuses, [id]: status });
-            }
-
             if (statusRes.events && Array.isArray(statusRes.events)) {
-
               statusRes.events.forEach((message: any) => {
-                const { applyExecutionMessage } = get();
-                if (applyExecutionMessage) {
-                  applyExecutionMessage(message);
-                }
+                rxWorkflowInstance.applyFlowEvent(message);
               });
             }
           }
+
+          // 3.切换到新的画布实例
+          switchCanvas(graphKey);
+
         } catch (e) {
           console.warn("Failed to fetch workflow status", e);
         }
@@ -212,11 +84,9 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     saveWorkflow: async (name?: string) => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows, setCurrentWorkflowId } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows } = get();
       if (!currentSpaceId) return;
-
       const blueprint = toBlueprint(nodes, edges);
-
       try {
         if (currentWorkflowId) {
           const currentWf = workflows.find(w => w.id === currentWorkflowId);
@@ -228,9 +98,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             setWorkflows(workflows.map(w => w.id === currentWorkflowId ? { ...w, name } : w));
           }
         } else {
-          const newWf = await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint as any);
-          setCurrentWorkflowId(newWf.id);
-          setWorkflows([...workflows, { id: newWf.id, name: name || 'Untitled Workflow' }]);
+          await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint as any);
         }
         success('Workflow saved');
       } catch (e) {
@@ -265,12 +133,14 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       if (!currentSpaceId) return;
       try {
         await api.deleteWorkflow(currentSpaceId, id);
+        const graphKey = makeGraphKey(currentSpaceId, id);
+        if (graphKey) workflowModelManager.destroy(graphKey);
         setWorkflows(workflows.filter(w => w.id !== id));
         if (currentWorkflowId === id) {
           setCurrentWorkflowId(null);
           setNodes([]);
           setEdges([]);
-          selectNode(null);
+          selectNode([]);
         }
         success('Workflow deleted');
       } catch (e) {
@@ -280,27 +150,17 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     createNewWorkflow: async () => {
-      const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId } = get();
-      setNodes([]);
-      setEdges([]);
-      selectNode(null);
-      setCurrentWorkflowId(null);
-      setWorkflowStatus('idle');
-      setCurrentRunId(null);
+
     },
 
     importWorkflow: (blueprint: any) => {
-      const { setNodes, setEdges, selectNode, setCurrentWorkflowId, setWorkflowStatus, setCurrentRunId } = get();
-      // Transform backend nodes to ReactFlow nodes
+      const { setNodes, setEdges, selectNode, setCurrentWorkflowId } = get();
       const { nodes, edges } = fromBlueprint(blueprint);
 
       const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
       setNodes(castDraft(preprocessed.nodes));
       setEdges(castDraft(preprocessed.edges));
-      selectNode(null);
-      setCurrentWorkflowId(null);
-      setWorkflowStatus('idle');
-      setCurrentRunId(null);
+
     },
 
     getWorkflowBlueprint: () => {
@@ -314,13 +174,76 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       return api.uploadFile(currentSpaceId, file);
     },
 
-    applyExecutionMessage: (message: WebSocketFlowMessage) => {
-      if (message.runnerKind && message.runnerKind !== 'Root') return;
-      applyExecutionEventImpl(message.event);
+    // ===== Workflow Actions =====
+    runWorkflow: async () => {
+      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error } = get();
+      if (!currentSpaceId) return;
+
+      const blueprint = toBlueprint(nodes, edges);
+      try {
+        const res = await api.runWorkflow(currentSpaceId, blueprint as never, currentWorkflowId || -1);
+        if (res && res.error) {
+          throw new Error(res.error);
+        }
+        if (res && res.run_id) {
+          success('Workflow started');
+        }
+      } catch (e) {
+        console.error("Failed to run workflow", e);
+        error('Failed to run workflow: ' + (e instanceof Error ? e.message : String(e)));
+      }
     },
 
-    applyExecutionEvent: (event: FlowEvent) => {
-      applyExecutionEventImpl(event);
-    }
+    pauseWorkflow: async () => {
+      const { currentSpaceId, currentRunId, error } = get();
+      if (!currentRunId || !currentSpaceId) return;
+      try {
+        await api.pauseWorkflow(currentSpaceId, currentRunId);
+      } catch (e) {
+        console.error("Failed to pause workflow", e);
+        error("Failed to pause workflow");
+      }
+    },
+
+    resumeWorkflow: async () => {
+      const { currentSpaceId, currentRunId, error } = get();
+      if (!currentRunId || !currentSpaceId) return;
+      try {
+        await api.resumeWorkflow(currentSpaceId, currentRunId);
+      } catch (e) {
+        console.error("Failed to resume workflow", e);
+        error("Failed to resume workflow");
+      }
+    },
+
+    stopWorkflow: async () => {
+      const { currentSpaceId, currentRunId, error } = get();
+      if (!currentRunId || !currentSpaceId) return;
+      try {
+        await api.stopWorkflow(currentSpaceId, currentRunId);
+      } catch (e) {
+        console.error("Failed to stop workflow", e);
+        error("Failed to stop workflow");
+      }
+    },
+
+    runNode: async (nodeId: string) => {
+      const { currentSpaceId, nodes, edges, currentWorkflowId, success, error } = get();
+      if (!currentSpaceId) return;
+      const blueprint = toBlueprint(nodes, edges);
+
+      try {
+        const res = await api.runNode(currentSpaceId, blueprint as never, nodeId, currentWorkflowId || -1);
+        if (res && res.error) {
+          throw new Error(res.error);
+        }
+        if (res && res.run_id) {
+        }
+        success(`Node ${nodeId} execution started`);
+      } catch (e) {
+        console.error(`Failed to run node ${nodeId}`, e);
+        error(`Failed to run node: ` + (e instanceof Error ? e.message : String(e)));
+      }
+    },
   })
 };

@@ -10,6 +10,7 @@ import {
   useWorkflowStatus,
   useWorkflowStatuses,
   useCurrentRunId,
+  useActiveGraphKey,
   canvasActions,
   historyActions,
   workflowActions,
@@ -35,6 +36,7 @@ export function useWorkflow() {
   const workflowStatus = useWorkflowStatus();
   const workflowStatuses = useWorkflowStatuses();
   const currentRunId = useCurrentRunId();
+  const activeGraphKey = useActiveGraphKey();
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
 
@@ -42,6 +44,7 @@ export function useWorkflow() {
 
   // 派生状态
   const state = {
+    activeGraphKey,
     nodes,
     edges,
     selectedNodeId,

@@ -20,7 +20,7 @@ export class RxWorkflow {
   private _model: WorkflowModel;
 
   // Subjects
-  private _state$ = new BehaviorSubject<Immutable<WorkflowState>>({ nodes: [], edges: [], selectedNodeId: null });
+  private _state$ = new BehaviorSubject<Immutable<WorkflowState>>({ nodes: [], edges: [] });
   private _commands$ = new Subject<GraphCommand>();
   private _history$ = new BehaviorSubject<{ canUndo: boolean; canRedo: boolean }>({ canUndo: false, canRedo: false });
 
@@ -34,7 +34,6 @@ export class RxWorkflow {
   // Derived Observables (Helper)
   public readonly nodes$: Observable<Immutable<Node[]>>;
   public readonly edges$: Observable<Immutable<Edge[]>>;
-  public readonly selectedNodeId$: Observable<string | null>;
 
   constructor(options: RxWorkflowOptions = {}) {
     this._model = new WorkflowModel({
@@ -74,7 +73,6 @@ export class RxWorkflow {
     // 派生流
     this.nodes$ = this.state$.pipe(map(s => s.nodes), distinctUntilChanged());
     this.edges$ = this.state$.pipe(map(s => s.edges), distinctUntilChanged());
-    this.selectedNodeId$ = this.state$.pipe(map(s => s.selectedNodeId), distinctUntilChanged());
   }
 
   // ===== Public API =====
@@ -104,13 +102,6 @@ export class RxWorkflow {
 
   get currentState(): Immutable<WorkflowState> {
     return this._model.state;
-  }
-
-  selectNode$(nodeId: string): Observable<Immutable<Node> | undefined> {
-    return this.nodes$.pipe(
-      map(nodes => nodes.find(n => n.id === nodeId)),
-      distinctUntilChanged()
-    );
   }
 
   destroy(): void {

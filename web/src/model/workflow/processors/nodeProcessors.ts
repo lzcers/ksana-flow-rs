@@ -11,7 +11,6 @@ import type {
   UpdateNodeCommand,
   ApplyNodeChangesCommand,
   ResetAllNodeStatusCommand,
-  SelectNodeCommand,
 } from '../commands';
 import { applyNodeChangesXyflow, getNextNodeId } from '../utils';
 
@@ -80,9 +79,6 @@ export const processRemoveNode = (
     draft.edges = draft.edges.filter(
       (e) => e.source !== id && e.target !== id
     );
-    if (draft.selectedNodeId === id) {
-      draft.selectedNodeId = null;
-    }
   });
 };
 
@@ -176,17 +172,6 @@ export const processApplyNodeChanges = (
   return produce(state, (draft) => {
     const updatedNodes = applyNodeChangesXyflow(changes as NodeChange[], draft.nodes as any[]);
     draft.nodes = updatedNodes as Draft<Node>[];
-  });
-};
-
-export const processSelectNode = (
-  state: Immutable<WorkflowState>,
-  command: SelectNodeCommand
-): Immutable<WorkflowState> => {
-  const { id } = command.payload;
-
-  return produce(state, (draft) => {
-    draft.selectedNodeId = id;
   });
 };
 

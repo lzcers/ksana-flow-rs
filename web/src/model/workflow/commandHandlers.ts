@@ -18,7 +18,6 @@ export function registerAllHandlers(workflow: WorkflowModel): void {
   workflow.registerHandler('REMOVE_NODE', nodeProcessors.processRemoveNode);
   // 新的统一 UPDATE_NODE 处理器
   workflow.registerHandler('UPDATE_NODE', nodeProcessors.processUpdateNode);
-  workflow.registerHandler('SELECT_NODE', nodeProcessors.processSelectNode);
   workflow.registerHandler('APPLY_NODE_CHANGES', nodeProcessors.processApplyNodeChanges);
   workflow.registerHandler('RESET_ALL_NODE_STATUS', nodeProcessors.processResetAllNodeStatus);
   // ===== Edge Handlers =====

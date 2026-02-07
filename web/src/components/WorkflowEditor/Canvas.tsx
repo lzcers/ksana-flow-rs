@@ -23,6 +23,7 @@ import type { WorkflowStatus } from '../../hooks/useWorkflow';
 import type { NodeMetadata } from '../../api';
 
 interface CanvasProps {
+  graphKey?: string | null;
   nodes: Node[];
   edges: Edge[];
   workflowStatus: WorkflowStatus;
@@ -69,6 +70,7 @@ const ZoomDisplay = () => {
 };
 
 export const Canvas: React.FC<CanvasProps> = ({
+  graphKey,
   nodes,
   edges,
   workflowStatus,
@@ -300,6 +302,7 @@ export const Canvas: React.FC<CanvasProps> = ({
   return (
     <main className="w-full h-full relative bg-black" onMouseMove={onMouseMove}>
       <ReactFlow
+        key={graphKey ?? 'no-graph'}
         panOnDrag={spacePressed}
         selectionOnDrag={!spacePressed}
         panOnScroll={true}

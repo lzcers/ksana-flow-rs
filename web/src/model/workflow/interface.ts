@@ -1,48 +1,51 @@
 import type { Observable } from 'rxjs';
-import { RxWorkflow, type RxWorkflowOptions } from './workflowRx';
-import type { WorkflowState } from './types';
-import type { GraphCommand } from './commands';
-import type { XYPosition, Connection } from '@xyflow/react';
-import type { Edge } from './types';
 import type { Immutable } from 'immer';
+import { RxWorkflow, type RxWorkflowOptions } from './RxWorkflow';
+import type { WorkflowState, Node, Edge, NodeStatus, NodeData } from './types';
+import type { CommandMeta, GraphCommand } from './commands';
+import type { XYPosition, Connection, EdgeChange, NodeChange } from '@xyflow/react';
 
 // Re-export RxWorkflow types
 export type { RxWorkflow, RxWorkflowOptions };
 
 export interface WorkflowModelDispatchers {
+  // node dispatchers
   addNode: (
     type: string,
     position: XYPosition,
-    options?: { id?: string; data?: Record<string, any> }
+    options?: { id?: string; data?: Record<string, any> },
+    meta?: CommandMeta,
   ) => void;
-  deleteNode: (id: string) => void;
-  updateNodeData: (id: string, data: Record<string, any>) => void;
-  updateNodePosition: (id: string, position: XYPosition) => void;
-  updateNodeDimensions: (id: string, width: number, height: number) => void;
-  selectNode: (id: string | null) => void;
-  onConnect: (connection: Connection) => void;
-  addEdge: (edge: Edge) => void;
-  removeEdge: (id: string) => void;
-  setNodes: (nodes: WorkflowState['nodes']) => void;
-  setEdges: (edges: WorkflowState['edges']) => void;
-  pasteNodes: (nodes: WorkflowState['nodes'], edges: WorkflowState['edges']) => void;
-  groupNodes: (nodeIds: string[]) => void;
-  toggleSubgraph: (nodeId: string) => void;
-  handleNodeDragStop: (nodeId: string) => void;
+  setNodes: (nodes: WorkflowState['nodes'], meta?: CommandMeta) => void;
+  deleteNode: (id: string, meta?: CommandMeta) => void;
+  updateNodeData: (id: string, data: Partial<NodeData> & Record<string, any>, meta?: CommandMeta) => void;
+  updateNodePosition: (id: string, position: XYPosition, meta?: CommandMeta) => void;
+  updateNodeDimensions: (id: string, width: number, height: number, meta?: CommandMeta) => void;
+  updateNodeStatus: (id: string, status: NodeStatus, meta?: CommandMeta) => void;
+  groupNodes: (nodeIds: string[], meta?: CommandMeta) => void;
+  toggleSubgraph: (nodeId: string, meta?: CommandMeta) => void;
+  handleNodeDragStop: (nodeId: string, meta?: CommandMeta) => void;
+  applyNodeChanges: (changes: NodeChange[], meta?: CommandMeta) => void;
+  // edge dispatchers
+  addEdge: (edge: Edge, meta?: CommandMeta) => void;
+  removeEdge: (id: string, meta?: CommandMeta) => void;
+  setEdges: (edges: WorkflowState['edges'], meta?: CommandMeta) => void;
+  onConnect: (connection: Connection, meta?: CommandMeta) => void;
+  updateEdges: (changes: EdgeChange[], meta?: CommandMeta) => void;
+  pasteNodes: (nodes: Node[], edges: Edge[], meta?: CommandMeta) => void;
+
 }
 
-// 保持接口兼容性，虽然内部实现换成了 RxWorkflow
 export interface WorkflowModelInterface {
   rxWorkflow: RxWorkflow;
   state$: Observable<Immutable<WorkflowState>>;
   viewState$: Observable<Immutable<WorkflowState>>;
   canUndo$: Observable<boolean>;
   canRedo$: Observable<boolean>;
-  dispatch: (command: GraphCommand) => void;
+  action: WorkflowModelDispatchers;
+  getSnapshot: () => Immutable<WorkflowState>;
   undo: () => void;
   redo: () => void;
-  dispatchers: WorkflowModelDispatchers;
-  getSnapshot: () => Immutable<WorkflowState>;
   destroy: () => void;
 }
 
@@ -53,8 +56,11 @@ export function createWorkflowModel(
 
   const dispatch = (command: GraphCommand) => rxWorkflow.dispatch(command);
 
-  const dispatchers: WorkflowModelDispatchers = {
-    addNode: (type, position, options) =>
+  // 用户操作，会进 History
+  const action: WorkflowModelDispatchers = {
+    // node dispatchers
+    setNodes: (nodes, meta) => dispatch({ type: 'SET_NODES', payload: { nodes }, meta }),
+    addNode: (type, position, options, meta) =>
       dispatch({
         type: 'ADD_NODE',
         payload: {
@@ -63,32 +69,44 @@ export function createWorkflowModel(
           position,
           data: options?.data,
         },
+        meta
       }),
-    deleteNode: (id) => dispatch({ type: 'REMOVE_NODE', payload: { id } }),
-    updateNodeData: (id, data) =>
-      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { data } } }),
-    updateNodePosition: (id, position) =>
-      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { position } } }),
-    updateNodeDimensions: (id, width, height) =>
+    deleteNode: (id, meta) => dispatch({ type: 'REMOVE_NODE', payload: { id }, meta }),
+    updateNodeStatus: (id, status, meta) => dispatch({
+      type: "UPDATE_NODE", payload: {
+        id,
+        updates: { status }
+      },
+      meta
+    }),
+    updateNodeData: (id, data, meta) =>
+      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { data } }, meta }),
+    updateNodePosition: (id, position, meta) =>
+      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { position } }, meta }),
+    updateNodeDimensions: (id, width, height, meta) =>
       dispatch({
         type: 'UPDATE_NODE',
         payload: { id, updates: { dimensions: { width, height } } },
+        meta
       }),
-    selectNode: (id) => dispatch({ type: 'SELECT_NODE', payload: { id } }),
-    onConnect: (connection: Connection) =>
-      dispatch({ type: 'UPDATE_EDGES', payload: { connect: connection } }),
-    addEdge: (edge) => dispatch({ type: 'UPDATE_EDGES', payload: { add: [edge] } }),
-    removeEdge: (id) => dispatch({ type: 'UPDATE_EDGES', payload: { remove: [id] } }),
-    setNodes: (nodes) => dispatch({ type: 'SET_NODES', payload: { nodes } }),
-    setEdges: (edges) => dispatch({ type: 'SET_EDGES', payload: { edges } }),
-    pasteNodes: (nodes, edges) =>
-      dispatch({ type: 'PASTE_NODES', payload: { nodes, edges } }),
-    groupNodes: (nodeIds) =>
-      dispatch({ type: 'GROUP_NODES', payload: { nodeIds } }),
-    toggleSubgraph: (nodeId) =>
-      dispatch({ type: 'TOGGLE_SUBGRAPH', payload: { nodeId } }),
-    handleNodeDragStop: (nodeId) =>
-      dispatch({ type: 'HANDLE_NODE_DRAG_STOP', payload: { nodeId } }),
+    groupNodes: (nodeIds, meta) =>
+      dispatch({ type: 'GROUP_NODES', payload: { nodeIds }, meta }),
+    toggleSubgraph: (nodeId, meta) =>
+      dispatch({ type: 'TOGGLE_SUBGRAPH', payload: { nodeId }, meta }),
+    handleNodeDragStop: (nodeId, meta) =>
+      dispatch({ type: 'HANDLE_NODE_DRAG_STOP', payload: { nodeId }, meta }),
+    applyNodeChanges: (changes, meta) =>
+      dispatch({ type: 'APPLY_NODE_CHANGES', payload: { changes }, meta }),
+    // edge dispatchers
+    onConnect: (connection: Connection, meta) =>
+      dispatch({ type: 'UPDATE_EDGES', payload: { connect: connection }, meta }),
+    addEdge: (edge, meta) => dispatch({ type: 'UPDATE_EDGES', payload: { add: [edge] }, meta }),
+    removeEdge: (id, meta) => dispatch({ type: 'UPDATE_EDGES', payload: { remove: [id] }, meta }),
+    setEdges: (edges, meta) => dispatch({ type: 'SET_EDGES', payload: { edges }, meta }),
+    updateEdges: (changes, meta) =>
+      dispatch({ type: 'UPDATE_EDGES', payload: { changes: changes }, meta }),
+    pasteNodes: (nodes, edges, meta) =>
+      dispatch({ type: 'PASTE_NODES', payload: { nodes, edges }, meta }),
   };
 
   return {
@@ -97,10 +115,9 @@ export function createWorkflowModel(
     viewState$: rxWorkflow.viewState$,
     canUndo$: rxWorkflow.canUndo$,
     canRedo$: rxWorkflow.canRedo$,
-    dispatch,
+    action,
     undo: () => rxWorkflow.undo(),
     redo: () => rxWorkflow.redo(),
-    dispatchers,
     getSnapshot: () => rxWorkflow.currentState,
     destroy: () => rxWorkflow.destroy(),
   };

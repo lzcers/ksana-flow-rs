@@ -2,8 +2,8 @@
 export * from './utils';
 
 // 导出新的 RxJS API
-export * from './workflowRx';
+export * from './RxWorkflow';
 export * from './commands';
 export * from './processors';
-export { registerAllHandlers } from './commandHandlers';
 export * from './interface';
+export { registerAllHandlers } from './commandHandlers';

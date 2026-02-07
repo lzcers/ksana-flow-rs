@@ -19,6 +19,10 @@ export type NodeType =
   | 'SubgraphNode'
   | string;
 
+export type NodeStatus = 'idle' | 'running' | 'completed' | 'error';
+
+export type WorkflowStatus = 'idle' | 'running' | 'paused';
+
 export interface NodeData extends Record<string, unknown> {
   label?: string;
   description?: string;
@@ -28,7 +32,7 @@ export interface NodeData extends Record<string, unknown> {
   inputs?: Record<string, any>;
   outputs?: Record<string, any>;
   config?: Record<string, any>;
-  status?: 'idle' | 'running' | 'completed' | 'error';
+  status?: NodeStatus;
   errorMessage?: string;
   lastMessage?: any;
   lastMessageRunId?: string;
@@ -46,7 +50,6 @@ export type NodeChange = XNodeChange<Node>;
 export interface WorkflowState {
   nodes: Node[];
   edges: Edge[];
-  selectedNodeId: string | null;
 }
 
 export type { EdgeChange, Connection };

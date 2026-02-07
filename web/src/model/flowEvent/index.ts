@@ -7,8 +7,5 @@ export * from './types';
 // WebSocket
 export * from './socket';
 
-import { RxFlowEvent } from './flowEventRx';
+export { RxFlowEvent } from './RxFlowEvent';
 
-export function createFlowEventModel(): RxFlowEvent {
-  return new RxFlowEvent();
-}

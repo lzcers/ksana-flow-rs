@@ -1,12 +1,3 @@
-/**
- * WorkflowModel (Core)
- * 纯粹的、同步的、基于 Immer 的状态管理核心。
- * 负责：
- * 1. 持有 WorkflowState
- * 2. 管理 History (Undo/Redo)
- * 3. 执行 Command (调用 Processor)
- */
-
 import type { WorkflowState } from './types';
 import type { GraphCommand } from './commands';
 import type { Immutable } from 'immer';
@@ -28,8 +19,16 @@ export interface WorkflowModelOptions {
 const defaultState: WorkflowState = {
   nodes: [],
   edges: [],
-  selectedNodeId: null,
 };
+
+/**
+ * WorkflowModel (Core)
+ * 纯粹的、同步的、基于 Immer 的状态管理核心。
+ * 负责：
+ * 1. 持有 WorkflowState
+ * 2. 管理 History (Undo/Redo)
+ * 3. 执行 Command (调用 Processor)
+ */
 
 export class WorkflowModel {
   private _state: Immutable<WorkflowState>;
@@ -109,12 +108,8 @@ export class WorkflowModel {
       }
 
       // 5. 记录历史 (除非 skipHistory)
-      const shouldSkipHistory =
-        command.meta?.skipHistory === true ||
-        command.type === 'SELECT_NODE' ||
-        command.type === 'UPDATE_NODE'; // 运行时状态更新通常不进历史
 
-      if (!shouldSkipHistory) {
+      if (!command.meta?.skipHistory) {
         this._pushHistory(this._state);
       }
 

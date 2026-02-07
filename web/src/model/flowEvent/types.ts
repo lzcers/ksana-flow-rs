@@ -27,7 +27,7 @@ export interface SubgraphFrame {
 }
 
 export interface WebSocketFlowMessage {
-  runId?: string;
+  runId: string;
   runnerId?: number;
   runnerKind?: RunnerKind;
   parentRunnerId?: number;

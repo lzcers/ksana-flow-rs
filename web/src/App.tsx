@@ -200,6 +200,7 @@ function AppContent() {
       <div className="absolute inset-0 z-0">
         <ReactFlowProvider>
           <Canvas
+            graphKey={state.activeGraphKey}
             nodes={state.nodes}
             edges={state.edges}
             workflowStatus={workflowStatus}

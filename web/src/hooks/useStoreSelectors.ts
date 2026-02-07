@@ -10,17 +10,35 @@ import type { NodeMetadata } from '../api';
 
 /** 只订阅节点数组（最常用） */
 export function useNodes(): Node[] {
-  return useStore(useCallback((state: StoreState) => state.nodes, []));
+  return useStore(
+    useCallback((state: StoreState) => {
+      const key = state.activeGraphKey;
+      if (key && state.graphsByKey[key]) return state.graphsByKey[key].nodes;
+      return state.nodes;
+    }, [])
+  );
 }
 
 /** 只订阅边数组 */
 export function useEdges(): Edge[] {
-  return useStore(useCallback((state: StoreState) => state.edges, []));
+  return useStore(
+    useCallback((state: StoreState) => {
+      const key = state.activeGraphKey;
+      if (key && state.graphsByKey[key]) return state.graphsByKey[key].edges;
+      return state.edges;
+    }, [])
+  );
 }
 
 /** 只订阅选中节点ID */
 export function useSelectedNodeId(): string | null {
-  return useStore(useCallback((state: StoreState) => state.selectedNodeId, []));
+  return useStore(
+    useCallback((state: StoreState) => {
+      const key = state.activeGraphKey;
+      if (key && state.graphsByKey[key]) return state.graphsByKey[key].selectedNodeId;
+      return state.selectedNodeId;
+    }, [])
+  );
 }
 
 /** 订阅连接状态 */
@@ -89,6 +107,10 @@ export function useWorkflows(): { id: number; name: string }[] {
 /** 订阅当前工作流ID */
 export function useCurrentWorkflowId(): number | null {
   return useStore(useCallback((state: StoreState) => state.currentWorkflowId, []));
+}
+
+export function useActiveGraphKey(): string | null {
+  return useStore(useCallback((state: StoreState) => state.activeGraphKey, []));
 }
 
 /** 订阅当前空间ID */

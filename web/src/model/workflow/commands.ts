@@ -1,10 +1,11 @@
 import type { XYPosition, Connection } from '@xyflow/react';
 import type { Node, NodeData, Edge, NodeChange, EdgeChange } from './types';
 
+export type CommandMeta = {
+  skipHistory?: boolean;
+}
 export interface BaseCommand {
-  meta?: {
-    skipHistory?: boolean;
-  };
+  meta?: CommandMeta;
 }
 
 // ===== Node Commands =====
@@ -31,25 +32,7 @@ export interface UpdateNodeCommand extends BaseCommand {
   type: 'UPDATE_NODE';
   payload: {
     id: string;
-    updates: {
-      data?: Partial<NodeData>;
-      position?: XYPosition;
-      dimensions?: { width: number; height: number };
-      status?: 'idle' | 'running' | 'completed' | 'error';
-      inputs?: Record<string, any>;
-      outputs?: Record<string, any>;
-      errorMessage?: string;
-      isOutputStream?: boolean;
-      lastMessage?: any;
-      [key: string]: any;
-    };
-  };
-}
-
-export interface SelectNodeCommand extends BaseCommand {
-  type: 'SELECT_NODE';
-  payload: {
-    id: string | null;
+    updates: Partial<NodeData> & Record<string, any>;
   };
 }
 
@@ -155,7 +138,6 @@ export type GraphCommand =
   | AddNodeCommand
   | RemoveNodeCommand
   | UpdateNodeCommand
-  | SelectNodeCommand
   | ApplyNodeChangesCommand
   | ResetAllNodeStatusCommand
   // Edge commands
