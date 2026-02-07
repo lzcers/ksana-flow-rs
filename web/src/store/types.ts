@@ -63,22 +63,12 @@ export interface Canvas {
 }
 
 
-interface RunRecord {
-  runId: string;
-  workflowId: number;
-  status: WorkflowStatus;
-}
-
-interface RuntimeManager {
-  // 存储所有运行中的工作流与其状态
-  runningRecord: Record<string, RunRecord>;
-}
-
 // 处理执行相关的状态和操作
 export interface Execution {
-  workflowStatus: WorkflowStatus;
   workflowStatuses: Record<number, WorkflowStatus>;
   runIdToWorkflowId: Record<string, number>;
+  // 当前工作流状态和 runId
+  workflowStatus: WorkflowStatus;
   currentRunId: string | null;
   flowMessageForRunId$: (runId: string) => Observable<WebSocketFlowMessage>;
   flowMessageForSubgraphNodeId$: (parentNodeId: string) => Observable<WebSocketFlowMessage>;

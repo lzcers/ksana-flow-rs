@@ -7,6 +7,7 @@ import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
 import type { FlowEvent, WebSocketFlowMessage } from '@/model/flowEvent/types';
 import { rxWorkflowModel } from '.';
 import { castDraft } from 'immer';
+import { unstable_batchedUpdates } from 'react-dom';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => {
   const applyExecutionEventImpl = (event: FlowEvent) => {
@@ -167,16 +168,14 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       if (!currentSpaceId) return;
       try {
         const wf = await api.fetchWorkflow(currentSpaceId, id);
-        set({ currentWorkflowId: id });
-
-        // Ensure blueprint matches BackendNode type structure or cast appropriately if safe
         const { nodes, edges } = fromBlueprint(wf.blueprint as any);
 
         const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
-
         setNodes(castDraft(preprocessed.nodes));
         setEdges(castDraft(preprocessed.edges));
         selectNode(null);
+        set({ currentWorkflowId: id });
+
         try {
           const statusRes = await api.getWorkflowStatus(currentSpaceId, id);
           if (statusRes) {
