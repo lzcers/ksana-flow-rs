@@ -3,7 +3,7 @@ import type { Node, Edge, NodeChange, EdgeChange, Connection, WorkflowStatus } f
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
 import type { Observable } from 'rxjs';
 import type { FlowEvent } from '../model/flowEvent/types';
-import type { GraphKey } from './workflowManager';
+import type { GraphKey } from '../model/workflowManager';
 
 
 

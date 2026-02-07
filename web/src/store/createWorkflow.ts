@@ -6,16 +6,99 @@ import * as api from '../api';
 import { applyCollapsedSubgraphUi } from '../model/workflow/utils';
 import { fromBlueprint, toBlueprint } from '@/model/workflow/adapters';
 import { NODE_TYPES } from '../components/WorkflowEditor/nodeTypes';
-import { makeGraphKey, workflowManager } from './workflowManager';
+import { makeGraphKey, workflowManager, type GraphKey } from '@/model/workflowManager';
+import type { WorkflowStatus } from '@/model/workflow/types';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => {
-  workflowManager.subscribeRuntimeState((runtime) => {
-    set({
-      activeGraphKey: runtime.activeGraphKey,
-      currentRunId: runtime.activeRunId,
-      workflowStatus: runtime.activeWorkflowStatus,
-      workflowStatuses: runtime.workflowStatuses,
-    });
+  const runIdByGraphKey = new Map<GraphKey, string | null>();
+  const statusByGraphKey = new Map<GraphKey, WorkflowStatus>();
+
+  const workflowIdFromGraphKey = (graphKey: GraphKey): number | null => {
+    const [, workflowIdRaw] = graphKey.split(':');
+    const workflowId = Number(workflowIdRaw);
+    return Number.isFinite(workflowId) ? workflowId : null;
+  };
+
+  const setGraphStatus = (graphKey: GraphKey, status: WorkflowStatus) => {
+    statusByGraphKey.set(graphKey, status);
+    const workflowId = workflowIdFromGraphKey(graphKey);
+    set((state) => ({
+      workflowStatus: state.activeGraphKey === graphKey ? status : state.workflowStatus,
+      workflowStatuses:
+        workflowId == null
+          ? state.workflowStatuses
+          : {
+            ...state.workflowStatuses,
+            [workflowId]: status,
+          },
+    }));
+  };
+
+  const applyFlowControlEventToGraphStatus = (graphKey: GraphKey, event: any) => {
+    if (!event || typeof event !== 'object') return;
+    if (typeof event.type !== 'string') return;
+    let status: WorkflowStatus | null = null;
+    switch (event.type) {
+      case 'FlowPaused':
+        status = 'paused';
+        break;
+      case 'FlowResumed':
+        status = 'running';
+        break;
+      case 'FlowStopped':
+      case 'FlowFinished':
+        status = 'idle';
+        break;
+      default:
+        status = null;
+        break;
+    }
+    if (status) setGraphStatus(graphKey, status);
+  };
+
+  workflowManager.subscribe((event) => {
+    switch (event.type) {
+      case 'ActiveChanged': {
+        const activeGraphKey = event.activeGraphKey;
+        const currentRunId = activeGraphKey ? runIdByGraphKey.get(activeGraphKey) ?? null : null;
+        const workflowStatus = activeGraphKey ? statusByGraphKey.get(activeGraphKey) ?? 'idle' : 'idle';
+        set({
+          activeGraphKey,
+          currentRunId,
+          workflowStatus,
+        });
+        break;
+      }
+      case 'RunIdChanged': {
+        runIdByGraphKey.set(event.graphKey, event.runId);
+        set((state) =>
+          state.activeGraphKey === event.graphKey ? { currentRunId: event.runId } : {},
+        );
+        break;
+      }
+      case 'WorkflowStatusChanged': {
+        setGraphStatus(event.graphKey, event.status);
+        break;
+      }
+      case 'ModelDestroyed': {
+        runIdByGraphKey.delete(event.graphKey);
+        statusByGraphKey.delete(event.graphKey);
+        set((state) => {
+          const next: Partial<Workflow> = {};
+          if (state.activeGraphKey === event.graphKey) {
+            next.activeGraphKey = null;
+            next.currentRunId = null;
+            next.workflowStatus = 'idle';
+          }
+          if (event.workflowId != null && Object.prototype.hasOwnProperty.call(state.workflowStatuses, event.workflowId)) {
+            const { [event.workflowId]: _removed, ...rest } = state.workflowStatuses;
+            next.workflowStatuses = rest;
+          }
+          return next;
+        });
+        break;
+      }
+    }
   });
 
   return ({
@@ -59,6 +142,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       try {
         // 1. 获取或创建工作实例
         const graphKey = makeGraphKey(currentSpaceId, id);
+        if (!runIdByGraphKey.has(graphKey)) runIdByGraphKey.set(graphKey, null);
+        if (!statusByGraphKey.has(graphKey)) statusByGraphKey.set(graphKey, 'idle');
         const rxWorkflowInstance = workflowManager.getOrCreate(graphKey);
         workflowManager.activate(graphKey);
         // 2. 从 API 获取工作流定义并初始化
@@ -79,6 +164,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             if (statusRes.events && Array.isArray(statusRes.events)) {
               statusRes.events.forEach((message: any) => {
                 rxWorkflowInstance.applyFlowEvent(message);
+                applyFlowControlEventToGraphStatus(graphKey, message);
               });
             }
           }
@@ -166,6 +252,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const { currentSpaceId, switchCanvas, setNodes, setEdges, selectNode } = get();
       if (!currentSpaceId) return;
       const graphKey = `${currentSpaceId}:draft`;
+      if (!runIdByGraphKey.has(graphKey)) runIdByGraphKey.set(graphKey, null);
+      if (!statusByGraphKey.has(graphKey)) statusByGraphKey.set(graphKey, 'idle');
       workflowManager.getOrCreate(graphKey);
       workflowManager.activate(graphKey);
       set({ currentWorkflowId: null });
@@ -234,7 +322,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           const graphKey = activeGraphKey ?? (currentWorkflowId != null ? makeGraphKey(currentSpaceId, currentWorkflowId) : null);
           if (graphKey) {
             workflowManager.setRunId(graphKey, res.run_id);
-            workflowManager.setWorkflowStatus(graphKey, 'running');
+            setGraphStatus(graphKey, 'running');
           }
           success('Workflow started');
         }
@@ -249,7 +337,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       if (!currentRunId || !currentSpaceId) return;
       try {
         await api.pauseWorkflow(currentSpaceId, currentRunId);
-        if (activeGraphKey) workflowManager.setWorkflowStatus(activeGraphKey, 'paused');
+        if (activeGraphKey) setGraphStatus(activeGraphKey, 'paused');
       } catch (e) {
         console.error("Failed to pause workflow", e);
         error("Failed to pause workflow");
@@ -261,7 +349,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       if (!currentRunId || !currentSpaceId) return;
       try {
         await api.resumeWorkflow(currentSpaceId, currentRunId);
-        if (activeGraphKey) workflowManager.setWorkflowStatus(activeGraphKey, 'running');
+        if (activeGraphKey) setGraphStatus(activeGraphKey, 'running');
       } catch (e) {
         console.error("Failed to resume workflow", e);
         error("Failed to resume workflow");
@@ -275,7 +363,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         await api.stopWorkflow(currentSpaceId, currentRunId);
         if (activeGraphKey) {
           workflowManager.setRunId(activeGraphKey, null);
-          workflowManager.setWorkflowStatus(activeGraphKey, 'idle');
+          setGraphStatus(activeGraphKey, 'idle');
         }
       } catch (e) {
         console.error("Failed to stop workflow", e);
@@ -297,7 +385,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           const graphKey = activeGraphKey ?? (currentWorkflowId != null ? makeGraphKey(currentSpaceId, currentWorkflowId) : null);
           if (graphKey) {
             workflowManager.setRunId(graphKey, res.run_id);
-            workflowManager.setWorkflowStatus(graphKey, 'running');
+            setGraphStatus(graphKey, 'running');
           }
         }
         success(`Node ${nodeId} execution started`);

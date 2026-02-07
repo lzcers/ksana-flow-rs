@@ -1,9 +1,9 @@
+import { castDraft } from 'immer';
 import type { StateCreator } from 'zustand';
 import type { StoreState, Canvas } from './types';
 import type { Node, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import { sortNodesByParent } from '../model/workflow/utils';
-import { workflowManager, type GraphKey } from './workflowManager';
-import { castDraft } from 'immer';
+import { workflowManager, type GraphKey } from '../model/workflowManager';
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => {
 
