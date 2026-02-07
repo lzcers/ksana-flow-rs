@@ -173,10 +173,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         const { nodes, edges } = fromBlueprint(wf.blueprint as any);
 
         const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
+
         setNodes(castDraft(preprocessed.nodes));
         setEdges(castDraft(preprocessed.edges));
         selectNode(null);
-
         try {
           const statusRes = await api.getWorkflowStatus(currentSpaceId, id);
           if (statusRes) {

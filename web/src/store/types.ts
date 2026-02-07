@@ -62,6 +62,18 @@ export interface Canvas {
   canRedo: boolean;
 }
 
+
+interface RunRecord {
+  runId: string;
+  workflowId: number;
+  status: WorkflowStatus;
+}
+
+interface RuntimeManager {
+  // 存储所有运行中的工作流与其状态
+  runningRecord: Record<string, RunRecord>;
+}
+
 // 处理执行相关的状态和操作
 export interface Execution {
   workflowStatus: WorkflowStatus;

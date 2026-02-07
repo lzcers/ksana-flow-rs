@@ -17,7 +17,6 @@ export const TextNode = memo((props: NodeProps & { data: NodeData }) => {
     incremark,
     onBlur,
   } = useTextNode(id, data);
-
   return (
     <TextNodeView
       {...props}
