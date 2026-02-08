@@ -32,7 +32,7 @@ export function useTextNode(id: string, data: NodeData) {
   const upstreamText = preferredUpstream ? coerceToText((streamingUpstream.data)?.lastMessage) : '';
   const derivedText = hasManualText
     ? manualText
-    : upstreamText || coerceToText(data.lastMessage);
+    : preferredUpstream ? upstreamText : coerceToText(data.lastMessage);
 
   useEffect(() => {
     setText(derivedText);

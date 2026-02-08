@@ -344,7 +344,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const { currentSpaceId, nodes, edges, currentWorkflowId, success, error } = get();
       if (!currentSpaceId) return;
       const blueprint = toBlueprint(nodes, edges);
-
       try {
         const res = await api.runNode(currentSpaceId, blueprint as never, nodeId, currentWorkflowId || -1);
         const ins = workflowManager.getOrCreate(makeGraphKey(currentSpaceId, currentWorkflowId || -1));
