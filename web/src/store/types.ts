@@ -50,8 +50,6 @@ export interface Canvas {
   selectedNodeId: string[];
   isConnecting: boolean;
   connectionSourceId: string | null;
-  canUndo: boolean;
-  canRedo: boolean;
   switchCanvas: (graphKey: GraphKey) => void;
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;

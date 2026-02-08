@@ -36,8 +36,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     selectedNodeId: [],
     isConnecting: false,
     connectionSourceId: null,
-    canUndo: false,
-    canRedo: false,
 
     undo: () => {
       getActiveModel().undo();
