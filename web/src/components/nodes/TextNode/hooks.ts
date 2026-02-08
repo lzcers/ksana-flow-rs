@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNodeConnections } from '@xyflow/react';
 import { useIncremark } from '@incremark/react';
 import { useStore } from '@/store';
@@ -14,25 +14,14 @@ export function useTextNode(id: string, data: NodeData) {
 
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  const isStreamingRef = useRef(false);
-  const lastTextRef = useRef<string>('');
-  const isMarkdownRef = useRef(isMarkdown);
-
-  useEffect(() => {
-    isMarkdownRef.current = isMarkdown;
-  }, [isMarkdown]);
-
   const incremark = useIncremark({
     math: { tex: true },
     gfm: true,
   });
 
-  const incremarkRef = useRef(incremark);
-  useEffect(() => {
-    incremarkRef.current = incremark;
-  }, [incremark]);
 
-
+  // 直接渲染 lastMessage，因为 instance.ts 已在事件处理时合并了流式消息
+  // 对于上游是 isOutputStream 的节点，也是直接渲染上游 lastMessage
   const manualText = typeof data.config?.text === 'string' ? data.config.text : '';
   const hasManualText = manualText.length > 0;
 
@@ -41,39 +30,15 @@ export function useTextNode(id: string, data: NodeData) {
   const streamingUpstream = upstreamNodes.find((n) => Boolean((n.data as any)?.isOutputStream));
   const preferredUpstream = streamingUpstream ?? upstreamNodes[0];
   const upstreamText = preferredUpstream ? coerceToText((preferredUpstream.data as any)?.lastMessage) : '';
-  const upstreamIsStreaming = Boolean((preferredUpstream?.data as any)?.isOutputStream);
 
   const derivedText = hasManualText
     ? manualText
     : upstreamText || coerceToText(data.lastMessage);
 
   useEffect(() => {
-    const nextText = derivedText;
-    const shouldStreamAppend = !hasManualText && upstreamIsStreaming;
-
-    if (shouldStreamAppend && !isStreamingRef.current) {
-      isStreamingRef.current = true;
-      lastTextRef.current = '';
-      setText('');
-      incremarkRef.current.reset();
-    }
-    if (!shouldStreamAppend) {
-      isStreamingRef.current = false;
-    }
-
-    const prev = lastTextRef.current;
-    if (nextText === prev) return;
-    lastTextRef.current = nextText;
-    setText(nextText);
-
-    if (!isMarkdownRef.current) return;
-    if (shouldStreamAppend && nextText.startsWith(prev)) {
-      const delta = nextText.slice(prev.length);
-      if (delta) incremarkRef.current.append(delta);
-      return;
-    }
-    incremarkRef.current.render(nextText);
-  }, [derivedText, hasManualText, upstreamIsStreaming]);
+    setText(derivedText);
+    incremark.render(derivedText);
+  }, [derivedText]);
 
   const onChange = useCallback((next: string) => {
     setText(next);
@@ -94,8 +59,8 @@ export function useTextNode(id: string, data: NodeData) {
   const resetText = useCallback(() => {
     setText('');
     updateConfig({ text: '' });
-    incremarkRef.current.reset();
-  }, [updateConfig]);
+    incremark.reset();
+  }, [updateConfig, incremark]);
 
   const onBlur = useCallback(() => {
     updateConfig({ text });

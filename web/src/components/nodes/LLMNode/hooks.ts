@@ -21,7 +21,6 @@ export function useLLMNodeController(id: string, data: NodeData) {
   const [stream, setStream] = useState(Boolean(data.config?.stream ?? true));
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [outputText, setOutputText] = useState<string>('');
-  const [isStreaming, setIsStreaming] = useState(false);
   const [isMarkdown, setIsMarkdown] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [isSystemFullScreen, setIsSystemFullScreen] = useState(false);
@@ -30,17 +29,6 @@ export function useLLMNodeController(id: string, data: NodeData) {
     math: { tex: true },
     gfm: true,
   });
-  const incremarkRef = useRef(incremark);
-  useEffect(() => {
-    incremarkRef.current = incremark;
-  }, [incremark]);
-
-  const isMarkdownRef = useRef(isMarkdown);
-  useEffect(() => {
-    isMarkdownRef.current = isMarkdown;
-  }, [isMarkdown]);
-  const lastTextRef = useRef<string>('');
-  const lastRunIdRef = useRef<string | null>(null);
 
   const isComposingSystem = useRef(false);
   const isComposingUser = useRef(false);
@@ -64,51 +52,14 @@ export function useLLMNodeController(id: string, data: NodeData) {
     setStream(Boolean(data.config?.stream ?? true));
   }, [data.config?.model, data.config?.stream]);
 
+  // 直接渲染 lastMessage，因为 instance.ts 已在事件处理时合并了流式消息
   useEffect(() => {
-    const isOutputStream = Boolean(data.isOutputStream);
-
-    if (isOutputStream) {
-      setIsStreaming(true);
-      const next = typeof data.lastMessage === 'string' ? data.lastMessage : '';
-      const prev = lastTextRef.current;
-      if (next !== prev) {
-        if (isMarkdownRef.current && next.startsWith(prev)) {
-          const delta = next.slice(prev.length);
-          if (delta) incremarkRef.current.append(delta);
-        } else if (isMarkdownRef.current) {
-          incremarkRef.current.render(next);
-        }
-        lastTextRef.current = next;
-        setOutputText(next);
-      }
-      return;
+    const text = typeof data.lastMessage === 'string' ? data.lastMessage : '';
+    setOutputText(text);
+    if (isMarkdown) {
+      incremark.render(text);
     }
-
-    setIsStreaming(false);
-    lastRunIdRef.current = null;
-    const finalText =
-      typeof data.outputs?.output === 'string'
-        ? data.outputs.output
-        : typeof data.lastMessage === 'string'
-          ? data.lastMessage
-          : '';
-
-    if (finalText !== lastTextRef.current) {
-      lastTextRef.current = finalText;
-      setOutputText(finalText);
-      if (isMarkdownRef.current) {
-        incremarkRef.current.render(finalText);
-      }
-    }
-  }, [data.isOutputStream, data.outputs?.output, data.lastMessage]);
-
-  useEffect(() => {
-    if (!isMarkdown) return;
-    if (isStreaming) return;
-    if (incremarkRef.current.markdown !== outputText) {
-      incremarkRef.current.render(outputText);
-    }
-  }, [isMarkdown, isStreaming, outputText]);
+  }, [data.lastMessage, isMarkdown, incremark]);
 
   useEffect(() => {
     if (!isConfigOpen) return;
@@ -125,12 +76,11 @@ export function useLLMNodeController(id: string, data: NodeData) {
     if (typeof value !== 'string') return;
     if (value !== outputText) {
       setOutputText(value);
-      lastTextRef.current = value;
-      if (isMarkdownRef.current) {
-        incremarkRef.current.render(value);
+      if (isMarkdown) {
+        incremark.render(value);
       }
     }
-  }, [data.config?.output, data.isOutputStream, outputText]);
+  }, [data.config?.output, data.isOutputStream, outputText, isMarkdown, incremark]);
 
   const onModelChange = useCallback(
     (next: string) => {
@@ -200,10 +150,10 @@ export function useLLMNodeController(id: string, data: NodeData) {
 
   const onOutputBlur = useCallback(() => {
     updateConfig({ output: outputText });
-    if (isMarkdownRef.current) {
-      incremarkRef.current.render(outputText);
+    if (isMarkdown) {
+      incremark.render(outputText);
     }
-  }, [outputText, updateConfig]);
+  }, [outputText, updateConfig, isMarkdown, incremark]);
 
   return {
     systemInputRef,
@@ -213,7 +163,6 @@ export function useLLMNodeController(id: string, data: NodeData) {
     model,
     stream,
     isConfigOpen,
-    isStreaming,
     isMarkdown,
     isFullScreen,
     isSystemFullScreen,

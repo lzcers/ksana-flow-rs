@@ -26,7 +26,6 @@ export function LLMNodeView({
   stream,
   isConfigOpen,
   setIsConfigOpen,
-  isStreaming,
   isMarkdown,
   setIsMarkdown,
   isFullScreen,
@@ -56,7 +55,6 @@ export function LLMNodeView({
   stream: boolean;
   isConfigOpen: boolean;
   setIsConfigOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  isStreaming: boolean;
   isMarkdown: boolean;
   setIsMarkdown: React.Dispatch<React.SetStateAction<boolean>>;
   isFullScreen: boolean;
@@ -221,7 +219,7 @@ export function LLMNodeView({
             <div className={llmNodeStyles.fullscreenBody}>
               {isMarkdown ? (
                 <ThemeProvider theme={theme}>
-                  <AutoScrollContainer enabled={isStreaming} className="h-full w-full">
+                  <AutoScrollContainer enabled={data.isOutputStream} className="h-full w-full">
                     <Incremark incremark={incremark} />
                   </AutoScrollContainer>
                 </ThemeProvider>
@@ -248,7 +246,7 @@ export function LLMNodeView({
           {isMarkdown ? (
             <div className={llmNodeStyles.markdownBox} onKeyDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
               <ThemeProvider theme={theme}>
-                <AutoScrollContainer enabled={isStreaming} className="h-[300px] p-2">
+                <AutoScrollContainer enabled={data.isOutputStream} className="h-[300px] p-2">
                   <Incremark incremark={incremark} />
                 </AutoScrollContainer>
               </ThemeProvider>

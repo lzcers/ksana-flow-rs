@@ -41,7 +41,6 @@ export class ModelInstance {
         this.runId = runId;
         this.rxFlowEvent$ = rxFlowEvent$;
         this.notifyWorkflowStatusChange = notifyWorkflowStatusChange;
-
         this.flowEventSubscription = this.rxFlowEvent$.getSource$()
             .pipe(
                 filter((e) => e.runId === this.runId && e.runnerKind === "Root"),

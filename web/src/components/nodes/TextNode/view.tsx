@@ -93,7 +93,7 @@ export function TextNodeView({
             <div className={textNodeStyles.fullscreenContainer}>
               {isMarkdown ? (
                 <ThemeProvider theme={theme}>
-                  <AutoScrollContainer enabled={data.upstreamIsStreaming} className="h-full w-full">
+                  <AutoScrollContainer enabled={false} className="h-full w-full">
                     <Incremark incremark={incremark} />
                   </AutoScrollContainer>
                 </ThemeProvider>
