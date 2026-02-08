@@ -12,7 +12,7 @@ export { type GraphKey, makeGraphKey };
 export type WorkflowManagerEvent =
   | { type: 'ActiveChanged'; activeGraphKey: GraphKey | null }
   | { type: 'RunIdChanged'; graphKey: GraphKey; runId: string | null }
-  | { type: 'WorkflowStatusChanged'; graphKey: GraphKey; workflowId: number | null; status: WorkflowStatus }
+  | { type: 'WorkflowStatusChanged'; graphKey: GraphKey; workflowId: number | null; runId: string | null; status: WorkflowStatus }
   | { type: 'ModelDestroyed'; graphKey: GraphKey; workflowId: number | null };
 
 export type WorkflowManagerListener = (event: WorkflowManagerEvent) => void;
@@ -67,11 +67,12 @@ export class WorkflowManager {
       spaceId,
       workflowId,
       null,
-      (changedGraphKey, changedWorkflowId, status) => {
+      (changedGraphKey, changedWorkflowId, runId, status) => {
         this.emit({
           type: 'WorkflowStatusChanged',
           graphKey: changedGraphKey,
           workflowId: changedWorkflowId,
+          runId,
           status,
         });
       },

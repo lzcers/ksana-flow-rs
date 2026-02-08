@@ -19,9 +19,10 @@ export class ModelInstance {
     spaceId: string;
     workflowId: number;
     runId: string | null;
+    status: WorkflowStatus = 'idle';
     rxFlowEvent$: RxFlowEvent;
 
-    private notifyWorkflowStatusChange: (graphKey: GraphKey, workflowId: number | null, status: WorkflowStatus) => void;
+    private notifyWorkflowStatusChange: (graphKey: GraphKey, workflowId: number | null, runId: string | null, status: WorkflowStatus) => void;
 
     constructor(
         graphKey: GraphKey,
@@ -30,7 +31,7 @@ export class ModelInstance {
         spaceId: string,
         workflowId: number,
         runId: string | null,
-        notifyWorkflowStatusChange: (graphKey: GraphKey, workflowId: number | null, status: WorkflowStatus) => void,
+        notifyWorkflowStatusChange: (graphKey: GraphKey, workflowId: number | null, runId: string | null, status: WorkflowStatus) => void,
     ) {
         this.graphKey = graphKey;
         this.model = model;
@@ -51,6 +52,7 @@ export class ModelInstance {
 
     setRunId(runId: string | null) {
         this.runId = runId;
+        // this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, this.status);
     }
 
     applyFlowEvent(event: FlowEvent) {
@@ -124,7 +126,7 @@ export class ModelInstance {
             case 'FlowFinished': status = 'idle'; break;
             default: status = 'idle'; break;
         }
-        const workflowId = Number.isFinite(this.workflowId) ? this.workflowId : null;
-        this.notifyWorkflowStatusChange(this.graphKey, workflowId, status);
+        this.status = status;
+        this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, status);
     }
 }

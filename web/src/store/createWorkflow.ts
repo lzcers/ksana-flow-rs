@@ -34,28 +34,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     }));
   };
 
-  const applyFlowControlEventToGraphStatus = (graphKey: GraphKey, event: any) => {
-    if (!event || typeof event !== 'object') return;
-    if (typeof event.type !== 'string') return;
-    let status: WorkflowStatus | null = null;
-    switch (event.type) {
-      case 'FlowPaused':
-        status = 'paused';
-        break;
-      case 'FlowResumed':
-        status = 'running';
-        break;
-      case 'FlowStopped':
-      case 'FlowFinished':
-        status = 'idle';
-        break;
-      default:
-        status = null;
-        break;
-    }
-    if (status) setGraphStatus(graphKey, status);
-  };
-
   workflowManager.subscribe((event) => {
     switch (event.type) {
       case 'ActiveChanged': {
@@ -164,14 +142,11 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             if (statusRes.events && Array.isArray(statusRes.events)) {
               statusRes.events.forEach((message: any) => {
                 rxWorkflowInstance.applyFlowEvent(message);
-                applyFlowControlEventToGraphStatus(graphKey, message);
               });
             }
           }
-
           // 3.切换到新的画布实例
           switchCanvas(graphKey);
-
         } catch (e) {
           console.warn("Failed to fetch workflow status", e);
         }
