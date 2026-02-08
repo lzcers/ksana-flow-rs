@@ -16,8 +16,8 @@ export interface Workflow {
   currentWorkflowId: number | null;
   currentSpaceId: string | null;
   currentRunId: string | null;
+  currentWorkflowStatus: WorkflowStatus;
   activeGraphKey: GraphKey | null;
-  workflowStatus: WorkflowStatus;
   workflowStatuses: Record<number, WorkflowStatus>;
   setSpaceId: (id: string) => void;
   loadMetadata: () => Promise<void>;

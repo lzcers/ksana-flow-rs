@@ -23,7 +23,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     statusByGraphKey.set(graphKey, status);
     const workflowId = workflowIdFromGraphKey(graphKey);
     set((state) => ({
-      workflowStatus: state.activeGraphKey === graphKey ? status : state.workflowStatus,
+      currentWorkflowStatus: state.activeGraphKey === graphKey ? status : state.currentWorkflowStatus,
       workflowStatuses:
         workflowId == null
           ? state.workflowStatuses
@@ -39,11 +39,11 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       case 'ActiveChanged': {
         const activeGraphKey = event.activeGraphKey;
         const currentRunId = activeGraphKey ? runIdByGraphKey.get(activeGraphKey) ?? null : null;
-        const workflowStatus = activeGraphKey ? statusByGraphKey.get(activeGraphKey) ?? 'idle' : 'idle';
+        const currentWorkflowStatus = activeGraphKey ? statusByGraphKey.get(activeGraphKey) ?? 'idle' : 'idle';
         set({
           activeGraphKey,
           currentRunId,
-          workflowStatus,
+          currentWorkflowStatus,
         });
         break;
       }
@@ -66,7 +66,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           if (state.activeGraphKey === event.graphKey) {
             next.activeGraphKey = null;
             next.currentRunId = null;
-            next.workflowStatus = 'idle';
+            next.currentWorkflowStatus = 'idle';
           }
           if (event.workflowId != null && Object.prototype.hasOwnProperty.call(state.workflowStatuses, event.workflowId)) {
             const { [event.workflowId]: _removed, ...rest } = state.workflowStatuses;
@@ -82,12 +82,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
   return ({
     workflows: [],
     nodeTypes: [],
-    currentWorkflowId: null,
     currentSpaceId: null,
+    currentWorkflowId: null,
     currentRunId: null,
+    currentWorkflowStatus: 'idle',
     activeGraphKey: null,
-    workflowStatus: 'idle',
     workflowStatuses: {},
+
     setSpaceId: (id) => {
       set({ currentSpaceId: id });
     },
@@ -117,14 +118,31 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     loadWorkflow: async (id: number) => {
       const { currentSpaceId, switchCanvas, error, setNodes, setEdges, selectNode } = get();
       if (!currentSpaceId) return;
+      const graphKey = makeGraphKey(currentSpaceId, id);
       try {
-        // 1. 获取或创建工作实例
-        const graphKey = makeGraphKey(currentSpaceId, id);
+        const existing = workflowManager.getModelInstance(graphKey);
+        if (existing) {
+          runIdByGraphKey.set(graphKey, existing.runId ?? null);
+          statusByGraphKey.set(graphKey, existing.status ?? 'idle');
+          setGraphStatus(graphKey, existing.status ?? 'idle');
+
+          selectNode([]);
+          set({ currentWorkflowId: id });
+
+          const snapshot = existing.model.getSnapshot();
+          const hasAnyGraphData = snapshot.nodes.length > 0 || snapshot.edges.length > 0;
+          if (hasAnyGraphData) {
+            switchCanvas(graphKey);
+            return;
+          }
+        }
+
         if (!runIdByGraphKey.has(graphKey)) runIdByGraphKey.set(graphKey, null);
         if (!statusByGraphKey.has(graphKey)) statusByGraphKey.set(graphKey, 'idle');
+
         const rxWorkflowInstance = workflowManager.getOrCreate(graphKey);
         workflowManager.activate(graphKey);
-        // 2. 从 API 获取工作流定义并初始化
+
         const wf = await api.fetchWorkflow(currentSpaceId, id);
         const { nodes, edges } = fromBlueprint(wf.blueprint as any);
         const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
@@ -145,10 +163,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
               });
             }
           }
-          // 3.切换到新的画布实例
-          switchCanvas(graphKey);
         } catch (e) {
           console.warn("Failed to fetch workflow status", e);
+        } finally {
+          switchCanvas(graphKey);
         }
 
       } catch (e) {
