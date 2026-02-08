@@ -19,7 +19,6 @@ export function useTextNode(id: string, data: NodeData) {
     gfm: true,
   });
 
-
   // 直接渲染 lastMessage，因为 instance.ts 已在事件处理时合并了流式消息
   // 对于上游是 isOutputStream 的节点，也是直接渲染上游 lastMessage
   const manualText = typeof data.config?.text === 'string' ? data.config.text : '';
@@ -28,9 +27,9 @@ export function useTextNode(id: string, data: NodeData) {
   const upstreamNodeIds = connections.map((conn) => conn.source);
   const upstreamNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id));
   const streamingUpstream = upstreamNodes.find((n) => Boolean((n.data as any)?.isOutputStream));
-  const preferredUpstream = streamingUpstream ?? upstreamNodes[0];
-  const upstreamText = preferredUpstream ? coerceToText((preferredUpstream.data as any)?.lastMessage) : '';
-
+  // 取上游节点第 0 个，且状态为 running
+  const preferredUpstream = streamingUpstream && upstreamNodes[0] && streamingUpstream.data.status === 'running';
+  const upstreamText = preferredUpstream ? coerceToText((streamingUpstream.data)?.lastMessage) : '';
   const derivedText = hasManualText
     ? manualText
     : upstreamText || coerceToText(data.lastMessage);
@@ -60,7 +59,7 @@ export function useTextNode(id: string, data: NodeData) {
     setText('');
     updateConfig({ text: '' });
     incremark.reset();
-  }, [updateConfig, incremark]);
+  }, [updateConfig]);
 
   const onBlur = useCallback(() => {
     updateConfig({ text });

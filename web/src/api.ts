@@ -36,13 +36,13 @@ export const fetchWorkflow = async (spaceId: string, id: number): Promise<Workfl
     return res.json();
 };
 
-export const createWorkflow = async (spaceId: string, name: string, blueprint: Record<string, unknown>) => {
+export const createWorkflow = async (spaceId: string, name: string, blueprint: Record<string, unknown>): Promise<{ id: number; status: string }> => {
     const res = await fetch(`${API_BASE}/workflows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ space_id: spaceId, name, blueprint }),
     });
-    return res.json();
+    return res.json()
 };
 
 export const updateWorkflow = async (spaceId: string, id: number, name: string | undefined, blueprint: Record<string, unknown>) => {

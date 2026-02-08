@@ -59,8 +59,7 @@ export function useLLMNodeController(id: string, data: NodeData) {
     if (isMarkdown) {
       incremark.render(text);
     }
-  }, [data.lastMessage, isMarkdown, incremark]);
-
+  }, [data.lastMessage, isMarkdown]);
   useEffect(() => {
     if (!isConfigOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -72,15 +71,13 @@ export function useLLMNodeController(id: string, data: NodeData) {
 
   useEffect(() => {
     if (Boolean(data.isOutputStream)) return;
-    const value = data.config?.output;
+    const value = data?.outputs?.output;
     if (typeof value !== 'string') return;
-    if (value !== outputText) {
-      setOutputText(value);
-      if (isMarkdown) {
-        incremark.render(value);
-      }
+    setOutputText(value);
+    if (isMarkdown) {
+      incremark.render(value);
     }
-  }, [data.config?.output, data.isOutputStream, outputText, isMarkdown, incremark]);
+  }, [data?.outputs, data.isOutputStream, isMarkdown]);
 
   const onModelChange = useCallback(
     (next: string) => {

@@ -109,6 +109,7 @@ function AppContent() {
       alert('Failed to import workflow: Invalid file format');
     }
   };
+
   useEffect(() => {
     if (openTabs.length === 0) {
       if (currentWorkflowId !== null) {
@@ -116,14 +117,10 @@ function AppContent() {
         if (wf) {
           setOpenTabs([{ id: currentWorkflowId, name: wf.name }]);
         }
-      } else {
-        // Only add 'New Workflow' tab if we are sure we are in that state (which is default)
-        // But createNewWorkflow sets currentWorkflowId to null.
-        // Let's just default to one new workflow tab if nothing is there.
-        setOpenTabs([{ id: null, name: 'New Workflow' }]);
       }
     }
-  }, [currentWorkflowId, openTabs.length, workflows]); // Run once on mount
+  }, [currentWorkflowId, workflows]); // Run once on mount
+
 
   // Sync tab names when workflows change (e.g. rename)
   useEffect(() => {
@@ -134,23 +131,14 @@ function AppContent() {
     }));
   }, [workflows]);
 
-  // When currentWorkflowId changes (e.g. after save), update the null tab if it became a saved workflow
   useEffect(() => {
-    if (currentWorkflowId !== null) {
-      // If we have a null tab and now we have an ID, it means we likely just saved.
-      // Or we switched.
-      // We need to be careful not to replace null tab if we just switched to an existing one.
-      // But if we switched, handleLoadWorkflow would have handled it.
-      // So this is mainly for "Save" action transforming New -> Saved.
+    if (currentWorkflowId !== -1) {
       setOpenTabs(prev => {
-        const nullTab = prev.find(t => t.id === null);
+        const nullTab = prev.find(t => t.id === -1);
         const existingTab = prev.find(t => t.id === currentWorkflowId);
-
-        // If we have a null tab, and we are now on a saved ID that isn't in tabs...
-        // It's highly likely the null tab just got saved.
         if (nullTab && !existingTab) {
           const wf = workflows.find(w => w.id === currentWorkflowId);
-          return prev.map(t => t.id === null ? { id: currentWorkflowId, name: wf?.name || t.name } : t);
+          return prev.map(t => t.id === -1 ? { id: currentWorkflowId, name: wf?.name || t.name } : t);
         }
         return prev;
       });
@@ -170,7 +158,7 @@ function AppContent() {
     createNewWorkflow();
     setOpenTabs(prev => {
       if (prev.find(t => t.id === null)) return prev;
-      return [...prev, { id: null, name: 'New Workflow' }];
+      return [...prev, { id: -1, name: 'New Workflow' }];
     });
   };
 
@@ -189,10 +177,11 @@ function AppContent() {
         }
       } else {
         createNewWorkflow();
-        setOpenTabs([{ id: null, name: 'New Workflow' }]);
       }
     }
   };
+
+
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 font-sans text-zinc-100 selection:bg-blue-500/30">

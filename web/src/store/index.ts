@@ -10,3 +10,4 @@ export const useStore = create<StoreState>((set, get, store) => ({
   ...createCanvas(set, get, store),
   ...createToast(set, get, store),
 }));
+

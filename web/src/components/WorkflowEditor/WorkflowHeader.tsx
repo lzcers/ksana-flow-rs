@@ -12,6 +12,7 @@ interface WorkflowHeaderProps {
   workflows: { id: number; name: string }[];
   currentWorkflowId: number | null;
   workflowStatuses?: Record<number, WorkflowStatus>;
+  tabs: Tab[];
   onLoadWorkflow: (id: number) => void;
   onSaveWorkflow: (name?: string) => void;
   onDeleteWorkflow: (id: number) => void;
@@ -19,7 +20,6 @@ interface WorkflowHeaderProps {
   onCreateNew: () => void;
   onExportWorkflow: () => void;
   onImportWorkflow: (file: File) => void;
-  tabs: Tab[];
   onCloseTab: (id: number | null) => void;
 }
 
@@ -63,7 +63,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   }, []);
 
   const handleSave = () => {
-    if (currentWorkflowId) {
+    if (currentWorkflowId !== -1) {
       onSaveWorkflow();
     } else {
       setShowSaveDialog(true);

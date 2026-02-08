@@ -85,6 +85,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         activeGraphKey: graphKey,
         currentRunId,
         currentWorkflowStatus,
+        currentWorkflowId,
         workflowStatuses:
           currentWorkflowId == null
             ? state.workflowStatuses
@@ -122,34 +123,24 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     loadWorkflow: async (id: number) => {
-      const { currentSpaceId, setActiveGraphKey, switchCanvas, error, setNodes, setEdges, selectNode } = get();
+      const { currentSpaceId, setActiveGraphKey, switchCanvas, setNodes, setEdges, error } = get();
       if (!currentSpaceId) return;
       const graphKey = makeGraphKey(currentSpaceId, id);
       try {
         const existing = workflowManager.getModelInstance(graphKey);
         if (existing) {
-          selectNode([]);
-          set({ currentWorkflowId: id });
-
-          const snapshot = existing.model.getSnapshot();
-          const hasAnyGraphData = snapshot.nodes.length > 0 || snapshot.edges.length > 0;
-          if (hasAnyGraphData) {
-            switchCanvas(graphKey);
-            setActiveGraphKey(graphKey);
-            return;
-          }
+          setActiveGraphKey(graphKey);
+          switchCanvas(graphKey);
+          return;
         }
-
         const rxWorkflowInstance = workflowManager.getOrCreate(graphKey);
-        switchCanvas(graphKey);
-
+        setActiveGraphKey(graphKey);
         const wf = await api.fetchWorkflow(currentSpaceId, id);
         const { nodes, edges } = fromBlueprint(wf.blueprint as any);
         const preprocessed = applyCollapsedSubgraphUi(nodes, edges);
         setNodes(castDraft(preprocessed.nodes));
         setEdges(castDraft(preprocessed.edges));
-        selectNode([]);
-        set({ currentWorkflowId: id });
+        switchCanvas(graphKey);
 
         try {
           const statusRes = await api.getWorkflowStatus(currentSpaceId, id);
@@ -171,23 +162,35 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     saveWorkflow: async (name?: string) => {
-      const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, success, error, setWorkflows } = get();
+      const { currentSpaceId, nodes, edges, currentWorkflowId, workflows, switchCanvas, setActiveGraphKey, success, error, setWorkflows } = get();
       if (!currentSpaceId) return;
       const blueprint = toBlueprint(nodes, edges);
       try {
-        if (currentWorkflowId) {
+        if (currentWorkflowId && currentWorkflowId !== -1) {
           const currentWf = workflows.find(w => w.id === currentWorkflowId);
           const nameToUse = name || currentWf?.name || 'Untitled';
 
           await api.updateWorkflow(currentSpaceId, currentWorkflowId, nameToUse, blueprint as any);
-
+          success('Workflow saved');
           if (name && name !== currentWf?.name) {
             setWorkflows(workflows.map(w => w.id === currentWorkflowId ? { ...w, name } : w));
           }
         } else {
-          await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint as any);
+          const res = await api.createWorkflow(currentSpaceId, name || 'Untitled Workflow', blueprint as any);
+          if (res.id) {
+            const graphKey = makeGraphKey(currentSpaceId, res.id);
+            set({
+              currentWorkflowId: res.id,
+              workflows: [...workflows, { id: res.id, name: name || 'Untitled Workflow' }],
+            })
+            const ins = workflowManager.getOrCreate(graphKey);
+            ins.model.action.setNodes(nodes);
+            ins.model.action.setEdges(edges);
+            setActiveGraphKey(graphKey);
+            switchCanvas(graphKey);
+            success('Workflow saved');
+          }
         }
-        success('Workflow saved');
       } catch (e) {
         console.error("Failed to save workflow", e);
         error('Failed to save workflow');
@@ -237,12 +240,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     },
 
     createNewWorkflow: async () => {
-      const { currentSpaceId, switchCanvas, setNodes, setEdges, selectNode } = get();
+      const { currentSpaceId, setActiveGraphKey, switchCanvas, setNodes, setEdges, selectNode } = get();
       if (!currentSpaceId) return;
-      const graphKey = `${currentSpaceId}:draft`;
+      const graphKey = `${currentSpaceId}:-1`;
       workflowManager.getOrCreate(graphKey);
+      setActiveGraphKey(graphKey);
       switchCanvas(graphKey);
-      set({ currentWorkflowId: null });
+      set({ currentWorkflowId: -1 });
       setNodes([]);
       setEdges([]);
       selectNode([]);

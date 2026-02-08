@@ -41,7 +41,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
         <div className="space-y-2">
           <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">Description</label>
           <textarea
-            value={node.data.description || ''}
+            value={''}
             onChange={(e) => onUpdateData(node.id, { description: e.target.value })}
             rows={4}
             className="w-full text-sm p-3 bg-black/40 border border-white/10 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500/50 transition-all outline-none resize-none text-zinc-200 placeholder-zinc-700"

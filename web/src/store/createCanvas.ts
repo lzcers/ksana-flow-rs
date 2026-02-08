@@ -1,13 +1,14 @@
-import { castDraft } from 'immer';
+import { castDraft, type Immutable } from 'immer';
 import type { StateCreator } from 'zustand';
 import type { StoreState, Canvas } from './types';
-import type { Node, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
+import type { Node, Edge, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import { sortNodesByParent } from '../model/workflow/utils';
 import { workflowManager, type GraphKey } from '../model/workflowManager';
 import type { Subscription } from 'rxjs';
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => {
   let viewStateSubscription: Subscription | null = null;
+
 
   const getActiveModel = () => {
     const graphKey = get().activeGraphKey;
@@ -17,16 +18,40 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     return instance.model;
   };
 
+
+  // RAF batching for viewState updates
+  let pendingViewState: Immutable<{ nodes: Node[]; edges: Edge[] }> | null = null;
+  let rafId: number | null = null;
+
+  const flushViewState = () => {
+    if (pendingViewState) {
+      set({
+        nodes: castDraft(pendingViewState.nodes),
+        edges: castDraft(pendingViewState.edges),
+      });
+      pendingViewState = null;
+    }
+    rafId = null;
+  };
+
   const switchCanvas = (graphKey: GraphKey) => {
+    // Clean up previous RAF batching state
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    pendingViewState = null;
+
     const rxWorkflowInstance = workflowManager.getModelInstance(graphKey);
     if (!rxWorkflowInstance) {
       throw new Error(`No Model found for graphKey: ${graphKey}`);
     }
-    get().setActiveGraphKey(graphKey);
-
     viewStateSubscription?.unsubscribe();
     viewStateSubscription = rxWorkflowInstance.model.viewState$.subscribe((viewState) => {
-      set({ nodes: castDraft(viewState.nodes), edges: castDraft(viewState.edges) });
+      pendingViewState = viewState;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(flushViewState);
+      }
     });
   };
 

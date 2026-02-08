@@ -15,8 +15,6 @@ import {
   historyActions,
   workflowActions,
   executionActions,
-  useCanUndo,
-  useCanRedo,
 } from './useStoreSelectors';
 
 export type { WorkflowStatus } from '../store/types';
@@ -37,9 +35,6 @@ export function useWorkflow() {
   const workflowStatuses = useWorkflowStatuses();
   const currentRunId = useCurrentRunId();
   const activeGraphKey = useActiveGraphKey();
-  const canUndo = useCanUndo();
-  const canRedo = useCanRedo();
-
   // Actions 直接从常量对象引用，不通过 hook（避免无限循环）
 
   // 派生状态
@@ -75,8 +70,6 @@ export function useWorkflow() {
     // History actions
     undo: historyActions.undo,
     redo: historyActions.redo,
-    canUndo: () => canUndo,
-    canRedo: () => canRedo,
 
     // Execution actions
     runWorkflow: executionActions.runWorkflow,

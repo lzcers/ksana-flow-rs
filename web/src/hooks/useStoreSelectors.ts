@@ -76,18 +76,8 @@ export const canvasActions = {
 export const historyActions = {
   get undo() { return useStore.getState().undo; },
   get redo() { return useStore.getState().redo; },
-  get canUndo() { return useStore.getState().canUndo; },
-  get canRedo() { return useStore.getState().canRedo; },
 };
 
-/** 订阅历史状态 - 使用独立选择器避免对象比较问题 */
-export function useCanUndo(): boolean {
-  return useStore(useCallback((state: StoreState) => state.canUndo, []));
-}
-
-export function useCanRedo(): boolean {
-  return useStore(useCallback((state: StoreState) => state.canRedo, []));
-}
 
 // ==========================================
 // Workflow 状态选择器

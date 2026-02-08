@@ -4,7 +4,7 @@ export const textNodeStyles = {
   headerRow: 'text-xs text-zinc-500 mb-1 flex items-center justify-between',
   modeHint: 'text-[10px] opacity-50',
   previewBox:
-    'w-full flex-1 text-xs bg-zinc-900/60 border border-zinc-800 rounded shadow-inner overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar',
+    'w-full flex-1 text-xs bg-zinc-900/60 border border-zinc-800 rounded shadow-inner overflow-y-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar',
   editTextarea:
     'w-full flex-1 p-2 text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner',
   fullscreenContainer:
