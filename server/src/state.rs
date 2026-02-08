@@ -10,10 +10,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock as StdRwLock};
 use tokio::sync::broadcast;
-use tokio::{
-    sync::RwLock,
-    task::JoinHandle,
-};
+use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::error;
 
 #[derive(Clone)]
@@ -109,43 +106,50 @@ impl GraphBlueprint {
                 }))
             };
 
-        let is_group = |n: &flow::BlueprintNode| n.type_name == SUBGRAPH_NODE_TYPE || n.type_name == MAP_NODE_TYPE;
-        let create_group_factory =
-            |group_node: &flow::BlueprintNode,
-             executor: SubgraphExecutor|
-             -> Result<Arc<NodeFactory>, String> {
-                match group_node.type_name.as_str() {
-                    SUBGRAPH_NODE_TYPE => Ok(Arc::new(move || {
-                        let node = SubgraphNode {
-                            executor: executor.clone(),
-                        };
+        let is_group = |n: &flow::BlueprintNode| {
+            n.type_name == SUBGRAPH_NODE_TYPE || n.type_name == MAP_NODE_TYPE
+        };
+        let create_group_factory = |group_node: &flow::BlueprintNode,
+                                    executor: SubgraphExecutor|
+         -> Result<Arc<NodeFactory>, String> {
+            match group_node.type_name.as_str() {
+                SUBGRAPH_NODE_TYPE => Ok(Arc::new(move || {
+                    let node = SubgraphNode {
+                        executor: executor.clone(),
+                    };
+                    Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
+                })),
+                MAP_NODE_TYPE => {
+                    let max_concurrency = group_node
+                        .config
+                        .get("max_concurrency")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(10) as usize;
+                    let streaming = group_node
+                        .config
+                        .get("streaming")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    Ok(Arc::new(move || {
+                        let node = SubgraphMapNode::with_executor(
+                            executor.clone(),
+                            max_concurrency,
+                            streaming,
+                        );
                         Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-                    })),
-                    MAP_NODE_TYPE => {
-                        let max_concurrency = group_node
-                            .config
-                            .get("max_concurrency")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(10) as usize;
-                        let streaming = group_node
-                            .config
-                            .get("streaming")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        Ok(Arc::new(move || {
-                            let node = SubgraphMapNode::with_executor(
-                                executor.clone(),
-                                max_concurrency,
-                                streaming,
-                            );
-                            Ok(Arc::new(RwLock::new(node)) as Arc<RwLock<dyn AnyNode>>)
-                        }))
-                    }
-                    other => Err(format!("Unknown group node type: {}", other)),
+                    }))
                 }
-            };
+                other => Err(format!("Unknown group node type: {}", other)),
+            }
+        };
 
-        flow::compile_graph_with_groups(&nodes, &edges, is_group, create_group_factory, create_leaf_factory)
+        flow::compile_graph_with_groups(
+            &nodes,
+            &edges,
+            is_group,
+            create_group_factory,
+            create_leaf_factory,
+        )
     }
 }
 
@@ -174,8 +178,6 @@ pub struct Node {
 pub struct NodeData {
     #[serde(default)]
     pub label: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
     #[serde(default)]
     pub config: Value,
     #[serde(default)]

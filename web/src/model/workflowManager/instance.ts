@@ -51,14 +51,13 @@ export class ModelInstance {
             });
     }
 
+    setRunId(runId: string | null) {
+        this.runId = runId;
+    }
+
     destroy() {
         this.flowEventSubscription.unsubscribe();
         this.model.destroy();
-    }
-
-    setRunId(runId: string | null) {
-        this.runId = runId;
-        // this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, this.status);
     }
 
     applyFlowEvent(event: FlowEvent) {
@@ -84,24 +83,23 @@ export class ModelInstance {
             case "NodeOutMessage":
                 this.model.action.updateNodeData(nodeId, {
                     lastMessage: msg,
-                    isOutputStream: false,
                     outputs: { output: msg },
                 }, meta);
                 break;
             case "NodeStreamNextMessage":
-                const prev = this.model.getSnapshot().nodes.find(n => n.id === nodeId)?.data?.lastMessage;
+                const snapshot = this.model.getSnapshot();
+                const node = snapshot.nodes.find((n) => n.id === nodeId);
+                const prev = node?.data?.lastMessage;
                 const lastMessage =
                     typeof msg === 'string'
                         ? `${typeof prev === 'string' ? prev : ''}${msg}`
                         : msg;
-                this.model.action.updateNodeData(nodeId, {
-                    lastMessage
-                }, meta);
+                this.model.action.updateNodeData(nodeId, { lastMessage }, meta);
                 break;
             case "NodeError":
                 this.model.action.updateNodeData(nodeId, {
                     errorMessage: msg,
-                    status: 'error'
+                    status: 'error',
                 }, meta);
                 break;
         }
@@ -109,23 +107,33 @@ export class ModelInstance {
 
     applyFlowNodeStatusEvent(event: FlowNodeStatusEvent) {
         const meta: CommandMeta = { skipHistory: true }
-        // 根据控制事件类型映射到 WorkflowStatus
         const eventTypeToNodeStatus: Record<FlowNodeStatusEventType, NodeStatus> = {
             "NodeStarted": "running",
             "NodeStreamStarted": "running",
             "NodeCompleted": "completed",
         }
         const { nodeId, type } = event;
-        this.model.action.updateNodeData(nodeId, {
+        const updates: Record<string, any> = {
             status: eventTypeToNodeStatus[type],
-            isOuputStream: type === "NodeStreamStarted",
-        }, meta)
+        };
+        if (type === 'NodeStreamStarted') {
+            updates.isOutputStream = true;
+            updates.lastMessage = '';
+            updates.errorMessage = undefined;
+        } else if (type === 'NodeStarted') {
+            updates.isOutputStream = false;
+            updates.errorMessage = undefined;
+        } else if (type === 'NodeCompleted') {
+            updates.isOutputStream = false;
+        }
+        this.model.action.updateNodeData(nodeId, updates, meta)
     }
 
     applyFlowControlEvent(event: FlowControlEvent) {
         // 根据控制事件类型映射到 WorkflowStatus
         let status = "idle" as WorkflowStatus;
         switch (event.type) {
+            case 'FlowStarted': status = 'running'; break;
             case 'FlowPaused': status = 'paused'; break;
             case 'FlowResumed': status = 'running'; break;
             case 'FlowStopped': status = 'idle'; break;
@@ -133,6 +141,6 @@ export class ModelInstance {
             default: status = 'idle'; break;
         }
         this.status = status;
-        this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, status);
+        this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, this.status);
     }
 }

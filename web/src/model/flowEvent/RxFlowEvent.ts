@@ -98,7 +98,8 @@ export class RxFlowEvent {
 
 
 export function isFlowControlEvent(event: FlowEvent): event is FlowControlEvent {
-  return event.type === 'FlowPaused' ||
+  return event.type === 'FlowStarted' ||
+    event.type === 'FlowPaused' ||
     event.type === 'FlowResumed' ||
     event.type === 'FlowStopped' ||
     event.type === 'FlowFinished';

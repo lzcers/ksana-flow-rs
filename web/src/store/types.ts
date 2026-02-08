@@ -1,8 +1,6 @@
 import type { NodeMetadata } from '../api';
 import type { Node, Edge, NodeChange, EdgeChange, Connection, WorkflowStatus } from '../model/workflow/types';
 import type { WorkflowBlueprint } from '@/model/workflow/adapters/blueprintAdapter';
-import type { Observable } from 'rxjs';
-import type { FlowEvent } from '../model/flowEvent/types';
 import type { GraphKey } from '../model/workflowManager';
 
 
@@ -13,11 +11,11 @@ import type { GraphKey } from '../model/workflowManager';
 export interface Workflow {
   nodeTypes: NodeMetadata[];
   workflows: { id: number; name: string }[];
+  activeGraphKey: GraphKey | null;
   currentWorkflowId: number | null;
   currentSpaceId: string | null;
   currentRunId: string | null;
   currentWorkflowStatus: WorkflowStatus;
-  activeGraphKey: GraphKey | null;
   workflowStatuses: Record<number, WorkflowStatus>;
   setActiveGraphKey: (graphKey: GraphKey | null) => void;
   setSpaceId: (id: string) => void;
@@ -39,8 +37,6 @@ export interface Workflow {
   stopWorkflow: () => Promise<void>;
   runNode: (nodeId: string) => Promise<void>;
   initializeWebSocket: () => () => void;
-  flowEventForRunId$: (runId: string) => Observable<FlowEvent>;
-  flowEventForNodeId$: (nodeId: string) => Observable<FlowEvent>;
 }
 
 // 处理画布相关的状态和操作

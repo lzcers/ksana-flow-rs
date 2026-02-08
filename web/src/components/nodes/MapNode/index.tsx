@@ -30,7 +30,7 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
     updateConfig({ streaming: !streaming });
   }, [streaming, updateConfig]);
 
-  const streamState = useMapNodeStream(id);
+  const streamState = useMapNodeStream(id, data);
 
   return (
     <MapNodeView
@@ -47,4 +47,3 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
 });
 
 MapNode.displayName = 'MapNode';
-

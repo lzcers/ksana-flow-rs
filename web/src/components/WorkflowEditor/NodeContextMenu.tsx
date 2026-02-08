@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { NODE_TYPES } from './nodeTypes';
+import { NODE_TYPES } from './nodeRegistry';
 import { FileText, Search } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { NodeMetadata } from '../../api';
@@ -17,10 +17,8 @@ const getIcon = (name: string) => {
   return nodeType?.icon || FileText;
 };
 
-const getColorForCategory = (category: string) => {
-  switch (category.toLowerCase()) {
-    default: return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/20';
-  }
+const getColorForCategory = () => {
+  return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/20';
 };
 
 export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
@@ -54,8 +52,7 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
   }, [visible, onClose]);
 
   const filteredNodeTypes = nodeTypes.filter(nodeType =>
-    nodeType.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    nodeType.category.toLowerCase().includes(searchQuery.toLowerCase())
+    nodeType.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (!visible) return null;
@@ -89,7 +86,7 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
         ) : (
           filteredNodeTypes.map(nodeType => {
             const Icon = getIcon(nodeType.name);
-            const colorClass = getColorForCategory(nodeType.category);
+            const colorClass = getColorForCategory();
 
             return (
               <button
@@ -104,7 +101,7 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                   <span className="text-[13px] font-medium text-zinc-300 group-hover:text-white transition-colors">
                     {nodeType.name}
                   </span>
-                  <span className="text-[9px] text-zinc-500 group-hover:text-zinc-400 capitalize leading-none mt-0.5">{nodeType.category}</span>
+                  <span className="text-[9px] text-zinc-500 group-hover:text-zinc-400 capitalize leading-none mt-0.5">{NODE_TYPES.find(i => i.type === nodeType.name)?.label ?? ""}</span>
                 </div>
               </button>
             );

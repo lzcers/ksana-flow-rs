@@ -1,11 +1,11 @@
 use chrono::{Local, NaiveDateTime};
 use flow::AnyNode;
+use nodes::reduce_node::ReduceNode;
 use nodes::{
     EmailNotifyNode, ImgGenNode, ShortVideoScriptNode, TextFileNode, TextMergeNode, TextNode,
     TextSplitConfig, TextSplitNode, TimerNode, create_llm_any_node,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
-use nodes::reduce_node::ReduceNode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -25,8 +25,6 @@ pub enum InputType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeMetadata {
     pub name: String,
-    pub description: String,
-    pub category: String,
     pub config: Value,
     pub inputs: Vec<InputType>,
     pub outputs: Vec<InputType>,
@@ -98,8 +96,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "TimerNode".to_string(),
-            description: "Timer node based on Cron expression".to_string(),
-            category: "Trigger".to_string(),
             config: json!({
                 "cron_expr": "* * * * * * *"
             }),
@@ -116,8 +112,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "EmailNotifyNode".to_string(),
-            description: "Email notification node".to_string(),
-            category: "Notification".to_string(),
             config: json!({
                 "subject": "Notification",
                 "body": ""
@@ -139,8 +133,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "ReactiveSourceNode".to_string(),
-            description: "Source node providing K-line data".to_string(),
-            category: "Source".to_string(),
             config: json!({
                 "code": "510300.SH",
                 "start_time": "2023-01-01T00:00:00",
@@ -181,8 +173,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "VOLMFINode".to_string(),
-            description: "Volume Money Flow Index Strategy".to_string(),
-            category: "Strategy".to_string(),
             config: json!({
                 "ema_period": 8,
                 "mfi_period": 8
@@ -201,8 +191,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "Backtester".to_string(),
-            description: "Backtesting Engine".to_string(),
-            category: "Sink".to_string(),
             config: json!({
                 "initial_capital": 500000.0,
                 "transaction_cost": 0.0002354
@@ -221,8 +209,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "LLMNode".to_string(),
-            description: "Large Language Model Node".to_string(),
-            category: "AI".to_string(),
             config: json!({
                 "system_prompt": "",
                 "user_prompt_template": "",
@@ -248,8 +234,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "StreamLLMNode".to_string(),
-            description: "Large Language Model Node".to_string(),
-            category: "AI".to_string(),
             config: json!({
                 "system_prompt": "",
                 "user_prompt_template": "",
@@ -275,8 +259,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "ImgGenNode".to_string(),
-            description: "Generate image with OpenRouter".to_string(),
-            category: "AI".to_string(),
             config: json!({
                 "system_prompt": "",
                 "user_prompt_template": "",
@@ -317,8 +299,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "TextNode".to_string(),
-            description: "Text input node".to_string(),
-            category: "Input".to_string(),
             config: json!({
                 "text": ""
             }),
@@ -336,8 +316,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "TextFileNode".to_string(),
-            description: "Reads content from an uploaded text file".to_string(),
-            category: "Input".to_string(),
             config: json!({
                 "file_id": "",
                 "filename": ""
@@ -355,8 +333,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "TextMergeNode".to_string(),
-            description: "Merges multiple text inputs".to_string(),
-            category: "Logic".to_string(),
             config: json!({
                 "separator": "\n"
             }),
@@ -373,8 +349,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "ShortVideoScriptNode".to_string(),
-            description: "Generates short video scripts in JSON format".to_string(),
-            category: "AI".to_string(),
             config: json!({
                 "model": "deepseek-chat"
             }),
@@ -391,8 +365,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "TextSplitNode".to_string(),
-            description: "Split text into segments based on line count or rules".to_string(),
-            category: "Logic".to_string(),
             config: serde_json::to_value(TextSplitConfig::default()).unwrap_or(Value::Null),
             inputs: vec![InputType::String],
             outputs: vec![InputType::Json],
@@ -473,8 +445,6 @@ pub fn create_registry() -> NodeRegistry {
     registry.register(
         NodeMetadata {
             name: "MapNode".to_string(),
-            description: "Map over array items by running an internal subgraph".to_string(),
-            category: "Logic".to_string(),
             config: json!({
                 "max_concurrency": 10,
                 "streaming": false,
@@ -484,14 +454,14 @@ pub fn create_registry() -> NodeRegistry {
             inputs: vec![InputType::None],
             outputs: vec![InputType::None],
         },
-        |_config: Value| Err("MapNode is a group node and must be compiled from its child nodes".to_string()),
+        |_config: Value| {
+            Err("MapNode is a group node and must be compiled from its child nodes".to_string())
+        },
     );
 
     registry.register(
         NodeMetadata {
             name: "ReduceNode".to_string(),
-            description: "Reduce an array into a single value".to_string(),
-            category: "Logic".to_string(),
             config: json!({
                 "reducer": "sum",
                 "separator": "\n"
@@ -500,14 +470,20 @@ pub fn create_registry() -> NodeRegistry {
             outputs: vec![InputType::Json],
         },
         |config: Value| {
-            let reducer = config.get("reducer").and_then(|v| v.as_str()).unwrap_or("sum");
+            let reducer = config
+                .get("reducer")
+                .and_then(|v| v.as_str())
+                .unwrap_or("sum");
             let node = match reducer {
                 "sum" => ReduceNode::sum(),
                 "count" => ReduceNode::count(),
                 "max" => ReduceNode::max(),
                 "min" => ReduceNode::min(),
                 "concat" => {
-                    let separator = config.get("separator").and_then(|v| v.as_str()).unwrap_or("\n");
+                    let separator = config
+                        .get("separator")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("\n");
                     ReduceNode::concat(separator)
                 }
                 "merge_array" => ReduceNode::merge(false),

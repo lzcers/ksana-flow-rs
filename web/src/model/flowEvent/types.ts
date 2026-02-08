@@ -1,6 +1,6 @@
 export type FlowNodeMsgEventType = 'NodeError' | 'NodeInMessage' | 'NodeOutMessage' | 'NodeStreamNextMessage';
 export type FlowNodeStatusEventType = 'NodeStarted' | 'NodeStreamStarted' | 'NodeCompleted';
-export type FlowControlEventType = 'FlowPaused' | 'FlowResumed' | 'FlowStopped' | 'FlowFinished';
+export type FlowControlEventType = "FlowStarted" | 'FlowPaused' | 'FlowResumed' | 'FlowStopped' | 'FlowFinished';
 
 export interface FlowNodeMsgEvent {
   type: FlowNodeMsgEventType;
@@ -44,7 +44,6 @@ export interface WebSocketFlowMessage {
 export interface NodeExecutionData {
   status?: 'idle' | 'running' | 'completed' | 'error';
   lastMessage?: any;
-  lastMessageRunId?: string;
   isOutputStream?: boolean;
   upstreamIsStreaming?: boolean;
   errorMessage?: string;

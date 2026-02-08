@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIncremark } from '@incremark/react';
-import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
-import type { FlowEvent } from '@/model/flowEvent/types';
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
@@ -12,8 +10,6 @@ function adjustTextareaHeight(el: HTMLTextAreaElement) {
 }
 
 export function useLLMNodeController(id: string, data: NodeData) {
-  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
-  const currentRunId = useStore((s) => s.currentRunId);
   const { updateConfig } = useNodeConfig(id, data.config);
 
   const systemInputRef = useRef<HTMLTextAreaElement>(null);
@@ -39,36 +35,12 @@ export function useLLMNodeController(id: string, data: NodeData) {
     incremarkRef.current = incremark;
   }, [incremark]);
 
-  const isStreamingRef = useRef(false);
   const isMarkdownRef = useRef(isMarkdown);
   useEffect(() => {
     isMarkdownRef.current = isMarkdown;
   }, [isMarkdown]);
-
-  const pendingChunkRef = useRef('');
-  const flushRafIdRef = useRef<number | null>(null);
-
-  const cancelFlush = useCallback(() => {
-    if (flushRafIdRef.current !== null) {
-      window.cancelAnimationFrame(flushRafIdRef.current);
-      flushRafIdRef.current = null;
-    }
-    pendingChunkRef.current = '';
-  }, []);
-
-  const scheduleFlush = useCallback(() => {
-    if (flushRafIdRef.current !== null) return;
-    flushRafIdRef.current = window.requestAnimationFrame(() => {
-      flushRafIdRef.current = null;
-      const chunk = pendingChunkRef.current;
-      if (!chunk) return;
-      pendingChunkRef.current = '';
-      if (isMarkdownRef.current) {
-        incremarkRef.current.append(chunk);
-      }
-      setOutputText((prev) => prev + chunk);
-    });
-  }, []);
+  const lastTextRef = useRef<string>('');
+  const lastRunIdRef = useRef<string | null>(null);
 
   const isComposingSystem = useRef(false);
   const isComposingUser = useRef(false);
@@ -93,32 +65,50 @@ export function useLLMNodeController(id: string, data: NodeData) {
   }, [data.config?.model, data.config?.stream]);
 
   useEffect(() => {
-    if (isStreamingRef.current) return;
+    const isOutputStream = Boolean(data.isOutputStream);
 
-    let nextText: string | null = null;
-    if (typeof data.config?.output === 'string') {
-      nextText = data.config.output;
-    } else if (typeof data.outputs?.output === 'string') {
-      nextText = data.outputs.output;
-    } else if (typeof data.lastMessage === 'string') {
-      nextText = data.lastMessage;
+    if (isOutputStream) {
+      setIsStreaming(true);
+      const next = typeof data.lastMessage === 'string' ? data.lastMessage : '';
+      const prev = lastTextRef.current;
+      if (next !== prev) {
+        if (isMarkdownRef.current && next.startsWith(prev)) {
+          const delta = next.slice(prev.length);
+          if (delta) incremarkRef.current.append(delta);
+        } else if (isMarkdownRef.current) {
+          incremarkRef.current.render(next);
+        }
+        lastTextRef.current = next;
+        setOutputText(next);
+      }
+      return;
     }
 
-    if (nextText === null) return;
-    setOutputText((prev) => (prev === nextText ? prev : nextText));
+    setIsStreaming(false);
+    lastRunIdRef.current = null;
+    const finalText =
+      typeof data.outputs?.output === 'string'
+        ? data.outputs.output
+        : typeof data.lastMessage === 'string'
+          ? data.lastMessage
+          : '';
 
-    if (isMarkdownRef.current && incremarkRef.current.markdown !== nextText) {
-      incremarkRef.current.render(nextText);
+    if (finalText !== lastTextRef.current) {
+      lastTextRef.current = finalText;
+      setOutputText(finalText);
+      if (isMarkdownRef.current) {
+        incremarkRef.current.render(finalText);
+      }
     }
-  }, [data.config?.output, data.outputs?.output, data.lastMessage]);
+  }, [data.isOutputStream, data.outputs?.output, data.lastMessage]);
 
   useEffect(() => {
     if (!isMarkdown) return;
-    if (isStreamingRef.current) return;
+    if (isStreaming) return;
     if (incremarkRef.current.markdown !== outputText) {
       incremarkRef.current.render(outputText);
     }
-  }, [isMarkdown, outputText]);
+  }, [isMarkdown, isStreaming, outputText]);
 
   useEffect(() => {
     if (!isConfigOpen) return;
@@ -130,69 +120,17 @@ export function useLLMNodeController(id: string, data: NodeData) {
   }, [isConfigOpen]);
 
   useEffect(() => {
-    const subscription = flowEventForNodeId$(id).subscribe((event: FlowEvent) => {
-      switch (event.type) {
-        case 'NodeStarted':
-          cancelFlush();
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-          break;
-
-        case 'NodeStreamStarted':
-          cancelFlush();
-          isStreamingRef.current = true;
-          setIsStreaming(true);
-          setOutputText('');
-          updateConfig({ output: '' });
-          isMarkdownRef.current = true;
-          setIsMarkdown(true);
-          incremarkRef.current.reset();
-          break;
-
-        case 'NodeStreamNextMessage':
-          if (isStreamingRef.current) {
-            const value = event.msg;
-            if (typeof value === 'string') {
-              pendingChunkRef.current += value;
-              scheduleFlush();
-            }
-          }
-          break;
-
-        case 'NodeOutMessage': {
-          cancelFlush();
-          const value = event.msg;
-          if (typeof value === 'string') {
-            setOutputText(value);
-            updateConfig({ output: value });
-            if (isMarkdownRef.current) {
-              incremarkRef.current.render(value);
-            }
-          }
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-          break;
-        }
-
-        case 'NodeCompleted':
-          cancelFlush();
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-          break;
-
-        case 'NodeError':
-          cancelFlush();
-          isStreamingRef.current = false;
-          setIsStreaming(false);
-          break;
+    if (Boolean(data.isOutputStream)) return;
+    const value = data.config?.output;
+    if (typeof value !== 'string') return;
+    if (value !== outputText) {
+      setOutputText(value);
+      lastTextRef.current = value;
+      if (isMarkdownRef.current) {
+        incremarkRef.current.render(value);
       }
-    });
-
-    return () => {
-      cancelFlush();
-      subscription.unsubscribe();
-    };
-  }, [flowEventForNodeId$, currentRunId, id, cancelFlush, scheduleFlush, updateConfig]);
+    }
+  }, [data.config?.output, data.isOutputStream, outputText]);
 
   const onModelChange = useCallback(
     (next: string) => {

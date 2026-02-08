@@ -33,7 +33,6 @@ export const NODE_REGISTRY: NodeRegistryItem[] = [
   { type: 'TextMergeNode', label: 'Merge', icon: GitMerge, color: 'text-cyan-500 bg-cyan-50', Component: TextMergeNode },
   { type: 'TextFileNode', label: 'File', icon: FileText, color: 'text-slate-500 bg-slate-50', Component: TextFileNode },
   { type: 'TextSplitNode', label: 'Split', icon: FileText, color: 'text-slate-500 bg-slate-50', Component: TextSplitNode },
-
   { type: 'MapNode', label: 'Map', icon: Repeat2, color: 'text-zinc-500 bg-zinc-50', Component: MapNode },
   { type: 'ReduceNode', label: 'Reduce', icon: Sigma, color: 'text-zinc-500 bg-zinc-50', Component: ReduceNode },
   { type: 'LLMNode', label: 'LLM', icon: Sparkles, color: 'text-purple-500 bg-purple-50', Component: LLMNode },

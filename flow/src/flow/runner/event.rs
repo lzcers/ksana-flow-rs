@@ -4,12 +4,13 @@ use serde_json::Value;
 #[derive(Debug, Clone)]
 pub enum FlowEvent {
     NodeStarted(String),
-    NodeCompleted(String),
-    NodeError(String, String),
-    NodeInMessage(String, Input),
-    NodeOutMessage(String, Value),
     NodeStreamStarted(String),
     NodeStreamNextMessage(String, Value),
+    NodeCompleted(String),
+    NodeInMessage(String, Input),
+    NodeOutMessage(String, Value),
+    NodeError(String, String),
+    FlowStarted,
     FlowPaused,
     FlowResumed,
     FlowStopped,

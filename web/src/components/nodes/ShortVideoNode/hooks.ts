@@ -1,14 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { parse } from 'jsonriver';
-import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
-import type { FlowEvent } from '@/model/flowEvent/types';
 import type { ProjectData } from '../../ShortVideoCreation/types';
 
 export function useShortVideoNodeController(id: string, data: NodeData) {
-  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
-  const currentRunId = useStore((s) => s.currentRunId);
   const { updateConfig } = useNodeConfig(id, data.config);
 
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -17,6 +13,7 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
   const streamControllerRef = useRef<ReadableStreamDefaultController<string> | null>(null);
   const completedRef = useRef(new WeakMap<object, boolean>());
   const isStreamingRef = useRef(false);
+  const lastTextRef = useRef<string>('');
 
   const isNodeCompleted = useCallback((value: any) => {
     if (value && typeof value === 'object') {
@@ -59,63 +56,55 @@ export function useShortVideoNodeController(id: string, data: NodeData) {
   }, []);
 
   useEffect(() => {
-    const subscription = flowEventForNodeId$(id).subscribe((event: FlowEvent) => {
-      switch (event.type) {
-        case 'NodeStarted':
-          isStreamingRef.current = false;
-          break;
+    const isOutputStream = Boolean(data.isOutputStream);
+    if (isOutputStream && !isStreamingRef.current) {
+      isStreamingRef.current = true;
+      lastTextRef.current = '';
+      setProjectData(null);
+      startNewStream();
+    }
 
-        case 'NodeStreamStarted':
-          isStreamingRef.current = true;
-          setProjectData(null);
-          startNewStream();
-          break;
-
-        case 'NodeStreamNextMessage':
-          if (isStreamingRef.current) {
-            const value = event.msg;
-            if (typeof value === 'string') {
-              streamControllerRef.current?.enqueue(value);
-            }
-          }
-          break;
-
-        case 'NodeOutMessage': {
-          const value = event.msg;
-          if (isStreamingRef.current) {
-            if (streamControllerRef.current) {
-              try {
-                streamControllerRef.current.close();
-              } catch { }
-              streamControllerRef.current = null;
-            }
-          }
-          try {
-            const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-            setProjectData(parsed);
-            updateConfig({ projectData: parsed });
-          } catch { }
-          isStreamingRef.current = false;
-          break;
-        }
+    if (!isOutputStream && isStreamingRef.current) {
+      isStreamingRef.current = false;
+      lastTextRef.current = '';
+      if (streamControllerRef.current) {
+        try {
+          streamControllerRef.current.close();
+        } catch { }
+        streamControllerRef.current = null;
       }
-    });
+    }
+  }, [data.isOutputStream, startNewStream]);
 
-    return () => subscription.unsubscribe();
-  }, [flowEventForNodeId$, currentRunId, id, startNewStream, updateConfig]);
+  useEffect(() => {
+    if (!isStreamingRef.current) return;
+    const nextText = typeof data.lastMessage === 'string' ? data.lastMessage : '';
+    const prev = lastTextRef.current;
+    if (nextText === prev) return;
+    if (!nextText.startsWith(prev)) {
+      lastTextRef.current = nextText;
+      streamControllerRef.current?.enqueue(nextText);
+      return;
+    }
+    const delta = nextText.slice(prev.length);
+    lastTextRef.current = nextText;
+    if (delta) streamControllerRef.current?.enqueue(delta);
+  }, [data.lastMessage]);
 
   useEffect(() => {
     if (data.config?.projectData) {
       setProjectData(data.config.projectData as ProjectData);
       return;
     }
-    if (data.lastMessage && !isStreamingRef.current && !projectData) {
+    if (!isStreamingRef.current && !projectData) {
+      const value = (data.outputs && 'output' in data.outputs) ? (data.outputs as any).output : data.lastMessage;
+      if (!value) return;
       try {
-        const parsed = typeof data.lastMessage === 'string' ? JSON.parse(data.lastMessage) : data.lastMessage;
+        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
         setProjectData(parsed);
       } catch { }
     }
-  }, [data.config?.projectData, data.lastMessage, projectData]);
+  }, [data.config?.projectData, data.lastMessage, data.outputs, projectData]);
 
   const onProjectDataChange = useCallback(
     (next: ProjectData) => {

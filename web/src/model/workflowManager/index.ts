@@ -1,15 +1,13 @@
-import { filter, map, type Observable } from 'rxjs';
 import {
   createWorkflowModel,
 } from '@/model/workflow';
 import type { WorkflowStatus } from '@/model/workflow/types';
-import { RxFlowEvent, type FlowEvent } from '@/model/flowEvent';
+import { RxFlowEvent } from '@/model/flowEvent';
 import { makeGraphKey, ModelInstance, type GraphKey } from './instance';
 
 export { type GraphKey, makeGraphKey };
 
 export type WorkflowManagerEvent =
-  | { type: 'RunIdChanged'; graphKey: GraphKey; runId: string | null }
   | { type: 'WorkflowStatusChanged'; graphKey: GraphKey; workflowId: number | null; runId: string | null; status: WorkflowStatus }
   | { type: 'ModelDestroyed'; graphKey: GraphKey; workflowId: number | null };
 
@@ -20,28 +18,6 @@ export class WorkflowManager {
   private models = new Map<GraphKey, ModelInstance>();
   private rxFlowEvent$: RxFlowEvent = new RxFlowEvent();
   private listeners = new Set<WorkflowManagerListener>();
-
-  flowEventForRunId$(runId: string): Observable<FlowEvent> {
-    return this.rxFlowEvent$.getSource$().pipe(
-      filter((msg) => msg.runId === runId && msg.runnerKind === 'Root'),
-      map((msg) => msg.event),
-    );
-  }
-
-  flowEventForNodeId$(runId: string, nodeId: string): Observable<FlowEvent> {
-    return this.rxFlowEvent$.getSource$().pipe(
-      filter((msg) => msg.runId === runId && msg.runnerKind === 'Root'),
-      map((msg) => msg.event),
-      filter((evt) => ('nodeId' in evt ? evt.nodeId === nodeId : false)),
-    );
-  }
-
-  setRunId(graphKey: GraphKey, runId: string | null): void {
-    const entry = this.models.get(graphKey);
-    if (!entry) return;
-    entry.setRunId(runId);
-    this.emit({ type: 'RunIdChanged', graphKey, runId });
-  }
 
   getOrCreate(graphKey: GraphKey): ModelInstance {
     const existing = this.models.get(graphKey);

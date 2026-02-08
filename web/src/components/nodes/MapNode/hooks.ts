@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useStore } from '@/store';
-import type { FlowEvent } from '@/model/flowEvent/types';
+import { useMemo } from 'react';
+import type { NodeData } from '@/model/workflow/types';
 
 export type MapNodeStreamState = {
   receivedItems: number;
@@ -18,61 +17,16 @@ const INITIAL: MapNodeStreamState = {
   finalCount: null,
 };
 
-export function useMapNodeStream(nodeId: string): MapNodeStreamState {
-  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
-  const currentRunId = useStore((s) => s.currentRunId);
-  const [state, setState] = useState<MapNodeStreamState>(INITIAL);
-
-  useEffect(() => {
-    const subscription = flowEventForNodeId$(nodeId).subscribe((event: FlowEvent) => {
-      switch (event.type) {
-        case 'NodeStarted':
-          setState(INITIAL);
-          return;
-
-        case 'NodeError':
-          setState(INITIAL);
-          return;
-
-        case 'NodeStreamNextMessage': {
-          const value = event.msg;
-          if (value == null || typeof value !== 'object') return;
-
-          const kind = (value).kind;
-          if (kind === 'item') {
-            const index = typeof (value).index === 'number' ? (value).index : null;
-            const output = (value).output;
-            setState((prev) => ({
-              ...prev,
-              receivedItems: prev.receivedItems + 1,
-              lastItemIndex: index,
-              lastItemOutput: output,
-            }));
-          } else if (kind === 'done') {
-            const count = typeof (value).count === 'number' ? (value).count : null;
-            setState((prev) => ({
-              ...prev,
-              doneCount: count,
-            }));
-          }
-          return;
-        }
-
-        case 'NodeOutMessage': {
-          const outValue = event.msg;
-          if (Array.isArray(outValue)) {
-            setState((prev) => ({
-              ...prev,
-              finalCount: outValue.length,
-            }));
-          }
-          return;
-        }
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [flowEventForNodeId$, currentRunId, nodeId]);
-
-  return state;
+export function useMapNodeStream(_nodeId: string, data?: NodeData): MapNodeStreamState {
+  return useMemo(() => {
+    const value = (data as any)?.mapStream;
+    if (!value || typeof value !== 'object') return INITIAL;
+    return {
+      receivedItems: typeof value.receivedItems === 'number' ? value.receivedItems : 0,
+      lastItemIndex: typeof value.lastItemIndex === 'number' ? value.lastItemIndex : null,
+      lastItemOutput: value.lastItemOutput ?? null,
+      doneCount: typeof value.doneCount === 'number' ? value.doneCount : null,
+      finalCount: typeof value.finalCount === 'number' ? value.finalCount : null,
+    };
+  }, [data]);
 }

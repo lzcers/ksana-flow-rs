@@ -15,7 +15,7 @@ import {
 } from '@xyflow/react';
 import { Play, Pause, Square } from 'lucide-react';
 import { WorkflowNode } from './WorkflowNode';
-import { NODE_TYPES } from './nodeTypes';
+import { NODE_TYPES } from './nodeRegistry';
 import { NodeContextMenu } from './NodeContextMenu';
 import { SelectionToolbar } from './SelectionToolbar';
 import type { Node, Edge } from '../../model/workflow/types';

@@ -3,7 +3,6 @@ import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
 import type { NodeData } from '@/model/workflow/types';
-import type { FlowEvent } from '@/model/flowEvent/types';
 
 const IMG_GEN_MIN_WIDTH = 270;
 const IMG_GEN_MIN_HEIGHT = 480;
@@ -121,8 +120,6 @@ export function useImgGenNodeController({
   height?: number | null;
 }) {
   const updateNodeDimensions = useStore((s) => s.updateNodeDimensions);
-  const flowEventForNodeId$ = useStore((s) => s.flowEventForNodeId$);
-  const currentRunId = useStore((s) => s.currentRunId);
   const currentSpaceId = useStore((s) => s.currentSpaceId);
   const { updateConfig } = useNodeConfig(id, data.config);
 
@@ -204,28 +201,21 @@ export function useImgGenNodeController({
   }, [isConfigOpen]);
 
   useEffect(() => {
-    const subscription = flowEventForNodeId$(id).subscribe((event: FlowEvent) => {
-      switch (event.type) {
-        case 'NodeStarted':
-          setImageSrc(undefined);
-          setMediaId(undefined);
-          setOutputRaw('');
-          updateConfig({ output: '' });
-          break;
-        case 'NodeOutMessage': {
-          const value = event.msg;
-          const nextRaw = typeof value === 'string' ? value : JSON.stringify(value);
-          setOutputRaw(nextRaw);
-          updateConfig({ output: nextRaw });
-          const parsed = parseImgGenOutput(nextRaw);
-          setImageSrc(parsed.imageSrc);
-          setMediaId(parsed.mediaId);
-          break;
-        }
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [flowEventForNodeId$, currentRunId, id, updateConfig]);
+    if (data.status !== 'running') return;
+    setImageSrc(undefined);
+    setMediaId(undefined);
+    setOutputRaw('');
+  }, [data.status]);
+
+  useEffect(() => {
+    const value = (data.outputs && 'output' in data.outputs) ? (data.outputs as any).output : data.lastMessage;
+    if (value == null) return;
+    const nextRaw = typeof value === 'string' ? value : JSON.stringify(value);
+    setOutputRaw(nextRaw);
+    const parsed = parseImgGenOutput(nextRaw);
+    setImageSrc(parsed.imageSrc);
+    setMediaId(parsed.mediaId);
+  }, [data.lastMessage, data.outputs]);
 
   useEffect(() => {
     const run = async () => {

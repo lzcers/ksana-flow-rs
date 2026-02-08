@@ -121,7 +121,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
         id,
         data: {
           label: type,
-          description: meta?.description || '',
           config: meta?.config || {},
           status: 'idle',
         },

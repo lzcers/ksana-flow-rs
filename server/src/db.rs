@@ -170,7 +170,10 @@ impl Db {
         }
 
         if !has_content_blob {
-            conn.execute("ALTER TABLE uploaded_files ADD COLUMN content_blob BLOB", [])?;
+            conn.execute(
+                "ALTER TABLE uploaded_files ADD COLUMN content_blob BLOB",
+                [],
+            )?;
         }
 
         Ok(())
@@ -193,9 +196,9 @@ impl Db {
     }
 
     pub fn get_file(&self, id: &str, workspace_id: &str) -> Result<Option<(String, String)>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT filename, content FROM uploaded_files WHERE id = ?1 AND workspace_id = ?2")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT filename, content FROM uploaded_files WHERE id = ?1 AND workspace_id = ?2",
+        )?;
         let mut rows = stmt.query(params![id, workspace_id])?;
 
         if let Some(row) = rows.next()? {
@@ -256,14 +259,10 @@ impl Db {
         Ok(())
     }
 
-    pub fn get_ai_media(
-        &self,
-        id: &str,
-        workspace_id: &str,
-    ) -> Result<Option<(String, Vec<u8>)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT mime_type, data FROM ai_media WHERE id = ?1 AND workspace_id = ?2",
-        )?;
+    pub fn get_ai_media(&self, id: &str, workspace_id: &str) -> Result<Option<(String, Vec<u8>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT mime_type, data FROM ai_media WHERE id = ?1 AND workspace_id = ?2")?;
         let mut rows = stmt.query(params![id, workspace_id])?;
 
         if let Some(row) = rows.next()? {
@@ -299,9 +298,9 @@ impl Db {
     }
 
     pub fn list_workflows(&self, workspace_id: &str) -> Result<Vec<(i64, String)>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, name FROM workflows WHERE workspace_id = ?1 ORDER BY updated_at DESC")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name FROM workflows WHERE workspace_id = ?1 ORDER BY updated_at DESC",
+        )?;
         let rows = stmt.query_map(params![workspace_id], |row| Ok((row.get(0)?, row.get(1)?)))?;
 
         let mut workflows = Vec::new();
@@ -311,7 +310,13 @@ impl Db {
         Ok(workflows)
     }
 
-    pub fn update_workflow(&self, id: i64, name: &str, data: &Value, workspace_id: &str) -> Result<bool> {
+    pub fn update_workflow(
+        &self,
+        id: i64,
+        name: &str,
+        data: &Value,
+        workspace_id: &str,
+    ) -> Result<bool> {
         let data_json = serde_json::to_string(data)?;
         let count = self.conn.execute(
             "UPDATE workflows SET name = ?1, data = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3 AND workspace_id = ?4",
@@ -321,9 +326,10 @@ impl Db {
     }
 
     pub fn delete_workflow(&self, id: i64, workspace_id: &str) -> Result<bool> {
-        let count = self
-            .conn
-            .execute("DELETE FROM workflows WHERE id = ?1 AND workspace_id = ?2", params![id, workspace_id])?;
+        let count = self.conn.execute(
+            "DELETE FROM workflows WHERE id = ?1 AND workspace_id = ?2",
+            params![id, workspace_id],
+        )?;
         Ok(count > 0)
     }
 
@@ -343,7 +349,9 @@ impl Db {
         let (event_type, node_id, payload_json) = match &envelope.event {
             FlowEvent::NodeStarted(node_id) => ("NodeStarted", Some(node_id.clone()), None),
             FlowEvent::NodeCompleted(node_id) => ("NodeCompleted", Some(node_id.clone()), None),
-            FlowEvent::NodeStreamStarted(node_id) => ("NodeStreamStarted", Some(node_id.clone()), None),
+            FlowEvent::NodeStreamStarted(node_id) => {
+                ("NodeStreamStarted", Some(node_id.clone()), None)
+            }
             FlowEvent::NodeError(node_id, msg) => (
                 "NodeError",
                 Some(node_id.clone()),
@@ -352,7 +360,9 @@ impl Db {
             FlowEvent::NodeInMessage(node_id, inputs) => (
                 "NodeInMessage",
                 Some(node_id.clone()),
-                Some(serde_json::to_string(&crate::utils::node_inputs_to_value_lossy(inputs))?),
+                Some(serde_json::to_string(
+                    &crate::utils::node_inputs_to_value_lossy(inputs),
+                )?),
             ),
             FlowEvent::NodeOutMessage(node_id, payload) => (
                 "NodeOutMessage",
@@ -360,6 +370,7 @@ impl Db {
                 Some(serde_json::to_string(payload)?),
             ),
             FlowEvent::NodeStreamNextMessage(_, _) => unreachable!(),
+            FlowEvent::FlowStarted => ("FlowStarted", None, None),
             FlowEvent::FlowPaused => ("FlowPaused", None, None),
             FlowEvent::FlowResumed => ("FlowResumed", None, None),
             FlowEvent::FlowStopped => ("FlowStopped", None, None),

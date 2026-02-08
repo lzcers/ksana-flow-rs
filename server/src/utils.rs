@@ -24,6 +24,7 @@ pub fn flow_event_to_value_lossy(event: &FlowEvent) -> Value {
         FlowEvent::NodeStreamNextMessage(node_id, payload) => {
             json!({ "NodeStreamNextMessage": [node_id, payload] })
         }
+        FlowEvent::FlowStarted => Value::String("FlowStarted".to_string()),
         FlowEvent::FlowPaused => Value::String("FlowPaused".to_string()),
         FlowEvent::FlowResumed => Value::String("FlowResumed".to_string()),
         FlowEvent::FlowStopped => Value::String("FlowStopped".to_string()),
@@ -56,6 +57,7 @@ pub fn flow_event_to_ws_value(event: &FlowEvent, _run_id: &str) -> Value {
             "nodeId": node_id,
             "msg": payload
         }),
+        FlowEvent::FlowStarted => json!({ "type": "FlowStarted" }),
         FlowEvent::FlowPaused => json!({ "type": "FlowPaused"  }),
         FlowEvent::FlowResumed => json!({ "type": "FlowResumed" }),
         FlowEvent::FlowStopped => json!({ "type": "FlowStopped" }),

@@ -160,6 +160,7 @@ impl Runner {
             // 从 scheduler 中弹出初始启动节点
             let starts = self.scheduler.pop_initial_starts();
             self.start_by_specs(starts).await?;
+            self.send_flow_event(FlowEvent::FlowStarted).await;
 
             // 3. 执行阶段
             // 整个 loop 就干三件事

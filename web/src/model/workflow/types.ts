@@ -24,20 +24,17 @@ export type NodeStatus = 'idle' | 'running' | 'completed' | 'error';
 export type WorkflowStatus = 'idle' | 'running' | 'paused';
 
 export interface NodeData extends Record<string, unknown> {
-  label?: string;
-  description?: string;
-  expanded?: boolean;
-  expandedSize?: { width: number; height: number };
-  collapsedSize?: { width: number; height: number };
+  label?: string;   // 名称
   inputs?: Record<string, any>;
   outputs?: Record<string, any>;
-  config?: Record<string, any>;
-  status?: NodeStatus;
-  errorMessage?: string;
-  lastMessage?: any;
-  lastMessageRunId?: string;
-  isOutputStream?: boolean;
-  upstreamIsStreaming?: boolean;
+  config?: Record<string, any>; // 配置
+  status?: NodeStatus; // 运行状态
+  errorMessage?: string; // 错误消息
+  lastMessage?: any;    // 最后的消息
+  isOutputStream?: boolean; // 是否输出流
+  expanded?: boolean; // 是否展开，Node Group
+  expandedSize?: { width: number; height: number }; // 展开大小
+  collapsedSize?: { width: number; height: number }; // 收起大小
 }
 
 export interface EdgeData extends Record<string, unknown> {

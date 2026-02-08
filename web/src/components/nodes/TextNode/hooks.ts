@@ -4,24 +4,18 @@ import { useIncremark } from '@incremark/react';
 import { useStore } from '@/store';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
-import type { FlowEvent } from '@/model/flowEvent/types';
 
 export function useTextNode(id: string, data: NodeData) {
   const { updateConfig } = useNodeConfig(id, data.config);
   const [text, setText] = useState<string>("");
   const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? true);
-  const flowEventForRunId$ = useStore((s) => s.flowEventForRunId$);
-  const currentRunId = useStore((s) => s.currentRunId);
+  const nodes = useStore((s) => s.nodes);
   const connections = useNodeConnections();
-  const connectionsRef = useRef(connections);
-
-  useEffect(() => {
-    connectionsRef.current = connections;
-  }, [connections]);
 
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const isStreamingRef = useRef(false);
+  const lastTextRef = useRef<string>('');
   const isMarkdownRef = useRef(isMarkdown);
 
   useEffect(() => {
@@ -39,65 +33,47 @@ export function useTextNode(id: string, data: NodeData) {
   }, [incremark]);
 
 
-  useEffect(() => {
-    let initText = ''
-    if (data.config?.text) {
-      initText = data.config?.text
-    } else if (data?.lastMessage) {
-      initText = data?.lastMessage
-    }
-    setText(initText);
-    if (isMarkdownRef.current) {
-      incremarkRef.current?.render(initText);
-    }
-  }, []);
+  const manualText = typeof data.config?.text === 'string' ? data.config.text : '';
+  const hasManualText = manualText.length > 0;
+
+  const upstreamNodeIds = connections.map((conn) => conn.source);
+  const upstreamNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id));
+  const streamingUpstream = upstreamNodes.find((n) => Boolean((n.data as any)?.isOutputStream));
+  const preferredUpstream = streamingUpstream ?? upstreamNodes[0];
+  const upstreamText = preferredUpstream ? coerceToText((preferredUpstream.data as any)?.lastMessage) : '';
+  const upstreamIsStreaming = Boolean((preferredUpstream?.data as any)?.isOutputStream);
+
+  const derivedText = hasManualText
+    ? manualText
+    : upstreamText || coerceToText(data.lastMessage);
 
   useEffect(() => {
-    if (!currentRunId) return;
-    const stream$ = flowEventForRunId$(currentRunId);
-    const subscription = stream$.subscribe((event: FlowEvent) => {
-      const upstreamNodeIds = connectionsRef.current.map((conn) => conn.source);
-      const isUpstream = (nodeId: string) => upstreamNodeIds.includes(nodeId);
-      const isRelevantNode = (nodeId: string) => nodeId === id || isUpstream(nodeId);
+    const nextText = derivedText;
+    const shouldStreamAppend = !hasManualText && upstreamIsStreaming;
 
-      if ('nodeId' in event) {
-        const { nodeId } = event;
-        if (!isRelevantNode(nodeId)) return;
-        switch (event.type) {
-          case 'NodeStarted':
-            isStreamingRef.current = false;
-            break;
-          case 'NodeStreamStarted':
-            resetText();
-            isStreamingRef.current = true;
-            break;
-          case 'NodeStreamNextMessage':
-            if (isStreamingRef.current) {
-              const next = coerceToText(event.msg);
-              if (next !== '') {
-                incremarkRef.current.append(next);
-                setText(prev => prev + next);
-              }
-            }
-            break;
-          case 'NodeOutMessage': {
-            isStreamingRef.current = false;
-            const next = coerceToText(event.msg);
-            if (next !== '') {
-              setText(next);
-              updateConfig({ text: next });
-              if (isMarkdownRef.current) {
-                incremarkRef.current.render(next);
-              }
-            }
-            break;
-          }
-        }
-      }
-    });
+    if (shouldStreamAppend && !isStreamingRef.current) {
+      isStreamingRef.current = true;
+      lastTextRef.current = '';
+      setText('');
+      incremarkRef.current.reset();
+    }
+    if (!shouldStreamAppend) {
+      isStreamingRef.current = false;
+    }
 
-    return () => subscription.unsubscribe();
-  }, [flowEventForRunId$, currentRunId, updateConfig, id]);
+    const prev = lastTextRef.current;
+    if (nextText === prev) return;
+    lastTextRef.current = nextText;
+    setText(nextText);
+
+    if (!isMarkdownRef.current) return;
+    if (shouldStreamAppend && nextText.startsWith(prev)) {
+      const delta = nextText.slice(prev.length);
+      if (delta) incremarkRef.current.append(delta);
+      return;
+    }
+    incremarkRef.current.render(nextText);
+  }, [derivedText, hasManualText, upstreamIsStreaming]);
 
   const onChange = useCallback((next: string) => {
     setText(next);

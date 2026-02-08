@@ -5,8 +5,6 @@ const API_BASE = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 export interface NodeMetadata {
     name: string;
-    description: string;
-    category: string;
     inputs: string[];
     outputs: string[];
     config: Record<string, unknown>;
