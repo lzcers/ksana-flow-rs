@@ -19,6 +19,7 @@ export interface Workflow {
   currentWorkflowStatus: WorkflowStatus;
   activeGraphKey: GraphKey | null;
   workflowStatuses: Record<number, WorkflowStatus>;
+  setActiveGraphKey: (graphKey: GraphKey | null) => void;
   setSpaceId: (id: string) => void;
   loadMetadata: () => Promise<void>;
   loadWorkflow: (id: number) => Promise<void>;
@@ -46,7 +47,6 @@ export interface Workflow {
 export interface Canvas {
   nodes: Node[];
   edges: Edge[];
-  graphsByKey: Record<GraphKey, { nodes: Node[]; edges: Edge[]; selectedNodeId: string[] }>;
   selectedNodeId: string[];
   isConnecting: boolean;
   connectionSourceId: string | null;

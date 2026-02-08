@@ -4,15 +4,17 @@ import type { StoreState, Canvas } from './types';
 import type { Node, NodeChange, EdgeChange, Connection } from '../model/workflow/types';
 import { sortNodesByParent } from '../model/workflow/utils';
 import { workflowManager, type GraphKey } from '../model/workflowManager';
+import type { Subscription } from 'rxjs';
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => {
+  let viewStateSubscription: Subscription | null = null;
 
   const getActiveModel = () => {
-    let activeRxWorkflowModel = workflowManager.active;
-    if (!activeRxWorkflowModel) {
-      throw new Error('No active Model');
-    }
-    return activeRxWorkflowModel;
+    const graphKey = get().activeGraphKey;
+    if (!graphKey) throw new Error('No active graphKey');
+    const instance = workflowManager.getModelInstance(graphKey);
+    if (!instance) throw new Error(`No Model found for graphKey: ${graphKey}`);
+    return instance.model;
   };
 
   const switchCanvas = (graphKey: GraphKey) => {
@@ -20,9 +22,10 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     if (!rxWorkflowInstance) {
       throw new Error(`No Model found for graphKey: ${graphKey}`);
     }
-    workflowManager.activate(graphKey);
+    get().setActiveGraphKey(graphKey);
 
-    rxWorkflowInstance.model.viewState$.subscribe((viewState) => {
+    viewStateSubscription?.unsubscribe();
+    viewStateSubscription = rxWorkflowInstance.model.viewState$.subscribe((viewState) => {
       set({ nodes: castDraft(viewState.nodes), edges: castDraft(viewState.edges) });
     });
   };
@@ -30,7 +33,6 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
   return {
     nodes: [],
     edges: [],
-    graphsByKey: {},
     selectedNodeId: [],
     isConnecting: false,
     connectionSourceId: null,

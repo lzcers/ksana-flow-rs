@@ -10,9 +10,6 @@ import { makeGraphKey, workflowManager, type GraphKey } from '@/model/workflowMa
 import type { WorkflowStatus } from '@/model/workflow/types';
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => {
-  const runIdByGraphKey = new Map<GraphKey, string | null>();
-  const statusByGraphKey = new Map<GraphKey, WorkflowStatus>();
-
   const workflowIdFromGraphKey = (graphKey: GraphKey): number | null => {
     const [, workflowIdRaw] = graphKey.split(':');
     const workflowId = Number(workflowIdRaw);
@@ -20,7 +17,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
   };
 
   const setGraphStatus = (graphKey: GraphKey, status: WorkflowStatus) => {
-    statusByGraphKey.set(graphKey, status);
     const workflowId = workflowIdFromGraphKey(graphKey);
     set((state) => ({
       currentWorkflowStatus: state.activeGraphKey === graphKey ? status : state.currentWorkflowStatus,
@@ -36,19 +32,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
 
   workflowManager.subscribe((event) => {
     switch (event.type) {
-      case 'ActiveChanged': {
-        const activeGraphKey = event.activeGraphKey;
-        const currentRunId = activeGraphKey ? runIdByGraphKey.get(activeGraphKey) ?? null : null;
-        const currentWorkflowStatus = activeGraphKey ? statusByGraphKey.get(activeGraphKey) ?? 'idle' : 'idle';
-        set({
-          activeGraphKey,
-          currentRunId,
-          currentWorkflowStatus,
-        });
-        break;
-      }
       case 'RunIdChanged': {
-        runIdByGraphKey.set(event.graphKey, event.runId);
         set((state) =>
           state.activeGraphKey === event.graphKey ? { currentRunId: event.runId } : {},
         );
@@ -59,8 +43,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         break;
       }
       case 'ModelDestroyed': {
-        runIdByGraphKey.delete(event.graphKey);
-        statusByGraphKey.delete(event.graphKey);
         set((state) => {
           const next: Partial<Workflow> = {};
           if (state.activeGraphKey === event.graphKey) {
@@ -88,6 +70,29 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
     currentWorkflowStatus: 'idle',
     activeGraphKey: null,
     workflowStatuses: {},
+    setActiveGraphKey: (graphKey: GraphKey | null) => {
+      if (graphKey) {
+        const spaceId = graphKey.split(':')[0];
+        workflowManager.connectWebSocket(spaceId);
+      }
+
+      const instance = graphKey ? workflowManager.getModelInstance(graphKey) : undefined;
+      const currentRunId = graphKey ? (instance?.runId ?? null) : null;
+      const currentWorkflowStatus = graphKey ? (instance?.status ?? 'idle') : 'idle';
+      const workflowId = graphKey ? workflowIdFromGraphKey(graphKey) : null;
+      set((state) => ({
+        activeGraphKey: graphKey,
+        currentRunId,
+        currentWorkflowStatus,
+        workflowStatuses:
+          workflowId == null
+            ? state.workflowStatuses
+            : {
+              ...state.workflowStatuses,
+              [workflowId]: currentWorkflowStatus,
+            },
+      }));
+    },
 
     setSpaceId: (id) => {
       set({ currentSpaceId: id });
@@ -122,10 +127,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       try {
         const existing = workflowManager.getModelInstance(graphKey);
         if (existing) {
-          runIdByGraphKey.set(graphKey, existing.runId ?? null);
-          statusByGraphKey.set(graphKey, existing.status ?? 'idle');
-          setGraphStatus(graphKey, existing.status ?? 'idle');
-
           selectNode([]);
           set({ currentWorkflowId: id });
 
@@ -137,11 +138,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           }
         }
 
-        if (!runIdByGraphKey.has(graphKey)) runIdByGraphKey.set(graphKey, null);
-        if (!statusByGraphKey.has(graphKey)) statusByGraphKey.set(graphKey, 'idle');
-
         const rxWorkflowInstance = workflowManager.getOrCreate(graphKey);
-        workflowManager.activate(graphKey);
+        switchCanvas(graphKey);
 
         const wf = await api.fetchWorkflow(currentSpaceId, id);
         const { nodes, edges } = fromBlueprint(wf.blueprint as any);
@@ -165,8 +163,6 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
           }
         } catch (e) {
           console.warn("Failed to fetch workflow status", e);
-        } finally {
-          switchCanvas(graphKey);
         }
 
       } catch (e) {
@@ -245,15 +241,12 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
       const { currentSpaceId, switchCanvas, setNodes, setEdges, selectNode } = get();
       if (!currentSpaceId) return;
       const graphKey = `${currentSpaceId}:draft`;
-      if (!runIdByGraphKey.has(graphKey)) runIdByGraphKey.set(graphKey, null);
-      if (!statusByGraphKey.has(graphKey)) statusByGraphKey.set(graphKey, 'idle');
       workflowManager.getOrCreate(graphKey);
-      workflowManager.activate(graphKey);
+      switchCanvas(graphKey);
       set({ currentWorkflowId: null });
       setNodes([]);
       setEdges([]);
       selectNode([]);
-      switchCanvas(graphKey);
     },
 
     importWorkflow: (blueprint: any) => {

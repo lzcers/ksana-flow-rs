@@ -1,4 +1,4 @@
-import { filter } from "rxjs";
+import { filter, type Subscription } from "rxjs";
 import type { FlowControlEvent, FlowEvent, FlowNodeMsgEvent, FlowNodeStatusEvent, FlowNodeStatusEventType, RxFlowEvent } from "../flowEvent";
 import { isFlowControlEvent, isFlowNodeMsgEvent, isFlowNodeStatusEvent } from "../flowEvent/RxFlowEvent";
 import type { CommandMeta } from "../workflow/commands";
@@ -23,6 +23,7 @@ export class ModelInstance {
     rxFlowEvent$: RxFlowEvent;
 
     private notifyWorkflowStatusChange: (graphKey: GraphKey, workflowId: number | null, runId: string | null, status: WorkflowStatus) => void;
+    private flowEventSubscription: Subscription;
 
     constructor(
         graphKey: GraphKey,
@@ -41,13 +42,18 @@ export class ModelInstance {
         this.rxFlowEvent$ = rxFlowEvent$;
         this.notifyWorkflowStatusChange = notifyWorkflowStatusChange;
 
-        this.rxFlowEvent$.getSource$()
+        this.flowEventSubscription = this.rxFlowEvent$.getSource$()
             .pipe(
                 filter((e) => e.runId === this.runId && e.runnerKind === "Root"),
             )
             .subscribe((e) => {
                 this.applyFlowEvent(e.event);
             });
+    }
+
+    destroy() {
+        this.flowEventSubscription.unsubscribe();
+        this.model.destroy();
     }
 
     setRunId(runId: string | null) {

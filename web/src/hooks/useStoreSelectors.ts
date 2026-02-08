@@ -12,8 +12,6 @@ import type { NodeMetadata } from '../api';
 export function useNodes(): Node[] {
   return useStore(
     useCallback((state: StoreState) => {
-      const key = state.activeGraphKey;
-      if (key && state.graphsByKey[key]) return state.graphsByKey[key].nodes;
       return state.nodes;
     }, [])
   );
@@ -23,8 +21,6 @@ export function useNodes(): Node[] {
 export function useEdges(): Edge[] {
   return useStore(
     useCallback((state: StoreState) => {
-      const key = state.activeGraphKey;
-      if (key && state.graphsByKey[key]) return state.graphsByKey[key].edges;
       return state.edges;
     }, [])
   );
@@ -34,8 +30,6 @@ export function useEdges(): Edge[] {
 export function useSelectedNodeId(): string[] {
   return useStore(
     useCallback((state: StoreState) => {
-      const key = state.activeGraphKey;
-      if (key && state.graphsByKey[key]) return state.graphsByKey[key].selectedNodeId;
       return state.selectedNodeId;
     }, [])
   );
@@ -142,7 +136,7 @@ export const workflowActions = {
 
 /** 订阅工作流执行状态 */
 export function useWorkflowStatus(): import('../store/types').WorkflowStatus {
-  return useStore(useCallback((state: StoreState) => state.workflowStatus, []));
+  return useStore(useCallback((state: StoreState) => state.currentWorkflowStatus, []));
 }
 
 export function useWorkflowStatuses(): Record<number, import('../store/types').WorkflowStatus> {

@@ -53,7 +53,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
     updateNodeDimensions,
     isConnecting,
     connectionSourceId,
-    workflowStatus,
+    currentWorkflowStatus,
     updateNodeData,
   } = useStore();
 
@@ -125,7 +125,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
           )}
         >
           {headerActions}
-          {workflowStatus === 'idle' && (
+          {currentWorkflowStatus === 'idle' && (
             <button onClick={handleRun} className={nodeWrapperStyles.runButton} title="Run Node">
               <Play size={12} fill="currentColor" className="ml-0.5 opacity-80" />
             </button>
