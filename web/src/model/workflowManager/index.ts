@@ -82,8 +82,8 @@ export class WorkflowManager {
 }
 
 declare global {
-  var __ksanaWorkflowModelManager: WorkflowManager | undefined;
+  var __ksanaWorkflowManager: WorkflowManager | undefined;
 }
 
 export const workflowManager =
-  globalThis.__ksanaWorkflowModelManager ?? (globalThis.__ksanaWorkflowModelManager = new WorkflowManager());
+  globalThis.__ksanaWorkflowManager ?? (globalThis.__ksanaWorkflowManager = new WorkflowManager());
