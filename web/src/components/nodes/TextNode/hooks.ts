@@ -11,7 +11,6 @@ export function useTextNode(id: string, data: NodeData) {
   const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? true);
   const nodes = useStore((s) => s.nodes);
   const connections = useNodeConnections();
-
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const incremark = useIncremark({
@@ -28,13 +27,15 @@ export function useTextNode(id: string, data: NodeData) {
   const upstreamNodes = nodes.filter((n) => upstreamNodeIds.includes(n.id));
   const streamingUpstream = upstreamNodes.find((n) => Boolean((n.data as any)?.isOutputStream));
   // 取上游节点第 0 个，且状态为 running
-  const preferredUpstream = streamingUpstream && upstreamNodes[0] && streamingUpstream.data.status === 'running';
-  const upstreamText = preferredUpstream ? coerceToText((streamingUpstream.data)?.lastMessage) : '';
-  const derivedText = hasManualText
+  const preferredUpstream = streamingUpstream && streamingUpstream.data.status === 'running';
+  const upstreamText = streamingUpstream ? coerceToText((streamingUpstream.data)?.lastMessage) : "";
+
+  const derivedText = preferredUpstream ? upstreamText : hasManualText
     ? manualText
-    : preferredUpstream ? upstreamText : coerceToText(data.lastMessage);
+    : coerceToText(data.lastMessage);
 
   useEffect(() => {
+    if (!derivedText) return;
     setText(derivedText);
     incremark.render(derivedText);
   }, [derivedText]);

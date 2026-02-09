@@ -123,12 +123,12 @@ export class ModelInstance {
             updates.isOutputStream = false;
             updates.errorMessage = undefined;
         } else if (type === 'NodeCompleted') {
-            updates.isOutputStream = false;
         }
         this.model.action.updateNodeData(nodeId, updates, meta)
     }
 
     applyFlowControlEvent(event: FlowControlEvent) {
+        const meta: CommandMeta = { skipHistory: true }
         // 根据控制事件类型映射到 WorkflowStatus
         let status = "idle" as WorkflowStatus;
         switch (event.type) {
@@ -138,6 +138,9 @@ export class ModelInstance {
             case 'FlowStopped': status = 'idle'; break;
             case 'FlowFinished': status = 'idle'; break;
             default: status = 'idle'; break;
+        }
+        if (event.type === "FlowStopped") {
+            this.model.action.resetAllNodeStatus(meta);
         }
         this.status = status;
         this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, this.status);

@@ -26,6 +26,7 @@ export interface WorkflowModelDispatchers {
   toggleSubgraph: (nodeId: string, meta?: CommandMeta) => void;
   handleNodeDragStop: (nodeId: string, meta?: CommandMeta) => void;
   applyNodeChanges: (changes: NodeChange[], meta?: CommandMeta) => void;
+  resetAllNodeStatus: (meta?: CommandMeta) => void;
   // edge dispatchers
   addEdge: (edge: Edge, meta?: CommandMeta) => void;
   removeEdge: (id: string, meta?: CommandMeta) => void;
@@ -97,6 +98,8 @@ export function createWorkflowModel(
       dispatch({ type: 'HANDLE_NODE_DRAG_STOP', payload: { nodeId }, meta }),
     applyNodeChanges: (changes, meta) =>
       dispatch({ type: 'APPLY_NODE_CHANGES', payload: { changes }, meta }),
+    resetAllNodeStatus: (meta) =>
+      dispatch({ type: 'RESET_ALL_NODE_STATUS', meta }),
     // edge dispatchers
     onConnect: (connection: Connection, meta) =>
       dispatch({ type: 'UPDATE_EDGES', payload: { connect: connection }, meta }),

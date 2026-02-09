@@ -111,11 +111,7 @@ export function TextNodeView({
         )}
 
         {isMarkdown ? (
-          <div
-            className={textNodeStyles.previewBox}
-            onKeyDown={(e) => e.stopPropagation()}
-            onWheel={(e) => e.stopPropagation()}
-          >
+          <div className={textNodeStyles.previewBox}>
             <ThemeProvider theme={theme}>
               <AutoScrollContainer enabled className="h-[300px] p-2">
                 <Incremark incremark={incremark} />
