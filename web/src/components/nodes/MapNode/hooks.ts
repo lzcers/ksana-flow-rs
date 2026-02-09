@@ -7,6 +7,7 @@ export type MapNodeStreamState = {
   lastItemOutput: any;
   doneCount: number | null;
   finalCount: number | null;
+  activeThreadIndex: number;
 };
 
 const INITIAL: MapNodeStreamState = {
@@ -15,6 +16,7 @@ const INITIAL: MapNodeStreamState = {
   lastItemOutput: null,
   doneCount: null,
   finalCount: null,
+  activeThreadIndex: 0,
 };
 
 export function useMapNodeStream(_nodeId: string, data?: NodeData): MapNodeStreamState {
@@ -27,6 +29,7 @@ export function useMapNodeStream(_nodeId: string, data?: NodeData): MapNodeStrea
       lastItemOutput: value.lastItemOutput ?? null,
       doneCount: typeof value.doneCount === 'number' ? value.doneCount : null,
       finalCount: typeof value.finalCount === 'number' ? value.finalCount : null,
+      activeThreadIndex: typeof value.activeThreadIndex === 'number' ? value.activeThreadIndex : 0,
     };
   }, [data]);
 }

@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState, useEffect } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
@@ -32,6 +32,20 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
 
   const streamState = useMapNodeStream(id, data);
 
+  const maxThreadCount = Math.max(1, parseInt(maxConcurrencyField.draft, 10) || 1);
+
+  const [activeThread, setActiveThread] = useState(streamState.activeThreadIndex ?? 0);
+
+  useEffect(() => {
+    if (activeThread >= maxThreadCount) {
+      setActiveThread(0);
+    }
+  }, [maxThreadCount, activeThread]);
+
+  const onThreadChange = useCallback((thread: number) => {
+    setActiveThread(thread);
+  }, []);
+
   return (
     <MapNodeView
       {...props}
@@ -42,6 +56,8 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
       onMaxConcurrencyChange={maxConcurrencyField.onChange}
       onStreamingToggle={onStreamingToggle}
       streamState={streamState}
+      activeThread={activeThread}
+      onThreadChange={onThreadChange}
     />
   );
 });

@@ -1,6 +1,6 @@
 import { memo, useEffect } from 'react';
 import { type NodeProps, useReactFlow, type Node, Position, useUpdateNodeInternals } from '@xyflow/react';
-import { ChevronDown, ChevronUp, Repeat2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Repeat2 } from 'lucide-react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import type { NodeData } from '@/model/workflow/types';
 import { cn } from '@/utils/cn';
@@ -16,6 +16,8 @@ interface MapNodeViewProps extends NodeProps {
   onMaxConcurrencyChange: (next: string) => void;
   onStreamingToggle: () => void;
   streamState: MapNodeStreamState;
+  activeThread: number;
+  onThreadChange: (thread: number) => void;
 }
 
 export const MapNodeView = memo(({
@@ -31,6 +33,8 @@ export const MapNodeView = memo(({
   onMaxConcurrencyChange,
   onStreamingToggle,
   streamState,
+  activeThread,
+  onThreadChange,
   ...props
 }: MapNodeViewProps) => {
   const { getNodes } = useReactFlow();
@@ -43,8 +47,44 @@ export const MapNodeView = memo(({
     updateNodeInternals(id);
   }, [id, expanded, width, height, updateNodeInternals]);
 
+  const maxThreadCount = Math.max(1, parseInt(maxConcurrency, 10) || 1);
+  const showPager = expanded && maxThreadCount >= 2;
+
+  const handlePrevThread = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newThread = activeThread <= 0 ? maxThreadCount - 1 : activeThread - 1;
+    onThreadChange(newThread);
+  };
+
+  const handleNextThread = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newThread = activeThread >= maxThreadCount - 1 ? 0 : activeThread + 1;
+    onThreadChange(newThread);
+  };
+
   const headerActions = (
     <div className={mapNodeStyles.headerActions}>
+      {showPager && (
+        <div className={mapNodeStyles.pagerContainer}>
+          <button
+            onClick={handlePrevThread}
+            className={mapNodeStyles.pagerButton}
+            title="Previous thread"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className={mapNodeStyles.pagerIndicator}>
+            {activeThread + 1} / {maxThreadCount}
+          </span>
+          <button
+            onClick={handleNextThread}
+            className={mapNodeStyles.pagerButton}
+            title="Next thread"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();

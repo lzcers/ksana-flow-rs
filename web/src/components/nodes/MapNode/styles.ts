@@ -17,5 +17,8 @@ export const mapNodeStyles = {
     'px-2 py-1 rounded-md text-xs border border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-900 transition-colors cursor-pointer',
   toggleOn: 'border-blue-500/60 text-blue-300',
   statusLine: 'mt-2 text-[11px] text-zinc-400 truncate',
+  pagerContainer: 'flex items-center gap-1',
+  pagerButton: 'p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed',
+  pagerIndicator: 'text-[10px] text-zinc-400 font-medium min-w-[28px] text-center select-none',
 } as const;
 
