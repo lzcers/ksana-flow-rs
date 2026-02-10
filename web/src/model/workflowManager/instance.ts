@@ -14,6 +14,7 @@ export interface SubgraphInstance {
     nodeStatuses: Map<string, NodeStatus>;
     messages: Map<string, any>;
     subgraphPath: SubgraphFrame[];
+    isActive: boolean;           // 是否是当前激活的线程（用于画布持续更新）
 }
 
 export function makeGraphKey(spaceId: string, workflowId: number): GraphKey {
@@ -162,7 +163,7 @@ export class ModelInstance {
         this.notifyWorkflowStatusChange(this.graphKey, this.workflowId, this.runId, this.status);
     }
 
-    // ========== 子图事件处理新方法 ==========
+    // ========== 子图事件处理（重构后）==========
 
     /**
      * 清理子图实例（当工作流停止时）
@@ -181,6 +182,8 @@ export class ModelInstance {
                 delete newData.subgraphAggregateStatus;
                 delete newData.subgraphProgress;
                 delete newData.hasSubgraph;
+                delete newData.activeThreadIndex;
+                delete newData.activeRunnerId;
                 this.model.action.updateNodeData(node.id, newData, meta);
             }
         });
@@ -192,11 +195,6 @@ export class ModelInstance {
     private shouldProcessEvent(e: WebSocketFlowMessage): boolean {
         // 根 Runner 的事件（当前运行）
         if (e.runId === this.runId && e.runnerKind === "Root") {
-            return true;
-        }
-
-        // 已知的子图 Runner 事件
-        if (e.runnerId !== undefined && this.subgraphInstances.has(e.runnerId)) {
             return true;
         }
 
@@ -224,7 +222,7 @@ export class ModelInstance {
     }
 
     /**
-     * 处理子图事件
+     * 处理子图事件（统一入口）
      */
     private applySubgraphEvent(msg: WebSocketFlowMessage) {
         const runnerId = msg.runnerId;
@@ -233,61 +231,81 @@ export class ModelInstance {
         // 获取或创建子图实例
         let subgraph = this.subgraphInstances.get(runnerId);
         if (!subgraph) {
-            // 新子图，创建实例
-            const parentNodeId = msg.parentNodeId;
-            const parentRunnerId = msg.parentRunnerId;
-
-            if (parentNodeId === undefined || parentRunnerId === undefined) {
-                console.warn('Subgraph event missing parent info:', msg);
-                return;
-            }
-
-            // 推断 threadIndex（对于 Map 节点）
-            // 根据当前 Map 节点已有的子图数量来确定 threadIndex
-            let threadIndex = 0;
-            const existingThreads = this.getMapThreadIndices(parentNodeId);
-            if (existingThreads.length > 0) {
-                // 找到最大的 threadIndex 并 +1
-                threadIndex = Math.max(...existingThreads) + 1;
-            }
-
-            subgraph = {
-                runnerId,
-                parentNodeId,
-                parentRunnerId,
-                threadIndex,
-                status: 'idle',
-                nodeStatuses: new Map(),
-                messages: new Map(),
-                subgraphPath: msg.subgraphPath || [],
-            };
-            this.subgraphInstances.set(runnerId, subgraph);
-            // 初始化父节点的子图状态存储
-            this.initParentNodeSubgraphState(parentNodeId, runnerId, threadIndex);
+            subgraph = this.createSubgraphInstance(msg, runnerId);
+            if (!subgraph) return;
         }
 
-        // 处理事件
-        const event = msg.event;
+        // 统一处理事件：存储 + 条件同步
+        this.processSubgraphEvent(subgraph, msg.event);
+    }
 
-        if (isFlowNodeMsgEvent(event)) {
-            this.applySubgraphNodeMsgEvent(subgraph, event);
-        } else if (isFlowNodeStatusEvent(event)) {
-            this.applySubgraphNodeStatusEvent(subgraph, event);
-        } else if (isFlowControlEvent(event)) {
-            this.applySubgraphControlEvent(subgraph, event);
+    /**
+     * 创建子图实例
+     */
+    private createSubgraphInstance(msg: WebSocketFlowMessage, runnerId: number): SubgraphInstance | undefined {
+        const parentNodeId = msg.parentNodeId;
+        const parentRunnerId = msg.parentRunnerId;
+
+        if (parentNodeId === undefined || parentRunnerId === undefined) {
+            console.warn('Subgraph event missing parent info:', msg);
+            return undefined;
+        }
+
+        // 推断 threadIndex（对于 Map 节点）
+        let threadIndex = 0;
+        const existingThreads = this.getMapThreadIndices(parentNodeId);
+        if (existingThreads.length > 0) {
+            threadIndex = Math.max(...existingThreads) + 1;
+        }
+
+        const subgraph: SubgraphInstance = {
+            runnerId,
+            parentNodeId,
+            parentRunnerId,
+            threadIndex,
+            status: 'idle',
+            nodeStatuses: new Map(),
+            messages: new Map(),
+            subgraphPath: msg.subgraphPath || [],
+            isActive: false,
+        };
+
+        this.subgraphInstances.set(runnerId, subgraph);
+        return subgraph;
+    }
+
+    /**
+     * 处理子图事件核心逻辑：存储 + 条件同步
+     */
+    private processSubgraphEvent(subgraph: SubgraphInstance, event: FlowEvent) {
+        // 1. 存储事件状态
+        this.storeSubgraphEvent(subgraph, event);
+
+        // 2. 如果子图处于激活状态，同步到画布
+        if (subgraph.isActive) {
+            this.syncSubgraphToCanvas(subgraph, event);
         }
     }
 
     /**
-     * 应用子图节点消息事件
+     * 存储子图事件到实例
      */
-    private applySubgraphNodeMsgEvent(
-        subgraph: SubgraphInstance,
-        event: FlowNodeMsgEvent,
-    ) {
+    private storeSubgraphEvent(subgraph: SubgraphInstance, event: FlowEvent) {
+        if (isFlowNodeMsgEvent(event)) {
+            this.storeNodeMsgEvent(subgraph, event);
+        } else if (isFlowNodeStatusEvent(event)) {
+            this.storeNodeStatusEvent(subgraph, event);
+        } else if (isFlowControlEvent(event)) {
+            this.storeControlEvent(subgraph, event);
+        }
+    }
+
+    /**
+     * 存储节点消息事件
+     */
+    private storeNodeMsgEvent(subgraph: SubgraphInstance, event: FlowNodeMsgEvent) {
         const { nodeId, type, msg: message } = event;
 
-        // 存储到子图实例
         switch (type) {
             case 'NodeInMessage':
                 subgraph.messages.set(`${nodeId}:input`, message);
@@ -295,28 +313,23 @@ export class ModelInstance {
             case 'NodeOutMessage':
                 subgraph.messages.set(`${nodeId}:output`, message);
                 break;
-            case 'NodeStreamNextMessage':
+            case 'NodeStreamNextMessage': {
                 const prev = subgraph.messages.get(`${nodeId}:stream`) || '';
                 subgraph.messages.set(`${nodeId}:stream`,
                     typeof message === 'string' ? prev + message : message
                 );
                 break;
+            }
             case 'NodeError':
                 subgraph.messages.set(`${nodeId}:error`, message);
                 break;
         }
-
-        // 同步到父节点状态
-        this.syncSubgraphStateToParent(subgraph);
     }
 
     /**
-     * 应用子图节点状态事件
+     * 存储节点状态事件
      */
-    private applySubgraphNodeStatusEvent(
-        subgraph: SubgraphInstance,
-        event: FlowNodeStatusEvent,
-    ) {
+    private storeNodeStatusEvent(subgraph: SubgraphInstance, event: FlowNodeStatusEvent) {
         const { nodeId, type } = event;
         const eventTypeToNodeStatus: Record<FlowNodeStatusEventType, NodeStatus> = {
             "NodeStarted": "running",
@@ -326,18 +339,12 @@ export class ModelInstance {
 
         const status = eventTypeToNodeStatus[type];
         subgraph.nodeStatuses.set(nodeId, status);
-
-        // 同步到父节点状态
-        this.syncSubgraphStateToParent(subgraph);
     }
 
     /**
-     * 应用子图控制事件
+     * 存储控制事件
      */
-    private applySubgraphControlEvent(
-        subgraph: SubgraphInstance,
-        event: FlowControlEvent
-    ) {
+    private storeControlEvent(subgraph: SubgraphInstance, event: FlowControlEvent) {
         let status: WorkflowStatus = 'idle';
         switch (event.type) {
             case 'FlowStarted': status = 'running'; break;
@@ -351,88 +358,94 @@ export class ModelInstance {
         if (event.type === 'FlowStopped') {
             subgraph.nodeStatuses.clear();
         }
-
-        this.syncSubgraphStateToParent(subgraph);
-    }
-
-
-    /**
-     * 初始化父节点的子图状态存储
-     */
-    private initParentNodeSubgraphState(parentNodeId: string, runnerId: number, threadIndex: number = 0) {
-        // const meta: CommandMeta = { skipHistory: true };
-        // const currentData = this.model.getNodeData(parentNodeId) || {};
-
-        // // 确保有 subgraphStatuses 字段存储子图状态
-        // const subgraphStatuses = currentData.subgraphStatuses || {};
-        // subgraphStatuses[runnerId] = {
-        //     runnerId,
-        //     threadIndex,
-        //     status: 'idle',
-        //     nodeCount: 0,
-        //     completedCount: 0,
-        //     nodeStatuses: {},
-        //     startedAt: Date.now(),
-        // };
-
-        // this.model.action.updateNodeData(parentNodeId, {
-        //     ...currentData,
-        //     subgraphStatuses,
-        //     hasSubgraph: true,
-        // }, meta);
     }
 
     /**
-     * 同步子图状态到父节点
+     * 将子图状态同步到画布节点（仅同步，不存储）
      */
-    private syncSubgraphStateToParent(subgraph: SubgraphInstance) {
-        // const meta: CommandMeta = { skipHistory: true };
-        // const parentNodeId = subgraph.parentNodeId;
-        // const currentData = this.model.getNodeData(parentNodeId) || {};
+    private syncSubgraphToCanvas(subgraph: SubgraphInstance, event: FlowEvent) {
+        // 获取子图节点的 ID 列表
+        const subgraphNodeIds = this.getSubgraphNodeIds(subgraph.parentNodeId);
+        if (subgraphNodeIds.length === 0) return;
 
-        // // 统计子图节点状态
-        // const nodeStatuses: Record<string, NodeStatus> = {};
-        // let completedCount = 0;
-        // let errorCount = 0;
-        // let runningCount = 0;
+        const meta: CommandMeta = { skipHistory: true };
 
-        // subgraph.nodeStatuses.forEach((status, nodeId) => {
-        //     nodeStatuses[nodeId] = status;
-        //     if (status === 'completed') completedCount++;
-        //     else if (status === 'error') errorCount++;
-        //     else if (status === 'running') runningCount++;
-        // });
-
-        // const totalNodes = subgraph.nodeStatuses.size;
-
-        // // 更新父节点的 subgraphStatuses
-        // const subgraphStatuses = currentData.subgraphStatuses || {};
-        // subgraphStatuses[subgraph.runnerId] = {
-        //     status: subgraph.status,
-        //     nodeCount: totalNodes,
-        //     completedCount,
-        //     errorCount,
-        //     runningCount,
-        //     nodeStatuses,
-        //     messages: Object.fromEntries(subgraph.messages),
-        //     updatedAt: Date.now(),
-        // };
-
-        // // 计算聚合状态（用于在画布上快速展示）
-        // let aggregateStatus: NodeStatus = 'idle';
-        // if (errorCount > 0) aggregateStatus = 'error';
-        // else if (runningCount > 0) aggregateStatus = 'running';
-        // else if (completedCount === totalNodes && totalNodes > 0) aggregateStatus = 'completed';
-
-        // this.model.action.updateNodeData(parentNodeId, {
-        //     ...currentData,
-        //     subgraphStatuses,
-        //     subgraphAggregateStatus: aggregateStatus,
-        //     subgraphProgress: totalNodes > 0 ? completedCount / totalNodes : 0,
-        // }, meta);
+        // 根据事件类型同步对应节点
+        if (isFlowNodeMsgEvent(event) || isFlowNodeStatusEvent(event)) {
+            this.syncNodeStateToCanvas(subgraph, event.nodeId, meta);
+        } else {
+            // 控制事件：同步所有节点状态
+            subgraphNodeIds.forEach(nodeId => {
+                this.syncNodeStateToCanvas(subgraph, nodeId, meta);
+            });
+        }
     }
 
-    // ========== Map 节点线程管理新方法 ==========
+    /**
+     * 同步单个节点状态到画布
+     */
+    private syncNodeStateToCanvas(
+        subgraph: SubgraphInstance,
+        nodeId: string,
+        meta: CommandMeta
+    ) {
+        const nodeStatus = subgraph.nodeStatuses.get(nodeId);
+        const nodeMessage = subgraph.messages.get(`${nodeId}:output`);
+        const nodeStream = subgraph.messages.get(`${nodeId}:stream`);
+        const nodeError = subgraph.messages.get(`${nodeId}:error`);
+        const nodeInput = subgraph.messages.get(`${nodeId}:input`);
+
+        const currentData = this.model.getNodeData(nodeId) || {};
+        const updates: Record<string, any> = {};
+
+        // 更新状态
+        if (nodeStatus) {
+            updates.status = nodeStatus;
+        }
+
+        // 更新消息（优先使用流式消息）
+        if (nodeStream !== undefined) {
+            updates.lastMessage = nodeStream;
+            updates.outputs = { output: nodeStream };
+            updates.isOutputStream = true;
+        } else if (nodeMessage !== undefined) {
+            updates.lastMessage = nodeMessage;
+            updates.outputs = { output: nodeMessage };
+        }
+
+        // 更新输入
+        if (nodeInput !== undefined) {
+            updates.inputs = nodeInput;
+        }
+
+        // 更新错误
+        if (nodeError !== undefined) {
+            updates.errorMessage = nodeError;
+            updates.status = 'error';
+        }
+
+        // 添加同步标记
+        updates._syncedFromSubgraph = true;
+        updates._syncedRunnerId = subgraph.runnerId;
+        updates._syncedAt = Date.now();
+
+        this.model.action.updateNodeData(nodeId, {
+            ...currentData,
+            ...updates,
+        }, meta);
+    }
+
+    /**
+     * 获取子图包含的节点 ID 列表
+     */
+    private getSubgraphNodeIds(parentNodeId: string): string[] {
+        const snapshot = this.model.getSnapshot();
+        return snapshot.nodes
+            .filter(n => n.parentId === parentNodeId)
+            .map(n => n.id);
+    }
+
+    // ========== Map 节点线程管理 ==========
 
     /**
      * 获取 Map 节点的所有线程索引列表
@@ -471,7 +484,7 @@ export class ModelInstance {
     }
 
     /**
-     * 设置当前观测的线程
+     * 设置当前观测的线程（Map 节点）
      */
     setActiveThread(mapNodeId: string, threadIndex: number): boolean {
         const threads = this.getMapThreads(mapNodeId);
@@ -482,90 +495,98 @@ export class ModelInstance {
         const subgraph = this.subgraphInstances.get(targetThread.runnerId);
         if (!subgraph) return false;
 
-        // 更新节点的 activeThreadIndex
-        const meta: CommandMeta = { skipHistory: true };
-        const currentData = this.model.getNodeData(mapNodeId) || {};
-        this.model.action.updateNodeData(mapNodeId, {
-            ...currentData,
-            activeThreadIndex: threadIndex,
-            activeRunnerId: targetThread.runnerId,
-        }, meta);
+        // 使用统一的激活方法
+        return this.activateSubgraphInstance(subgraph, {
+            updateParentState: true,
+            parentNodeId: mapNodeId,
+            threadIndex,
+        });
+    }
 
-        // 同步该线程的状态到画布
-        this.syncSubgraphToCanvas(subgraph);
+    // ========== SubgraphNode 激活处理 ==========
+
+    /**
+     * 激活 SubgraphNode 对应的子图
+     * 当用户展开 SubgraphNode 时调用，用于持续接收该子图的事件
+     */
+    activateSubgraphNode(nodeId: string): boolean {
+        // 查找该 SubgraphNode 对应的子图实例
+        let targetSubgraph: SubgraphInstance | undefined;
+
+        for (const subgraph of this.subgraphInstances.values()) {
+            if (subgraph.parentNodeId === nodeId) {
+                targetSubgraph = subgraph;
+                break;
+            }
+        }
+
+        if (!targetSubgraph) {
+            console.warn(`No subgraph instance found for SubgraphNode: ${nodeId}`);
+            return false;
+        }
+
+        // 使用统一的激活方法
+        return this.activateSubgraphInstance(targetSubgraph, {
+            updateParentState: false,
+        });
+    }
+
+    /**
+     * 激活子图实例的统一方法
+     */
+    private activateSubgraphInstance(
+        targetSubgraph: SubgraphInstance,
+        options: {
+            updateParentState: boolean;
+            parentNodeId?: string;
+            threadIndex?: number;
+        }
+    ): boolean {
+        // 1. 取消其他所有子图的活跃状态
+        this.subgraphInstances.forEach((subgraph) => {
+            if (subgraph.runnerId !== targetSubgraph.runnerId) {
+                subgraph.isActive = false;
+            }
+        });
+
+        // 2. 激活目标子图
+        targetSubgraph.isActive = true;
+
+        // 3. 如果需要，更新父节点状态
+        if (options.updateParentState && options.parentNodeId !== undefined) {
+            const meta: CommandMeta = { skipHistory: true };
+            const currentData = this.model.getNodeData(options.parentNodeId) || {};
+            this.model.action.updateNodeData(options.parentNodeId, {
+                ...currentData,
+                activeThreadIndex: options.threadIndex,
+                activeRunnerId: targetSubgraph.runnerId,
+            }, meta);
+        }
+
+        // 4. 同步当前状态到画布（全量同步所有节点）
+        this.syncAllSubgraphNodesToCanvas(targetSubgraph);
 
         return true;
     }
 
-    /**
-     * 将子图状态同步到画布节点
-     */
-    private syncSubgraphToCanvas(subgraph: SubgraphInstance) {
-        const meta: CommandMeta = { skipHistory: true };
-        const mapNodeId = subgraph.parentNodeId;
 
-        // 获取子图节点的 ID 列表
-        // 从 Map 节点的配置中获取 subgraph_node_ids
-        const mapNodeData = this.model.getNodeData(mapNodeId) || {};
-        const subgraphNodeIds: string[] = mapNodeData.config?.subgraph_node_ids || [];
+    /**
+     * 将子图所有节点状态同步到画布（全量同步）
+     */
+    private syncAllSubgraphNodesToCanvas(subgraph: SubgraphInstance) {
+        const meta: CommandMeta = { skipHistory: true };
+        const subgraphNodeIds = this.getSubgraphNodeIds(subgraph.parentNodeId);
 
         if (subgraphNodeIds.length === 0) {
-            console.warn('Map node has no subgraph_node_ids configured:', mapNodeId);
+            console.warn('Subgraph has no child nodes:', subgraph.parentNodeId);
             return;
         }
 
-        // 将子图状态同步到每个子图节点
+        // 同步所有子节点
         subgraphNodeIds.forEach(nodeId => {
-            const nodeStatus = subgraph.nodeStatuses.get(nodeId);
-            const nodeMessage = subgraph.messages.get(`${nodeId}:output`);
-            const nodeError = subgraph.messages.get(`${nodeId}:error`);
-            const nodeInput = subgraph.messages.get(`${nodeId}:input`);
-
-            // 只有当有状态或消息时才更新
-            if (nodeStatus || nodeMessage || nodeError || nodeInput) {
-                const currentData = this.model.getNodeData(nodeId) || {};
-                const updates: Record<string, any> = {};
-
-                // 更新状态
-                if (nodeStatus) {
-                    updates.status = nodeStatus;
-                }
-
-                // 更新消息
-                if (nodeMessage) {
-                    updates.lastMessage = nodeMessage;
-                    updates.outputs = { output: nodeMessage };
-                }
-
-                // 更新输入
-                if (nodeInput) {
-                    updates.inputs = nodeInput;
-                }
-
-                // 更新错误
-                if (nodeError) {
-                    updates.errorMessage = nodeError;
-                    updates.status = 'error';
-                }
-
-                // 添加同步标记
-                updates._syncedFromSubgraph = true;
-                updates._syncedRunnerId = subgraph.runnerId;
-                updates._syncedAt = Date.now();
-
-                this.model.action.updateNodeData(nodeId, {
-                    ...currentData,
-                    ...updates,
-                }, meta);
-            }
+            this.syncNodeStateToCanvas(subgraph, nodeId, meta);
         });
-
-        // 更新 Map 节点的同步状态
-        this.model.action.updateNodeData(mapNodeId, {
-            ...mapNodeData,
-            isSyncedToCanvas: true,
-            lastSyncedAt: Date.now(),
-            syncedRunnerId: subgraph.runnerId,
-        }, meta);
     }
+
+
 }

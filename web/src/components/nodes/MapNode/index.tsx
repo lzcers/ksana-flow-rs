@@ -6,6 +6,7 @@ import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
 import { useStore } from '@/store';
 import { useMapNodeStream } from './hooks';
 import { MapNodeView } from './view';
+import { workflowManager } from '@/model/workflowManager';
 
 export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
   const { id, data } = props;
@@ -35,6 +36,7 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
   const maxThreadCount = Math.max(1, parseInt(maxConcurrencyField.draft, 10) || 1);
 
   const [activeThread, setActiveThread] = useState(streamState.activeThreadIndex ?? 0);
+  const activeGraphKey = useStore((s) => s.activeGraphKey);
 
   useEffect(() => {
     if (activeThread >= maxThreadCount) {
@@ -44,7 +46,15 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
 
   const onThreadChange = useCallback((thread: number) => {
     setActiveThread(thread);
-  }, []);
+
+    // 调用后端的 setActiveThread 来激活对应的子图实例
+    if (activeGraphKey) {
+      const instance = workflowManager.getModelInstance(activeGraphKey);
+      if (instance) {
+        instance.setActiveThread(id, thread);
+      }
+    }
+  }, [id, activeGraphKey]);
 
   return (
     <MapNodeView
