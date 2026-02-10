@@ -35,6 +35,12 @@ export class ModelInstance {
     rxFlowEvent$: RxFlowEvent;
     subgraphInstances: Map<number, SubgraphInstance> = new Map();
 
+    /**
+     * 预激活状态存储：用于子图尚未创建但用户已请求激活的场景
+     * Key: `${parentNodeId}:${threadIndex}`
+     */
+    private pendingSubgraphActivation: Map<string, { threadIndex: number; parentNodeId: string }> = new Map();
+
     private notifyWorkflowStatusChange: (graphKey: GraphKey, workflowId: number | null, runId: string | null, status: WorkflowStatus) => void;
     private flowEventSubscription: Subscription;
 
@@ -170,6 +176,7 @@ export class ModelInstance {
      */
     clearSubgraphInstances() {
         this.subgraphInstances.clear();
+        this.pendingSubgraphActivation.clear(); // 清理预激活状态
 
         // 清除所有节点的子图状态
         const meta: CommandMeta = { skipHistory: true };
@@ -184,6 +191,7 @@ export class ModelInstance {
                 delete newData.hasSubgraph;
                 delete newData.activeThreadIndex;
                 delete newData.activeRunnerId;
+                delete newData.subgraphStatus;
                 this.model.action.updateNodeData(node.id, newData, meta);
             }
         });
@@ -271,7 +279,43 @@ export class ModelInstance {
         };
 
         this.subgraphInstances.set(runnerId, subgraph);
+
+        // 检查是否有预激活请求，如果有则自动激活
+        this.checkAndApplyPendingActivation(subgraph, parentNodeId, threadIndex);
+
         return subgraph;
+    }
+
+    /**
+     * 检查并应用预激活请求
+     */
+    private checkAndApplyPendingActivation(
+        subgraph: SubgraphInstance,
+        parentNodeId: string,
+        threadIndex: number
+    ) {
+        const pendingKey = `${parentNodeId}:${threadIndex}`;
+        const pendingActivation = this.pendingSubgraphActivation.get(pendingKey);
+
+        if (pendingActivation && pendingActivation.threadIndex === threadIndex) {
+            // 自动激活该子图
+            this.activateSubgraphInstance(subgraph, {
+                updateParentState: true,
+                parentNodeId,
+                threadIndex,
+            });
+
+            // 清除预激活记录
+            this.pendingSubgraphActivation.delete(pendingKey);
+
+            // 更新节点状态为运行中
+            const meta: CommandMeta = { skipHistory: true };
+            const currentData = this.model.getNodeData(parentNodeId) || {};
+            this.model.action.updateNodeData(parentNodeId, {
+                ...currentData,
+                subgraphStatus: 'active',
+            }, meta);
+        }
     }
 
     /**
@@ -485,17 +529,38 @@ export class ModelInstance {
 
     /**
      * 设置当前观测的线程（Map 节点）
+     * 支持预激活：如果子图尚未创建，记录激活意图，待子图创建时自动激活
      */
     setActiveThread(mapNodeId: string, threadIndex: number): boolean {
         const threads = this.getMapThreads(mapNodeId);
         const targetThread = threads.find(t => t.threadIndex === threadIndex);
 
-        if (!targetThread) return false;
+        if (!targetThread) {
+            // 子图实例不存在，记录预激活意图
+            this.pendingSubgraphActivation.set(`${mapNodeId}:${threadIndex}`, {
+                threadIndex,
+                parentNodeId: mapNodeId,
+            });
 
+            // 更新节点状态显示"等待中"
+            const meta: CommandMeta = { skipHistory: true };
+            const currentData = this.model.getNodeData(mapNodeId) || {};
+            this.model.action.updateNodeData(mapNodeId, {
+                ...currentData,
+                activeThreadIndex: threadIndex,
+                subgraphStatus: 'waiting', // 等待子图创建
+            }, meta);
+
+            return true; // 返回 true 表示已接受请求
+        }
+
+        // 子图存在，正常激活
         const subgraph = this.subgraphInstances.get(targetThread.runnerId);
         if (!subgraph) return false;
 
-        // 使用统一的激活方法
+        // 清除可能存在的预激活记录
+        this.pendingSubgraphActivation.delete(`${mapNodeId}:${threadIndex}`);
+
         return this.activateSubgraphInstance(subgraph, {
             updateParentState: true,
             parentNodeId: mapNodeId,
