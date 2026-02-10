@@ -44,6 +44,19 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
     }
   }, [maxThreadCount, activeThread]);
 
+  // 当 MapNode 展开时，自动激活当前线程的子图（支持预激活）
+  useEffect(() => {
+    const isExpanded = data.expanded !== false;
+
+    if (isExpanded && activeGraphKey) {
+      const instance = workflowManager.getModelInstance(activeGraphKey);
+      if (instance) {
+        // 激活当前线程，支持预激活（子图可能尚未创建）
+        instance.setActiveThread(id, activeThread);
+      }
+    }
+  }, [data.expanded, activeGraphKey, id, activeThread]);
+
   const onThreadChange = useCallback((thread: number) => {
     setActiveThread(thread);
 
