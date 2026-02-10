@@ -104,6 +104,10 @@ export class RxWorkflow {
     return this._model.state;
   }
 
+  getNodeData(nodeId: string): Immutable<Node['data']> | undefined {
+    return this._model.state.nodes.find(n => n.id === nodeId)?.data;
+  }
+
   destroy(): void {
     this._state$.complete();
     this._commands$.complete();

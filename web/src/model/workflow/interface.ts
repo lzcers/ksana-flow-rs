@@ -45,6 +45,7 @@ export interface WorkflowModelInterface {
   canRedo$: Observable<boolean>;
   action: WorkflowModelDispatchers;
   getSnapshot: () => Immutable<WorkflowState>;
+  getNodeData: (nodeId: string) => Immutable<Node['data']> | undefined;
   undo: () => void;
   redo: () => void;
   destroy: () => void;
@@ -122,6 +123,7 @@ export function createWorkflowModel(
     undo: () => rxWorkflow.undo(),
     redo: () => rxWorkflow.redo(),
     getSnapshot: () => rxWorkflow.currentState,
+    getNodeData: (nodeId: string) => rxWorkflow.getNodeData(nodeId),
     destroy: () => rxWorkflow.destroy(),
   };
 }
