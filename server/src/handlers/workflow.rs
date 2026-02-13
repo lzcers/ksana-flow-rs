@@ -17,7 +17,7 @@ use flow::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use uuid::Uuid;
@@ -47,7 +47,8 @@ pub struct RunWorkflowRequest {
 pub struct RunNodeRequest {
     pub space_id: String,
     blueprint: GraphBlueprint,
-    node_id: String,
+    node_id: Option<String>,
+    node_ids: Option<Vec<String>>,
     pub workflow_id: i64,
 }
 
@@ -398,20 +399,40 @@ pub async fn run_node(
     State(state): State<AppState>,
     Json(payload): Json<RunNodeRequest>,
 ) -> impl IntoResponse {
-    let workspace_id = payload.space_id;
-    let workflow_id = payload.workflow_id;
-    let blueprint = payload.blueprint;
-    let mut node_id = payload.node_id;
-    loop {
-        let parent_id = blueprint
-            .nodes
-            .iter()
-            .find(|n| n.id == node_id)
-            .and_then(|n| n.parent_id.clone());
-        if let Some(parent_id) = parent_id {
-            node_id = parent_id;
-        } else {
-            break;
+    let RunNodeRequest {
+        space_id: workspace_id,
+        blueprint,
+        node_id,
+        node_ids,
+        workflow_id,
+    } = payload;
+    let mut requested = Vec::new();
+    if let Some(ids) = node_ids {
+        requested.extend(ids);
+    }
+    if let Some(id) = node_id {
+        requested.push(id);
+    }
+    if requested.is_empty() {
+        return Json(json!({"error": "No node id provided"}));
+    }
+    let mut start_node_ids = Vec::new();
+    let mut seen = HashSet::new();
+    for mut node_id in requested {
+        loop {
+            let parent_id = blueprint
+                .nodes
+                .iter()
+                .find(|n| n.id == node_id)
+                .and_then(|n| n.parent_id.clone());
+            if let Some(parent_id) = parent_id {
+                node_id = parent_id;
+            } else {
+                break;
+            }
+        }
+        if seen.insert(node_id.clone()) {
+            start_node_ids.push(node_id);
         }
     }
 
@@ -428,41 +449,40 @@ pub async fn run_node(
         // Reconstruct ExecutionContext from blueprint
         let execution_ctx = reconstruct_execution_context_from_blueprint(&blueprint);
 
-        // 重置当前节点状态
-        execution_ctx.set_state(node_id.clone(), NodeState::Idle);
-
-        // 提取所有父节点的输出构建当前节点输入
-        let mut node_inputs = HashMap::new();
-        for parent_id in graph.get_parents(&node_id) {
-            let state = execution_ctx.get_state(&parent_id);
-            match state {
-                Some(NodeState::Completed) => {
-                    if let Some(output) = execution_ctx.get_output(&parent_id) {
-                        node_inputs.insert(parent_id.clone(), output);
+        let mut node_inputs = Vec::new();
+        for node_id in &start_node_ids {
+            if !graph.nodes.contains_key(node_id) {
+                return Json(json!({
+                    "error": format!("Node '{}' not found in blueprint", node_id)
+                }));
+            }
+            execution_ctx.set_state(node_id.clone(), NodeState::Idle);
+            let mut inputs = HashMap::new();
+            for parent_id in graph.get_parents(node_id) {
+                let state = execution_ctx.get_state(&parent_id);
+                match state {
+                    Some(NodeState::Completed) => {
+                        if let Some(output) = execution_ctx.get_output(&parent_id) {
+                            inputs.insert(parent_id.clone(), output);
+                        }
+                    }
+                    _ => {
+                        return Json(json!({
+                            "error": format!("Parent node '{}' has not completed successfully", parent_id)
+                        }));
                     }
                 }
-                _ => {
-                    // 父节点未完成，理论上不应该允许从父节点未运行成功的地方开始执行
-                    return Json(json!({
-                        "error": format!("Parent node '{}' has not completed successfully", parent_id)
-                    }));
-                }
             }
+            node_inputs.push((node_id.clone(), Input::new(inputs)));
         }
-        (graph, execution_ctx, Input::new(node_inputs))
+        (graph, execution_ctx, node_inputs)
     };
-
-    if !graph.nodes.contains_key(&node_id) {
-        return Json(json!({
-            "error": format!("Node '{}' not found in blueprint", node_id)
-        }));
-    }
 
     match start_execution(
         state,
         graph,
         Some(execution_ctx),
-        vec![(node_id.clone(), node_inputs)],
+        node_inputs,
         workflow_id,
         workspace_id,
     )
@@ -471,7 +491,7 @@ pub async fn run_node(
         Ok(run_id) => Json(json!({
             "status": "started",
             "run_id": run_id,
-            "start_node": node_id
+            "start_nodes": start_node_ids
         })),
         Err(e) => Json(json!({"error": e})),
     }

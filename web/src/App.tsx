@@ -60,6 +60,7 @@ function AppContent() {
     importWorkflow,
     getWorkflowBlueprint,
     groupNodes,
+    runNode,
     undo,
     redo,
   } = workflow;
@@ -204,7 +205,8 @@ function AppContent() {
             onResume={resumeWorkflow}
             onStop={stopWorkflow}
             onGroupNodes={groupNodes}
-            onPaste={workflow.onPaste} // Add onPaste if it exists in useWorkflow or derive it
+            onRunNodes={runNode}
+            onPaste={workflow.onPaste}
             onSave={async () => { await saveWorkflow(); }}
             onUndo={undo}
             onRedo={redo}

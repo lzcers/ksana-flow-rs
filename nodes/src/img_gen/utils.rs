@@ -48,7 +48,7 @@ pub fn build_payload(
     json!({
         "model": model,
         "messages": messages,
-        "modalities": ["image", "text"],
+        "modalities": ["image"],
         "stream": false,
         "image_config": {
             "aspect_ratio": aspect_ratio,

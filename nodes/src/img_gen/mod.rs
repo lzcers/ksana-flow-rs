@@ -113,7 +113,7 @@ impl Node for ImgGenNode {
         .await
         {
             Ok(v) => v,
-            Err(e) => return Ok(Value::String(e).into()),
+            Err(e) => return Err(e),
         };
 
         let Some(data_url) = utils::extract_first_image_data_url(&resp_json) else {

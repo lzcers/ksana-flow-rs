@@ -126,7 +126,7 @@ impl Scheduler {
 
     fn should_schedule(&self, node_id: &str, exec_ctx: &ExecutionContext) -> bool {
         match exec_ctx.get_state(node_id) {
-            Some(NodeState::Running) | Some(NodeState::Completed) => false,
+            Some(NodeState::Running) => false,
             _ => true,
         }
     }
