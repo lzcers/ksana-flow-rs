@@ -44,9 +44,11 @@ export interface Canvas {
     selectedNodeId: string[];
     isConnecting: boolean;
     connectionSourceId: string | null;
+    dragOverNodeId: string | null;
     switchCanvas: (graphKey: GraphKey) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
+    onNodeDrag: (event: any, node: any) => void;
     onNodeDragStop: (event: any, node: any) => void;
     onConnect: (connection: Connection) => void;
     addNode: (type: string, position?: { x: number; y: number }) => void;

@@ -55,12 +55,111 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
     });
   };
 
+  const findDropTargetGroup = (
+    nodeId: string,
+    nodes: Immutable<Node[]>
+  ): string | null => {
+    const nodeById = new Map(nodes.map((n) => [n.id, n] as const));
+    const node = nodeById.get(nodeId);
+    if (!node) return null;
+
+    const isGroup = (n: Immutable<Node>) => n.type === 'SubgraphNode' || n.type === 'MapNode';
+    const isDropTargetGroup = (n: Immutable<Node>) =>
+      isGroup(n) && n.id !== nodeId && n.hidden !== true && (n.data)?.expanded !== false;
+
+    const toNumber = (v: unknown): number | undefined => {
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      if (typeof v === 'string') {
+        const n = parseFloat(v);
+        if (Number.isFinite(n)) return n;
+      }
+      return undefined;
+    };
+
+    const getSize = (n: Immutable<Node>): { width: number; height: number } => {
+      const styleW = toNumber((n.style)?.width);
+      const styleH = toNumber((n.style)?.height);
+      const width = (n.measured?.width ?? styleW ?? n.width ?? (isGroup(n) ? 300 : 150)) as number;
+      const height = (n.measured?.height ?? styleH ?? n.height ?? (isGroup(n) ? 200 : 50)) as number;
+      return { width, height };
+    };
+
+    const getAbsPos = (n: Immutable<Node>): { x: number; y: number } => {
+      let x = n.position.x;
+      let y = n.position.y;
+      let cur: Immutable<Node> | undefined = n;
+      const visited = new Set<string>();
+      while (cur?.parentId) {
+        if (!visited.add(cur.parentId)) break;
+        const p = nodeById.get(cur.parentId);
+        if (!p) break;
+        x += p.position.x;
+        y += p.position.y;
+        cur = p;
+      }
+      return { x, y };
+    };
+
+    const depthOf = (n: Immutable<Node>): number => {
+      let depth = 0;
+      let cur: Immutable<Node> | undefined = n;
+      const visited = new Set<string>();
+      while (cur?.parentId) {
+        if (!visited.add(cur.parentId)) break;
+        const p = nodeById.get(cur.parentId);
+        if (!p) break;
+        depth += 1;
+        cur = p;
+      }
+      return depth;
+    };
+
+    const isAncestor = (ancestorId: string, descendantId: string): boolean => {
+      let cur = nodeById.get(descendantId);
+      const visited = new Set<string>();
+      while (cur?.parentId) {
+        if (cur.parentId === ancestorId) return true;
+        if (!visited.add(cur.parentId)) break;
+        cur = nodeById.get(cur.parentId);
+      }
+      return false;
+    };
+
+    const nodeSize = getSize(node);
+    const nodeAbs = getAbsPos(node);
+    const center = { x: nodeAbs.x + nodeSize.width / 2, y: nodeAbs.y + nodeSize.height / 2 };
+
+    let targetGroup: Immutable<Node> | null = null;
+    let bestDepth = -1;
+    for (const g of nodes) {
+      if (!isDropTargetGroup(g)) continue;
+      if (isGroup(node) && isAncestor(node.id, g.id)) continue;
+
+      const gAbs = getAbsPos(g);
+      const gSize = getSize(g);
+      const inside =
+        center.x >= gAbs.x &&
+        center.x <= gAbs.x + gSize.width &&
+        center.y >= gAbs.y &&
+        center.y <= gAbs.y + gSize.height;
+      if (!inside) continue;
+      const d = depthOf(g);
+      if (d > bestDepth) {
+        bestDepth = d;
+        targetGroup = g;
+      }
+    }
+
+    return targetGroup?.id ?? null;
+  };
+
   return {
     nodes: [],
     edges: [],
     selectedNodeId: [],
     isConnecting: false,
     connectionSourceId: null,
+    dragOverNodeId: null,
 
     undo: () => {
       getActiveModel().undo();
@@ -115,8 +214,20 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
       }
     },
 
+    onNodeDrag: (_event: any, draggedNode: any) => {
+      const nodeId = typeof draggedNode?.id === 'string' ? draggedNode.id : null;
+      if (!nodeId) {
+        set({ dragOverNodeId: null });
+        return;
+      }
+      const { nodes } = getActiveModel().getSnapshot();
+      const targetId = findDropTargetGroup(nodeId, nodes as Immutable<Node[]>);
+      set({ dragOverNodeId: targetId });
+    },
+
     onNodeDragStop: (_event: any, draggedNode: any) => {
       const nodeId = typeof draggedNode?.id === 'string' ? draggedNode.id : null;
+      set({ dragOverNodeId: null });
       if (!nodeId) return;
       getActiveModel().action.handleNodeDragStop(nodeId);
     },

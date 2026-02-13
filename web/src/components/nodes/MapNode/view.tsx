@@ -6,6 +6,7 @@ import type { NodeData } from "@/model/workflow/types";
 import { cn } from "@/utils/cn";
 import { mapNodeStyles } from "./styles";
 import type { MapNodeStreamState } from "./hooks";
+import { useStore } from "@/store";
 
 interface MapNodeViewProps extends NodeProps {
     data: NodeData;
@@ -40,6 +41,7 @@ export const MapNodeView = memo(
     }: MapNodeViewProps) => {
         const { getNodes } = useReactFlow();
         const updateNodeInternals = useUpdateNodeInternals();
+        const dragOverNodeId = useStore(state => state.dragOverNodeId);
 
         const childNodes = getNodes().filter((n: Node) => n.parentId === id);
         const childCount = childNodes.length;
@@ -50,6 +52,7 @@ export const MapNodeView = memo(
 
         const maxThreadCount = Math.max(1, parseInt(maxConcurrency, 10) || 1);
         const showPager = expanded && maxThreadCount >= 2;
+        const isDragOver = dragOverNodeId === id;
 
         const handlePrevThread = (e: React.MouseEvent) => {
             e.stopPropagation();
@@ -104,7 +107,10 @@ export const MapNodeView = memo(
                 id={id}
                 data={data}
                 selected={selected}
-                className={expanded ? mapNodeStyles.expandedContainer : mapNodeStyles.collapsedContainer}
+                className={cn(
+                    expanded ? mapNodeStyles.expandedContainer : mapNodeStyles.collapsedContainer,
+                    isDragOver && mapNodeStyles.dragOverHighlight,
+                )}
                 headerActions={headerActions}
                 resizable={expanded}
                 minWidth={expanded ? 200 : 260}

@@ -31,6 +31,7 @@ interface CanvasProps {
     availableNodes: NodeMetadata[];
     onNodesChange: (changes: any) => void;
     onEdgesChange: (changes: any) => void;
+    onNodeDrag: (event: any, node: any) => void;
     onNodeDragStop: (event: any, node: any) => void;
     onConnect: (connection: any) => void;
     onAddNode: (type: string, position: { x: number; y: number }) => void;
@@ -75,6 +76,7 @@ export const Canvas: React.FC<CanvasProps> = ({
     availableNodes,
     onNodesChange,
     onEdgesChange,
+    onNodeDrag,
     onNodeDragStop,
     onConnect,
     onAddNode,
@@ -217,6 +219,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                 onPaneClick={onPaneClick}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
+                onNodeDrag={onNodeDrag}
                 onNodeDragStop={onNodeDragStop}
                 onConnect={onConnect}
                 onConnectStart={onConnectStart}
