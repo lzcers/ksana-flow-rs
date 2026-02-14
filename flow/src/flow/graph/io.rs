@@ -1,8 +1,10 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    marker::PhantomData,
 };
 
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::ReactiveStream;
@@ -124,5 +126,76 @@ impl Into<Output> for Value {
             value: Some(self),
             stream: None,
         }
+    }
+}
+
+pub struct TypedInput<'a, T> {
+    inner: &'a Input,
+    _marker: PhantomData<T>,
+}
+
+impl<'a, T: DeserializeOwned> TypedInput<'a, T> {
+    pub fn get_any(&self) -> Option<T> {
+        self.inner.get_any_as()
+    }
+
+    pub fn get(&self, key: &str) -> Option<T> {
+        self.inner.get_str_as(key)
+    }
+
+    pub fn get_values(&self) -> &'a HashMap<NodeId, Value> {
+        self.inner.get_values()
+    }
+
+    pub fn inner(&self) -> &'a Input {
+        self.inner
+    }
+}
+
+impl Input {
+    pub fn as_typed<T: DeserializeOwned>(&self) -> TypedInput<'_, T> {
+        TypedInput {
+            inner: self,
+            _marker: PhantomData,
+        }
+    }
+}
+
+pub struct TypedOutput<T> {
+    inner: Output,
+    _marker: PhantomData<T>,
+}
+
+impl<T> TypedOutput<T> {
+    pub fn from_output(output: Output) -> Self {
+        TypedOutput {
+            inner: output,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn into_output(self) -> Output {
+        self.inner
+    }
+}
+
+impl<T: Serialize> TypedOutput<T> {
+    pub fn new(value: T) -> Self {
+        let json_value = serde_json::to_value(value).unwrap_or(Value::Null);
+        TypedOutput {
+            inner: Output::new(Some(json_value)),
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn with_stream(mut self, stream: ReactiveStream) -> Self {
+        self.inner.set_stream(stream);
+        self
+    }
+}
+
+impl<T: Serialize> From<T> for TypedOutput<T> {
+    fn from(value: T) -> Self {
+        TypedOutput::new(value)
     }
 }
