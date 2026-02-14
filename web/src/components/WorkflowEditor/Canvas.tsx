@@ -4,6 +4,7 @@ import {
     Background,
     Controls,
     type NodeTypes,
+    type EdgeTypes,
     Panel,
     useReactFlow,
     useViewport,
@@ -15,10 +16,13 @@ import {
 } from "@xyflow/react";
 import { Play, Pause, Square } from "lucide-react";
 import { WorkflowNode } from "./WorkflowNode";
+import { WorkflowEdge } from "./WorkflowEdge";
 import { NODE_TYPES } from "./nodeRegistry";
 import { NodeContextMenu } from "./NodeContextMenu";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
+import { useSwipeToDelete } from "./useSwipeToDelete";
+import { SwipeToDeleteContext } from "./SwipeToDeleteContext";
 import type { Node, Edge } from "../../model/workflow/types";
 import type { WorkflowStatus } from "../../hooks/useWorkflow";
 import type { NodeMetadata } from "../../api";
@@ -51,6 +55,10 @@ interface CanvasProps {
 const nodeTypes: NodeTypes = {
     workflow: WorkflowNode,
     ...Object.fromEntries(NODE_TYPES.map(nt => [nt.type, WorkflowNode])),
+};
+
+const edgeTypes: EdgeTypes = {
+    default: WorkflowEdge,
 };
 
 const defaultEdgeOptions = {
@@ -96,6 +104,15 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     const spacePressed = useKeyPress("Space");
     const mousePositionRef = React.useRef({ x: 0, y: 0 });
+
+    const handleDeleteEdges = React.useCallback(
+        (edgeIds: string[]) => {
+            onEdgesChange(edgeIds.map(id => ({ type: "remove", id })));
+        },
+        [onEdgesChange]
+    );
+
+    const { markedEdgeIds, isShiftPressed, markEdgeForDeletion } = useSwipeToDelete(handleDeleteEdges);
 
     const onMouseMove = React.useCallback((event: React.MouseEvent) => {
         mousePositionRef.current = { x: event.clientX, y: event.clientY };
@@ -173,7 +190,6 @@ export const Canvas: React.FC<CanvasProps> = ({
 
             const type = event.dataTransfer.getData("application/reactflow");
 
-            // check if the dropped element is valid
             if (typeof type === "undefined" || !type) {
                 return;
             }
@@ -183,7 +199,6 @@ export const Canvas: React.FC<CanvasProps> = ({
                 y: event.clientY,
             });
 
-            // Offset the position to center the node (approximate dimensions: 120x80)
             const centeredPosition = {
                 x: position.x - 60,
                 y: position.y - 40,
@@ -205,108 +220,119 @@ export const Canvas: React.FC<CanvasProps> = ({
         setConnectionState?.(false, null);
     }, [setConnectionState]);
 
+    const swipeToDeleteContextValue = React.useMemo(
+        () => ({
+            markedEdgeIds,
+            isShiftPressed,
+            markEdgeForDeletion,
+        }),
+        [markedEdgeIds, isShiftPressed, markEdgeForDeletion]
+    );
+
     return (
-        <main className="w-full h-full relative bg-black" onMouseMove={onMouseMove}>
-            <ReactFlow
-                key={graphKey ?? "no-graph"}
-                panOnDrag={spacePressed}
-                selectionOnDrag={!spacePressed}
-                panOnScroll={true}
-                className={spacePressed ? "ksana-flow--panning" : undefined}
-                nodes={nodes}
-                edges={edges}
-                onPaneContextMenu={onPaneContextMenu}
-                onPaneClick={onPaneClick}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onNodeDrag={onNodeDrag}
-                onNodeDragStop={onNodeDragStop}
-                onConnect={onConnect}
-                onConnectStart={onConnectStart}
-                onConnectEnd={onConnectEnd}
-                onDrop={onDrop}
-                onDragOver={onDragOver}
-                nodeTypes={nodeTypes}
-                fitView
-                fitViewOptions={fitViewOptions}
-                deleteKeyCode={["Backspace", "Delete"]}
-                // Style overrides for clean look
-                colorMode="dark"
-                defaultEdgeOptions={defaultEdgeOptions}
-                connectionLineStyle={{
-                    stroke: "#3b82f6",
-                    strokeWidth: 2,
-                }}
-                onlyRenderVisibleElements={false}
-                minZoom={0.1}
-                maxZoom={2}
-            >
-                <Background color="#52525b" bgColor="#000" gap={24} size={1} />
-                <Controls
-                    showInteractive={false}
-                    className="bg-zinc-900/80! backdrop-blur-xl! border-white/10! shadow-xl! fill-zinc-400! rounded-xl! overflow-hidden! border!"
-                />
+        <SwipeToDeleteContext.Provider value={swipeToDeleteContextValue}>
+            <main className="w-full h-full relative bg-black" onMouseMove={onMouseMove}>
+                <ReactFlow
+                    key={graphKey ?? "no-graph"}
+                    panOnDrag={spacePressed}
+                    selectionOnDrag={!spacePressed}
+                    panOnScroll={true}
+                    className={spacePressed ? "ksana-flow--panning" : undefined}
+                    nodes={nodes}
+                    edges={edges}
+                    onPaneContextMenu={onPaneContextMenu}
+                    onPaneClick={onPaneClick}
+                    onNodesChange={onNodesChange}
+                    onEdgesChange={onEdgesChange}
+                    onNodeDrag={onNodeDrag}
+                    onNodeDragStop={onNodeDragStop}
+                    onConnect={onConnect}
+                    onConnectStart={onConnectStart}
+                    onConnectEnd={onConnectEnd}
+                    onDrop={onDrop}
+                    onDragOver={onDragOver}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    fitView
+                    fitViewOptions={fitViewOptions}
+                    deleteKeyCode={["Backspace", "Delete"]}
+                    colorMode="dark"
+                    defaultEdgeOptions={defaultEdgeOptions}
+                    connectionLineStyle={{
+                        stroke: "#3b82f6",
+                        strokeWidth: 2,
+                    }}
+                    onlyRenderVisibleElements={false}
+                    minZoom={0.1}
+                    maxZoom={2}
+                >
+                    <Background color="#52525b" bgColor="#000" gap={24} size={1} />
+                    <Controls
+                        showInteractive={false}
+                        className="bg-zinc-900/80! backdrop-blur-xl! border-white/10! shadow-xl! fill-zinc-400! rounded-xl! overflow-hidden! border!"
+                    />
 
-                <Panel position="bottom-left" style={{ marginLeft: "48px" }}>
-                    <div className="bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-lg p-1 shadow-lg">
-                        <ZoomDisplay />
-                    </div>
-                </Panel>
+                    <Panel position="bottom-left" style={{ marginLeft: "48px" }}>
+                        <div className="bg-zinc-900/80 backdrop-blur-md border border-white/10 rounded-lg p-1 shadow-lg">
+                            <ZoomDisplay />
+                        </div>
+                    </Panel>
 
-                <Panel position="bottom-center" className="mb-12">
-                    <div className="flex items-center gap-3">
-                        {workflowStatus === "idle" ? (
-                            <button
-                                onClick={onRun}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 hover:text-zinc-100 border border-zinc-700/50 rounded-full text-sm font-medium shadow-sm hover:shadow-md transition-all backdrop-blur-sm"
-                            >
-                                <Play size={18} fill="currentColor" className="opacity-80" />
-                                Run Workflow
-                            </button>
-                        ) : (
-                            <>
-                                {workflowStatus === "running" ? (
-                                    <button
-                                        onClick={onPause}
-                                        className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500/90 hover:text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
-                                        title="Pause"
-                                    >
-                                        <Pause size={18} fill="currentColor" />
-                                        <span className="text-sm font-medium">Pause</span>
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={onResume}
-                                        className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500/90 hover:text-green-400 border border-green-500/20 hover:border-green-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
-                                        title="Resume"
-                                    >
-                                        <Play size={18} fill="currentColor" />
-                                        <span className="text-sm font-medium">Resume</span>
-                                    </button>
-                                )}
+                    <Panel position="bottom-center" className="mb-12">
+                        <div className="flex items-center gap-3">
+                            {workflowStatus === "idle" ? (
                                 <button
-                                    onClick={onStop}
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500/90 hover:text-red-400 border border-red-500/20 hover:border-red-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
-                                    title="Stop"
+                                    onClick={onRun}
+                                    className="flex items-center gap-2 px-6 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 hover:text-zinc-100 border border-zinc-700/50 rounded-full text-sm font-medium shadow-sm hover:shadow-md transition-all backdrop-blur-sm"
                                 >
-                                    <Square size={18} fill="currentColor" />
-                                    <span className="text-sm font-medium">Stop</span>
+                                    <Play size={18} fill="currentColor" className="opacity-80" />
+                                    Run Workflow
                                 </button>
-                            </>
-                        )}
-                    </div>
-                </Panel>
+                            ) : (
+                                <>
+                                    {workflowStatus === "running" ? (
+                                        <button
+                                            onClick={onPause}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500/90 hover:text-yellow-400 border border-yellow-500/20 hover:border-yellow-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
+                                            title="Pause"
+                                        >
+                                            <Pause size={18} fill="currentColor" />
+                                            <span className="text-sm font-medium">Pause</span>
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={onResume}
+                                            className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 hover:bg-green-500/20 text-green-500/90 hover:text-green-400 border border-green-500/20 hover:border-green-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
+                                            title="Resume"
+                                        >
+                                            <Play size={18} fill="currentColor" />
+                                            <span className="text-sm font-medium">Resume</span>
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={onStop}
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500/90 hover:text-red-400 border border-red-500/20 hover:border-red-500/30 rounded-full transition-all shadow-sm hover:shadow-md backdrop-blur-sm"
+                                        title="Stop"
+                                    >
+                                        <Square size={18} fill="currentColor" />
+                                        <span className="text-sm font-medium">Stop</span>
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </Panel>
 
-                <NodeContextMenu
-                    visible={contextMenu.visible}
-                    position={{ x: contextMenu.x, y: contextMenu.y }}
-                    nodeTypes={availableNodes}
-                    onSelect={handleSelectNode}
-                    onClose={() => setContextMenu(prev => ({ ...prev, visible: false }))}
-                />
+                    <NodeContextMenu
+                        visible={contextMenu.visible}
+                        position={{ x: contextMenu.x, y: contextMenu.y }}
+                        nodeTypes={availableNodes}
+                        onSelect={handleSelectNode}
+                        onClose={() => setContextMenu(prev => ({ ...prev, visible: false }))}
+                    />
 
-                {onGroupNodes && onRunNodes && <SelectionToolbar onGroupNodes={onGroupNodes} onRunNodes={onRunNodes} />}
-            </ReactFlow>
-        </main>
+                    {onGroupNodes && onRunNodes && <SelectionToolbar onGroupNodes={onGroupNodes} onRunNodes={onRunNodes} />}
+                </ReactFlow>
+            </main>
+        </SwipeToDeleteContext.Provider>
     );
 };
