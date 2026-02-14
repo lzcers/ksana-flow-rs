@@ -156,7 +156,7 @@ export const processApplyNodeChanges = (state: Immutable<WorkflowState>, command
 export const processResetAllNodeStatus = (state: Immutable<WorkflowState>, _command: ResetAllNodeStatusCommand): Immutable<WorkflowState> => {
     return produce(state, draft => {
         draft.nodes.forEach(node => {
-            if (node.data) {
+            if (node.data.status === "running") {
                 node.data.status = "idle";
                 node.data.errorMessage = undefined;
             }

@@ -35,6 +35,8 @@ export interface Workflow {
     stopWorkflow: () => Promise<void>;
     runNode: (nodeIds: string[]) => Promise<void>;
     initializeWebSocket: () => () => void;
+    startAutoSave: () => void;
+    stopAutoSave: () => void;
 }
 
 // 处理画布相关的状态和操作

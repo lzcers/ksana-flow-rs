@@ -9,6 +9,9 @@ import { makeGraphKey, workflowManager, type GraphKey } from "@/model/workflowMa
 import type { WorkflowStatus } from "@/model/workflow/types";
 
 export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, get) => {
+    let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+    const AUTO_SAVE_INTERVAL = 10_000;
+
     const workflowIdFromGraphKey = (graphKey: GraphKey): number | null => {
         const [, workflowIdRaw] = graphKey.split(":");
         const workflowId = Number(workflowIdRaw);
@@ -51,6 +54,20 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             }
         }
     });
+
+    const saveWorkflowSilent = async () => {
+        const { currentSpaceId, nodes, edges, currentWorkflowId, workflows } = get();
+        if (!currentSpaceId || currentWorkflowId == null || currentWorkflowId === -1) return;
+
+        const blueprint = toBlueprint(nodes, edges);
+        try {
+            const currentWf = workflows.find(w => w.id === currentWorkflowId);
+            const nameToUse = currentWf?.name || "Untitled";
+            await api.updateWorkflow(currentSpaceId, currentWorkflowId, nameToUse, blueprint as any);
+        } catch (e) {
+            console.error("Auto-save failed", e);
+        }
+    };
 
     return {
         workflows: [],
@@ -365,6 +382,18 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             } catch (e) {
                 console.error(`Failed to run node ${nodeIds}`, e);
                 error(`Failed to run node: ` + (e instanceof Error ? e.message : String(e)));
+            }
+        },
+
+        startAutoSave: () => {
+            if (autoSaveTimer) return;
+            autoSaveTimer = setInterval(saveWorkflowSilent, AUTO_SAVE_INTERVAL);
+        },
+
+        stopAutoSave: () => {
+            if (autoSaveTimer) {
+                clearInterval(autoSaveTimer);
+                autoSaveTimer = null;
             }
         },
     };
