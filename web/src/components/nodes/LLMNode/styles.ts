@@ -18,7 +18,7 @@ export const llmNodeStyles = {
     outputHeader: "text-[10px] text-zinc-500 font-bold mb-1 flex items-center justify-between",
     outputMode: "text-[10px] opacity-50",
     markdownBox:
-        "w-full flex-1 text-xs bg-zinc-900/60 border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar",
+        "w-full flex-1 text-xs bg-zinc-900/60 border border-zinc-800 rounded overflow-auto overflow-x-hidden nodrag nowheel text-zinc-200 custom-scrollbar select-text",
     rawTextarea:
         "w-full flex-1 p-2 text-xs bg-zinc-900/60 hover:bg-zinc-900/70 focus:bg-zinc-900 border border-zinc-800 focus:border-zinc-700 rounded resize-none nodrag nowheel focus:outline-none focus:ring-1 focus:ring-blue-500/50 focus:ring-offset-1 focus:ring-offset-zinc-900 text-zinc-300 focus:text-zinc-200 transition-colors duration-200 placeholder-zinc-500 shadow-inner",
     userPromptSection: "px-3 pb-3 space-y-2 pt-2",

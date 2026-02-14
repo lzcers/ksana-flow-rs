@@ -240,10 +240,10 @@ export function LLMNodeView({
                         <span className={llmNodeStyles.outputMode}>{isMarkdown ? "Markdown" : "Raw"}</span>
                     </div>
                     {isMarkdown ? (
-                        <div className={llmNodeStyles.markdownBox} onWheel={e => e.stopPropagation()}>
+                        <div className={llmNodeStyles.markdownBox}>
                             <ThemeProvider theme={theme}>
                                 <AutoScrollContainer enabled={data.isOutputStream} className="h-[300px] p-2">
-                                    <Incremark incremark={incremark} className="nodrag" />
+                                    <Incremark incremark={incremark} />
                                 </AutoScrollContainer>
                             </ThemeProvider>
                         </div>
