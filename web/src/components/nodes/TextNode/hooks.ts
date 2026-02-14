@@ -8,7 +8,7 @@ import type { NodeData } from "@/model/workflow/types";
 export function useTextNode(id: string, data: NodeData) {
     const { updateConfig } = useNodeConfig(id, data.config);
     const [text, setText] = useState<string>("");
-    const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? true);
+    const [isMarkdown, setIsMarkdown] = useState<boolean>(() => data.config?.isMarkdown ?? false);
     const nodes = useStore(s => s.nodes);
     const connections = useNodeConnections();
     const [isFullScreen, setIsFullScreen] = useState(false);

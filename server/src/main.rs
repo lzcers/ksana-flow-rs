@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 构建基础环境过滤器
     let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "server=info,flow=trace,nodes=info,axum=info".into());
+        .unwrap_or_else(|_| "server=info,flow=info,nodes=info,axum=info".into());
 
     // 根据格式初始化 subscriber
     if is_json {

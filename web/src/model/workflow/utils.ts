@@ -48,7 +48,16 @@ export const applyCollapsedSubgraphUi = (nodes: Immutable<Node[]>, edges: Immuta
   const nextNodes = nodes.map((n) => {
     if (!n.parentId) return n;
     const hiddenBy = collapsedAncestor(n.id);
-    if (!hiddenBy) return n;
+    if (!hiddenBy) {
+      if (n.hidden === true) {
+        return {
+          ...n,
+          hidden: false,
+          extent: 'parent' as const,
+        };
+      }
+      return n;
+    }
     return {
       ...n,
       hidden: true,

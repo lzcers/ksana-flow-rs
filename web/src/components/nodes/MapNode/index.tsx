@@ -18,7 +18,7 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
     }, [id, toggleSubgraph]);
 
     const maxConcurrencyField = useNodeConfigField<string>({
-        value: String(data.config?.max_concurrency ?? 10),
+        value: String(data.config?.max_concurrency ?? 2),
         commitMode: "change",
         updateValue: next => {
             const n = parseInt(next, 10);

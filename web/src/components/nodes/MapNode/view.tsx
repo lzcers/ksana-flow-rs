@@ -113,8 +113,8 @@ export const MapNodeView = memo(
                 )}
                 headerActions={headerActions}
                 resizable={expanded}
-                minWidth={expanded ? 200 : 260}
-                minHeight={expanded ? 200 : 200}
+                minWidth={expanded ? 600 : 260}
+                minHeight={expanded ? 400 : 200}
                 targetHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
                 sourceHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
                 style={{ width, height }}

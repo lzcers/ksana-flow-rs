@@ -63,7 +63,10 @@ export class RxWorkflow {
             (n.type === 'SubgraphNode' || n.type === 'MapNode') &&
             n.data.expanded === false
         );
-        if (!hasCollapsed) return state;
+        const hasHiddenChildren = state.nodes.some(
+          (n) => n.parentId && n.hidden === true
+        );
+        if (!hasCollapsed && !hasHiddenChildren) return state;
         const { nodes, edges } = applyCollapsedSubgraphUi(state.nodes, state.edges);
         return { ...state, nodes, edges };
       }),

@@ -446,7 +446,7 @@ pub fn create_registry() -> NodeRegistry {
         NodeMetadata {
             name: "MapNode".to_string(),
             config: json!({
-                "max_concurrency": 10,
+                "max_concurrency": 2,
                 "streaming": false,
                 "inherit_context": false,
                 "timeout_ms": null
