@@ -78,6 +78,7 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
         currentRunId: null,
         currentWorkflowStatus: "idle",
         workflowStatuses: {},
+        isLoadingWorkflow: false,
 
         setActiveGraphKey: (graphKey: GraphKey | null) => {
             const spaceId = graphKey?.split(":")[0];
@@ -141,11 +142,13 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             const { currentSpaceId, setActiveGraphKey, switchCanvas, setNodes, setEdges, error } = get();
             if (!currentSpaceId) return;
             const graphKey = makeGraphKey(currentSpaceId, id);
+            set({ isLoadingWorkflow: true });
             try {
                 const existing = workflowManager.getModelInstance(graphKey);
                 if (existing) {
                     setActiveGraphKey(graphKey);
                     switchCanvas(graphKey);
+                    set({ isLoadingWorkflow: false });
                     return;
                 }
                 const rxWorkflowInstance = workflowManager.getOrCreate(graphKey);
@@ -172,6 +175,8 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
             } catch (e) {
                 console.error("Failed to load workflow", e);
                 error("Failed to load workflow");
+            } finally {
+                set({ isLoadingWorkflow: false });
             }
         },
 

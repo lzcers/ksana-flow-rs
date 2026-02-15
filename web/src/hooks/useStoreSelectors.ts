@@ -108,6 +108,11 @@ export function useNodeTypes(): NodeMetadata[] {
   return useStore(useCallback((state: StoreState) => state.nodeTypes, []));
 }
 
+/** 订阅工作流加载状态 */
+export function useIsLoadingWorkflow(): boolean {
+  return useStore(useCallback((state: StoreState) => state.isLoadingWorkflow, []));
+}
+
 /** 工作流操作方法 - 直接从 store 获取 */
 export const workflowActions = {
   get loadWorkflow() { return useStore.getState().loadWorkflow; },

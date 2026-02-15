@@ -15,6 +15,7 @@ export interface Workflow {
     currentRunId: string | null;
     currentWorkflowStatus: WorkflowStatus;
     workflowStatuses: Record<number, WorkflowStatus>;
+    isLoadingWorkflow: boolean;
     setActiveGraphKey: (graphKey: GraphKey | null) => void;
     setSpaceId: (id: string) => void;
     loadMetadata: () => Promise<void>;

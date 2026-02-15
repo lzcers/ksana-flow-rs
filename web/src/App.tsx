@@ -1,17 +1,18 @@
 import { useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from "react-router-dom";
 import { useWorkflow } from "./hooks/useWorkflow";
 import { useAppInit } from "./hooks/useAppInit";
 import { Canvas } from "./components/WorkflowEditor/Canvas";
 import { WorkflowHeader } from "./components/WorkflowEditor/WorkflowHeader";
 import { ReactFlowProvider } from "@xyflow/react";
 import { ToastContainer } from "./components/ui/ToastContainer";
+import { Loader2 } from "lucide-react";
 
 export default function App() {
     return (
         <BrowserRouter>
             <Routes>
-                <Route path="/space/:spaceId/*" element={<WorkspaceWrapper />} />
+                <Route path="/space/:spaceId/:workflowId?" element={<WorkspaceWrapper />} />
                 <Route path="/" element={<Navigate to="/space/ksana" replace />} />
             </Routes>
         </BrowserRouter>
@@ -19,22 +20,23 @@ export default function App() {
 }
 
 function WorkspaceWrapper() {
-    const { spaceId } = useParams<{ spaceId: string }>();
+    const { spaceId, workflowId } = useParams<{ spaceId: string; workflowId: string }>();
+    const navigate = useNavigate();
 
     // Guard against undefined spaceId (though routing ensures it's there)
     const currentSpaceId = spaceId || "ksana";
 
-    useAppInit(currentSpaceId);
+    useAppInit(currentSpaceId, workflowId ? Number(workflowId) : undefined);
 
     return (
         <>
-            <AppContent />
+            <AppContent spaceId={currentSpaceId} navigate={navigate} />
             <ToastContainer />
         </>
     );
 }
 
-function AppContent() {
+function AppContent({ spaceId, navigate }: { spaceId: string; navigate: ReturnType<typeof useNavigate> }) {
     const workflow = useWorkflow();
     const {
         state,
@@ -64,6 +66,7 @@ function AppContent() {
         runNode,
         undo,
         redo,
+        isLoadingWorkflow,
     } = workflow;
 
     const [openTabs, setOpenTabs] = useState<{ id: number | null; name: string }[]>([]);
@@ -158,6 +161,7 @@ function AppContent() {
 
     const handleLoadWorkflow = (id: number) => {
         loadWorkflow(id);
+        navigate(`/space/${spaceId}/${id}`, { replace: true });
         setOpenTabs(prev => {
             if (prev.find(t => t.id === id)) return prev;
             const wf = workflows.find(w => w.id === id);
@@ -167,6 +171,7 @@ function AppContent() {
 
     const handleCreateNew = () => {
         createNewWorkflow();
+        navigate(`/space/${spaceId}`, { replace: true });
         setOpenTabs(prev => {
             if (prev.find(t => t.id === null)) return prev;
             return [...prev, { id: -1, name: "New Workflow" }];
@@ -183,11 +188,14 @@ function AppContent() {
                 const last = newTabs[newTabs.length - 1];
                 if (last.id === null) {
                     createNewWorkflow();
+                    navigate(`/space/${spaceId}`, { replace: true });
                 } else {
                     loadWorkflow(last.id);
+                    navigate(`/space/${spaceId}/${last.id}`, { replace: true });
                 }
             } else {
                 createNewWorkflow();
+                navigate(`/space/${spaceId}`, { replace: true });
             }
         }
     };
@@ -224,6 +232,16 @@ function AppContent() {
                     />
                 </ReactFlowProvider>
             </div>
+
+            {/* Loading Overlay */}
+            {isLoadingWorkflow && (
+                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-zinc-950/80 backdrop-blur-sm">
+                    <div className="flex flex-col items-center gap-3">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                        <span className="text-sm text-zinc-400">Loading workflow...</span>
+                    </div>
+                </div>
+            )}
 
             {/* Top Menu Bar - Floating Glass Panel */}
             <div className="absolute top-3 left-4 right-4 z-50 h-10 px-2 rounded-xl border border-white/10 bg-zinc-900/80 backdrop-blur-xl shadow-xl shadow-black/40 flex items-center transition-all duration-300">
