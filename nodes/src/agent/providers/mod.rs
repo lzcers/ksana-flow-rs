@@ -115,11 +115,23 @@ impl Request {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChoiceImgUrl {
+    pub url: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChoiceImg {
+    #[serde(rename = "type")]
+    pub img_type: String,
+    pub image_url: ChoiceImgUrl,
+}
 /// 选择项中的消息（非流式响应）
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChoiceMessage {
     pub role: MessageRole,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<ChoiceImg>>,
 }
 
 /// 非流式响应的选择项

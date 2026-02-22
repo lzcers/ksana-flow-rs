@@ -8,15 +8,6 @@ pub struct Usage {
     pub total_tokens: u32,
 }
 
-/// 内容片段：支持多模态
-/// 扩展性体现：新增模态只需在此添加 Variant，无需修改上层逻辑
-#[derive(Debug, Clone)]
-pub enum Content {
-    Text(String),
-    ImageUrl { url: String, detail: Option<String> },
-    // InputAudio {  Vec<u8>, format: String },
-}
-
 /// 消息角色
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
