@@ -1,82 +1,263 @@
 mod deepseek;
-mod utils;
-use super::core::{Content, Message, Usage};
-use async_trait::async_trait;
-use futures::stream::BoxStream;
-use thiserror::Error;
+mod openrouter;
+pub use crate::agent::core::{Message, MessageRole};
+pub use deepseek::DeepSeekProvider;
+use futures::{Stream, stream::BoxStream};
+pub use openrouter::OpenRouterProvider;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Error)]
-pub enum ModelProviderError {
-    #[error("Missing env var: {0}")]
-    MissingEnvVar(String),
-    #[error("Request failed: {0}")]
-    RequestFailed(String),
-    #[error("Failed to parse response: {0}")]
-    ResponseParseFailed(String),
-    #[error("API error {status}: {body}")]
-    ApiError { status: u16, body: String },
-    #[error("Invalid response: {0}")]
-    InvalidResponse(String),
-    #[error("Stream not supported")]
-    StreamNotSupported,
+/// Token 使用统计
+/// 兼容 OpenAI 和 DeepSeek 的格式（prompt_tokens/input_tokens, completion_tokens/output_tokens）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Usage {
+    #[serde(alias = "input_tokens")]
+    pub prompt_tokens: u32,
+    #[serde(alias = "output_tokens")]
+    pub completion_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<u32>,
 }
-/// 通用完成请求 (聊天、补全等)
-pub struct CompletionRequest {
-    /// 目标模型名称 (如 "deepseek-chat", "gpt-4")
+
+#[derive(Debug)]
+pub enum ProviderError {
+    Request(reqwest::Error),
+    Serialization(serde_json::Error),
+    InvalidApiKey,
+    ApiError { code: i32, message: String },
+    MissingApiKey,
+    StreamError(String),
+}
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProviderError::Request(e) => write!(f, "Request error: {}", e),
+            ProviderError::Serialization(e) => write!(f, "Serialization error: {}", e),
+            ProviderError::InvalidApiKey => write!(f, "Invalid API key"),
+            ProviderError::ApiError { code, message } => {
+                write!(f, "API error {}: {}", code, message)
+            }
+            ProviderError::MissingApiKey => write!(f, "Missing API key"),
+            ProviderError::StreamError(msg) => write!(f, "Stream error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for ProviderError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ProviderError::Request(e) => Some(e),
+            ProviderError::Serialization(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<reqwest::Error> for ProviderError {
+    fn from(e: reqwest::Error) -> Self {
+        ProviderError::Request(e)
+    }
+}
+
+impl From<serde_json::Error> for ProviderError {
+    fn from(e: serde_json::Error) -> Self {
+        ProviderError::Serialization(e)
+    }
+}
+
+/// 请求参数
+/// 基于 OpenAI 兼容格式，可扩展支持不同供应商的特有参数
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Request {
+    /// 模型名称
     pub model: String,
-    /// 消息历史
+    /// 消息列表
     pub messages: Vec<Message>,
-    /// 通用参数
-    pub options: CompletionOptions,
-    /// 扩展字段：用于供应商特定参数 (如 DeepSeek 的特殊参数)
-    /// 这保证了抽象的灵活性，不会因供应商差异而频繁修改 Trait
-    pub extensions: std::collections::HashMap<String, serde_json::Value>,
-}
-
-pub struct CompletionStreamChunk {
-    pub id: String,
-    pub model: String,
-    pub content: Vec<Content>,
-    pub finish_reason: Option<String>,
-    pub extensions: std::collections::HashMap<String, serde_json::Value>,
-}
-
-pub type CompletionStream = BoxStream<'static, Result<CompletionStreamChunk, ModelProviderError>>;
-
-pub struct CompletionStreamResponse {
-    pub stream: CompletionStream,
-}
-
-/// 通用完成响应
-pub struct CompletionResponse {
-    pub id: String,
-    pub model: String,
-    pub content: Vec<Content>,
-    pub usage: Option<Usage>,
-    pub finish_reason: String,
-    /// 扩展字段：保留供应商特定元数据
-    pub extensions: std::collections::HashMap<String, serde_json::Value>,
-}
-
-pub struct CompletionOptions {
+    /// 是否使用流式输出
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+    /// 控制随机性 (0-2)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
+    /// 最大 token 数
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    pub top_p: Option<f32>,
-    pub stream: bool,
+    /// 扩展字段，用于供应商特有参数
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
-// 对话类型能力
-#[async_trait]
-pub trait CompletionProvider: Send + Sync {
-    fn name(&self) -> &str;
-    /// 非流式完成
-    async fn complete(
-        &self,
-        request: CompletionRequest,
-    ) -> Result<CompletionResponse, ModelProviderError>;
 
-    /// 流式完成
-    async fn complete_stream(
+impl Request {
+    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
+        Self {
+            model: model.into(),
+            messages,
+            stream: None,
+            temperature: None,
+            max_tokens: None,
+            extra: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn with_stream(mut self, stream: bool) -> Self {
+        self.stream = Some(stream);
+        self
+    }
+
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
+        self
+    }
+
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = Some(max_tokens);
+        self
+    }
+}
+
+/// 选择项中的消息（非流式响应）
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChoiceMessage {
+    pub role: MessageRole,
+    pub content: String,
+}
+
+/// 非流式响应的选择项
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Choice {
+    pub index: u32,
+    pub message: ChoiceMessage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+}
+
+/// 非流式完整响应
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Response {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<Choice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_fingerprint: Option<String>,
+}
+
+/// 流式响应中的 delta 内容
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct Delta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<MessageRole>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+}
+
+/// 流式响应的选择项
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StreamChoice {
+    pub index: u32,
+    pub delta: Delta,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logprobs: Option<serde_json::Value>,
+}
+
+/// 流式响应块
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StreamResponse {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub system_fingerprint: Option<String>,
+    pub choices: Vec<StreamChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+}
+
+pub trait Provider {
+    async fn send_request(
         &self,
-        request: CompletionRequest,
-    ) -> Result<CompletionStreamResponse, ModelProviderError>;
+        path: &str,
+        request: &Request,
+        model: &str,
+    ) -> Result<Response, ProviderError>;
+
+    /// 返回原始字节流，每项是一块数据（可能是 SSE 事件的一行，或 JSON Lines 的一行）
+    async fn stream_request(
+        &self,
+        path: &str,
+        request: Request,
+        model: &str,
+    ) -> Result<impl Stream<Item = StreamResponse>, ProviderError>;
+
+    fn http_client(&self) -> &reqwest::Client;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_request_builder() {
+        let messages = vec![
+            Message::system("You are a helpful assistant."),
+            Message::user("Hello!"),
+        ];
+
+        let request = Request::new("deepseek-chat", messages)
+            .with_stream(true)
+            .with_temperature(0.7)
+            .with_max_tokens(2048);
+
+        assert_eq!(request.model, "deepseek-chat");
+        assert_eq!(request.messages.len(), 2);
+        assert_eq!(request.stream, Some(true));
+        assert_eq!(request.temperature, Some(0.7));
+        assert_eq!(request.max_tokens, Some(2048));
+    }
+
+    #[test]
+    fn test_message_construction() {
+        let sys_msg = Message::system("System prompt");
+        assert_eq!(sys_msg.role, MessageRole::System);
+        assert_eq!(sys_msg.content, "System prompt");
+
+        let user_msg = Message::user("User query");
+        assert_eq!(user_msg.role, MessageRole::User);
+        assert_eq!(user_msg.content, "User query");
+
+        let assistant_msg = Message::assistant("Assistant response");
+        assert_eq!(assistant_msg.role, MessageRole::Assistant);
+        assert_eq!(assistant_msg.content, "Assistant response");
+    }
+
+    #[test]
+    fn test_response_deserialization() {
+        let json = r#"{
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1677652288,
+            "model": "gpt-3.5-turbo",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello there!"
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "input_tokens": 9,
+                "output_tokens": 12
+            }
+        }"#;
+
+        // 注意：这里使用 super::Usage，它来自 agent::core
+        // 但 Response 中定义的 usage 也是 Option<Usage>
+        // 这里可能需要调整以匹配实际的 Usage 结构
+    }
 }

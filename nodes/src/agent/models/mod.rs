@@ -1,22 +1,41 @@
-use super::providers::CompletionProvider;
-use crate::agent::core::Message;
+mod chat_model;
+
+use futures::Stream;
 use thiserror::Error;
 
+use crate::agent::{core::Message, providers::ProviderError};
+
+/// 聊天错误类型
 #[derive(Debug, Error)]
-pub enum ModelError {}
-struct ChatModel<T: CompletionProvider> {
-    provider: T,
-    is_stream: bool,
+pub enum ChatError {
+    #[error("Provider error: {0}")]
+    Provider(#[from] ProviderError),
+    #[error("No response from model")]
+    NoResponse,
+    #[error("Stream error: {0}")]
+    StreamError(String),
 }
 
-impl<T: CompletionProvider> ChatModel<T> {
-    pub fn new(provider: T, is_stream: bool) -> Self {
-        Self {
-            provider,
-            is_stream,
-        }
-    }
-    pub async fn chat(&self, msg: Message) -> Result<Message, ModelError> {
-        todo!()
-    }
+/// 聊天流式响应片段
+#[derive(Debug, Clone)]
+pub struct ChatChunk {
+    /// 本次流式返回的片段内容
+    pub content: String,
+    /// 标记是否是最后一个片段
+    pub is_finished: bool,
+    /// 结束原因（比如 "stop" / "length"）
+    pub finish_reason: Option<String>,
+}
+
+/// 聊天能力 trait
+pub trait ChatCapability {
+    /// 非流式聊天
+    async fn chat(&self, msg: &Message) -> Result<Message, ChatError>;
+    /// 流式聊天
+    async fn chat_stream(&self, msg: &Message) -> Result<impl Stream<Item = ChatChunk>, ChatError>;
+}
+
+pub trait GenImgCapability {
+    /// 生成图片
+    async fn gen_img(&self, msg: &Message) -> Result<Message, ChatError>;
 }
