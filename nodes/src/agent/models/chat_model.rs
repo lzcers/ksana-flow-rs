@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use futures::stream::{BoxStream, StreamExt};
 
 use crate::agent::{
+    agents::ToolDef,
     core::{Message, MessageRole},
     models::{ChatCapability, ChatChunk, ChatError},
     providers::{Provider, Request, Response},
@@ -51,14 +52,18 @@ impl ChatModel {
 
 #[async_trait]
 impl ChatCapability for ChatModel {
-    async fn chat(&self, msg: Vec<Message>) -> Result<Message, ChatError> {
+    async fn chat(
+        &self,
+        msg: Vec<Message>,
+        tools: Option<Vec<ToolDef>>,
+    ) -> Result<Message, ChatError> {
         let model_name = self
             .active_model
             .as_ref()
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let request = Request::new(model_name, msg);
+        let request = Request::new(model_name, msg).with_tools(tools);
 
         let response: Response = provider
             .send_request("/chat/completions", &request, model_name)
@@ -91,6 +96,7 @@ impl ChatCapability for ChatModel {
     async fn chat_stream(
         &self,
         msgs: Vec<Message>,
+        tools: Option<Vec<ToolDef>>,
     ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
         let model_name = self
             .active_model
@@ -98,7 +104,9 @@ impl ChatCapability for ChatModel {
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let request = Request::new(model_name, msgs).with_stream(true);
+        let request = Request::new(model_name, msgs)
+            .with_stream(true)
+            .with_tools(tools);
 
         let stream = provider
             .stream_request("/chat/completions", request, model_name)
@@ -154,7 +162,7 @@ mod tests {
 
         let msg = Message::user("Say 'Hello, world!' in one sentence.");
 
-        let result = model.chat(vec![msg]).await;
+        let result = model.chat(vec![msg], None).await;
         assert!(result.is_ok());
 
         let message = result.unwrap();
@@ -188,7 +196,7 @@ mod tests {
 
         let msg = Message::user("Count from 1 to 3, each number on a new line.");
 
-        let result = model.chat_stream(vec![msg]).await;
+        let result = model.chat_stream(vec![msg], None).await;
         assert!(result.is_ok());
 
         let mut stream = result.unwrap();
@@ -227,7 +235,7 @@ mod tests {
 
         let msg = Message::user("Say 'Hello, world!' in one sentence.");
 
-        let result = model.chat(vec![msg]).await;
+        let result = model.chat(vec![msg], None).await;
         assert!(result.is_ok());
 
         let message = result.unwrap();
@@ -261,7 +269,7 @@ mod tests {
 
         let msg = Message::user("Count from 1 to 3, each number on a new line.");
 
-        let result = model.chat_stream(vec![msg]).await;
+        let result = model.chat_stream(vec![msg], None).await;
         assert!(result.is_ok());
 
         let mut stream = result.unwrap();

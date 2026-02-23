@@ -102,7 +102,7 @@ impl Node for LLMNode {
         if self.stream {
             let stream_result = self
                 .chat_model
-                .chat_stream(messages)
+                .chat_stream(messages, None)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -123,7 +123,7 @@ impl Node for LLMNode {
         } else {
             let result = self
                 .chat_model
-                .chat(messages)
+                .chat(messages, None)
                 .await
                 .map_err(|e| e.to_string())?;
 

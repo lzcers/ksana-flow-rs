@@ -1,7 +1,7 @@
 mod deepseek;
 mod openrouter;
 
-use crate::agent::agents::ToolCall;
+use crate::agent::agents::{ToolCall, ToolDef};
 pub use crate::agent::core::{Message, MessageRole};
 use async_trait::async_trait;
 pub use deepseek::DeepSeekProvider;
@@ -114,6 +114,15 @@ impl Request {
 
     pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
         self.max_tokens = Some(max_tokens);
+        self
+    }
+
+    pub fn with_tools(mut self, tools: Option<Vec<ToolDef>>) -> Self {
+        if let Some(tools) = tools {
+            if let Ok(tools_value) = serde_json::to_value(tools) {
+                self.extra.insert("tools".to_string(), tools_value);
+            }
+        }
         self
     }
 }

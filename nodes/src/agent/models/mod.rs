@@ -8,7 +8,7 @@ pub use gen_img_model::GenImgModel;
 use futures::stream::BoxStream;
 use thiserror::Error;
 
-use crate::agent::{core::Message, providers::ProviderError};
+use crate::agent::{agents::ToolDef, core::Message, providers::ProviderError};
 
 /// 聊天错误类型
 #[derive(Debug, Error)]
@@ -38,11 +38,16 @@ pub struct ChatChunk {
 #[async_trait]
 pub trait ChatCapability {
     /// 非流式聊天
-    async fn chat(&self, msgs: Vec<Message>) -> Result<Message, ChatError>;
+    async fn chat(
+        &self,
+        msgs: Vec<Message>,
+        tools: Option<Vec<ToolDef>>,
+    ) -> Result<Message, ChatError>;
     /// 流式聊天
     async fn chat_stream(
         &self,
         msgs: Vec<Message>,
+        tools: Option<Vec<ToolDef>>,
     ) -> Result<BoxStream<'static, ChatChunk>, ChatError>;
 }
 
