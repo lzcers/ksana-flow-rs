@@ -1,6 +1,6 @@
 pub mod agent;
+pub mod tools;
 pub mod web_agent;
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

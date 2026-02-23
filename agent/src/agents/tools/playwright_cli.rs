@@ -1,6 +1,6 @@
 use crate::{
+    agents::tools::Tool,
     agents::{ToolDef, ToolExecutorError},
-    tools::Tool,
 };
 use async_trait::async_trait;
 use serde_json::Value;
