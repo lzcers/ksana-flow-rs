@@ -1,10 +1,10 @@
 mod chat_model;
 mod gen_img_model;
 
-// pub use chat_model::ChatModel;
+pub use chat_model::ChatModel;
 pub use gen_img_model::GenImgModel;
 
-use futures::Stream;
+use futures::stream::BoxStream;
 use thiserror::Error;
 
 use crate::agent::{core::Message, providers::ProviderError};
@@ -38,7 +38,7 @@ pub trait ChatCapability {
     /// 非流式聊天
     async fn chat(&self, msg: &Message) -> Result<Message, ChatError>;
     /// 流式聊天
-    async fn chat_stream(&self, msg: &Message) -> Result<impl Stream<Item = ChatChunk>, ChatError>;
+    async fn chat_stream(&self, msg: &Message) -> Result<BoxStream<'static, ChatChunk>, ChatError>;
 }
 
 /// 图片生成响应

@@ -2,7 +2,6 @@ use flow::AnyNode;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-mod agent;
 mod input;
 mod llm;
 mod llm_stream;

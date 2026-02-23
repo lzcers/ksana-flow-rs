@@ -117,7 +117,7 @@ impl Provider for DeepSeekProvider {
         path: &str,
         mut request: Request,
         _model: &str,
-    ) -> Result<BoxStream<StreamResponse>, ProviderError> {
+    ) -> Result<BoxStream<'static, StreamResponse>, ProviderError> {
         let url = format!("{}{}", self.base_url, path);
         let headers = self.build_headers();
 

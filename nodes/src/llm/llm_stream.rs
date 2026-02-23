@@ -1,12 +1,14 @@
-use super::{agent::LlmAgent, input::extract_input_string};
+use super::input::extract_input_string;
+use crate::agent::{ChatChunk, ChatModel, DeepSeekProvider, Message, OpenRouterProvider};
 use crate::prompt::build_user_prompt;
 use async_trait::async_trait;
 use flow::{
-    Context, Input, Node, Output, ReactiveStream, StreamSubscriptionFn,
+    Context, Input, Node, Output, ReactiveStream,
     observable::{Observable, Observer, VecSubscription},
 };
 use futures::stream::StreamExt;
 use serde_json::Value;
+use std::sync::Arc;
 
 pub struct LLMStreamObservable<S> {
     pub stream: S,
@@ -36,21 +38,72 @@ where
     }
 }
 
+pub struct ChatChunkObservable<S> {
+    pub stream: S,
+}
+
+#[async_trait]
+impl<S> Observable<String, String> for ChatChunkObservable<S>
+where
+    S: futures::Stream<Item = Result<ChatChunk, String>> + Send + Unpin + 'static,
+{
+    type Sub = VecSubscription;
+
+    async fn subscribe(mut self, mut observer: impl Observer<String, String>) -> Self::Sub {
+        let mut stream = self.stream;
+
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(chunk) => {
+                    observer.on_next(chunk.content).await;
+                    if chunk.is_finished {
+                        observer.on_completed().await;
+                        return VecSubscription;
+                    }
+                }
+                Err(e) => {
+                    observer.on_error(e).await;
+                    return VecSubscription;
+                }
+            }
+        }
+        observer.on_completed().await;
+        VecSubscription
+    }
+}
+
 pub struct LLMStreamNode {
-    llm: LlmAgent,
-    #[allow(dead_code)]
+    chat_model: ChatModel,
     model: String,
-    #[allow(dead_code)]
     system_prompt: String,
     user_prompt_template: String,
 }
 
 impl LLMStreamNode {
     pub fn new(sys_prompt: &str, user_tmpl: &str, model: &str) -> Self {
-        let llm = LlmAgent::new(sys_prompt, model);
+        dotenv::dotenv().ok();
+
+        let mut chat_model = ChatModel::new();
+
+        if model.contains('/') {
+            let provider =
+                OpenRouterProvider::from_env().expect("Failed to create OpenRouter provider");
+            chat_model.add_model_provider(model, Arc::new(provider));
+        } else {
+            let provider =
+                DeepSeekProvider::from_env().expect("Failed to create DeepSeek provider");
+            chat_model.add_models_for_provider(
+                &["deepseek-chat", "deepseek-reasoner"],
+                Arc::new(provider),
+            );
+        }
+
+        chat_model
+            .set_active_model(model)
+            .expect("Failed to set active model");
 
         Self {
-            llm,
+            chat_model,
             model: model.to_owned(),
             system_prompt: sys_prompt.to_owned(),
             user_prompt_template: user_tmpl.to_owned(),
@@ -60,15 +113,26 @@ impl LLMStreamNode {
 
 #[async_trait]
 impl Node for LLMStreamNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
         let input = extract_input_string(input);
         let prompt = build_user_prompt(&self.user_prompt_template, &input);
-        let stream = self.llm.stream_prompt(&prompt).await;
-        let react_stream = LLMStreamObservable { stream };
+
+        let mut messages = Vec::new();
+        if !self.system_prompt.is_empty() {
+            messages.push(Message::system(&self.system_prompt));
+        }
+        messages.push(Message::user(&prompt));
+
+        let stream_result = self
+            .chat_model
+            .chat_stream_with_messages(messages)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let mapped_stream = stream_result.map(|chunk| Ok(chunk));
+        let react_stream = ChatChunkObservable {
+            stream: mapped_stream,
+        };
         let stream = ReactiveStream::from_observable_with_accumulator(
             react_stream,
             |chunks: Vec<String>| {
@@ -84,14 +148,12 @@ impl Node for LLMStreamNode {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use flow::{Context, TaskEvent};
-    use flow::{Input, TaskGuard};
+    use flow::{Input, StreamSubscriptionFn, TaskGuard};
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::runtime::Runtime;
-
-    use super::*;
-    use rig::providers::deepseek::DEEPSEEK_CHAT;
 
     async fn collect_output(subscribe: StreamSubscriptionFn) -> String {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
@@ -122,7 +184,7 @@ mod tests {
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            let mut node = LLMStreamNode::new("", "", DEEPSEEK_CHAT);
+            let mut node = LLMStreamNode::new("", "", "deepseek-chat");
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
 
@@ -145,11 +207,10 @@ mod tests {
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            // Template with {input} placeholder
             let mut node = LLMStreamNode::new(
                 "You are a helpful translator.",
                 "Translate this to English: {input}",
-                DEEPSEEK_CHAT,
+                "deepseek-chat",
             );
             let input = "你好".to_owned();
             eprintln!("input: {}", &input);
@@ -173,8 +234,7 @@ mod tests {
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            // Template without placeholder, used when input is empty
-            let mut node = LLMStreamNode::new("", "Tell me a joke", DEEPSEEK_CHAT);
+            let mut node = LLMStreamNode::new("", "Tell me a joke", "deepseek-chat");
             let input = "".to_owned();
             eprintln!("input: {}", &input);
 
@@ -215,40 +275,12 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_deepseek_direct_stream() {
-        use rig::client::CompletionClient;
-        use rig::client::ProviderClient;
-        use rig::providers::deepseek;
-        use rig::streaming::StreamingPrompt;
-        use tokio::runtime::Runtime;
-
-        dotenv::dotenv().ok();
-        let runtime = Runtime::new().expect("Failed to create tokio runtime");
-        runtime.block_on(async {
-            let client = deepseek::Client::from_env();
-            let agent = client
-                .agent(DEEPSEEK_CHAT)
-                .preamble("You are a helpful assistant.")
-                .build();
-
-            let prompt = "Hello, deepseek!";
-            println!("Sending prompt: {}", prompt);
-
-            let mut stream = agent.stream_prompt(prompt).await;
-            let _ = rig::agent::stream_to_stdout(&mut stream).await;
-
-            println!("\nDone.");
-        });
-    }
-
-    #[test]
-    #[ignore]
     fn test_llm_node_completed_payload() {
         dotenv::dotenv().ok();
         let runtime = Runtime::new().expect("Failed to create tokio runtime");
         runtime.block_on(async {
             let ctx = Context::new();
-            let mut node = LLMStreamNode::new("", "Say hello", DEEPSEEK_CHAT);
+            let mut node = LLMStreamNode::new("", "Say hello", "deepseek-chat");
 
             let inputs: HashMap<String, Value> = HashMap::new();
             let out = node.run(&ctx, &Input::new(inputs)).await.unwrap();
@@ -278,13 +310,11 @@ mod tests {
                 }
             }
 
-            // Verify that we got a payload in Completed event
             assert!(
                 completed_payload.is_some(),
                 "Completed event should have a payload"
             );
 
-            // Verify the payload matches the accumulated stream
             let payload_str = completed_payload
                 .unwrap()
                 .as_str()

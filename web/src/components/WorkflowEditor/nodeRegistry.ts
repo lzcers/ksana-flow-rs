@@ -42,7 +42,6 @@ export const NODE_REGISTRY: NodeRegistryItem[] = [
     { type: "Backtester", label: "Backtest", icon: Box, color: "text-indigo-500 bg-indigo-50", Component: BacktesterNode },
     { type: "EmailNotifyNode", label: "EmailNotifyNode", icon: Mail, color: "text-indigo-500 bg-indigo-50", Component: EmailNotifyNode },
     { type: "TimerNode", label: "TimerNode", icon: Timer, color: "text-indigo-500 bg-indigo-50", Component: TimerNode },
-    { type: "ShortVideoScriptNode", label: "AI Video", icon: Clapperboard, color: "text-rose-500 bg-rose-50", Component: ShortVideoNode },
     { type: "SubgraphNode", label: "Group", icon: Group, color: "text-zinc-500 bg-zinc-50", Component: SubgraphNode },
 ];
 

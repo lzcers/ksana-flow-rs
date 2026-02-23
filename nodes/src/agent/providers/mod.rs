@@ -193,7 +193,7 @@ pub struct StreamResponse {
 }
 
 #[async_trait]
-pub trait Provider {
+pub trait Provider: Send + Sync {
     async fn send_request(
         &self,
         path: &str,
@@ -207,7 +207,7 @@ pub trait Provider {
         path: &str,
         request: Request,
         model: &str,
-    ) -> Result<BoxStream<StreamResponse>, ProviderError>;
+    ) -> Result<BoxStream<'static, StreamResponse>, ProviderError>;
 
     fn http_client(&self) -> &reqwest::Client;
 }

@@ -1,15 +1,15 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
-use futures::{Stream, StreamExt};
+use futures::stream::{BoxStream, Stream, StreamExt};
 
 use crate::agent::{
     core::Message,
     models::{ChatCapability, ChatChunk, ChatError},
-    providers::{Provider, Request, Response},
+    providers::{Provider, Request, Response, StreamResponse},
 };
 
 pub struct ChatModel {
-    model_providers: HashMap<String, Rc<dyn Provider>>,
+    model_providers: HashMap<String, Arc<dyn Provider>>,
     active_model: Option<String>,
 }
 
@@ -21,13 +21,13 @@ impl ChatModel {
         }
     }
 
-    pub fn add_model_provider(&mut self, model_name: &str, provider: Rc<dyn Provider>) {
+    pub fn add_model_provider(&mut self, model_name: &str, provider: Arc<dyn Provider>) {
         self.model_providers
             .entry(model_name.to_owned())
             .or_insert(provider);
     }
 
-    pub fn add_models_for_provider(&mut self, model_names: &[&str], provider: Rc<dyn Provider>) {
+    pub fn add_models_for_provider(&mut self, model_names: &[&str], provider: Arc<dyn Provider>) {
         for model_name in model_names {
             self.add_model_provider(model_name, provider.clone());
         }
@@ -41,7 +41,7 @@ impl ChatModel {
         Ok(())
     }
 
-    fn get_provider(&self, model_name: &str) -> Result<&Rc<dyn Provider>, ChatError> {
+    fn get_provider(&self, model_name: &str) -> Result<&Arc<dyn Provider>, ChatError> {
         self.model_providers
             .get(model_name)
             .ok_or_else(|| ChatError::ModelNotFound(model_name.to_owned()))
@@ -50,13 +50,22 @@ impl ChatModel {
 
 impl ChatCapability for ChatModel {
     async fn chat(&self, msg: &Message) -> Result<Message, ChatError> {
+        self.chat_with_messages(vec![msg.clone()]).await
+    }
+
+    async fn chat_stream(&self, msg: &Message) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
+        self.chat_stream_with_messages(vec![msg.clone()]).await
+    }
+}
+
+impl ChatModel {
+    pub async fn chat_with_messages(&self, messages: Vec<Message>) -> Result<Message, ChatError> {
         let model_name = self
             .active_model
             .as_ref()
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let messages = vec![msg.clone()];
         let request = Request::new(model_name, messages);
 
         let response: Response = provider
@@ -75,37 +84,41 @@ impl ChatCapability for ChatModel {
         })
     }
 
-    async fn chat_stream(&self, msg: &Message) -> Result<impl Stream<Item = ChatChunk>, ChatError> {
+    pub async fn chat_stream_with_messages(
+        &self,
+        messages: Vec<Message>,
+    ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
         let model_name = self
             .active_model
             .as_ref()
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let messages = vec![msg.clone()];
         let request = Request::new(model_name, messages).with_stream(true);
 
         let stream = provider
             .stream_request("/chat/completions", request, model_name)
             .await?;
 
-        Ok(stream.map(|response| {
-            if let Some(choice) = response.choices.first() {
-                let content = choice.delta.content.clone().unwrap_or_default();
-                let is_finished = choice.finish_reason.is_some();
-                ChatChunk {
-                    content,
-                    is_finished,
-                    finish_reason: choice.finish_reason.clone(),
+        Ok(stream
+            .map(|response| {
+                if let Some(choice) = response.choices.first() {
+                    let content = choice.delta.content.clone().unwrap_or_default();
+                    let is_finished = choice.finish_reason.is_some();
+                    ChatChunk {
+                        content,
+                        is_finished,
+                        finish_reason: choice.finish_reason.clone(),
+                    }
+                } else {
+                    ChatChunk {
+                        content: String::new(),
+                        is_finished: true,
+                        finish_reason: Some("no_choices".to_string()),
+                    }
                 }
-            } else {
-                ChatChunk {
-                    content: String::new(),
-                    is_finished: true,
-                    finish_reason: Some("no_choices".to_string()),
-                }
-            }
-        }))
+            })
+            .boxed())
     }
 }
 
@@ -120,7 +133,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         let provider = match DeepSeekProvider::from_env() {
-            Ok(p) => Rc::new(p),
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
                 return;
@@ -150,7 +163,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         let provider = match DeepSeekProvider::from_env() {
-            Ok(p) => Rc::new(p),
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
                 return;
@@ -189,7 +202,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         let provider = match OpenRouterProvider::from_env() {
-            Ok(p) => Rc::new(p),
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
                 return;
@@ -219,7 +232,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         let provider = match OpenRouterProvider::from_env() {
-            Ok(p) => Rc::new(p),
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
                 return;
@@ -255,8 +268,8 @@ mod tests {
 
     #[test]
     fn test_model_provider_mapping() {
-        let deepseek_provider = Rc::new(DeepSeekProvider::new("dummy_key"));
-        let openrouter_provider = Rc::new(OpenRouterProvider::new("dummy_key"));
+        let deepseek_provider = Arc::new(DeepSeekProvider::new("dummy_key"));
+        let openrouter_provider = Arc::new(OpenRouterProvider::new("dummy_key"));
 
         let mut model = ChatModel::new();
 
@@ -275,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_set_active_model() {
-        let provider = Rc::new(DeepSeekProvider::new("dummy_key"));
+        let provider = Arc::new(DeepSeekProvider::new("dummy_key"));
         let mut model = ChatModel::new();
         model.add_model_provider("deepseek-chat", provider);
 
