@@ -8,6 +8,7 @@ pub use deepseek::DeepSeekProvider;
 use futures::stream::BoxStream;
 pub use openrouter::OpenRouterProvider;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 /// Token 使用统计
 /// 兼容 OpenAI 和 DeepSeek 的格式（prompt_tokens/input_tokens, completion_tokens/output_tokens）
@@ -119,9 +120,20 @@ impl Request {
 
     pub fn with_tools(mut self, tools: Option<Vec<ToolDef>>) -> Self {
         if let Some(tools) = tools {
-            if let Ok(tools_value) = serde_json::to_value(tools) {
-                self.extra.insert("tools".to_string(), tools_value);
-            }
+            let tools: Vec<Value> = tools
+                .iter()
+                .map(|def| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": def.name,
+                            "description": def.description,
+                            "parameters": def.parameters,
+                        }
+                    })
+                })
+                .collect();
+            self.extra.insert("tools".to_string(), json!(tools));
         }
         self
     }

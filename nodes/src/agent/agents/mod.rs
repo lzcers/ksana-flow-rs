@@ -1,4 +1,6 @@
-mod agent;
+pub mod agent;
+pub use agent::{Agent, AgentError};
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -51,5 +53,5 @@ pub enum ToolExecutorError {
 #[async_trait]
 pub trait ToolExecutor {
     async fn execute(&self, call: ToolCall) -> Result<ToolResult, ToolExecutorError>;
-    fn tools(&self) -> Vec<ToolDef>;
+    fn tools(&self) -> &Vec<ToolDef>;
 }
