@@ -1,6 +1,7 @@
 mod chat_model;
 mod gen_img_model;
 
+use async_trait::async_trait;
 pub use chat_model::ChatModel;
 pub use gen_img_model::GenImgModel;
 
@@ -34,11 +35,15 @@ pub struct ChatChunk {
 }
 
 /// 聊天能力 trait
+#[async_trait]
 pub trait ChatCapability {
     /// 非流式聊天
-    async fn chat(&self, msg: &Message) -> Result<Message, ChatError>;
+    async fn chat(&self, msgs: Vec<Message>) -> Result<Message, ChatError>;
     /// 流式聊天
-    async fn chat_stream(&self, msg: &Message) -> Result<BoxStream<'static, ChatChunk>, ChatError>;
+    async fn chat_stream(
+        &self,
+        msgs: Vec<Message>,
+    ) -> Result<BoxStream<'static, ChatChunk>, ChatError>;
 }
 
 /// 图片生成响应
@@ -48,8 +53,9 @@ pub struct GenImgResponse {
     pub image_urls: Vec<String>,
 }
 
-// 生图能力
+// 生图能力 trait
+#[async_trait]
 pub trait GenImgCapability {
     /// 生成图片
-    async fn gen_img(&self, msg: &Message) -> Result<GenImgResponse, ChatError>;
+    async fn gen_img(&self, msgs: Vec<Message>) -> Result<GenImgResponse, ChatError>;
 }

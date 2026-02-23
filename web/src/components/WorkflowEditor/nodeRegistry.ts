@@ -1,6 +1,6 @@
 import type { ComponentType } from "react";
 import type { NodeProps } from "@xyflow/react";
-import { Activity, Box, Clapperboard, FileText, GitMerge, Image, Mail, Sparkles, Timer, Type, Database, Group, Repeat2, Sigma } from "lucide-react";
+import { Activity, Box, FileText, GitMerge, Image, Mail, Sparkles, Timer, Type, Database, Group, Repeat2, Sigma } from "lucide-react";
 import type { NodeData, NodeType } from "../../model/workflow/types";
 import {
     BacktesterNode,
@@ -9,7 +9,6 @@ import {
     LLMNode,
     MapNode,
     ReduceNode,
-    ShortVideoNode,
     SourceNode,
     TextFileNode,
     TextMergeNode,

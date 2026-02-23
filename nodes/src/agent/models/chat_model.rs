@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
-use futures::stream::{BoxStream, Stream, StreamExt};
+use async_trait::async_trait;
+use futures::stream::{BoxStream, StreamExt};
 
 use crate::agent::{
     core::Message,
     models::{ChatCapability, ChatChunk, ChatError},
-    providers::{Provider, Request, Response, StreamResponse},
+    providers::{Provider, Request, Response},
 };
 
 pub struct ChatModel {
@@ -48,25 +49,16 @@ impl ChatModel {
     }
 }
 
+#[async_trait]
 impl ChatCapability for ChatModel {
-    async fn chat(&self, msg: &Message) -> Result<Message, ChatError> {
-        self.chat_with_messages(vec![msg.clone()]).await
-    }
-
-    async fn chat_stream(&self, msg: &Message) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
-        self.chat_stream_with_messages(vec![msg.clone()]).await
-    }
-}
-
-impl ChatModel {
-    pub async fn chat_with_messages(&self, messages: Vec<Message>) -> Result<Message, ChatError> {
+    async fn chat(&self, msg: Vec<Message>) -> Result<Message, ChatError> {
         let model_name = self
             .active_model
             .as_ref()
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let request = Request::new(model_name, messages);
+        let request = Request::new(model_name, msg);
 
         let response: Response = provider
             .send_request("/chat/completions", &request, model_name)
@@ -84,9 +76,9 @@ impl ChatModel {
         })
     }
 
-    pub async fn chat_stream_with_messages(
+    async fn chat_stream(
         &self,
-        messages: Vec<Message>,
+        msgs: Vec<Message>,
     ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
         let model_name = self
             .active_model
@@ -94,7 +86,7 @@ impl ChatModel {
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let request = Request::new(model_name, messages).with_stream(true);
+        let request = Request::new(model_name, msgs).with_stream(true);
 
         let stream = provider
             .stream_request("/chat/completions", request, model_name)
@@ -150,7 +142,7 @@ mod tests {
 
         let msg = Message::user("Say 'Hello, world!' in one sentence.");
 
-        let result = model.chat(&msg).await;
+        let result = model.chat(vec![msg]).await;
         assert!(result.is_ok());
 
         let message = result.unwrap();
@@ -180,7 +172,7 @@ mod tests {
 
         let msg = Message::user("Count from 1 to 3, each number on a new line.");
 
-        let result = model.chat_stream(&msg).await;
+        let result = model.chat_stream(vec![msg]).await;
         assert!(result.is_ok());
 
         let mut stream = result.unwrap();
@@ -219,7 +211,7 @@ mod tests {
 
         let msg = Message::user("Say 'Hello, world!' in one sentence.");
 
-        let result = model.chat(&msg).await;
+        let result = model.chat(vec![msg]).await;
         assert!(result.is_ok());
 
         let message = result.unwrap();
@@ -249,7 +241,7 @@ mod tests {
 
         let msg = Message::user("Count from 1 to 3, each number on a new line.");
 
-        let result = model.chat_stream(&msg).await;
+        let result = model.chat_stream(vec![msg]).await;
         assert!(result.is_ok());
 
         let mut stream = result.unwrap();

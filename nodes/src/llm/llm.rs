@@ -1,5 +1,5 @@
 use super::input::extract_input_string;
-use crate::agent::{ChatModel, DeepSeekProvider, Message, OpenRouterProvider};
+use crate::agent::{ChatCapability, ChatModel, DeepSeekProvider, Message, OpenRouterProvider};
 use crate::prompt::build_user_prompt;
 use async_trait::async_trait;
 use flow::{Context, Input, Node, Output};
@@ -59,7 +59,7 @@ impl Node for LLMNode {
 
         let result = self
             .chat_model
-            .chat_with_messages(messages)
+            .chat(messages)
             .await
             .map_err(|e| e.to_string())?;
 

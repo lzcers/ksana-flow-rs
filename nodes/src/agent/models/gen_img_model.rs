@@ -1,14 +1,15 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::agent::{
     core::Message,
     models::{ChatError, GenImgCapability, GenImgResponse},
     providers::{Provider, Request, Response},
 };
+use async_trait::async_trait;
 use serde_json::json;
 
 pub struct GenImgModel {
-    model_providers: HashMap<String, Rc<dyn Provider>>,
+    model_providers: HashMap<String, Arc<dyn Provider>>,
     active_model: Option<String>,
     aspect_ratio: String,
     image_size: String,
@@ -24,13 +25,13 @@ impl GenImgModel {
         }
     }
 
-    pub fn add_model_provider(&mut self, model_name: &str, provider: Rc<dyn Provider>) {
+    pub fn add_model_provider(&mut self, model_name: &str, provider: Arc<dyn Provider>) {
         self.model_providers
             .entry(model_name.to_owned())
             .or_insert(provider);
     }
 
-    pub fn add_models_for_provider(&mut self, model_names: &[&str], provider: Rc<dyn Provider>) {
+    pub fn add_models_for_provider(&mut self, model_names: &[&str], provider: Arc<dyn Provider>) {
         for model_name in model_names {
             self.add_model_provider(model_name, provider.clone());
         }
@@ -54,15 +55,16 @@ impl GenImgModel {
         self
     }
 
-    fn get_provider(&self, model_name: &str) -> Result<&Rc<dyn Provider>, ChatError> {
+    fn get_provider(&self, model_name: &str) -> Result<&Arc<dyn Provider>, ChatError> {
         self.model_providers
             .get(model_name)
             .ok_or_else(|| ChatError::ModelNotFound(model_name.to_owned()))
     }
 }
 
+#[async_trait]
 impl GenImgCapability for GenImgModel {
-    async fn gen_img(&self, msg: &Message) -> Result<GenImgResponse, ChatError> {
+    async fn gen_img(&self, msgs: Vec<Message>) -> Result<GenImgResponse, ChatError> {
         let model_name = self
             .active_model
             .as_ref()
@@ -80,8 +82,7 @@ impl GenImgCapability for GenImgModel {
             }),
         );
 
-        let messages = vec![msg.clone()];
-        let mut request = Request::new(model_name, messages);
+        let mut request = Request::new(model_name, msgs);
         request.extra = extra;
 
         let response: Response = provider
@@ -120,7 +121,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         let provider = match OpenRouterProvider::from_env() {
-            Ok(p) => Rc::new(p),
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
                 return;
@@ -140,7 +141,7 @@ mod tests {
 
         let msg = Message::user("Generate a beautiful sunset over mountains");
 
-        let result = model.gen_img(&msg).await;
+        let result = model.gen_img(vec![msg]).await;
         assert!(result.is_ok());
 
         let response = result.unwrap();
@@ -149,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_model_provider_mapping() {
-        let provider = Rc::new(OpenRouterProvider::new("dummy_key"));
+        let provider = Arc::new(OpenRouterProvider::new("dummy_key"));
 
         let mut model = GenImgModel::new();
 
@@ -161,14 +162,22 @@ mod tests {
             provider,
         );
 
-        assert!(model.model_providers.contains_key("black-forest-labs/flux.2-klein-4b"));
-        assert!(model.model_providers.contains_key("black-forest-labs/flux.1-pro"));
+        assert!(
+            model
+                .model_providers
+                .contains_key("black-forest-labs/flux.2-klein-4b")
+        );
+        assert!(
+            model
+                .model_providers
+                .contains_key("black-forest-labs/flux.1-pro")
+        );
         assert_eq!(model.model_providers.len(), 2);
     }
 
     #[test]
     fn test_set_active_model() {
-        let provider = Rc::new(OpenRouterProvider::new("dummy_key"));
+        let provider = Arc::new(OpenRouterProvider::new("dummy_key"));
         let mut model = GenImgModel::new();
         model.add_model_provider("black-forest-labs/flux.2-klein-4b", provider);
 
