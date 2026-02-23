@@ -2,16 +2,16 @@ use async_trait::async_trait;
 use std::process::Stdio;
 use tokio::process::Command;
 
-use crate::agent::agents::{
-    ToolCall, ToolDef, ToolExecutor, ToolExecutorError, ToolResult, agent::Agent,
-};
-use crate::agent::{ChatCapability, Message};
+use crate::agents::{ToolCall, ToolDef, ToolExecutor, ToolExecutorError, ToolResult, agent::Agent};
+use crate::core::Message;
+use crate::models::ChatCapability;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum WebAgentError {
     #[error("Agent error: {0}")]
-    Agent(#[from] crate::agent::agents::agent::AgentError),
+    Agent(#[from] crate::agents::agent::AgentError),
     #[error("Tool executor error: {0}")]
     Tool(#[from] ToolExecutorError),
     #[error(
@@ -190,8 +190,9 @@ Always use the playwright_cli tool to interact with the browser. Do not make up 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::agents::ToolDef;
-    use crate::agent::{ChatCapability, ChatError, Message};
+    use crate::agents::ToolDef;
+    use crate::core::Message;
+    use crate::models::{ChatCapability, ChatError};
     use async_trait::async_trait;
 
     struct MockChatModel;
@@ -210,7 +211,7 @@ mod tests {
             &self,
             _msgs: Vec<Message>,
             _tools: Option<Vec<ToolDef>>,
-        ) -> Result<futures::stream::BoxStream<'static, crate::agent::ChatChunk>, ChatError>
+        ) -> Result<futures::stream::BoxStream<'static, crate::models::ChatChunk>, ChatError>
         {
             unimplemented!()
         }
@@ -273,7 +274,7 @@ Always use the playwright_cli tool to interact with the browser. Do not make up 
     async fn test_summarize_zeroclaw_readme() {
         dotenv::dotenv().ok();
 
-        let provider = match crate::agent::providers::DeepSeekProvider::from_env() {
+        let provider = match crate::providers::DeepSeekProvider::from_env() {
             Ok(p) => std::sync::Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping integration test");
@@ -281,7 +282,7 @@ Always use the playwright_cli tool to interact with the browser. Do not make up 
             }
         };
 
-        let mut model = crate::agent::models::ChatModel::new();
+        let mut model = crate::models::ChatModel::new();
         model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
 
         if let Err(e) = model.set_active_model("deepseek-chat") {

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::agent::agents::ToolCall;
+use crate::agents::ToolCall;
 
 /// 用量
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -23,13 +23,9 @@ pub enum MessageRole {
 #[serde(tag = "role")]
 pub enum Message {
     #[serde(rename = "system")]
-    System {
-        content: String,
-    },
+    System { content: String },
     #[serde(rename = "user")]
-    User {
-        content: String,
-    },
+    User { content: String },
     #[serde(rename = "assistant")]
     Assistant {
         content: String,

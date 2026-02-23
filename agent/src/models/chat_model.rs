@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use futures::stream::{BoxStream, StreamExt};
 
-use crate::agent::{
+use crate::{
     agents::ToolDef,
     core::{Message, MessageRole},
     models::{ChatCapability, ChatChunk, ChatError},
@@ -137,8 +137,8 @@ impl ChatCapability for ChatModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::core::Message;
-    use crate::agent::providers::{DeepSeekProvider, OpenRouterProvider};
+    use crate::core::Message;
+    use crate::providers::{DeepSeekProvider, OpenRouterProvider};
 
     #[tokio::test]
     async fn test_chat_with_deepseek_chat() {

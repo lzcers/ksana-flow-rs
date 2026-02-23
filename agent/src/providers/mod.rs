@@ -1,8 +1,8 @@
 mod deepseek;
 mod openrouter;
 
-use crate::agent::agents::{ToolCall, ToolDef};
-pub use crate::agent::core::{Message, MessageRole};
+use crate::agents::{ToolCall, ToolDef};
+use crate::core::{Message, MessageRole};
 use async_trait::async_trait;
 pub use deepseek::DeepSeekProvider;
 use futures::stream::BoxStream;

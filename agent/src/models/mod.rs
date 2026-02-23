@@ -8,7 +8,7 @@ pub use gen_img_model::GenImgModel;
 use futures::stream::BoxStream;
 use thiserror::Error;
 
-use crate::agent::{agents::ToolDef, core::Message, providers::ProviderError};
+use crate::{agents::ToolDef, core::Message, providers::ProviderError};
 
 /// 聊天错误类型
 #[derive(Debug, Error)]

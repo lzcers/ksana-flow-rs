@@ -1,4 +1,3 @@
-pub mod agent;
 mod config;
 mod img_gen;
 pub mod llm;

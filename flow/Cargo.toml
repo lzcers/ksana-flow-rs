@@ -9,6 +9,6 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
 dashmap = "6.1.0"
-async-trait = "0.1.89"
-futures = "0.3.32"

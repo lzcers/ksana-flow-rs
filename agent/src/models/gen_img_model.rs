@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::agent::{
+use crate::{
     core::Message,
     models::{ChatError, GenImgCapability, GenImgResponse},
     providers::{Provider, Request, Response},
@@ -117,8 +117,8 @@ impl GenImgCapability for GenImgModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::core::Message;
-    use crate::agent::providers::OpenRouterProvider;
+    use crate::core::Message;
+    use crate::providers::OpenRouterProvider;
 
     #[tokio::test]
     async fn test_gen_img_with_openrouter() {

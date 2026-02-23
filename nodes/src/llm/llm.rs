@@ -1,8 +1,10 @@
 use super::input::extract_input_string;
-use crate::agent::{
-    ChatCapability, ChatChunk, ChatModel, DeepSeekProvider, Message, OpenRouterProvider,
-};
 use crate::prompt::build_user_prompt;
+use agent::{
+    core::Message,
+    models::{ChatCapability, ChatChunk, ChatModel},
+    providers::{DeepSeekProvider, OpenRouterProvider},
+};
 use async_trait::async_trait;
 use flow::{
     Context, Input, Node, Output, ReactiveStream,

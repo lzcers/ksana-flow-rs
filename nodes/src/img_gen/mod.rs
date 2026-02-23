@@ -6,8 +6,10 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::agent::{
-    ChatError, GenImgCapability, GenImgModel, GenImgResponse, Message, OpenRouterProvider,
+use agent::{
+    core::Message,
+    models::{ChatError, GenImgCapability, GenImgModel, GenImgResponse},
+    providers::OpenRouterProvider,
 };
 
 mod utils;

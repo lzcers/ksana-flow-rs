@@ -1,9 +1,10 @@
 use futures::future::join_all;
 use thiserror::Error;
 
-use crate::agent::{
-    ChatCapability, ChatError, Message,
+use crate::{
     agents::{ToolCall, ToolExecutor, ToolExecutorError, ToolResult},
+    core::Message,
+    models::{ChatCapability, ChatError},
 };
 
 #[derive(Debug, Error)]
