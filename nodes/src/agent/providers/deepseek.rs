@@ -87,7 +87,6 @@ impl Provider for DeepSeekProvider {
 
         let status = response.status();
         let body = response.text().await?;
-        println!("{:?}", body);
 
         if !status.is_success() {
             // 尝试解析错误响应

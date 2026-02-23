@@ -47,7 +47,6 @@ impl<M: ChatCapability, E: ToolExecutor> Agent<M, E> {
                 .model
                 .chat(messages.clone(), Some(tools.clone()))
                 .await?;
-
             messages.push(response.clone());
 
             let tool_calls = match &response {

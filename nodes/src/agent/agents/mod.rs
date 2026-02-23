@@ -1,5 +1,5 @@
 pub mod agent;
-pub use agent::{Agent, AgentError};
+pub mod web_agent;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -18,16 +18,53 @@ pub struct ToolDef {
     pub parameters: Value,
 }
 
-/// 模型发起的工具调用请求。
+/// OpenAI 兼容的工具调用 function 字段
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallFunction {
+    pub name: String,
+    pub arguments: String,
+}
+
+/// 模型发起的工具调用请求（OpenAI 兼容格式）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
     /// 工具调用的唯一标识符，用于将结果与调用关联。
     /// 通常由模型生成，执行结果需原样返回。
     pub id: String,
-    /// 要调用的工具名称，必须匹配某个 ToolDef 的 name。
-    pub name: String,
-    /// 工具参数，一个 JSON 对象，由模型根据 ToolDef 的 schema 生成。
-    pub arguments: Value,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub call_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<u32>,
+    /// OpenAI 嵌套格式
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function: Option<ToolCallFunction>,
+    /// 简化格式（用于内部使用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<Value>,
+}
+
+impl ToolCall {
+    pub fn get_name(&self) -> String {
+        if let Some(function) = &self.function {
+            function.name.clone()
+        } else if let Some(name) = &self.name {
+            name.clone()
+        } else {
+            String::new()
+        }
+    }
+
+    pub fn get_arguments(&self) -> Value {
+        if let Some(function) = &self.function {
+            serde_json::from_str(&function.arguments).unwrap_or(Value::Null)
+        } else if let Some(args) = &self.arguments {
+            args.clone()
+        } else {
+            Value::Null
+        }
+    }
 }
 
 /// 工具执行的结果。
