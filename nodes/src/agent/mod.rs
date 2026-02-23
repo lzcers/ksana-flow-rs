@@ -1,3 +1,4 @@
+mod agents;
 mod core;
 mod models;
 mod providers;

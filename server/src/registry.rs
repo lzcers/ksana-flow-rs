@@ -2,8 +2,8 @@ use chrono::{Local, NaiveDateTime};
 use flow::AnyNode;
 use nodes::reduce_node::ReduceNode;
 use nodes::{
-    EmailNotifyNode, ImgGenNode, TextFileNode, TextMergeNode, TextNode, TextSplitConfig,
-    TextSplitNode, TimerNode, create_llm_any_node,
+    EmailNotifyNode, ImgGenNode, LLMNode, TextFileNode, TextMergeNode, TextNode, TextSplitConfig,
+    TextSplitNode, TimerNode,
     trade::{Backtester, ReactiveSourceNode, VOLMFINode},
 };
 use serde::{Deserialize, Serialize};
@@ -223,36 +223,12 @@ pub fn create_registry() -> NodeRegistry {
             let user_prompt_template = config["user_prompt_template"].as_str();
             let model = config["model"].as_str().unwrap_or("deepseek-chat");
             let stream = config["stream"].as_bool().unwrap_or(false);
-            Ok(create_llm_any_node(
+            Ok(Arc::new(RwLock::new(LLMNode::new(
                 system_prompt.unwrap_or(""),
                 user_prompt_template.unwrap_or(""),
                 model,
                 stream,
-            ))
-        },
-    );
-    registry.register(
-        NodeMetadata {
-            name: "StreamLLMNode".to_string(),
-            config: json!({
-                "system_prompt": "",
-                "user_prompt_template": "",
-                "model": "deepseek-chat",
-                "stream": true
-            }),
-            inputs: vec![InputType::String],
-            outputs: vec![],
-        },
-        |config: Value| {
-            let system_prompt = config["system_prompt"].as_str();
-            let user_prompt_template = config["user_prompt_template"].as_str();
-            let model = config["model"].as_str().unwrap_or("deepseek-chat");
-            Ok(create_llm_any_node(
-                system_prompt.unwrap_or(""),
-                user_prompt_template.unwrap_or(""),
-                model,
-                true,
-            ))
+            ))))
         },
     );
 
