@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::stream::{BoxStream, StreamExt};
 
 use crate::agent::{
-    core::Message,
+    core::{Message, MessageRole},
     models::{ChatCapability, ChatChunk, ChatError},
     providers::{Provider, Request, Response},
 };
@@ -70,10 +70,22 @@ impl ChatCapability for ChatModel {
             .next()
             .ok_or(ChatError::NoResponse)?;
 
-        Ok(Message {
-            role: choice.message.role,
-            content: choice.message.content,
-        })
+        match choice.message.role {
+            MessageRole::Assistant => Ok(Message::Assistant {
+                content: choice.message.content,
+                tool_calls: choice.message.tool_calls,
+            }),
+            MessageRole::User => Ok(Message::User {
+                content: choice.message.content,
+            }),
+            MessageRole::System => Ok(Message::System {
+                content: choice.message.content,
+            }),
+            MessageRole::Tool => Ok(Message::Tool {
+                tool_call_id: choice.message.tool_call_id.unwrap_or_default(),
+                content: choice.message.content,
+            }),
+        }
     }
 
     async fn chat_stream(
@@ -146,8 +158,12 @@ mod tests {
         assert!(result.is_ok());
 
         let message = result.unwrap();
-        println!("Response: {}", message.content);
-        assert!(!message.content.is_empty());
+        if let Message::Assistant { content, .. } = message {
+            println!("Response: {:?}", content);
+            assert!(!content.is_empty());
+        } else {
+            panic!("Expected Assistant message");
+        }
     }
 
     #[tokio::test]
@@ -215,8 +231,12 @@ mod tests {
         assert!(result.is_ok());
 
         let message = result.unwrap();
-        println!("Response: {}", message.content);
-        assert!(!message.content.is_empty());
+        if let Message::Assistant { content, .. } = message {
+            println!("Response: {:?}", content);
+            assert!(!content.is_empty());
+        } else {
+            panic!("Expected Assistant message");
+        }
     }
 
     #[tokio::test]

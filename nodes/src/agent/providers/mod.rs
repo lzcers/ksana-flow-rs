@@ -1,6 +1,7 @@
 mod deepseek;
 mod openrouter;
 
+use crate::agent::agents::ToolCall;
 pub use crate::agent::core::{Message, MessageRole};
 use async_trait::async_trait;
 pub use deepseek::DeepSeekProvider;
@@ -25,7 +26,7 @@ pub enum ProviderError {
     Request(reqwest::Error),
     Serialization(serde_json::Error),
     InvalidApiKey,
-    ApiError { code: i32, message: String },
+    ApiError { code: u16, message: String },
     MissingApiKey,
     StreamError(String),
 }
@@ -127,6 +128,7 @@ pub struct ChoiceImg {
     pub img_type: String,
     pub image_url: ChoiceImgUrl,
 }
+
 /// 选择项中的消息（非流式响应）
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChoiceMessage {
@@ -134,6 +136,10 @@ pub struct ChoiceMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ChoiceImg>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// 非流式响应的选择项
@@ -166,6 +172,8 @@ pub struct Delta {
     pub role: Option<MessageRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 /// 流式响应的选择项

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::agent::agents::ToolCall;
+
 /// 用量
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Usage {
@@ -8,9 +10,8 @@ pub struct Usage {
     pub total_tokens: u32,
 }
 
-/// 消息角色
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MessageRole {
     System,
     User,
@@ -18,32 +19,46 @@ pub enum MessageRole {
     Tool,
 }
 
-/// 聊天消息
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: MessageRole,
-    pub content: String,
+#[serde(tag = "role")]
+pub enum Message {
+    #[serde(rename = "system")]
+    System {
+        content: String,
+    },
+    #[serde(rename = "user")]
+    User {
+        content: String,
+    },
+    #[serde(rename = "assistant")]
+    Assistant {
+        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tool_calls: Option<Vec<ToolCall>>,
+    },
+    #[serde(rename = "tool")]
+    Tool {
+        tool_call_id: String,
+        content: String,
+    },
 }
 
 impl Message {
     pub fn system(content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::System,
+        Self::System {
             content: content.into(),
         }
     }
 
     pub fn user(content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::User,
+        Self::User {
             content: content.into(),
         }
     }
-
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self {
-            role: MessageRole::Assistant,
+        Self::Assistant {
             content: content.into(),
+            tool_calls: None,
         }
     }
 }

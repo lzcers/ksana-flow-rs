@@ -127,7 +127,12 @@ impl Node for LLMNode {
                 .await
                 .map_err(|e| e.to_string())?;
 
-            Ok(Value::String(result.content).into())
+            let content = match result {
+                Message::Assistant { content, .. } => content,
+                _ => String::new(),
+            };
+
+            Ok(Value::String(content).into())
         }
     }
 }

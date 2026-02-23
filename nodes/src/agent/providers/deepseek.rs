@@ -87,6 +87,7 @@ impl Provider for DeepSeekProvider {
 
         let status = response.status();
         let body = response.text().await?;
+        println!("{:?}", body);
 
         if !status.is_success() {
             // 尝试解析错误响应
@@ -94,16 +95,19 @@ impl Provider for DeepSeekProvider {
                 let code = error_json["error"]["code"]
                     .as_i64()
                     .or_else(|| error_json["error"]["type"].as_str().map(|t| t.len() as i64))
-                    .unwrap_or(0) as i32;
+                    .unwrap_or(0);
                 let message = error_json["error"]["message"]
                     .as_str()
                     .or_else(|| error_json["error"].as_str())
                     .unwrap_or(&body)
                     .to_string();
-                return Err(ProviderError::ApiError { code, message });
+                return Err(ProviderError::ApiError {
+                    code: code as u16,
+                    message,
+                });
             }
             return Err(ProviderError::ApiError {
-                code: status.as_u16() as i32,
+                code: status.as_u16(),
                 message: body,
             });
         }
@@ -130,12 +134,11 @@ impl Provider for DeepSeekProvider {
             .json(&request)
             .send()
             .await?;
-
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(ProviderError::ApiError {
-                code: status.as_u16() as i32,
+                code: status.as_u16(),
                 message: body,
             });
         }

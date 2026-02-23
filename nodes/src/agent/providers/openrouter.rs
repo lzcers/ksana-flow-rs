@@ -119,7 +119,7 @@ impl Provider for OpenRouterProvider {
                 let code = error_json["error"]["code"]
                     .as_i64()
                     .or_else(|| error_json["error"]["type"].as_str().map(|t| t.len() as i64))
-                    .unwrap_or(0) as i32;
+                    .unwrap_or(0) as u16;
                 let message = error_json["error"]["message"]
                     .as_str()
                     .or_else(|| error_json["error"].as_str())
@@ -128,7 +128,7 @@ impl Provider for OpenRouterProvider {
                 return Err(ProviderError::ApiError { code, message });
             }
             return Err(ProviderError::ApiError {
-                code: status.as_u16() as i32,
+                code: status.as_u16(),
                 message: body,
             });
         }
@@ -160,7 +160,7 @@ impl Provider for OpenRouterProvider {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             return Err(ProviderError::ApiError {
-                code: status.as_u16() as i32,
+                code: status.as_u16(),
                 message: body,
             });
         }
