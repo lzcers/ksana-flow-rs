@@ -5,7 +5,7 @@ pub use ta::{Close, High, Low, Open, Volume};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct K {
     pub code: String,
-    pub timestamp: u64,
+    pub timestamp: i64,
     pub open: f64,
     pub high: f64,
     pub low: f64,

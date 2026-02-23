@@ -31,7 +31,7 @@ pub fn date_to_str(date: &NaiveDate) -> String {
     date.format("%Y%m%d").to_string()
 }
 
-pub fn timestamp_to_str(timestamp: u64) -> String {
-    let datetime = DateTime::from_timestamp_millis(timestamp as i64).unwrap();
+pub fn timestamp_to_str(timestamp: i64) -> String {
+    let datetime = DateTime::from_timestamp_millis(timestamp).unwrap();
     datetime.date_naive().to_string()
 }

@@ -37,16 +37,16 @@ pub struct Position {
     pub fee: f64,
 
     /// 开仓时间。
-    pub open_time: u64,
+    pub open_time: i64,
 
     /// 平仓时间。
-    pub close_time: Option<u64>,
+    pub close_time: Option<i64>,
 }
 // 交易接口
 
 impl Position {
     // 开新仓
-    pub fn open_position(code: &str, timestamp: u64, current_price: f64, quantity: f64) -> Self {
+    pub fn open_position(code: &str, timestamp: i64, current_price: f64, quantity: f64) -> Self {
         Self {
             code: code.to_string(),
             open_price: current_price,
@@ -58,7 +58,7 @@ impl Position {
             close_time: None,
         }
     }
-    pub fn close_position(&mut self, timestamp: u64, current_price: f64) -> f64 {
+    pub fn close_position(&mut self, timestamp: i64, current_price: f64) -> f64 {
         let income = self.sub_position(timestamp, current_price, self.quantity);
         self.close_time = Some(timestamp);
         income
@@ -76,7 +76,7 @@ impl Position {
         add_cost
     }
 
-    pub fn sub_position(&mut self, timestamp: u64, current_price: f64, quantity: f64) -> f64 {
+    pub fn sub_position(&mut self, timestamp: i64, current_price: f64, quantity: f64) -> f64 {
         if quantity <= self.quantity {
             self.quantity -= quantity;
             self.update_position_profit(current_price);

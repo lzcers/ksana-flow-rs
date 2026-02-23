@@ -10,7 +10,7 @@ pub struct Data {
     pub current: f64,
     pub percent: f64,
     pub chg: f64,
-    pub timestamp: u64,
+    pub timestamp: i64,
     pub volume: u64,
     pub amount: f64,
     pub turnover_rate: Option<f64>,

@@ -12,7 +12,7 @@ use tracing::warn;
 pub struct Record {
     order: OrderInfo,
     code: String,
-    timestamp: u64,
+    timestamp: i64,
     price: f64,
     quantity: f64,
     profit: f64,
@@ -21,7 +21,7 @@ pub struct Record {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Value {
-    timestamp: u64,
+    timestamp: i64,
     amount: f64,
     profit_rate: f64,
 }
@@ -140,7 +140,7 @@ impl Backtester {
         record: &mut Vec<Record>,
         order_info: &OrderInfo,
         code: &str,
-        timestamp: u64,
+        timestamp: i64,
         price: f64,
         quantity: f64,
         profit: f64,

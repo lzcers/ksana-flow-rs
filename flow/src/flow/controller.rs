@@ -1,9 +1,12 @@
+use crate::NodeId;
 use crate::flow::{
     graph::Graph,
-    runner::{ExecutionContext, FlowEventEnvelope, Runner, RunnerCommand, RunnerHandle, SubgraphFrame},
+    runner::{
+        ExecutionContext, FlowEventEnvelope, Runner, RunnerCommand, RunnerHandle, SubgraphFrame,
+    },
 };
-use crate::NodeId;
 use dashmap::DashMap;
+use std::sync::atomic::AtomicU16;
 use std::{
     future::Future,
     sync::{
@@ -18,7 +21,7 @@ use tokio::{
 
 pub type ControllerHandle = Arc<Controller>;
 
-pub type RunnerId = u64;
+pub type RunnerId = u16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerKind {
@@ -39,7 +42,7 @@ pub struct RunnerRecord {
 pub struct Controller {
     cmd_tx: broadcast::Sender<RunnerCommand>,
     event_tx: mpsc::Sender<FlowEventEnvelope>,
-    next_runner_id: AtomicU64,
+    next_runner_id: AtomicU16,
     runners: DashMap<RunnerId, Arc<RunnerRecord>>,
     max_concurrency: AtomicUsize,
 }
@@ -52,7 +55,7 @@ impl Controller {
             Arc::new(Self {
                 cmd_tx,
                 event_tx,
-                next_runner_id: AtomicU64::new(1),
+                next_runner_id: AtomicU16::new(1),
                 runners: DashMap::new(),
                 max_concurrency: AtomicUsize::new(0),
             }),
@@ -88,7 +91,12 @@ impl Controller {
     pub fn describe_runner(
         &self,
         runner_id: RunnerId,
-    ) -> (RunnerKind, Option<RunnerId>, Option<NodeId>, Vec<SubgraphFrame>) {
+    ) -> (
+        RunnerKind,
+        Option<RunnerId>,
+        Option<NodeId>,
+        Vec<SubgraphFrame>,
+    ) {
         let mut kind = RunnerKind::Root;
         let mut parent_runner_id = None;
         let mut parent_node_id = None;

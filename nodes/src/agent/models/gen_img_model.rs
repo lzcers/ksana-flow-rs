@@ -60,6 +60,10 @@ impl GenImgModel {
             .get(model_name)
             .ok_or_else(|| ChatError::ModelNotFound(model_name.to_owned()))
     }
+
+    pub fn active_model(&self) -> Option<&str> {
+        self.active_model.as_deref()
+    }
 }
 
 #[async_trait]

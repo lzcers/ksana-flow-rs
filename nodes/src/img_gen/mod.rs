@@ -2,22 +2,23 @@ use async_trait::async_trait;
 use flow::{Context, Input, Node, Output};
 use serde_json::Value;
 use serde_json::json;
+use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+use crate::agent::{
+    ChatError, GenImgCapability, GenImgModel, GenImgResponse, Message, OpenRouterProvider,
+};
 
 mod utils;
 
 pub struct ImgGenNode {
-    api_key: Option<String>,
-    base_url: String,
-    http: reqwest::Client,
-    model: String,
+    gen_img_model: GenImgModel,
     system_prompt: String,
     user_prompt_template: String,
-    aspect_ratio: String,
-    image_size: String,
     input_image_file_id: Option<String>,
     space_id: Option<String>,
+    active_model_name: String,
 }
 
 impl ImgGenNode {
@@ -32,21 +33,22 @@ impl ImgGenNode {
     ) -> Self {
         dotenv::dotenv().ok();
 
-        let api_key = std::env::var("OPENROUTER_API_KEY").ok();
-        let base_url = std::env::var("OPENROUTER_BASE_URL")
-            .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
+        let mut gen_img_model = GenImgModel::new()
+            .with_aspect_ratio(aspect_ratio.to_string())
+            .with_image_size(image_size.to_string());
+
+        if let Ok(provider) = OpenRouterProvider::from_env() {
+            gen_img_model.add_model_provider(model, Arc::new(provider));
+            let _ = gen_img_model.set_active_model(model);
+        }
 
         Self {
-            api_key,
-            base_url,
-            http: reqwest::Client::new(),
-            model: model.to_owned(),
+            gen_img_model,
             system_prompt: system_prompt.to_owned(),
             user_prompt_template: user_prompt_template.to_owned(),
-            aspect_ratio: aspect_ratio.to_owned(),
-            image_size: image_size.to_owned(),
             input_image_file_id,
             space_id,
+            active_model_name: model.to_string(),
         }
     }
 }
@@ -54,10 +56,7 @@ impl ImgGenNode {
 #[async_trait]
 impl Node for ImgGenNode {
     async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
-        let Some(api_key) = &self.api_key else {
-            return Ok(Value::String("Missing OPENROUTER_API_KEY".to_string()).into());
-        };
-        info!("ImgGenNode: model={}", self.model);
+        info!("ImgGenNode: using {:?}", self.active_model_name);
         let space_id = input
             .get_str_as::<String>("space_id")
             .or_else(|| self.space_id.clone())
@@ -95,42 +94,41 @@ impl Node for ImgGenNode {
             _ => None,
         };
 
-        let payload = utils::build_payload(
-            &self.model,
-            system_prompt,
-            &prompt,
-            image_data_url,
-            &self.aspect_ratio,
-            &self.image_size,
-        );
+        let mut msgs = Vec::new();
+        if !system_prompt.is_empty() {
+            msgs.push(Message::system(system_prompt));
+        }
 
-        let resp_json = match utils::send_openrouter_chat_completions(
-            &self.http,
-            &self.base_url,
-            api_key,
-            &payload,
-        )
-        .await
-        {
-            Ok(v) => v,
-            Err(e) => return Err(e),
-        };
+        if let Some(data_url) = image_data_url {
+            msgs.push(Message::user(format!(
+                "{}\n\n[Image: {}]",
+                prompt, data_url
+            )));
+        } else {
+            msgs.push(Message::user(prompt.clone()));
+        }
 
-        let Some(data_url) = utils::extract_first_image_data_url(&resp_json) else {
-            if let Some(err) = utils::extract_model_error(&resp_json) {
-                let err_msg = format!("No image returned from model. Error: {}", err);
+        let img_resp: GenImgResponse =
+            self.gen_img_model
+                .gen_img(msgs)
+                .await
+                .map_err(|e| match e {
+                    ChatError::Provider(e) => format!("Provider error: {}", e),
+                    ChatError::NoResponse => "No response from model".to_string(),
+                    ChatError::StreamError(e) => format!("Stream error: {}", e),
+                    ChatError::ModelNotFound(e) => format!("Model not found: {}", e),
+                })?;
+
+        let image_url = match img_resp.image_urls.first() {
+            Some(url) => url,
+            None => {
+                let err_msg = "No image returned from GenImgModel";
                 warn!("{}", err_msg);
                 panic!("{}", err_msg);
             }
-            let err_msg = format!(
-                "No image returned from model. Response excerpt: {}",
-                utils::response_debug_excerpt(&resp_json)
-            );
-            warn!("{}", err_msg);
-            panic!("{}", err_msg);
         };
 
-        let (mime_type, bytes) = match utils::parse_data_url_to_bytes(&data_url) {
+        let (mime_type, bytes) = match utils::parse_data_url_to_bytes(&image_url) {
             Ok(v) => v,
             Err(e) => return Ok(Value::String(e).into()),
         };
@@ -141,7 +139,7 @@ impl Node for ImgGenNode {
             &mime_type,
             &bytes,
             &prompt,
-            &self.model,
+            self.gen_img_model.active_model().unwrap_or_default(),
             &space_id,
         ) {
             return Ok(Value::String(e).into());

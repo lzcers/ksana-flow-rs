@@ -93,7 +93,7 @@ impl TushareSource {
                     .to_owned(),
                 timestamp: date_str_to_timestamp(
                     v["trade_date"].as_str().expect("trade_date field error"),
-                ) as u64,
+                ),
                 open: v["open"].as_f64().expect("open field error"),
                 high: v["high"].as_f64().expect("high field error"),
                 low: v["low"].as_f64().expect("low field error"),

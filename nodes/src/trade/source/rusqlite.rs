@@ -202,7 +202,7 @@ impl SqliteSource {
         while let Some(row) = stock_list.next()? {
             query_result.push(K {
                 code: row.get::<_, String>(0)?,
-                timestamp: row.get::<_, u64>(1)?,
+                timestamp: row.get::<_, i64>(1)?,
                 open: row.get::<_, f64>(3)?,
                 high: row.get::<_, f64>(4)?,
                 low: row.get::<_, f64>(5)?,
