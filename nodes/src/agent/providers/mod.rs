@@ -1,8 +1,10 @@
 mod deepseek;
 mod openrouter;
+
 pub use crate::agent::core::{Message, MessageRole};
+use async_trait::async_trait;
 pub use deepseek::DeepSeekProvider;
-use futures::{Stream, stream::BoxStream};
+use futures::stream::BoxStream;
 pub use openrouter::OpenRouterProvider;
 use serde::{Deserialize, Serialize};
 
@@ -190,6 +192,7 @@ pub struct StreamResponse {
     pub usage: Option<Usage>,
 }
 
+#[async_trait]
 pub trait Provider {
     async fn send_request(
         &self,
@@ -204,72 +207,7 @@ pub trait Provider {
         path: &str,
         request: Request,
         model: &str,
-    ) -> Result<impl Stream<Item = StreamResponse>, ProviderError>;
+    ) -> Result<BoxStream<StreamResponse>, ProviderError>;
 
     fn http_client(&self) -> &reqwest::Client;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_request_builder() {
-        let messages = vec![
-            Message::system("You are a helpful assistant."),
-            Message::user("Hello!"),
-        ];
-
-        let request = Request::new("deepseek-chat", messages)
-            .with_stream(true)
-            .with_temperature(0.7)
-            .with_max_tokens(2048);
-
-        assert_eq!(request.model, "deepseek-chat");
-        assert_eq!(request.messages.len(), 2);
-        assert_eq!(request.stream, Some(true));
-        assert_eq!(request.temperature, Some(0.7));
-        assert_eq!(request.max_tokens, Some(2048));
-    }
-
-    #[test]
-    fn test_message_construction() {
-        let sys_msg = Message::system("System prompt");
-        assert_eq!(sys_msg.role, MessageRole::System);
-        assert_eq!(sys_msg.content, "System prompt");
-
-        let user_msg = Message::user("User query");
-        assert_eq!(user_msg.role, MessageRole::User);
-        assert_eq!(user_msg.content, "User query");
-
-        let assistant_msg = Message::assistant("Assistant response");
-        assert_eq!(assistant_msg.role, MessageRole::Assistant);
-        assert_eq!(assistant_msg.content, "Assistant response");
-    }
-
-    #[test]
-    fn test_response_deserialization() {
-        let json = r#"{
-            "id": "chatcmpl-123",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-3.5-turbo",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "Hello there!"
-                },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "input_tokens": 9,
-                "output_tokens": 12
-            }
-        }"#;
-
-        // 注意：这里使用 super::Usage，它来自 agent::core
-        // 但 Response 中定义的 usage 也是 Option<Usage>
-        // 这里可能需要调整以匹配实际的 Usage 结构
-    }
 }

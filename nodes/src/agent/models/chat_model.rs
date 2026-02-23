@@ -1,3 +1,5 @@
+use std::{collections::HashMap, rc::Rc};
+
 use futures::{Stream, StreamExt};
 
 use crate::agent::{
@@ -6,27 +8,59 @@ use crate::agent::{
     providers::{Provider, Request, Response},
 };
 
-/// 聊天模型
-pub struct ChatModel<T: Provider> {
-    provider: T,
-    model: String,
+pub struct ChatModel {
+    model_providers: HashMap<String, Rc<dyn Provider>>,
+    active_model: Option<String>,
 }
 
-impl<T: Provider> ChatModel<T> {
-    /// 创建新的聊天模型
-    pub fn new(provider: T, model: String) -> Self {
-        Self { provider, model }
+impl ChatModel {
+    pub fn new() -> Self {
+        Self {
+            model_providers: HashMap::new(),
+            active_model: None,
+        }
+    }
+
+    pub fn add_model_provider(&mut self, model_name: &str, provider: Rc<dyn Provider>) {
+        self.model_providers
+            .entry(model_name.to_owned())
+            .or_insert(provider);
+    }
+
+    pub fn add_models_for_provider(&mut self, model_names: &[&str], provider: Rc<dyn Provider>) {
+        for model_name in model_names {
+            self.add_model_provider(model_name, provider.clone());
+        }
+    }
+
+    pub fn set_active_model(&mut self, model_name: &str) -> Result<(), ChatError> {
+        if !self.model_providers.contains_key(model_name) {
+            return Err(ChatError::ModelNotFound(model_name.to_owned()));
+        }
+        self.active_model = Some(model_name.to_owned());
+        Ok(())
+    }
+
+    fn get_provider(&self, model_name: &str) -> Result<&Rc<dyn Provider>, ChatError> {
+        self.model_providers
+            .get(model_name)
+            .ok_or_else(|| ChatError::ModelNotFound(model_name.to_owned()))
     }
 }
 
-impl<T: Provider> ChatCapability for ChatModel<T> {
+impl ChatCapability for ChatModel {
     async fn chat(&self, msg: &Message) -> Result<Message, ChatError> {
-        let messages = vec![msg.clone()];
-        let request = Request::new(&self.model, messages);
+        let model_name = self
+            .active_model
+            .as_ref()
+            .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
-        let response: Response = self
-            .provider
-            .send_request("/chat/completions", &request, &self.model)
+        let provider = self.get_provider(model_name)?;
+        let messages = vec![msg.clone()];
+        let request = Request::new(model_name, messages);
+
+        let response: Response = provider
+            .send_request("/chat/completions", &request, model_name)
             .await?;
 
         let choice = response
@@ -42,12 +76,17 @@ impl<T: Provider> ChatCapability for ChatModel<T> {
     }
 
     async fn chat_stream(&self, msg: &Message) -> Result<impl Stream<Item = ChatChunk>, ChatError> {
-        let messages = vec![msg.clone()];
-        let request = Request::new(&self.model, messages).with_stream(true);
+        let model_name = self
+            .active_model
+            .as_ref()
+            .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
-        let stream = self
-            .provider
-            .stream_request("/chat/completions", request, &self.model)
+        let provider = self.get_provider(model_name)?;
+        let messages = vec![msg.clone()];
+        let request = Request::new(model_name, messages).with_stream(true);
+
+        let stream = provider
+            .stream_request("/chat/completions", request, model_name)
             .await?;
 
         Ok(stream.map(|response| {
@@ -74,21 +113,28 @@ impl<T: Provider> ChatCapability for ChatModel<T> {
 mod tests {
     use super::*;
     use crate::agent::core::Message;
-    use crate::agent::providers::DeepSeekProvider;
+    use crate::agent::providers::{DeepSeekProvider, OpenRouterProvider};
 
     #[tokio::test]
-    async fn test_chat_with_deepseek() {
+    async fn test_chat_with_deepseek_chat() {
         dotenv::dotenv().ok();
 
         let provider = match DeepSeekProvider::from_env() {
-            Ok(p) => p,
+            Ok(p) => Rc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
                 return;
             }
         };
 
-        let model = ChatModel::new(provider, "deepseek-chat".to_string());
+        let mut model = ChatModel::new();
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
+
+        if let Err(e) = model.set_active_model("deepseek-chat") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
         let msg = Message::user("Say 'Hello, world!' in one sentence.");
 
         let result = model.chat(&msg).await;
@@ -100,18 +146,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_chat_stream_with_deepseek() {
+    async fn test_chat_stream_with_deepseek_chat() {
         dotenv::dotenv().ok();
 
         let provider = match DeepSeekProvider::from_env() {
-            Ok(p) => p,
+            Ok(p) => Rc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
                 return;
             }
         };
 
-        let model = ChatModel::new(provider, "deepseek-chat".to_string());
+        let mut model = ChatModel::new();
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
+
+        if let Err(e) = model.set_active_model("deepseek-chat") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
         let msg = Message::user("Count from 1 to 3, each number on a new line.");
 
         let result = model.chat_stream(&msg).await;
@@ -129,5 +182,109 @@ mod tests {
         }
 
         assert!(!full_content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_chat_with_openrouter_gemini() {
+        dotenv::dotenv().ok();
+
+        let provider = match OpenRouterProvider::from_env() {
+            Ok(p) => Rc::new(p),
+            Err(_) => {
+                eprintln!("OPENROUTER_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        let mut model = ChatModel::new();
+        model.add_model_provider("google/gemini-3-pro-preview", provider);
+
+        if let Err(e) = model.set_active_model("google/gemini-3-pro-preview") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
+        let msg = Message::user("Say 'Hello, world!' in one sentence.");
+
+        let result = model.chat(&msg).await;
+        assert!(result.is_ok());
+
+        let message = result.unwrap();
+        println!("Response: {}", message.content);
+        assert!(!message.content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_chat_stream_with_openrouter_gemini() {
+        dotenv::dotenv().ok();
+
+        let provider = match OpenRouterProvider::from_env() {
+            Ok(p) => Rc::new(p),
+            Err(_) => {
+                eprintln!("OPENROUTER_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        let mut model = ChatModel::new();
+        model.add_model_provider("google/gemini-3-pro-preview", provider);
+
+        if let Err(e) = model.set_active_model("google/gemini-3-pro-preview") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
+        let msg = Message::user("Count from 1 to 3, each number on a new line.");
+
+        let result = model.chat_stream(&msg).await;
+        assert!(result.is_ok());
+
+        let mut stream = result.unwrap();
+        let mut full_content = String::new();
+
+        while let Some(chunk) = stream.next().await {
+            print!("{}", chunk.content);
+            full_content.push_str(&chunk.content);
+            if chunk.is_finished {
+                println!("\nFinish reason: {:?}", chunk.finish_reason);
+            }
+        }
+
+        assert!(!full_content.is_empty());
+    }
+
+    #[test]
+    fn test_model_provider_mapping() {
+        let deepseek_provider = Rc::new(DeepSeekProvider::new("dummy_key"));
+        let openrouter_provider = Rc::new(OpenRouterProvider::new("dummy_key"));
+
+        let mut model = ChatModel::new();
+
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], deepseek_provider);
+        model.add_model_provider("google/gemini-3-pro-preview", openrouter_provider);
+
+        assert!(model.model_providers.contains_key("deepseek-chat"));
+        assert!(model.model_providers.contains_key("deepseek-reasoner"));
+        assert!(
+            model
+                .model_providers
+                .contains_key("google/gemini-3-pro-preview")
+        );
+        assert_eq!(model.model_providers.len(), 3);
+    }
+
+    #[test]
+    fn test_set_active_model() {
+        let provider = Rc::new(DeepSeekProvider::new("dummy_key"));
+        let mut model = ChatModel::new();
+        model.add_model_provider("deepseek-chat", provider);
+
+        let result = model.set_active_model("deepseek-chat");
+        assert!(result.is_ok());
+        assert_eq!(model.active_model, Some("deepseek-chat".to_string()));
+
+        let result = model.set_active_model("non-existent-model");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ChatError::ModelNotFound(_))));
     }
 }

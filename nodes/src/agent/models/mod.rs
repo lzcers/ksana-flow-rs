@@ -1,7 +1,7 @@
 mod chat_model;
 mod gen_img_model;
 
-pub use chat_model::ChatModel;
+// pub use chat_model::ChatModel;
 pub use gen_img_model::GenImgModel;
 
 use futures::Stream;
@@ -18,6 +18,8 @@ pub enum ChatError {
     NoResponse,
     #[error("Stream error: {0}")]
     StreamError(String),
+    #[error("Model not found: {0}")]
+    ModelNotFound(String),
 }
 
 /// 聊天流式响应片段

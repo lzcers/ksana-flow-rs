@@ -1,5 +1,6 @@
 use super::{Provider, ProviderError, Request, Response, StreamResponse};
-use futures::{Stream, StreamExt};
+use async_trait::async_trait;
+use futures::{StreamExt, stream::BoxStream};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use std::env;
 
@@ -91,6 +92,7 @@ impl OpenRouterProvider {
     }
 }
 
+#[async_trait]
 impl Provider for OpenRouterProvider {
     async fn send_request(
         &self,
@@ -140,7 +142,7 @@ impl Provider for OpenRouterProvider {
         path: &str,
         mut request: Request,
         _model: &str,
-    ) -> Result<impl Stream<Item = StreamResponse>, ProviderError> {
+    ) -> Result<BoxStream<StreamResponse>, ProviderError> {
         let url = format!("{}{}", self.base_url, path);
         let headers = self.build_headers();
 
@@ -181,7 +183,7 @@ impl Provider for OpenRouterProvider {
             })
             .flat_map(futures::stream::iter);
 
-        Ok(stream)
+        Ok(Box::pin(stream))
     }
 
     fn http_client(&self) -> &reqwest::Client {

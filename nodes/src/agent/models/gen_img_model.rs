@@ -1,3 +1,5 @@
+use std::{collections::HashMap, rc::Rc};
+
 use crate::agent::{
     core::Message,
     models::{ChatError, GenImgCapability, GenImgResponse},
@@ -5,21 +7,41 @@ use crate::agent::{
 };
 use serde_json::json;
 
-pub struct GenImgModel<T: Provider> {
-    provider: T,
-    model: String,
+pub struct GenImgModel {
+    model_providers: HashMap<String, Rc<dyn Provider>>,
+    active_model: Option<String>,
     aspect_ratio: String,
     image_size: String,
 }
 
-impl<T: Provider> GenImgModel<T> {
-    pub fn new(provider: T, model: String, aspect_ratio: String, image_size: String) -> Self {
+impl GenImgModel {
+    pub fn new() -> Self {
         Self {
-            provider,
-            model,
-            aspect_ratio,
-            image_size,
+            model_providers: HashMap::new(),
+            active_model: None,
+            aspect_ratio: "1:1".to_string(),
+            image_size: "1K".to_string(),
         }
+    }
+
+    pub fn add_model_provider(&mut self, model_name: &str, provider: Rc<dyn Provider>) {
+        self.model_providers
+            .entry(model_name.to_owned())
+            .or_insert(provider);
+    }
+
+    pub fn add_models_for_provider(&mut self, model_names: &[&str], provider: Rc<dyn Provider>) {
+        for model_name in model_names {
+            self.add_model_provider(model_name, provider.clone());
+        }
+    }
+
+    pub fn set_active_model(&mut self, model_name: &str) -> Result<(), ChatError> {
+        if !self.model_providers.contains_key(model_name) {
+            return Err(ChatError::ModelNotFound(model_name.to_owned()));
+        }
+        self.active_model = Some(model_name.to_owned());
+        Ok(())
     }
 
     pub fn with_aspect_ratio(mut self, aspect_ratio: String) -> Self {
@@ -31,10 +53,23 @@ impl<T: Provider> GenImgModel<T> {
         self.image_size = image_size;
         self
     }
+
+    fn get_provider(&self, model_name: &str) -> Result<&Rc<dyn Provider>, ChatError> {
+        self.model_providers
+            .get(model_name)
+            .ok_or_else(|| ChatError::ModelNotFound(model_name.to_owned()))
+    }
 }
 
-impl<T: Provider> GenImgCapability for GenImgModel<T> {
+impl GenImgCapability for GenImgModel {
     async fn gen_img(&self, msg: &Message) -> Result<GenImgResponse, ChatError> {
+        let model_name = self
+            .active_model
+            .as_ref()
+            .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
+
+        let provider = self.get_provider(model_name)?;
+
         let mut extra = std::collections::HashMap::new();
         extra.insert("modalities".to_string(), json!(["image"]));
         extra.insert(
@@ -46,12 +81,11 @@ impl<T: Provider> GenImgCapability for GenImgModel<T> {
         );
 
         let messages = vec![msg.clone()];
-        let mut request = Request::new(&self.model, messages);
+        let mut request = Request::new(model_name, messages);
         request.extra = extra;
 
-        let response: Response = self
-            .provider
-            .send_request("/chat/completions", &request, &self.model)
+        let response: Response = provider
+            .send_request("/chat/completions", &request, model_name)
             .await?;
 
         let choice = response
@@ -86,19 +120,23 @@ mod tests {
         dotenv::dotenv().ok();
 
         let provider = match OpenRouterProvider::from_env() {
-            Ok(p) => p,
+            Ok(p) => Rc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
                 return;
             }
         };
 
-        let model = GenImgModel::new(
-            provider,
-            "black-forest-labs/flux.2-klein-4b".to_string(),
-            "1:1".to_string(),
-            "1K".to_string(),
-        );
+        let mut model = GenImgModel::new()
+            .with_aspect_ratio("1:1".to_string())
+            .with_image_size("1K".to_string());
+
+        model.add_model_provider("black-forest-labs/flux.2-klein-4b", provider);
+
+        if let Err(e) = model.set_active_model("black-forest-labs/flux.2-klein-4b") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
 
         let msg = Message::user("Generate a beautiful sunset over mountains");
 
@@ -107,5 +145,52 @@ mod tests {
 
         let response = result.unwrap();
         assert!(!response.image_urls.is_empty());
+    }
+
+    #[test]
+    fn test_model_provider_mapping() {
+        let provider = Rc::new(OpenRouterProvider::new("dummy_key"));
+
+        let mut model = GenImgModel::new();
+
+        model.add_models_for_provider(
+            &[
+                "black-forest-labs/flux.2-klein-4b",
+                "black-forest-labs/flux.1-pro",
+            ],
+            provider,
+        );
+
+        assert!(model.model_providers.contains_key("black-forest-labs/flux.2-klein-4b"));
+        assert!(model.model_providers.contains_key("black-forest-labs/flux.1-pro"));
+        assert_eq!(model.model_providers.len(), 2);
+    }
+
+    #[test]
+    fn test_set_active_model() {
+        let provider = Rc::new(OpenRouterProvider::new("dummy_key"));
+        let mut model = GenImgModel::new();
+        model.add_model_provider("black-forest-labs/flux.2-klein-4b", provider);
+
+        let result = model.set_active_model("black-forest-labs/flux.2-klein-4b");
+        assert!(result.is_ok());
+        assert_eq!(
+            model.active_model,
+            Some("black-forest-labs/flux.2-klein-4b".to_string())
+        );
+
+        let result = model.set_active_model("non-existent-model");
+        assert!(result.is_err());
+        assert!(matches!(result, Err(ChatError::ModelNotFound(_))));
+    }
+
+    #[test]
+    fn test_builder_methods() {
+        let model = GenImgModel::new()
+            .with_aspect_ratio("16:9".to_string())
+            .with_image_size("2K".to_string());
+
+        assert_eq!(model.aspect_ratio, "16:9");
+        assert_eq!(model.image_size, "2K");
     }
 }
