@@ -1,10 +1,16 @@
 pub mod agent;
+pub mod memory;
 pub mod tools;
 pub mod web_agent;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use thiserror::Error; // 用于灵活的参数和结果
+use thiserror::Error;
+
+pub use agent::{Agent, AgentError, AgentEvent};
+pub use memory::{ContextualMemory, MarkdownMemory, Memory, MemoryError, PersistentMemory, SemanticMemory, SlidingWindowMemory};
+pub use tools::{GenericToolExecutor, Tool, ToolRegistry};
 
 /// 工具定义，用于告知模型可用的工具。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +84,8 @@ pub struct ToolResult {
     /// 如果失败，可以包含错误信息。
     pub output: Value,
 }
-#[derive(Debug, Error)]
+
+#[derive(Debug, Error, Clone)]
 pub enum ToolExecutorError {
     #[error("Tool not found: {0}")]
     ToolNotFound(String),

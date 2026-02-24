@@ -51,10 +51,21 @@ impl Message {
             content: content.into(),
         }
     }
+
     pub fn assistant(content: impl Into<String>) -> Self {
         Self::Assistant {
             content: content.into(),
             tool_calls: None,
+        }
+    }
+
+    /// 获取消息内容
+    pub fn content(&self) -> &str {
+        match self {
+            Self::System { content } => content,
+            Self::User { content } => content,
+            Self::Assistant { content, .. } => content,
+            Self::Tool { content, .. } => content,
         }
     }
 }

@@ -213,12 +213,16 @@ async fn test_my_workflow() {
 
 ### Using the Agent Module
 
+The `agent` crate provides a standalone LLM Agent implementation with streaming support.
+
+#### Basic Usage (Non-streaming)
+
 ```rust
 use agent::{
     agents::{Agent, Tool, ToolDef, GenericToolExecutor, ToolExecutorError},
     core::Message,
     models::ChatModel,
-    providers::openrouter::OpenRouterProvider,
+    providers::DeepSeekProvider,
 };
 use async_trait::async_trait;
 use serde_json::Value;
@@ -262,11 +266,10 @@ impl Tool for SearchTool {
 async fn main() -> anyhow::Result<()> {
     // Create chat model with provider
     let mut model = ChatModel::new();
-    let provider = Arc::new(OpenRouterProvider::new("api-key"));
+    let provider = Arc::new(DeepSeekProvider::from_env()?);
 
-    model.add_model_provider("deepseek/deepseek-chat", provider.clone());
-    model.add_model_provider("openai/gpt-4", provider);
-    model.set_active_model("deepseek/deepseek-chat")?;
+    model.add_model_provider("deepseek-chat", provider);
+    model.set_active_model("deepseek-chat")?;
 
     // Create tool executor
     let mut tool_executor = GenericToolExecutor::new();
@@ -276,10 +279,80 @@ async fn main() -> anyhow::Result<()> {
     let agent = Agent::new(model, tool_executor)
         .with_max_iterations(10);
 
-    // Run agent
+    // Run agent (non-streaming, blocks until complete)
     let messages = vec![Message::user("Hello!")];
     let result = agent.run(messages).await?;
 
     Ok(())
 }
 ```
+
+#### Streaming Usage (Recommended)
+
+```rust
+use agent::{
+    agents::{Agent, AgentEvent, GenericToolExecutor},
+    core::Message,
+    models::ChatModel,
+    providers::DeepSeekProvider,
+};
+use futures::StreamExt;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Setup model and executor as above...
+    let mut model = ChatModel::new();
+    let provider = Arc::new(DeepSeekProvider::from_env()?);
+    model.add_model_provider("deepseek-chat", provider);
+    model.set_active_model("deepseek-chat")?;
+
+    let tool_executor = GenericToolExecutor::new();
+    let agent = Agent::new(model, tool_executor);
+
+    let messages = vec![Message::user("What is the weather today?")];
+
+    // Run agent with streaming events
+    let mut stream = agent.run_stream(messages).await?;
+
+    while let Some(event) = stream.next().await {
+        match event? {
+            AgentEvent::AssistantMessage(msg) => {
+                println!("Assistant replied: {:?}", msg);
+            }
+            AgentEvent::ToolCalls(calls) => {
+                println!("Tool calls detected: {} calls", calls.len());
+            }
+            AgentEvent::ToolResult { call_id, success, output } => {
+                println!("Tool {} completed: success={}", call_id, success);
+            }
+            AgentEvent::Iteration { iteration, message_count } => {
+                println!("Iteration {} complete, {} messages", iteration, message_count);
+            }
+            AgentEvent::Complete(messages) => {
+                println!("Agent completed with {} messages", messages.len());
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+```
+
+#### AgentEvent Types
+
+| Event | Description |
+|-------|-------------|
+| `AssistantMessage(Message)` | Model generated a response |
+| `ToolCalls(Vec<ToolCall>)` | Model requested tool execution |
+| `ToolResult { call_id, success, output }` | Single tool completed |
+| `Iteration { iteration, message_count }` | One chat+tool cycle completed |
+| `Complete(Vec<Message>)` | Agent finished, contains full conversation |
+
+#### Key Design Changes
+
+1. **`run_stream` is the primary method** - `run` is now a wrapper around `run_stream`
+2. **Partial tool failures are handled gracefully** - One tool failing doesn't stop others
+3. **Arc<Mutex<>> internal design** - Agent can be used with `&self`, no `&mut` needed
+4. **Real-time observability** - See each step of the agent loop as it happens

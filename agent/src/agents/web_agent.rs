@@ -1,5 +1,5 @@
-use crate::agents::tools::{GenericToolExecutor, PlaywrightCliTool};
-use crate::agents::{ToolExecutorError, agent::Agent};
+use crate::agents::tools::{GenericToolExecutor, PlaywrightCliTool, ToolRegistry};
+use crate::agents::{ToolExecutor, ToolExecutorError, agent::Agent};
 use crate::core::Message;
 use crate::models::ChatCapability;
 
@@ -13,14 +13,30 @@ pub enum WebAgentError {
     Tool(#[from] ToolExecutorError),
 }
 
-pub struct WebAgent<M: ChatCapability> {
-    agent: Agent<M, GenericToolExecutor>,
+pub struct WebAgent<M: ChatCapability, E: ToolExecutor> {
+    agent: Agent<M, E>,
 }
 
-impl<M: ChatCapability> WebAgent<M> {
+impl<M: ChatCapability + Send + 'static> WebAgent<M, GenericToolExecutor> {
+    /// 创建一个带有默认 PlaywrightCliTool 的 WebAgent
     pub fn new(model: M) -> Self {
         let mut executor = GenericToolExecutor::new();
         executor.register(PlaywrightCliTool::new());
+        let agent = Agent::new(model, executor);
+        Self { agent }
+    }
+
+    /// 从 ToolRegistry 创建 WebAgent
+    pub fn with_registry(model: M, registry: ToolRegistry) -> Self {
+        let executor = GenericToolExecutor::with_registry(registry);
+        let agent = Agent::new(model, executor);
+        Self { agent }
+    }
+}
+
+impl<M: ChatCapability + Send + 'static, E: ToolExecutor + Send + 'static> WebAgent<M, E> {
+    /// 使用任意 ToolExecutor 创建 WebAgent
+    pub fn with_executor(model: M, executor: E) -> Self {
         let agent = Agent::new(model, executor);
         Self { agent }
     }
@@ -30,35 +46,40 @@ impl<M: ChatCapability> WebAgent<M> {
         self
     }
 
-    pub async fn summarize_url(&self, url: &str) -> Result<String, WebAgentError> {
-        let system_prompt = format!(
-            "You are a web agent that can browse websites using playwright-cli.
+    /// 执行一个自然语言描述的网页浏览任务
+    pub async fn execute_task(&self, task_description: &str) -> Result<String, WebAgentError> {
+        let system_prompt = r#"You are a capable web browsing agent that can interact with websites using the playwright_cli tool.
 
-First, call playwright_cli with args [\"--help\"] to understand what commands are available.
+Your workflow:
+1. Understand the user's task
+2. Use playwright_cli commands to navigate and interact with web pages
+3. Extract relevant information
+4. Provide a helpful response to the user
 
-Then, use playwright-cli to:
-1. Open the URL: {}
-2. Get the page content
-3. Generate a concise summary of the page
+Guidelines:
+- ALWAYS use playwright_cli to interact with browsers - do not make up information
+- Break complex tasks into multiple steps
+- After gathering information, provide a comprehensive summary to the user"#.to_string();
 
-Always use the playwright_cli tool to interact with the browser. Do not make up information.",
-            url
-        );
-
-        let messages = vec![Message::system(system_prompt)];
+        let messages = vec![
+            Message::system(system_prompt),
+            Message::user(task_description.to_string()),
+        ];
         let result = self.agent.run(messages).await?;
 
-        let summary = result
+        let response = result
             .iter()
+            .rev()
             .find_map(|msg| match msg {
-                Message::Assistant { content, .. } => Some(content.clone()),
+                Message::Assistant { content, .. } if !content.is_empty() => Some(content.clone()),
                 _ => None,
             })
-            .unwrap_or_else(|| "No summary generated".to_string());
+            .unwrap_or_else(|| "No response generated".to_string());
 
-        Ok(summary)
+        Ok(response)
     }
 
+    /// 运行自定义消息序列
     pub async fn run(&self, messages: Vec<Message>) -> Result<Vec<Message>, WebAgentError> {
         Ok(self.agent.run(messages).await?)
     }
@@ -67,63 +88,6 @@ Always use the playwright_cli tool to interact with the browser. Do not make up 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::ToolDef;
-    use crate::core::Message;
-    use crate::models::{ChatCapability, ChatError};
-    use async_trait::async_trait;
-
-    struct MockChatModel;
-
-    #[async_trait]
-    impl ChatCapability for MockChatModel {
-        async fn chat(
-            &self,
-            _msgs: Vec<Message>,
-            _tools: Option<Vec<ToolDef>>,
-        ) -> Result<Message, ChatError> {
-            Ok(Message::assistant("Summary complete"))
-        }
-
-        async fn chat_stream(
-            &self,
-            _msgs: Vec<Message>,
-            _tools: Option<Vec<ToolDef>>,
-        ) -> Result<futures::stream::BoxStream<'static, crate::models::ChatChunk>, ChatError>
-        {
-            unimplemented!()
-        }
-    }
-
-    #[test]
-    fn test_web_agent_new() {
-        let model = MockChatModel;
-        let _agent = WebAgent::new(model);
-    }
-
-    #[test]
-    fn test_summarize_url_system_prompt() {
-        let model = MockChatModel;
-        let _agent = WebAgent::new(model);
-        let url = "https://zeroclawlabs.ai/";
-
-        let system_prompt = format!(
-            "You are a web agent that can browse websites using playwright-cli.
-
-First, call playwright_cli with args [\"--help\"] to understand what commands are available.
-
-Then, use playwright-cli to:
-1. Open the URL: {}
-2. Get the page content
-3. Generate a concise summary of the page
-
-Always use the playwright_cli tool to interact with the browser. Do not make up information.",
-            url
-        );
-
-        assert!(system_prompt.contains(url));
-        assert!(system_prompt.contains("playwright-cli"));
-        assert!(system_prompt.contains("--help"));
-    }
 
     #[tokio::test]
     #[ignore = "Requires playwright-cli installed and a real LLM provider configured"]
@@ -146,17 +110,16 @@ Always use the playwright_cli tool to interact with the browser. Do not make up 
             return;
         }
 
-        let web_agent = WebAgent::new(model);
+        let web_agent: WebAgent<crate::models::ChatModel, GenericToolExecutor> =
+            WebAgent::new(model);
         let url = "https://zeroclawlabs.ai/";
 
-        match web_agent.summarize_url(url).await {
-            Ok(summary) => {
-                println!("Summary of {}:\n{}", url, summary);
-                assert!(!summary.is_empty());
-            }
-            Err(e) => {
-                eprintln!("Test failed (playwright-cli may not be installed): {}", e);
-            }
-        }
+        let result = web_agent
+            .execute_task(&format!(
+                "Please browse to {} and provide a concise summary of the page content.",
+                url
+            ))
+            .await;
+        assert!(result.is_ok(), "Failed to execute task: {:?}", result);
     }
 }
