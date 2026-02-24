@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Key components:
 - **flow**: Core workflow engine with graph execution, runner, and reactive streams
 - **nodes**: Node implementations (LLM, text processing, MapReduce, trading, etc.)
+- **agent**: Standalone LLM Agent crate with Provider/Model/Tool abstraction
 - **server**: Axum-based HTTP API and WebSocket server
 - **web**: React/TypeScript frontend with visual workflow editor
 
@@ -41,7 +42,25 @@ Recent additions include:
 
 ### Node Registry
 
-`server/src/registry.rs` maintains a registry of node creators. New nodes must be registered here with their metadata (name, description, category, config schema) and a factory function that creates the node from JSON config.
+`server/src/registry.rs` maintains a registry of node creators. New nodes must be registered here with their metadata (name, config schema, input/output types) and a factory function that creates the node from JSON config.
+
+### Agent Module Architecture
+
+The `agent` crate provides a standalone LLM Agent implementation:
+
+1. **Core Types** (`core.rs`): `Message` enum (System/User/Assistant/Tool), `Usage`, `MessageRole`
+2. **Models** (`models/`):
+   - `ChatCapability`: Trait for chat models (non-streaming and streaming)
+   - `GenImgCapability`: Trait for image generation models
+   - `ChatModel`: Multi-provider chat model (DeepSeek, OpenRouter) with dynamic model mapping
+   - `GenImgModel`: Image generation model
+3. **Providers** (`providers/`): DeepSeek and OpenRouter API implementations
+4. **Agents** (`agents/`):
+   - `Agent`: Orchestrates model chat + tool execution loop with max iterations
+   - `ToolExecutor`: Trait for executing tool calls
+   - `ToolDef`: Tool definition schema for model consumption
+   - `ToolRegistry`: Registry of available tools
+   - `WebAgent`: Specialized agent with browser automation via Playwright CLI
 
 ## Development Commands
 
@@ -55,8 +74,9 @@ cargo build --release
 
 # Build specific package
 cargo build -p flow
-cargo build -p server
 cargo build -p nodes
+cargo build -p agent
+cargo build -p server
 ```
 
 ### Run
@@ -80,6 +100,7 @@ cargo test
 # Run tests for specific package
 cargo test -p flow
 cargo test -p nodes
+cargo test -p agent
 
 # Run specific test by name
 cargo test test_complex_graph_connections
@@ -161,11 +182,9 @@ impl Node for MyNode {
 registry.register(
     NodeMetadata {
         name: "MyNode".to_string(),
-        description: "...".to_string(),
-        category: "...".to_string(),
         config: serde_json::json!({...}),
-        inputs: vec![...],
-        outputs: vec![...],
+        inputs: vec![InputType::String],
+        outputs: vec![InputType::String],
     },
     |config| {
         let cfg: MyNodeConfig = serde_json::from_value(config)?;
@@ -189,5 +208,78 @@ async fn test_my_workflow() {
     let result = runner.run(Input::new(...)).await;
 
     assert!(result.is_ok());
+}
+```
+
+### Using the Agent Module
+
+```rust
+use agent::{
+    agents::{Agent, Tool, ToolDef, GenericToolExecutor, ToolExecutorError},
+    core::Message,
+    models::ChatModel,
+    providers::openrouter::OpenRouterProvider,
+};
+use async_trait::async_trait;
+use serde_json::Value;
+use std::sync::Arc;
+
+// Define a custom tool
+struct SearchTool {
+    def: ToolDef,
+}
+
+impl SearchTool {
+    fn new() -> Self {
+        Self {
+            def: ToolDef {
+                name: "search".to_string(),
+                description: "Search the web".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"}
+                    },
+                    "required": ["query"]
+                }),
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for SearchTool {
+    fn definition(&self) -> &ToolDef {
+        &self.def
+    }
+
+    async fn execute(&self, arguments: Value) -> Result<Value, ToolExecutorError> {
+        Ok(serde_json::json!({"result": "search result"}))
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create chat model with provider
+    let mut model = ChatModel::new();
+    let provider = Arc::new(OpenRouterProvider::new("api-key"));
+
+    model.add_model_provider("deepseek/deepseek-chat", provider.clone());
+    model.add_model_provider("openai/gpt-4", provider);
+    model.set_active_model("deepseek/deepseek-chat")?;
+
+    // Create tool executor
+    let mut tool_executor = GenericToolExecutor::new();
+    tool_executor.register(SearchTool::new());
+
+    // Create agent
+    let agent = Agent::new(model, tool_executor)
+        .with_max_iterations(10);
+
+    // Run agent
+    let messages = vec![Message::user("Hello!")];
+    let result = agent.run(messages).await?;
+
+    Ok(())
 }
 ```
