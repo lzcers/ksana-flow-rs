@@ -1,10 +1,7 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '@/model/workflow/types';
 import { textSplitNodeStyles } from './styles';
-
-const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
-const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export function TextSplitNodeView({
   id,
@@ -55,8 +52,6 @@ export function TextSplitNodeView({
       type={type}
       data={data}
       selected={selected}
-      sourceHandles={SOURCE_HANDLES}
-      targetHandles={TARGET_HANDLES}
       className="flex flex-col"
       minWidth={320}
       minHeight={450}

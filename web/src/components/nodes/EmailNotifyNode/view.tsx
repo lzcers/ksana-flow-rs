@@ -1,9 +1,7 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { emailNotifyNodeStyles } from './styles';
-
-const TARGET_HANDLES = [Position.Left];
 
 export function EmailNotifyNodeView({
   id,
@@ -37,7 +35,6 @@ export function EmailNotifyNodeView({
       minWidth={300}
       minHeight={180}
       style={{ width, height }}
-      targetHandles={TARGET_HANDLES}
     >
       <div className={emailNotifyNodeStyles.section}>
         <div>

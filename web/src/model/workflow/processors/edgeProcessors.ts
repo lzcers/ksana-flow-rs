@@ -6,6 +6,7 @@ import type {
 } from '../commands';
 import { addEdge as addEdgeXyflow } from '@xyflow/react';
 import { applyEdgeChangesXyflow } from '../utils';
+import { validateConnection } from '../utils/connection';
 
 
 export const processUpdateEdges = (
@@ -17,7 +18,22 @@ export const processUpdateEdges = (
   return produce(state, (draft) => {
     // 处理连接
     if (connect) {
-      draft.edges = addEdgeXyflow(connect, draft.edges);
+      // 验证连接并获取边数据
+      const validation = validateConnection(connect, draft.nodes as any);
+
+      if (validation.valid) {
+        // 使用验证后的边数据创建边
+        const edgeWithData = {
+          ...connect,
+          data: validation.edgeData || {},
+        };
+        draft.edges = addEdgeXyflow(edgeWithData, draft.edges);
+      } else {
+        // 连接无效，记录警告但不阻止（或可以选择静默忽略）
+        console.warn(`连接验证失败: ${validation.error}`);
+        // 仍然创建边，但不包含端口信息（向后兼容）
+        draft.edges = addEdgeXyflow(connect, draft.edges);
+      }
     }
 
     // 处理批量添加

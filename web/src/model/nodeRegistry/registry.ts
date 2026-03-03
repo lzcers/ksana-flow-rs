@@ -137,38 +137,12 @@ export function isDataTypeCompatible(
   // 目标为 any，接受任何类型
   if (target === 'any') return true;
 
-  // 源为 any，需要目标也接受 any
-  if (source === 'any') return target === 'any';
-
+  // 源为 any，需要目标也接受 any（已在上面处理）
   // 查找兼容性矩阵
   return TYPE_COMPATIBILITY[source]?.includes(target) ?? false;
 }
 
 // ============ 内置节点定义 ============
-
-/**
- * 创建默认的控制流端口
- */
-function createControlPorts(): { inputs: PortDef[]; outputs: PortDef[] } {
-  return {
-    inputs: [
-      {
-        id: 'ctrl',
-        label: '',
-        kind: 'control',
-        position: Position.Left,
-      },
-    ],
-    outputs: [
-      {
-        id: 'ctrl',
-        label: '',
-        kind: 'control',
-        position: Position.Right,
-      },
-    ],
-  };
-}
 
 // 注册内置节点（后续可移到单独文件）
 registerNode({

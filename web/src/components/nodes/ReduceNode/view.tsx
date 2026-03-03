@@ -1,11 +1,8 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '@/model/workflow/types';
 import { reduceNodeStyles } from './styles';
 import type { ReduceReducer } from './hooks';
-
-const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
-const TARGET_HANDLES = [Position.Left];
 
 const LABEL_BY_REDUCER: Record<ReduceReducer, string> = {
   sum: 'Sum',
@@ -46,8 +43,6 @@ export function ReduceNodeView({
       type={type}
       data={data}
       selected={selected}
-      sourceHandles={SOURCE_HANDLES}
-      targetHandles={TARGET_HANDLES}
       className="flex flex-col"
       minWidth={300}
       minHeight={220}

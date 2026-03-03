@@ -1,7 +1,26 @@
 import React from "react";
 import { BaseEdge, getBezierPath, type EdgeProps } from "@xyflow/react";
-import type { Edge } from "../../model/workflow/types";
+import type { Edge, EdgeData } from "../../model/workflow/types";
 import { useSwipeToDeleteContext } from "./SwipeToDeleteContext";
+
+/**
+ * 边样式配置
+ */
+const EDGE_STYLES = {
+  control: {
+    stroke: "#3b82f6", // 蓝色
+    strokeWidth: 2,
+  },
+  data: {
+    stroke: "#10b981", // 绿色
+    strokeWidth: 2,
+    strokeDasharray: "5,5", // 虚线
+  },
+  default: {
+    stroke: "#3b82f6",
+    strokeWidth: 2,
+  },
+};
 
 export const WorkflowEdge: React.FC<EdgeProps<Edge>> = ({
     id,
@@ -13,9 +32,14 @@ export const WorkflowEdge: React.FC<EdgeProps<Edge>> = ({
     targetPosition,
     style,
     markerEnd,
+    data,
 }) => {
     const { markedEdgeIds, isShiftPressed, markEdgeForDeletion } = useSwipeToDeleteContext();
     const isMarkedForDeletion = markedEdgeIds.has(id);
+
+    // 获取边类型
+    const edgeKind = (data as EdgeData | undefined)?.kind || 'control';
+    const baseEdgeStyle = EDGE_STYLES[edgeKind] || EDGE_STYLES.default;
 
     const [edgePath] = getBezierPath({
         sourceX,
@@ -41,8 +65,12 @@ export const WorkflowEdge: React.FC<EdgeProps<Edge>> = ({
                 filter: "drop-shadow(0 0 8px rgba(161, 161, 170, 0.6))",
             };
         }
-        return style;
-    }, [isMarkedForDeletion, style]);
+        // 合并基础样式和传入的样式
+        return {
+            ...baseEdgeStyle,
+            ...style,
+        };
+    }, [isMarkedForDeletion, style, baseEdgeStyle]);
 
     const markerEndFinal = isMarkedForDeletion ? undefined : markerEnd;
 

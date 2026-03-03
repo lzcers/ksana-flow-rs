@@ -1,9 +1,7 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { timerNodeStyles } from './styles';
-
-const SOURCE_HANDLES = [Position.Right];
 
 export function TimerNodeView({
   id,
@@ -23,7 +21,6 @@ export function TimerNodeView({
       selected={selected}
       minWidth={250}
       minHeight={120}
-      sourceHandles={SOURCE_HANDLES}
       style={{ width, height }}
     >
       <div className={timerNodeStyles.section}>

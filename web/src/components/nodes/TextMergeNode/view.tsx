@@ -1,10 +1,7 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '@/model/workflow/types';
 import { textMergeNodeStyles } from './styles';
-
-const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
-const TARGET_HANDLES = [Position.Left];
 
 export function TextMergeNodeView({
   id,
@@ -29,8 +26,6 @@ export function TextMergeNodeView({
       type={type}
       data={data}
       selected={selected}
-      sourceHandles={SOURCE_HANDLES}
-      targetHandles={TARGET_HANDLES}
       className="flex flex-col"
       minWidth={180}
       minHeight={150}

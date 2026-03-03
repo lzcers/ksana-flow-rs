@@ -1,5 +1,5 @@
 import { memo, useEffect } from "react";
-import { type NodeProps, useReactFlow, type Node, Position, useUpdateNodeInternals } from "@xyflow/react";
+import { type NodeProps, useReactFlow, type Node, useUpdateNodeInternals } from "@xyflow/react";
 import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Repeat2 } from "lucide-react";
 import { NodeWrapper } from "../shared/NodeWrapper";
 import type { NodeData } from "@/model/workflow/types";
@@ -115,8 +115,6 @@ export const MapNodeView = memo(
                 resizable={expanded}
                 minWidth={expanded ? 600 : 260}
                 minHeight={expanded ? 400 : 200}
-                targetHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
-                sourceHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
                 style={{ width, height }}
                 {...props}
             >

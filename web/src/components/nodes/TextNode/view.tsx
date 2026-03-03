@@ -1,14 +1,11 @@
 import { AutoScrollContainer, Incremark, ThemeProvider } from "@incremark/react";
 import { Maximize2, Eye, Pencil } from "lucide-react";
-import { Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import { NodeWrapper } from "../shared/NodeWrapper";
 import { FullScreenModal } from "../../ui/FullScreenModal";
 import { theme } from "./theme";
 import type { NodeData } from "@/model/workflow/types";
 import { textNodeStyles } from "./styles";
-
-const SOURCE_HANDLES = [Position.Right];
-const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
 
 export function TextNodeView({
     id,
@@ -70,8 +67,6 @@ export function TextNodeView({
             type={type}
             data={data}
             selected={selected}
-            sourceHandles={SOURCE_HANDLES}
-            targetHandles={TARGET_HANDLES}
             className={textNodeStyles.wrapperClass}
             minWidth={260}
             minHeight={200}
