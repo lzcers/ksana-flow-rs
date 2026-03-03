@@ -1,10 +1,7 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { volMfiNodeStyles } from './styles';
-
-const TARGET_HANDLES = [Position.Left];
-const SOURCE_HANDLES = [Position.Right];
 
 export function VolMfiNodeView({
   id,
@@ -34,8 +31,6 @@ export function VolMfiNodeView({
       minWidth={250}
       minHeight={140}
       style={{ width, height }}
-      targetHandles={TARGET_HANDLES}
-      sourceHandles={SOURCE_HANDLES}
     >
       <div className={volMfiNodeStyles.section}>
         <div>

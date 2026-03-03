@@ -1,13 +1,10 @@
 import React from "react";
-import { Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import { Settings, X } from "lucide-react";
 import type { NodeData } from "@/model/workflow/types";
 import { NodeWrapper } from "../shared/NodeWrapper";
 import { FullScreenModal } from "../../ui/FullScreenModal";
 import { imgGenNodeStyles } from "./styles";
-
-const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
-const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
 export function ImgGenNodeView({
     id,
@@ -100,8 +97,6 @@ export function ImgGenNodeView({
                 minHeight={minHeight}
                 keepAspectRatio={Boolean(parsedAspectRatio)}
                 style={{ width, height }}
-                targetHandles={TARGET_HANDLES}
-                sourceHandles={SOURCE_HANDLES}
                 headerActions={headerActions}
             >
                 <div className={imgGenNodeStyles.canvas}>

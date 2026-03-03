@@ -17,11 +17,7 @@ pub struct WebAgent<M: ChatCapability, E: ToolExecutor> {
     agent: Agent<M, E>,
 }
 
-<<<<<<< HEAD
 impl<M: ChatCapability + Send + 'static> WebAgent<M, GenericToolExecutor> {
-=======
-impl<M: ChatCapability> WebAgent<M, GenericToolExecutor> {
->>>>>>> de493cbf9fd6df16c60c5347f9e5582456dde207
     /// 创建一个带有默认 PlaywrightCliTool 的 WebAgent
     pub fn new(model: M) -> Self {
         let mut executor = GenericToolExecutor::new();
@@ -38,11 +34,7 @@ impl<M: ChatCapability> WebAgent<M, GenericToolExecutor> {
     }
 }
 
-<<<<<<< HEAD
 impl<M: ChatCapability + Send + 'static, E: ToolExecutor + Send + 'static> WebAgent<M, E> {
-=======
-impl<M: ChatCapability, E: ToolExecutor> WebAgent<M, E> {
->>>>>>> de493cbf9fd6df16c60c5347f9e5582456dde207
     /// 使用任意 ToolExecutor 创建 WebAgent
     pub fn with_executor(model: M, executor: E) -> Self {
         let agent = Agent::new(model, executor);

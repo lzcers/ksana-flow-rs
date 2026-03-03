@@ -16,9 +16,31 @@ export const nodeWrapperStyles = {
     resizeControlHidden: "opacity-0 group-hover:opacity-100 transition-opacity duration-300",
     resizeHandle: "absolute -bottom-3 -right-3 p-2 cursor-nwse-resize group/resize",
     resizeIcon: "text-zinc-600 group-hover/resize:text-blue-500 transition-colors",
+
+    // 控制流端口样式（圆形，蓝色）
+    handleControlTarget:
+        "w-3! h-3! bg-zinc-950! border-[1.5px]! border-zinc-500! hover:border-blue-500! hover:bg-zinc-900! rounded-full! transition-all duration-200 z-50",
+    handleControlSource:
+        "w-3! h-3! bg-zinc-400! hover:bg-blue-400! border-[1.5px]! border-zinc-950! rounded-full! transition-all duration-200 z-50",
+
+    // 数据流端口样式（圆角矩形，绿色）
+    handleDataTarget:
+        "w-2.5! h-4! bg-zinc-950! border-[1.5px]! border-emerald-600! hover:border-emerald-400! hover:bg-zinc-900! rounded-sm! transition-all duration-200 z-50",
+    handleDataSource:
+        "w-2.5! h-4! bg-emerald-600! hover:bg-emerald-400! border-[1.5px]! border-zinc-950! rounded-sm! transition-all duration-200 z-50",
+
+    // 端口标签样式
+    handleLabel:
+        "absolute text-[9px] font-medium text-zinc-400 whitespace-nowrap pointer-events-none select-none",
+
+    // 必须端口样式
+    handleRequired: "ring-1 ring-amber-500/50! ring-offset-1! ring-offset-zinc-900!",
+
+    // 旧版兼容样式
     handleTargetBase:
         "w-3.5! h-3.5! bg-zinc-950! border-[1.5px]! border-zinc-500! hover:border-blue-500! hover:bg-zinc-900! rounded-full! transition-all duration-200 z-50",
     handleSourceBase: "w-3.5! h-3.5! bg-zinc-400! hover:bg-blue-400! border-[1.5px]! border-zinc-950! rounded-full! transition-all duration-200 z-50",
+
     contentArea: "w-full h-full overflow-hidden",
     errorToast:
         "absolute bottom-3 left-3 right-8 text-[10px] text-red-400 bg-red-950/80 p-1.5 rounded-md border border-red-900/50 truncate backdrop-blur-sm",

@@ -78,13 +78,32 @@ impl GraphBlueprint {
         let edges: Vec<flow::BlueprintEdge> = self
             .edges
             .iter()
-            .map(|e| flow::BlueprintEdge {
-                id: e.id.clone(),
-                source: e.source.clone(),
-                target: e.target.clone(),
-                source_handle: e.source_handle.clone(),
-                target_handle: e.target_handle.clone(),
-                condition: e.condition.clone(),
+            .map(|e| {
+                let kind = match e.kind.as_deref() {
+                    Some("data") => flow::EdgeKind::Data,
+                    _ => flow::EdgeKind::Control,
+                };
+                let data_type = e.data_type.as_ref().and_then(|dt| match dt.as_str() {
+                    "string" => Some(flow::DataType::String),
+                    "number" => Some(flow::DataType::Number),
+                    "boolean" => Some(flow::DataType::Boolean),
+                    "json" => Some(flow::DataType::Json),
+                    "binary" => Some(flow::DataType::Binary),
+                    "any" => Some(flow::DataType::Any),
+                    _ => None,
+                });
+                flow::BlueprintEdge {
+                    id: e.id.clone(),
+                    source: e.source.clone(),
+                    target: e.target.clone(),
+                    source_handle: e.source_handle.clone(),
+                    target_handle: e.target_handle.clone(),
+                    condition: e.condition.clone(),
+                    kind,
+                    source_port: e.source_port.clone(),
+                    target_port: e.target_port.clone(),
+                    data_type,
+                }
             })
             .collect();
 
@@ -211,6 +230,18 @@ pub struct Edge {
     pub target_handle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition: Option<Value>,
+    /// 边类型：控制流或数据流
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// 数据流边的源端口 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_port: Option<String>,
+    /// 数据流边的目标端口 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_port: Option<String>,
+    /// 数据流边的数据类型
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_type: Option<String>,
 }
 
 #[cfg(test)]
@@ -308,6 +339,10 @@ mod tests {
                 source_handle: None,
                 target_handle: None,
                 condition: None,
+                kind: None,
+                source_port: None,
+                target_port: None,
+                data_type: None,
             }],
         };
 

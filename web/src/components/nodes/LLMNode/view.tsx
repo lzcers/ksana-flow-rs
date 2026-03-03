@@ -1,15 +1,12 @@
 import React from "react";
 import { AutoScrollContainer, Incremark, ThemeProvider } from "@incremark/react";
 import { Maximize2, Eye, Pencil, Settings, X } from "lucide-react";
-import { Position, type NodeProps } from "@xyflow/react";
+import { type NodeProps } from "@xyflow/react";
 import { FullScreenModal } from "../../ui/FullScreenModal";
 import { theme } from "../TextNode/theme";
 import type { NodeData } from "@/model/workflow/types";
 import { NodeWrapper } from "../shared/NodeWrapper";
 import { llmNodeStyles } from "./styles";
-
-const TARGET_HANDLES = [Position.Left, Position.Top, Position.Bottom];
-const SOURCE_HANDLES = [Position.Right, Position.Top, Position.Bottom];
 
 export function LLMNodeView({
     id,
@@ -118,8 +115,6 @@ export function LLMNodeView({
             minWidth={300}
             minHeight={400}
             style={{ width, height }}
-            targetHandles={TARGET_HANDLES}
-            sourceHandles={SOURCE_HANDLES}
             headerActions={headerActions}
         >
             <div className="flex flex-col h-full relative">

@@ -13,6 +13,7 @@ use super::{
     {SubgraphConfig, SubgraphExecutor},
 };
 use crate::Context;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -32,10 +33,35 @@ pub struct BlueprintNode {
     pub config: Value,
 }
 
+/// 边类型：控制流或数据流
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EdgeKind {
+    #[default]
+    Control,
+    Data,
+}
+
+/// 数据类型：用于数据流边的类型标注
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DataType {
+    #[default]
+    String,
+    Number,
+    Boolean,
+    Json,
+    Binary,
+    Any,
+}
+
 /// 蓝图边：连接两个蓝图节点。
 ///
 /// - `condition`：可选条件，决定是否允许从 `source` 走到 `target`。
 ///   当前仅支持 `bool`，未来可以扩展为表达式/脚本等更复杂的条件类型。
+/// - `kind`：边类型，区分控制流边和数据流边。
+/// - `source_port`/`target_port`：数据流边的源/目标端口 ID。
+/// - `data_type`：数据流边的数据类型。
 #[derive(Clone, Debug)]
 pub struct BlueprintEdge {
     pub id: String,
@@ -44,6 +70,14 @@ pub struct BlueprintEdge {
     pub source_handle: Option<String>,
     pub target_handle: Option<String>,
     pub condition: Option<Value>,
+    /// 边类型：控制流或数据流
+    pub kind: EdgeKind,
+    /// 数据流边的源端口 ID
+    pub source_port: Option<String>,
+    /// 数据流边的目标端口 ID
+    pub target_port: Option<String>,
+    /// 数据流边的数据类型
+    pub data_type: Option<DataType>,
 }
 
 /// 边分类结果：将边按相对于子图成员的关系分为三类。
@@ -478,6 +512,10 @@ where
                     source_handle: e.source_handle,
                     target_handle: None,
                     condition: e.condition,
+                    kind: e.kind.clone(),
+                    source_port: e.source_port.clone(),
+                    target_port: None,
+                    data_type: e.data_type.clone(),
                 });
             }
         }
@@ -492,6 +530,10 @@ where
                     source_handle: None,
                     target_handle: e.target_handle,
                     condition: e.condition,
+                    kind: e.kind.clone(),
+                    source_port: None,
+                    target_port: e.target_port.clone(),
+                    data_type: e.data_type.clone(),
                 });
             }
         }

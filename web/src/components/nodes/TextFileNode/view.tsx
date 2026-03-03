@@ -1,11 +1,9 @@
 import React from 'react';
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import { FileText, Upload } from 'lucide-react';
 import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { textFileNodeStyles } from './styles';
-
-const SOURCE_HANDLES = [Position.Right];
 
 export function TextFileNodeView({
   id,
@@ -41,7 +39,6 @@ export function TextFileNodeView({
       data={data}
       selected={selected}
       className="flex flex-col"
-      sourceHandles={SOURCE_HANDLES}
       minWidth={280}
       minHeight={120}
       style={{ width, height }}

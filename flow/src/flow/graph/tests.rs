@@ -1,5 +1,5 @@
 use super::{
-    BlueprintEdge, BlueprintNode, SubgraphConfig, SubgraphError, SubgraphExecutor, compile_graph,
+    BlueprintEdge, BlueprintNode, EdgeKind, SubgraphConfig, SubgraphError, SubgraphExecutor, compile_graph,
     graph::{AnyNode, Edge, Graph, Node, NodeFactory},
     io::{Input, Output},
 };
@@ -130,6 +130,10 @@ async fn test_compile_graph_bool_condition_blocks_edge() {
         source_handle: None,
         target_handle: None,
         condition: Some(Value::Bool(false)),
+        kind: EdgeKind::Control,
+        source_port: None,
+        target_port: None,
+        data_type: None,
     }];
 
     let counter_for_factory = counter.clone();
@@ -182,6 +186,10 @@ async fn test_compile_graph_filters_dangling_edges() {
         source_handle: None,
         target_handle: None,
         condition: None,
+        kind: EdgeKind::Control,
+        source_port: None,
+        target_port: None,
+        data_type: None,
     }];
 
     let counter_for_factory = counter.clone();
@@ -309,6 +317,10 @@ async fn test_subgraph_inbound_proxy_routes_by_source_id() {
             source_handle: None,
             target_handle: None,
             condition: None,
+            kind: EdgeKind::Control,
+            source_port: None,
+            target_port: None,
+            data_type: None,
         },
         BlueprintEdge {
             id: "e_BY".to_string(),
@@ -317,6 +329,10 @@ async fn test_subgraph_inbound_proxy_routes_by_source_id() {
             source_handle: None,
             target_handle: None,
             condition: None,
+            kind: EdgeKind::Control,
+            source_port: None,
+            target_port: None,
+            data_type: None,
         },
     ];
 
@@ -389,6 +405,10 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
             source_handle: None,
             target_handle: None,
             condition: None,
+            kind: EdgeKind::Control,
+            source_port: None,
+            target_port: None,
+            data_type: None,
         },
         BlueprintEdge {
             id: "e_AY".to_string(),
@@ -397,6 +417,10 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
             source_handle: None,
             target_handle: None,
             condition: None,
+            kind: EdgeKind::Control,
+            source_port: None,
+            target_port: None,
+            data_type: None,
         },
     ];
 
@@ -482,6 +506,10 @@ fn bench_compile_graph_200_nodes() {
             source_handle: None,
             target_handle: None,
             condition: None,
+            kind: EdgeKind::Control,
+            source_port: None,
+            target_port: None,
+            data_type: None,
         })
         .collect();
 

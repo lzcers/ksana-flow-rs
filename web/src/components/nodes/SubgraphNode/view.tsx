@@ -1,5 +1,5 @@
 import { memo, useEffect } from "react";
-import { type NodeProps, useReactFlow, type Node, Position, useUpdateNodeInternals } from "@xyflow/react";
+import { type NodeProps, useReactFlow, type Node, useUpdateNodeInternals } from "@xyflow/react";
 import { ChevronDown, ChevronUp, Network } from "lucide-react";
 import { NodeWrapper } from "../shared/NodeWrapper";
 import { subgraphNodeStyles } from "./styles";
@@ -56,8 +56,6 @@ export const SubgraphNodeView = memo(({ id, data, selected, expanded, onToggle, 
             resizable={expanded}
             minWidth={expanded ? 200 : 260}
             minHeight={expanded ? 200 : 200}
-            targetHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
-            sourceHandles={[Position.Left, Position.Right, Position.Top, Position.Bottom]}
             style={{ width, height }}
             {...props}
         >

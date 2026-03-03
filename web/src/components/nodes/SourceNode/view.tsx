@@ -1,9 +1,7 @@
-import { Position, type NodeProps } from '@xyflow/react';
+import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
 import { NodeWrapper } from '../shared/NodeWrapper';
 import { sourceNodeStyles } from './styles';
-
-const SOURCE_HANDLES = [Position.Right];
 
 export function SourceNodeView({
   id,
@@ -41,7 +39,6 @@ export function SourceNodeView({
       minWidth={280}
       minHeight={140}
       style={{ width, height }}
-      sourceHandles={SOURCE_HANDLES}
     >
       <div className={sourceNodeStyles.section}>
         <div className={sourceNodeStyles.grid2}>
