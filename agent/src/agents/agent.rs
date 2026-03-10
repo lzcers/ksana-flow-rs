@@ -1,15 +1,15 @@
 use async_stream::stream;
-use futures::{future::join_all, stream::BoxStream, StreamExt};
+use futures::{StreamExt, future::join_all, stream::BoxStream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use thiserror::Error;
+use tokio::sync::Mutex;
 
 use crate::{
     agents::{
-        memory::{Memory, SlidingWindowMemory},
         ToolCall, ToolExecutor, ToolExecutorError, ToolResult,
+        memory::{Memory, SlidingWindowMemory},
     },
     core::Message,
     models::{ChatCapability, ChatError},
@@ -308,7 +308,10 @@ where
     /// 继续对话（使用已有记忆）
     ///
     /// 与 `run` 类似，但不需要传入历史消息，直接使用记忆中的上下文
-    pub async fn continue_conversation(&self, message: Message) -> Result<Vec<Message>, AgentError> {
+    pub async fn continue_conversation(
+        &self,
+        message: Message,
+    ) -> Result<Vec<Message>, AgentError> {
         self.run(vec![message]).await
     }
 }
@@ -365,7 +368,9 @@ mod tests {
         assert!(result.is_ok());
 
         // 继续对话，测试记忆
-        let result = agent.continue_conversation(Message::user("我叫什么名字？")).await;
+        let result = agent
+            .continue_conversation(Message::user("我叫什么名字？"))
+            .await;
         assert!(result.is_ok());
 
         let messages = result.unwrap();
