@@ -17,4 +17,5 @@ async-trait = { workspace = true }
 dotenv = { workspace = true }
 bytes = "1.11.1"
 async-stream = "0.3"
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+rust_decimal = { version = "1", features = ["serde"] }

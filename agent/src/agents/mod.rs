@@ -1,5 +1,7 @@
 pub mod agent;
 pub mod memory;
+pub mod reducer;
+pub mod runner;
 pub mod tools;
 pub mod web_agent;
 
@@ -10,6 +12,11 @@ use thiserror::Error;
 
 pub use agent::{Agent, AgentError, AgentEvent};
 pub use memory::{ContextualMemory, MarkdownMemory, Memory, MemoryError, PersistentMemory, SemanticMemory, SlidingWindowMemory};
+pub use reducer::{
+    AgentConfig, AgentEffectResult, AgentInput, AgentOutput, AgentState, Context, JobState,
+    Layer, LayerKind, LayerMeta, StateTransition, apply_effect, reduce,
+};
+pub use runner::AgentRunner;
 pub use tools::{GenericToolExecutor, Tool, ToolRegistry};
 
 /// 工具定义，用于告知模型可用的工具。
