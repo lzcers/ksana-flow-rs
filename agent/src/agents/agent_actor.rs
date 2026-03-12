@@ -22,7 +22,7 @@ use crate::models::{ChatCapability, ChatChunk};
 
 /// Actor 产生的事件
 #[derive(Debug, Clone)]
-pub enum ActorEvent {
+pub enum AgentActorEvent {
     /// 流式输出片段
     Chunk(String),
     /// 模型请求工具调用
@@ -50,7 +50,7 @@ pub enum ActorEvent {
 
 /// 发送给 Actor 的控制命令
 #[derive(Debug)]
-pub enum ActorCommand {
+pub enum AgentActorCommand {
     /// 暂停执行
     Pause,
     /// 继续执行（恢复）
@@ -64,27 +64,27 @@ pub enum ActorCommand {
 // ============================================================================
 
 /// Actor 的外部控制句柄
-pub struct ActorHandle {
+pub struct AgentActorHandle {
     /// 命令发送器
-    pub cmd_tx: mpsc::Sender<ActorCommand>,
+    pub cmd_tx: mpsc::Sender<AgentActorCommand>,
     /// 事件接收器
-    pub event_rx: mpsc::Receiver<ActorEvent>,
+    pub event_rx: mpsc::Receiver<AgentActorEvent>,
 }
 
-impl ActorHandle {
+impl AgentActorHandle {
     /// 暂停 Actor
     pub async fn pause(&self) {
-        let _ = self.cmd_tx.send(ActorCommand::Pause).await;
+        let _ = self.cmd_tx.send(AgentActorCommand::Pause).await;
     }
 
     /// 继续/恢复 Actor
     pub async fn resume(&self) {
-        let _ = self.cmd_tx.send(ActorCommand::Continue).await;
+        let _ = self.cmd_tx.send(AgentActorCommand::Continue).await;
     }
 
     /// 取消 Actor
     pub async fn cancel(&self) {
-        let _ = self.cmd_tx.send(ActorCommand::Cancel).await;
+        let _ = self.cmd_tx.send(AgentActorCommand::Cancel).await;
     }
 }
 
@@ -160,9 +160,9 @@ where
     }
 
     /// 启动 Actor，返回控制句柄
-    pub fn spawn(mut self) -> ActorHandle {
-        let (cmd_tx, mut cmd_rx) = mpsc::channel::<ActorCommand>(16);
-        let (event_tx, event_rx) = mpsc::channel::<ActorEvent>(64);
+    pub fn spawn(mut self) -> AgentActorHandle {
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentActorCommand>(16);
+        let (event_tx, event_rx) = mpsc::channel::<AgentActorEvent>(64);
 
         tokio::spawn(async move {
             let mut paused = false;
@@ -175,17 +175,17 @@ where
                 // 检查命令
                 while let Ok(cmd) = cmd_rx.try_recv() {
                     match cmd {
-                        ActorCommand::Pause => {
+                        AgentActorCommand::Pause => {
                             paused = true;
                             self.state.state = JobState::Paused;
                         }
-                        ActorCommand::Continue => {
+                        AgentActorCommand::Continue => {
                             paused = false;
                             if self.state.state == JobState::Paused {
                                 self.state.state = JobState::Running;
                             }
                         }
-                        ActorCommand::Cancel => {
+                        AgentActorCommand::Cancel => {
                             cancelled = true;
                             self.state.state = JobState::Cancelled;
                         }
@@ -193,13 +193,15 @@ where
                 }
 
                 if cancelled {
-                    let _ = event_tx.send(ActorEvent::Error("Cancelled".to_string())).await;
+                    let _ = event_tx
+                        .send(AgentActorEvent::Error("Cancelled".to_string()))
+                        .await;
                     break;
                 }
 
                 if paused {
                     // 等待继续命令
-                    if let Some(ActorCommand::Continue) = cmd_rx.recv().await {
+                    if let Some(AgentActorCommand::Continue) = cmd_rx.recv().await {
                         paused = false;
                         self.state.state = JobState::Running;
                     }
@@ -216,26 +218,23 @@ where
                     }
                     Ok(false) => {
                         // 执行完成
-                        let _ = event_tx.send(ActorEvent::Completed).await;
+                        let _ = event_tx.send(AgentActorEvent::Completed).await;
                         break;
                     }
                     Err(e) => {
-                        let _ = event_tx.send(ActorEvent::Error(e)).await;
+                        let _ = event_tx.send(AgentActorEvent::Error(e)).await;
                         break;
                     }
                 }
             }
         });
 
-        ActorHandle { cmd_tx, event_rx }
+        AgentActorHandle { cmd_tx, event_rx }
     }
 
     /// 执行一次迭代
     /// 返回 Ok(true) 表示应继续，Ok(false) 表示完成
-    async fn step(
-        &mut self,
-        event_tx: &mpsc::Sender<ActorEvent>,
-    ) -> Result<bool, String> {
+    async fn step(&mut self, event_tx: &mpsc::Sender<AgentActorEvent>) -> Result<bool, String> {
         self.state.iteration += 1;
 
         if self.state.iteration > self.state.max_iterations {
@@ -268,7 +267,9 @@ where
         // 检查是否有工具调用
         if let Some(calls) = tool_calls {
             // 发送工具调用事件
-            let _ = event_tx.send(ActorEvent::ToolCalls(calls.clone())).await;
+            let _ = event_tx
+                .send(AgentActorEvent::ToolCalls(calls.clone()))
+                .await;
 
             // 执行工具并收集结果
             let tool_messages = self.execute_tools(calls, event_tx).await;
@@ -280,7 +281,7 @@ where
 
             // 发送迭代事件
             let _ = event_tx
-                .send(ActorEvent::Iteration {
+                .send(AgentActorEvent::Iteration {
                     iteration: self.state.iteration,
                     message_count: self.state.context.conversation().len(),
                 })
@@ -297,7 +298,7 @@ where
     async fn execute_tools(
         &self,
         tool_calls: Vec<ToolCall>,
-        event_tx: &mpsc::Sender<ActorEvent>,
+        event_tx: &mpsc::Sender<AgentActorEvent>,
     ) -> Vec<Message> {
         let mut messages = Vec::with_capacity(tool_calls.len());
 
@@ -306,9 +307,7 @@ where
             let result = self.executor.execute(call).await;
 
             let (success, content) = match result {
-                Ok(r) if r.success => {
-                    (true, serde_json::to_string(&r.output).unwrap_or_default())
-                }
+                Ok(r) if r.success => (true, serde_json::to_string(&r.output).unwrap_or_default()),
                 Ok(r) => {
                     let error_msg = serde_json::to_string(&serde_json::json!({
                         "error": r.output
@@ -327,7 +326,7 @@ where
 
             // 发送工具结果事件
             let _ = event_tx
-                .send(ActorEvent::ToolResult {
+                .send(AgentActorEvent::ToolResult {
                     call_id: tool_call_id.clone(),
                     success,
                     output: content.clone(),
@@ -351,7 +350,7 @@ where
 /// 收集流式响应并发送事件
 async fn collect_stream_with_events(
     mut stream: futures::stream::BoxStream<'static, ChatChunk>,
-    event_tx: &mpsc::Sender<ActorEvent>,
+    event_tx: &mpsc::Sender<AgentActorEvent>,
 ) -> (String, Option<Vec<ToolCall>>) {
     let mut content = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
@@ -359,7 +358,9 @@ async fn collect_stream_with_events(
     while let Some(chunk) = stream.next().await {
         // 发送 chunk 事件
         if !chunk.content.is_empty() {
-            let _ = event_tx.send(ActorEvent::Chunk(chunk.content.clone())).await;
+            let _ = event_tx
+                .send(AgentActorEvent::Chunk(chunk.content.clone()))
+                .await;
             content.push_str(&chunk.content);
         }
 
@@ -499,14 +500,22 @@ mod tests {
         let mut events = Vec::new();
         while let Some(event) = handle.event_rx.recv().await {
             events.push(event);
-            if matches!(events.last(), Some(ActorEvent::Completed)) {
+            if matches!(events.last(), Some(AgentActorEvent::Completed)) {
                 break;
             }
         }
 
         assert!(!events.is_empty());
-        assert!(events.iter().any(|e| matches!(e, ActorEvent::Chunk(_))));
-        assert!(events.iter().any(|e| matches!(e, ActorEvent::Completed)));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentActorEvent::Chunk(_)))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentActorEvent::Completed))
+        );
     }
 
     #[tokio::test]
@@ -528,7 +537,7 @@ mod tests {
         // 收集事件
         let mut completed = false;
         while let Some(event) = handle.event_rx.recv().await {
-            if matches!(event, ActorEvent::Completed) {
+            if matches!(event, AgentActorEvent::Completed) {
                 completed = true;
                 break;
             }
@@ -603,13 +612,21 @@ mod tests {
         let mut events = Vec::new();
         while let Some(event) = handle.event_rx.recv().await {
             events.push(event.clone());
-            if matches!(event, ActorEvent::Completed) {
+            if matches!(event, AgentActorEvent::Completed) {
                 break;
             }
         }
 
         // 验证有工具调用事件
-        assert!(events.iter().any(|e| matches!(e, ActorEvent::ToolCalls(_))));
-        assert!(events.iter().any(|e| matches!(e, ActorEvent::ToolResult { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentActorEvent::ToolCalls(_)))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, AgentActorEvent::ToolResult { .. }))
+        );
     }
 }
