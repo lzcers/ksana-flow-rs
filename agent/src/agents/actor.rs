@@ -270,30 +270,12 @@ where
             // 发送工具调用事件
             let _ = event_tx.send(ActorEvent::ToolCalls(calls.clone())).await;
 
-            // 直接执行工具调用（避免使用 call_tools 的 &dyn 问题）
-            for call in calls {
-                let tool_call_id = call.id.clone();
-                let result = self.executor.execute(call).await;
+            // 执行工具并收集结果
+            let tool_messages = self.execute_tools(calls, event_tx).await;
 
-                let (success, output) = match result {
-                    Ok(r) => (r.success, serde_json::to_string(&r.output).unwrap_or_default()),
-                    Err(e) => (false, e.to_string()),
-                };
-
-                // 添加工具消息
-                self.state.context.add_message(Message::Tool {
-                    tool_call_id: tool_call_id.clone(),
-                    content: output.clone(),
-                });
-
-                // 发送工具结果事件
-                let _ = event_tx
-                    .send(ActorEvent::ToolResult {
-                        call_id: tool_call_id,
-                        success,
-                        output,
-                    })
-                    .await;
+            // 添加工具结果到上下文
+            for msg in tool_messages {
+                self.state.context.add_message(msg);
             }
 
             // 发送迭代事件
@@ -309,6 +291,56 @@ where
             // 没有工具调用，完成
             Ok(false)
         }
+    }
+
+    /// 执行工具调用并返回 Tool 消息列表
+    async fn execute_tools(
+        &self,
+        tool_calls: Vec<ToolCall>,
+        event_tx: &mpsc::Sender<ActorEvent>,
+    ) -> Vec<Message> {
+        let mut messages = Vec::with_capacity(tool_calls.len());
+
+        for call in tool_calls {
+            let tool_call_id = call.id.clone();
+            let result = self.executor.execute(call).await;
+
+            let (success, content) = match result {
+                Ok(r) if r.success => {
+                    (true, serde_json::to_string(&r.output).unwrap_or_default())
+                }
+                Ok(r) => {
+                    let error_msg = serde_json::to_string(&serde_json::json!({
+                        "error": r.output
+                    }))
+                    .unwrap_or_else(|_| r#"{"error": "Tool execution failed"}"#.to_string());
+                    (false, error_msg)
+                }
+                Err(e) => {
+                    let error_msg = serde_json::to_string(&serde_json::json!({
+                        "error": e.to_string()
+                    }))
+                    .unwrap_or_else(|_| r#"{"error": "Tool execution error"}"#.to_string());
+                    (false, error_msg)
+                }
+            };
+
+            // 发送工具结果事件
+            let _ = event_tx
+                .send(ActorEvent::ToolResult {
+                    call_id: tool_call_id.clone(),
+                    success,
+                    output: content.clone(),
+                })
+                .await;
+
+            messages.push(Message::Tool {
+                tool_call_id,
+                content,
+            });
+        }
+
+        messages
     }
 }
 
