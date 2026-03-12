@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::agents::{GenericToolExecutor, Tool, ToolDef, ToolExecutor, ToolResult};
+    use crate::agents::utils::collect_stream;
+    use crate::agents::{GenericToolExecutor, Tool, ToolDef, ToolExecutor, ToolResult, call_tools};
     use crate::core::Message;
     use crate::models::{ChatCapability, ChatModel};
     use crate::providers::DeepSeekProvider;
@@ -72,8 +73,8 @@ mod tests {
         }
     }
 
-    /// 测试 Agent Loop - 完整的工具调用流程
-    /// 目的：展示 Agent 调用工具的完整过程
+    /// 测试 Agent Loop - 流式工具调用流程
+    /// 目的：展示 Agent 流式调用工具的完整过程
     #[tokio::test]
     async fn test_agent_loop_with_tools() {
         dotenv::dotenv().ok();
@@ -108,84 +109,49 @@ mod tests {
 
         let max_iterations = 5;
 
-        println!("\n========== Agent Loop 开始 ==========\n");
+        println!("\n========== Agent Loop (Stream Mode) 开始 ==========\n");
         println!("[User] 北京今天天气怎么样？\n");
 
         // 4. Agent Loop
         for iteration in 1..=max_iterations {
             println!("=== Iteration {} ===", iteration);
 
-            // 调用模型
-            let response = model
-                .chat(messages.clone(), Some(executor.tools().clone()))
+            // 流式调用模型
+            let stream = model
+                .chat_stream(messages.clone(), Some(executor.tools().clone()))
                 .await;
 
-            let assistant_msg = match response {
-                Ok(msg) => msg,
+            let stream = match stream {
+                Ok(s) => s,
                 Err(e) => {
                     println!("[Error] 模型调用失败: {:?}", e);
                     break;
                 }
             };
 
-            // 打印助手响应
-            if let Message::Assistant {
+            // 收集流式响应
+            let (content, tool_calls) = collect_stream(stream).await;
+
+            // 构建助手消息
+            let assistant_msg = Message::Assistant {
                 content,
-                tool_calls,
-            } = &assistant_msg
-            {
-                if !content.is_empty() {
-                    println!("[Assistant] {}", content);
-                }
+                tool_calls: tool_calls.clone(),
+            };
 
-                // 添加助手消息到历史
-                messages.push(assistant_msg.clone());
+            // 打印助手响应（流式已实时打印，这里打印摘要）
+            println!("\n[Assistant Message] 已接收完整响应");
 
-                // 检查是否有工具调用
-                if let Some(calls) = tool_calls {
-                    println!("\n[Tool Calls] 检测到 {} 个工具调用", calls.len());
+            // 添加助手消息到历史
+            messages.push(assistant_msg);
 
-                    // 执行每个工具调用
-                    for call in calls {
-                        println!("[Tool Call] id={}, name={}", call.id, call.get_name());
-
-                        // 执行工具
-                        let result = executor.execute(call.clone()).await;
-
-                        match result {
-                            Ok(ToolResult {
-                                id,
-                                success,
-                                output,
-                            }) => {
-                                println!("[Tool Result] id={}, success={}", id, success);
-
-                                // 将工具结果添加到消息历史
-                                messages.push(Message::Tool {
-                                    tool_call_id: id,
-                                    content: serde_json::to_string(&output).unwrap_or_default(),
-                                });
-                            }
-                            Err(e) => {
-                                println!("[Tool Error] {:?}", e);
-                                messages.push(Message::Tool {
-                                    tool_call_id: call.id.clone(),
-                                    content: format!("Error: {:?}", e),
-                                });
-                            }
-                        }
-                    }
-
-                    println!();
-                    // 继续下一轮迭代，让模型处理工具结果
-                    continue;
-                } else {
-                    // 没有工具调用，Agent 完成
-                    println!("\n[Agent Complete] 无更多工具调用");
-                    break;
-                }
+            // 检查是否有工具调用
+            if let Some(calls) = tool_calls {
+                let tools_result = call_tools(&executor, calls).await;
+                messages.extend(tools_result);
+                continue;
             } else {
-                println!("[Unexpected] 非助手消息");
+                // 没有工具调用，Agent 完成
+                println!("\n[Agent Complete] 无更多工具调用");
                 break;
             }
         }
@@ -222,7 +188,7 @@ mod tests {
             }
         }
 
-        // 验证：应该有至少 3 条消息（system + user + assistant）
+        // 验证：应该有至少 2 条消息（system + user）
         assert!(messages.len() >= 2, "应该有至少 2 条消息");
     }
 }
