@@ -32,6 +32,7 @@ pub struct ChatChunk {
     pub is_finished: bool,
     /// 结束原因（比如 "stop" / "length"）
     pub finish_reason: Option<String>,
+    
 }
 
 /// 聊天能力 trait

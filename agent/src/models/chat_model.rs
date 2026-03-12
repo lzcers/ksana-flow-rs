@@ -121,12 +121,14 @@ impl ChatCapability for ChatModel {
                         content,
                         is_finished,
                         finish_reason: choice.finish_reason.clone(),
+                        tool_calls: choice.delta.tool_calls.clone(),
                     }
                 } else {
                     ChatChunk {
                         content: String::new(),
                         is_finished: true,
                         finish_reason: Some("no_choices".to_string()),
+                        tool_calls: None,
                     }
                 }
             })
