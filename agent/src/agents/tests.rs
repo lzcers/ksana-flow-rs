@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::agents::utils::collect_stream;
-    use crate::agents::{GenericToolExecutor, Tool, ToolDef, ToolExecutor, ToolResult, call_tools};
+    use crate::agents::{GenericToolExecutor, Tool, ToolDef, ToolExecutor, call_tools};
     use crate::core::Message;
     use crate::models::{ChatCapability, ChatModel};
     use crate::providers::DeepSeekProvider;
