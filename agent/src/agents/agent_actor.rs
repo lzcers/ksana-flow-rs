@@ -25,6 +25,13 @@ use crate::models::{ChatCapability, ChatChunk};
 pub enum AgentActorEvent {
     /// 流式输出片段
     Chunk(String),
+    /// LLM 响应完成，包含完整的 content 和 tool_calls
+    LlmResponse {
+        /// 完整的响应内容
+        content: String,
+        /// 工具调用列表（如果有）
+        tool_calls: Option<Vec<ToolCall>>,
+    },
     /// 模型请求工具调用
     ToolCalls(Vec<ToolCall>),
     /// 单个工具执行完成
@@ -254,6 +261,14 @@ where
 
         // 收集流式响应
         let (content, tool_calls) = collect_stream_with_events(stream, event_tx).await;
+
+        // 发送 LLM 响应完成事件
+        let _ = event_tx
+            .send(AgentActorEvent::LlmResponse {
+                content: content.clone(),
+                tool_calls: tool_calls.clone(),
+            })
+            .await;
 
         // 构建助手消息
         let assistant_msg = Message::Assistant {

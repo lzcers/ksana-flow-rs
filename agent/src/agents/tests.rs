@@ -369,6 +369,12 @@ mod tests {
                 AgentActorEvent::Error(e) => {
                     println!("\n[Event] Error: {}", e);
                 }
+                AgentActorEvent::LlmResponse { content, tool_calls } => {
+                    println!("\n[Event] LlmResponse: content len={}", content.len());
+                    if let Some(calls) = tool_calls {
+                        println!("  → Tool calls: {} 个", calls.len());
+                    }
+                }
             }
 
             events.push(event.clone());
@@ -728,6 +734,12 @@ mod tests {
                 AgentActorEvent::Error(e) => {
                     println!("\n[Event] Error: {}", e);
                 }
+                AgentActorEvent::LlmResponse { content, tool_calls } => {
+                    println!("\n[Event] LlmResponse: content len={}", content.len());
+                    if let Some(calls) = tool_calls {
+                        println!("  → Tool calls: {} 个", calls.len());
+                    }
+                }
             }
 
             events.push(event.clone());
@@ -898,6 +910,12 @@ mod tests {
                 }
                 AgentActorEvent::Error(e) => {
                     println!("\n[Event] Error: {}", e);
+                }
+                AgentActorEvent::LlmResponse { content, tool_calls } => {
+                    println!("\n[Event] LlmResponse: content len={}", content.len());
+                    if let Some(calls) = tool_calls {
+                        println!("  → Tool calls: {} 个", calls.len());
+                    }
                 }
             }
 
