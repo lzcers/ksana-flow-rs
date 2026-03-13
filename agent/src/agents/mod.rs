@@ -1,4 +1,5 @@
 pub mod agent_actor;
+pub mod agent_executor;
 pub mod agent_state;
 pub mod context;
 #[cfg(test)]
@@ -7,6 +8,7 @@ pub mod tools;
 pub mod utils;
 
 pub use agent_actor::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle};
+pub use agent_executor::{AgentExecutor, StepResult, StreamChunk, ToolExecutionResult};
 pub use agent_state::{AgentState, JobState};
 pub use context::{Context, Layer, LayerKind, LayerMeta};
 pub use tools::{

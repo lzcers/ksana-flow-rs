@@ -1,20 +1,24 @@
-//! Actor 模型 - 可暂停、可恢复的执行单元
+//! Actor 控制器 - 命令处理、状态管理、事件发送、迭代控制
 //!
 //! Actor 是一个独立执行单元，具有以下特性：
 //! - 可插拔的 Chat 模型和 ToolExecutor
 //! - 支持暂停、继续、取消操作
 //! - 状态可持久化和恢复
 //! - 流式事件输出
+//!
+//! 职责分离：
+//! - 执行逻辑由 `AgentExecutor` 处理（单步执行）
+//! - 本文件负责控制面：命令处理、状态转换、事件发送、迭代控制
 
 use std::sync::Arc;
 
-use futures::StreamExt;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::agents::{AgentState, Context, JobState, ToolCall, ToolExecutor};
+use super::agent_executor::{AgentExecutor, StepResult, StreamChunk};
+use crate::agents::{AgentState, Context, ToolCall, ToolExecutor};
 use crate::core::Message;
-use crate::models::{ChatCapability, ChatChunk};
+use crate::models::ChatCapability;
 
 // ============================================================================
 // Actor 事件
@@ -26,7 +30,7 @@ pub enum AgentActorEvent {
     /// 流式输出片段
     Chunk(String),
     /// LLM 响应完成，包含完整的 content 和 tool_calls
-    LlmResponse {
+    StepCompleted {
         /// 完整的响应内容
         content: String,
         /// 工具调用列表（如果有）
@@ -45,6 +49,8 @@ pub enum AgentActorEvent {
         iteration: usize,
         message_count: usize,
     },
+    /// 达到最大迭代次数
+    MaxIterations { iteration: usize },
     /// Agent 执行完成
     Completed,
     /// 发生错误
@@ -99,22 +105,29 @@ impl AgentActorHandle {
 // Agent Actor
 // ============================================================================
 
-/// Agent Actor - 可插拔的 LLM Agent 执行器
+/// Agent Actor - 可插拔的 LLM Agent 控制器
 ///
 /// 泛型参数：
 /// - `C`: Chat 模型能力
 /// - `E`: 工具执行器
+///
+/// Actor 负责控制面逻辑：
+/// - 命令处理（暂停、继续、取消、单步）
+/// - 状态管理（JobState、迭代计数、Context）
+/// - 事件发送
+/// - 迭代控制（最大迭代次数）
+///
+/// 执行面由 `AgentExecutor` 处理，只负责单步执行。
+/// Context 由 Actor 管理，执行器不持有状态。
 pub struct AgentActor<C, E>
 where
     C: ChatCapability + Send + Sync,
     E: ToolExecutor + Send + Sync,
 {
-    /// Agent 状态
+    /// Agent 状态（控制面）
     state: AgentState,
-    /// Chat 模型
-    chat: Arc<C>,
-    /// 工具执行器
-    executor: Arc<E>,
+    /// 执行器（执行面，无状态）
+    executor: AgentExecutor<C, E>,
 }
 
 impl<C, E> AgentActor<C, E>
@@ -132,15 +145,14 @@ where
                 title: String::new(),
                 description: String::new(),
                 category: None,
-                state: JobState::Pending,
+                state: crate::agents::JobState::Pending,
                 budget: None,
                 actual_cost: rust_decimal::Decimal::ZERO,
                 context,
                 iteration: 0,
                 max_iterations: 10,
             },
-            chat,
-            executor,
+            executor: AgentExecutor::new(chat, executor),
         }
     }
 
@@ -166,8 +178,96 @@ where
         &mut self.state
     }
 
-    /// 启动 Actor，返回控制句柄
-    pub fn spawn(mut self) -> AgentActorHandle {
+    /// 执行单步迭代
+    ///
+    /// 此方法执行一次 LLM 调用 + 工具执行，然后返回结果。
+    /// 可以重复调用来手动控制执行流程。
+    ///
+    /// # 参数
+    /// - `stream_tx`: 可选的流式事件发送通道，用于接收 `StreamChunk` 事件
+    ///
+    /// # 返回
+    /// - `StepResult`: 执行结果
+    ///
+    /// # 状态更新
+    /// - 自动增加迭代计数
+    /// - 更新 Context（添加 assistant 消息和 tool 消息）
+    /// - 更新 JobState
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let mut actor = AgentActor::new(chat, executor, context);
+    /// loop {
+    ///     let result = actor.run_step(Some(stream_tx.clone())).await;
+    ///     match result {
+    ///         StepResult::Done { .. } => break,
+    ///         StepResult::Error(_) => break,
+    ///         StepResult::Continue { .. } => continue,
+    ///     }
+    /// }
+    /// ```
+    pub async fn run_step(&mut self, stream_tx: Option<mpsc::Sender<StreamChunk>>) -> StepResult {
+        // 增加迭代计数
+        self.state.iteration += 1;
+
+        // 更新状态为 Running
+        self.state.state = crate::agents::JobState::Running;
+
+        // 从 Context 获取消息列表
+        let messages = self.state.context.to_messages();
+
+        // 执行单步迭代
+        let result = self.executor.run_step(messages, stream_tx).await;
+
+        // 处理执行结果
+        match &result {
+            StepResult::Continue {
+                content,
+                tool_calls,
+                tool_results,
+            } => {
+                // 更新 Context：添加 assistant 消息
+                self.state.context.add_message(Message::Assistant {
+                    content: content.clone(),
+                    tool_calls: Some(tool_calls.clone()),
+                });
+
+                // 更新 Context：添加 tool 结果消息
+                for tr in tool_results {
+                    self.state.context.add_message(Message::Tool {
+                        tool_call_id: tr.call_id.clone(),
+                        content: tr.output.clone(),
+                    });
+                }
+
+                // 继续状态
+                self.state.state = crate::agents::JobState::WaitingInput;
+            }
+            StepResult::Done { content } => {
+                // 更新 Context：添加 assistant 消息
+                self.state.context.add_message(Message::Assistant {
+                    content: content.clone(),
+                    tool_calls: None,
+                });
+
+                // 完成状态
+                self.state.state = crate::agents::JobState::Completed;
+            }
+            StepResult::Error(_) => {
+                self.state.state = crate::agents::JobState::Failed;
+            }
+        }
+
+        result
+    }
+
+    /// 启动循环执行，返回控制句柄
+    ///
+    /// 此方法启动后台任务执行循环，直到完成或被打断。
+    /// 返回的控制句柄可用于暂停、继续、取消等操作。
+    ///
+    /// 如果需要手动控制每一步执行，请使用 `run_step` 方法。
+    pub fn run_loop(mut self) -> AgentActorHandle {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentActorCommand>(16);
         let (event_tx, event_rx) = mpsc::channel::<AgentActorEvent>(64);
 
@@ -175,26 +275,23 @@ where
             let mut paused = false;
             let mut cancelled = false;
 
-            // 更新状态为 Running
-            self.state.state = JobState::Running;
-
             loop {
                 // 检查命令
                 while let Ok(cmd) = cmd_rx.try_recv() {
                     match cmd {
                         AgentActorCommand::Pause => {
                             paused = true;
-                            self.state.state = JobState::Paused;
+                            self.state.state = crate::agents::JobState::Paused;
                         }
                         AgentActorCommand::Continue => {
                             paused = false;
-                            if self.state.state == JobState::Paused {
-                                self.state.state = JobState::Running;
+                            if self.state.state == crate::agents::JobState::Paused {
+                                self.state.state = crate::agents::JobState::Running;
                             }
                         }
                         AgentActorCommand::Cancel => {
                             cancelled = true;
-                            self.state.state = JobState::Cancelled;
+                            self.state.state = crate::agents::JobState::Cancelled;
                         }
                     }
                 }
@@ -210,26 +307,113 @@ where
                     // 等待继续命令
                     if let Some(AgentActorCommand::Continue) = cmd_rx.recv().await {
                         paused = false;
-                        self.state.state = JobState::Running;
+                        self.state.state = crate::agents::JobState::Running;
                     }
                     continue;
                 }
 
-                // 执行一步迭代
-                let result = self.step(&event_tx).await;
+                // 执行前检查最大迭代
+                if self.state.iteration >= self.state.max_iterations {
+                    let _ = event_tx
+                        .send(AgentActorEvent::MaxIterations {
+                            iteration: self.state.iteration,
+                        })
+                        .await;
+                    let _ = event_tx
+                        .send(AgentActorEvent::Error("Max iterations reached".to_string()))
+                        .await;
+                    break;
+                }
 
-                match result {
-                    Ok(true) => {
-                        // 继续下一次迭代
-                        continue;
+                // 创建 StreamChunk channel，在后台转换为 AgentActorEvent
+                let (stream_tx, mut stream_rx) = mpsc::channel::<StreamChunk>(64);
+                let event_tx_clone = event_tx.clone();
+
+                // 后台任务：将 StreamChunk 转换为 AgentActorEvent
+                let convert_handle = tokio::spawn(async move {
+                    while let Some(chunk) = stream_rx.recv().await {
+                        match chunk {
+                            StreamChunk::Text(text) => {
+                                if event_tx_clone
+                                    .send(AgentActorEvent::Chunk(text))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            StreamChunk::Completed {
+                                content,
+                                tool_calls,
+                            } => {
+                                if event_tx_clone
+                                    .send(AgentActorEvent::StepCompleted {
+                                        content,
+                                        tool_calls,
+                                    })
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        }
                     }
-                    Ok(false) => {
-                        // 执行完成
+                });
+
+                // === 执行单步迭代 ===
+                let result = self.run_step(Some(stream_tx)).await;
+
+                // 等待转换任务完成
+                let _ = convert_handle.await;
+
+                // 发送工具相关事件
+                match &result {
+                    StepResult::Continue {
+                        tool_calls,
+                        tool_results,
+                        ..
+                    } => {
+                        let _ = event_tx
+                            .send(AgentActorEvent::ToolCalls(tool_calls.clone()))
+                            .await;
+                        for tr in tool_results {
+                            let _ = event_tx
+                                .send(AgentActorEvent::ToolResult {
+                                    call_id: tr.call_id.clone(),
+                                    success: tr.success,
+                                    output: tr.output.clone(),
+                                })
+                                .await;
+                        }
+                        let _ = event_tx
+                            .send(AgentActorEvent::Iteration {
+                                iteration: self.state.iteration,
+                                message_count: self.state.context.conversation().len(),
+                            })
+                            .await;
+                    }
+                    StepResult::Done { .. } => {
+                        let _ = event_tx
+                            .send(AgentActorEvent::Iteration {
+                                iteration: self.state.iteration,
+                                message_count: self.state.context.conversation().len(),
+                            })
+                            .await;
                         let _ = event_tx.send(AgentActorEvent::Completed).await;
-                        break;
                     }
-                    Err(e) => {
-                        let _ = event_tx.send(AgentActorEvent::Error(e)).await;
+                    StepResult::Error(e) => {
+                        let _ = event_tx.send(AgentActorEvent::Error(e.clone())).await;
+                    }
+                }
+
+                // 根据结果决定后续行为
+                match result {
+                    StepResult::Continue { .. } => {
+                        // 循环模式直接继续下一次迭代
+                    }
+                    StepResult::Done { .. } | StepResult::Error(_) => {
+                        // 完成或错误，退出循环
                         break;
                     }
                 }
@@ -237,411 +421,5 @@ where
         });
 
         AgentActorHandle { cmd_tx, event_rx }
-    }
-
-    /// 执行一次迭代
-    /// 返回 Ok(true) 表示应继续，Ok(false) 表示完成
-    async fn step(&mut self, event_tx: &mpsc::Sender<AgentActorEvent>) -> Result<bool, String> {
-        self.state.iteration += 1;
-
-        if self.state.iteration > self.state.max_iterations {
-            return Ok(false);
-        }
-
-        // 获取消息列表
-        let messages = self.state.context.to_messages();
-        let tools = self.executor.tools().clone();
-
-        // 流式调用模型
-        let stream = self
-            .chat
-            .chat_stream(messages, Some(tools))
-            .await
-            .map_err(|e| e.to_string())?;
-
-        // 收集流式响应
-        let (content, tool_calls) = collect_stream_with_events(stream, event_tx).await;
-
-        // 发送 LLM 响应完成事件
-        let _ = event_tx
-            .send(AgentActorEvent::LlmResponse {
-                content: content.clone(),
-                tool_calls: tool_calls.clone(),
-            })
-            .await;
-
-        // 构建助手消息
-        let assistant_msg = Message::Assistant {
-            content,
-            tool_calls: tool_calls.clone(),
-        };
-
-        // 添加到上下文
-        self.state.context.add_message(assistant_msg);
-
-        // 检查是否有工具调用
-        if let Some(calls) = tool_calls {
-            // 发送工具调用事件
-            let _ = event_tx
-                .send(AgentActorEvent::ToolCalls(calls.clone()))
-                .await;
-
-            // 执行工具并收集结果
-            let tool_messages = self.execute_tools(calls, event_tx).await;
-
-            // 添加工具结果到上下文
-            for msg in tool_messages {
-                self.state.context.add_message(msg);
-            }
-
-            // 发送迭代事件
-            let _ = event_tx
-                .send(AgentActorEvent::Iteration {
-                    iteration: self.state.iteration,
-                    message_count: self.state.context.conversation().len(),
-                })
-                .await;
-
-            Ok(true) // 继续迭代
-        } else {
-            // 没有工具调用，完成
-            Ok(false)
-        }
-    }
-
-    /// 执行工具调用并返回 Tool 消息列表
-    async fn execute_tools(
-        &self,
-        tool_calls: Vec<ToolCall>,
-        event_tx: &mpsc::Sender<AgentActorEvent>,
-    ) -> Vec<Message> {
-        let mut messages = Vec::with_capacity(tool_calls.len());
-
-        for call in tool_calls {
-            let tool_call_id = call.id.clone();
-            let result = self.executor.execute(call).await;
-
-            let (success, content) = match result {
-                Ok(r) if r.success => (true, serde_json::to_string(&r.output).unwrap_or_default()),
-                Ok(r) => {
-                    let error_msg = serde_json::to_string(&serde_json::json!({
-                        "error": r.output
-                    }))
-                    .unwrap_or_else(|_| r#"{"error": "Tool execution failed"}"#.to_string());
-                    (false, error_msg)
-                }
-                Err(e) => {
-                    let error_msg = serde_json::to_string(&serde_json::json!({
-                        "error": e.to_string()
-                    }))
-                    .unwrap_or_else(|_| r#"{"error": "Tool execution error"}"#.to_string());
-                    (false, error_msg)
-                }
-            };
-
-            // 发送工具结果事件
-            let _ = event_tx
-                .send(AgentActorEvent::ToolResult {
-                    call_id: tool_call_id.clone(),
-                    success,
-                    output: content.clone(),
-                })
-                .await;
-
-            messages.push(Message::Tool {
-                tool_call_id,
-                content,
-            });
-        }
-
-        messages
-    }
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// 收集流式响应并发送事件
-async fn collect_stream_with_events(
-    mut stream: futures::stream::BoxStream<'static, ChatChunk>,
-    event_tx: &mpsc::Sender<AgentActorEvent>,
-) -> (String, Option<Vec<ToolCall>>) {
-    let mut content = String::new();
-    let mut tool_calls: Vec<ToolCall> = Vec::new();
-
-    while let Some(chunk) = stream.next().await {
-        // 发送 chunk 事件
-        if !chunk.content.is_empty() {
-            let _ = event_tx
-                .send(AgentActorEvent::Chunk(chunk.content.clone()))
-                .await;
-            content.push_str(&chunk.content);
-        }
-
-        // 合并工具调用
-        if let Some(inc_tool_calls) = chunk.tool_calls {
-            merge_tool_calls(&mut tool_calls, inc_tool_calls);
-        }
-    }
-
-    let final_tool_calls = if tool_calls.is_empty() {
-        None
-    } else {
-        Some(tool_calls)
-    };
-
-    (content, final_tool_calls)
-}
-
-/// 合并增量 ToolCall
-fn merge_tool_calls(accumulated: &mut Vec<ToolCall>, incremental: Vec<ToolCall>) {
-    for inc in incremental {
-        let existing = accumulated.iter_mut().find(|tc| {
-            if let (Some(idx1), Some(idx2)) = (tc.index, inc.index) {
-                idx1 == idx2
-            } else if !tc.id.is_empty() && tc.id == inc.id {
-                true
-            } else {
-                false
-            }
-        });
-
-        if let Some(existing) = existing {
-            if !inc.id.is_empty() {
-                existing.id = inc.id;
-            }
-            if inc.call_type.is_some() {
-                existing.call_type = inc.call_type;
-            }
-            if inc.index.is_some() {
-                existing.index = inc.index;
-            }
-            if let Some(inc_func) = &inc.function {
-                if let Some(existing_func) = &mut existing.function {
-                    if !inc_func.name.is_empty() {
-                        existing_func.name = inc_func.name.clone();
-                    }
-                    existing_func.arguments.push_str(&inc_func.arguments);
-                } else {
-                    existing.function = Some(inc_func.clone());
-                }
-            }
-        } else {
-            accumulated.push(inc);
-        }
-    }
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::agents::{ToolDef, ToolExecutorError, ToolResult};
-    use crate::models::ChatError;
-    use async_trait::async_trait;
-    use futures::stream::BoxStream;
-    use serde_json::json;
-
-    // Mock Chat Model
-    struct MockChat;
-
-    #[async_trait]
-    impl ChatCapability for MockChat {
-        async fn chat(
-            &self,
-            _msgs: Vec<Message>,
-            _tools: Option<Vec<ToolDef>>,
-        ) -> Result<Message, ChatError> {
-            Ok(Message::assistant("Mock response"))
-        }
-
-        async fn chat_stream(
-            &self,
-            _msgs: Vec<Message>,
-            _tools: Option<Vec<ToolDef>>,
-        ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
-            let chunks = vec![
-                ChatChunk {
-                    content: "Hello".to_string(),
-                    is_finished: false,
-                    finish_reason: None,
-                    tool_calls: None,
-                },
-                ChatChunk {
-                    content: "!".to_string(),
-                    is_finished: true,
-                    finish_reason: Some("stop".to_string()),
-                    tool_calls: None,
-                },
-            ];
-            Ok(futures::stream::iter(chunks).boxed())
-        }
-    }
-
-    // Mock Tool Executor
-    struct MockExecutor {
-        tools: Vec<ToolDef>,
-    }
-
-    #[async_trait]
-    impl ToolExecutor for MockExecutor {
-        async fn execute(&self, _call: ToolCall) -> Result<ToolResult, ToolExecutorError> {
-            Ok(ToolResult {
-                id: "test".to_string(),
-                success: true,
-                output: json!({"result": "ok"}),
-            })
-        }
-
-        fn tools(&self) -> &Vec<ToolDef> {
-            &self.tools
-        }
-    }
-
-    #[tokio::test]
-    async fn test_actor_spawn_and_collect() {
-        let chat = Arc::new(MockChat);
-        let executor = Arc::new(MockExecutor { tools: vec![] });
-        let context = Context::new();
-
-        let actor = AgentActor::new(chat, executor, context).with_max_iterations(1);
-        let mut handle = actor.spawn();
-
-        // 收集事件
-        let mut events = Vec::new();
-        while let Some(event) = handle.event_rx.recv().await {
-            events.push(event);
-            if matches!(events.last(), Some(AgentActorEvent::Completed)) {
-                break;
-            }
-        }
-
-        assert!(!events.is_empty());
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, AgentActorEvent::Chunk(_)))
-        );
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, AgentActorEvent::Completed))
-        );
-    }
-
-    #[tokio::test]
-    async fn test_actor_pause_and_resume() {
-        let chat = Arc::new(MockChat);
-        let executor = Arc::new(MockExecutor { tools: vec![] });
-        let context = Context::new();
-
-        let actor = AgentActor::new(chat, executor, context).with_max_iterations(2);
-        let mut handle = actor.spawn();
-
-        // 暂停
-        handle.pause().await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-        // 恢复
-        handle.resume().await;
-
-        // 收集事件
-        let mut completed = false;
-        while let Some(event) = handle.event_rx.recv().await {
-            if matches!(event, AgentActorEvent::Completed) {
-                completed = true;
-                break;
-            }
-        }
-
-        assert!(completed);
-    }
-
-    #[tokio::test]
-    async fn test_actor_with_tool_calls() {
-        // Mock Chat 返回工具调用
-        struct MockChatWithTools;
-
-        #[async_trait]
-        impl ChatCapability for MockChatWithTools {
-            async fn chat(
-                &self,
-                _msgs: Vec<Message>,
-                _tools: Option<Vec<ToolDef>>,
-            ) -> Result<Message, ChatError> {
-                Ok(Message::assistant("Done"))
-            }
-
-            async fn chat_stream(
-                &self,
-                _msgs: Vec<Message>,
-                _tools: Option<Vec<ToolDef>>,
-            ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
-                // 第一次调用返回工具调用
-                let chunks = vec![
-                    ChatChunk {
-                        content: String::new(),
-                        is_finished: false,
-                        finish_reason: None,
-                        tool_calls: Some(vec![ToolCall {
-                            id: "call_123".to_string(),
-                            call_type: Some("function".to_string()),
-                            index: Some(0),
-                            function: Some(crate::agents::ToolCallFunction {
-                                name: "test_tool".to_string(),
-                                arguments: r#"{"arg":"value"}"#.to_string(),
-                            }),
-                            name: None,
-                            arguments: None,
-                        }]),
-                    },
-                    ChatChunk {
-                        content: String::new(),
-                        is_finished: true,
-                        finish_reason: Some("tool_calls".to_string()),
-                        tool_calls: None,
-                    },
-                ];
-                Ok(futures::stream::iter(chunks).boxed())
-            }
-        }
-
-        // Mock Executor
-        let tools = vec![ToolDef {
-            name: "test_tool".to_string(),
-            description: "A test tool".to_string(),
-            parameters: json!({"type": "object"}),
-        }];
-        let executor = Arc::new(MockExecutor { tools });
-        let chat = Arc::new(MockChatWithTools);
-
-        let context = Context::new();
-        let actor = AgentActor::new(chat, executor, context).with_max_iterations(2);
-        let mut handle = actor.spawn();
-
-        // 收集事件
-        let mut events = Vec::new();
-        while let Some(event) = handle.event_rx.recv().await {
-            events.push(event.clone());
-            if matches!(event, AgentActorEvent::Completed) {
-                break;
-            }
-        }
-
-        // 验证有工具调用事件
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, AgentActorEvent::ToolCalls(_)))
-        );
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, AgentActorEvent::ToolResult { .. }))
-        );
     }
 }
