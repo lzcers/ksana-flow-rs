@@ -15,11 +15,15 @@ impl PlaywrightCliTool {
     pub fn new() -> Self {
         let definition = ToolDef {
             name: "playwright_cli".to_string(),
-            description: r#"A browser automation tool for web navigation, content extraction, and interaction.
-Common commands:
-- `open <url>` - Navigate to a URL and wait for page load
-- `--help` - Show all available commands
-Always start with `open <url>` to navigate to a page before extracting content."#.to_string(),
+            description: r#"
+                A browser automation tool for web navigation, content extraction, and interaction.
+                Common commands:
+                - `open <url>` - Navigate to a URL and wait for page load
+                - `--help` - Show all available commands
+                Always start with `open <url>` to navigate to a page before extracting content.
+            "#
+            .trim()
+            .to_string(),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
