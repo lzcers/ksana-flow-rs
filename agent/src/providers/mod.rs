@@ -1,5 +1,4 @@
 mod deepseek;
-mod llamacpp;
 mod openrouter;
 
 use crate::agents::{ToolCall, ToolDef};
@@ -7,7 +6,6 @@ use crate::core::{Message, MessageRole};
 use async_trait::async_trait;
 pub use deepseek::DeepSeekProvider;
 use futures::stream::BoxStream;
-pub use llamacpp::LlamaCppProvider;
 pub use openrouter::OpenRouterProvider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -249,7 +247,7 @@ pub trait Provider: Send + Sync {
     async fn stream_request(
         &self,
         path: &str,
-        request: Request,
+        request: &Request,
         model: &str,
     ) -> Result<BoxStream<'static, StreamResponse>, ProviderError>;
 

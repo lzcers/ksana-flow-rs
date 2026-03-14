@@ -276,7 +276,7 @@ mod tests {
         );
 
         // 5. 创建 AgentActor - 增加最大迭代次数
-        let actor = AgentActor::new(model, executor, context).with_max_iterations(10);
+        let actor = AgentActor::new(model, executor, context);
 
         // 6. 启动 Actor
         let mut handle = actor.run_loop();
@@ -350,6 +350,9 @@ mod tests {
                 AgentActorEvent::Completed => {
                     println!("\n\n[Event] Completed");
                 }
+                AgentActorEvent::Cancelled => {
+                    println!("\n\n[Event] Cancelled");
+                }
                 AgentActorEvent::Error(e) => {
                     println!("\n[Event] Error: {}", e);
                 }
@@ -363,6 +366,7 @@ mod tests {
             if matches!(
                 events.last(),
                 Some(AgentActorEvent::Completed)
+                    | Some(AgentActorEvent::Cancelled)
                     | Some(AgentActorEvent::Error(_))
                     | Some(AgentActorEvent::MaxIterations { .. })
             ) {

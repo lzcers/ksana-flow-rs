@@ -118,13 +118,11 @@ impl Provider for DeepSeekProvider {
     async fn stream_request(
         &self,
         path: &str,
-        mut request: Request,
+        request: &Request,
         _model: &str,
     ) -> Result<BoxStream<'static, StreamResponse>, ProviderError> {
         let url = format!("{}{}", self.base_url, path);
         let headers = self.build_headers();
-
-        request.stream = Some(true);
 
         let response = self
             .client

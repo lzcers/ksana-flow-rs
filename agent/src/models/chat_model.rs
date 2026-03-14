@@ -110,14 +110,15 @@ impl ChatCapability for ChatModel {
             .with_tools(tools);
 
         let stream = provider
-            .stream_request("/chat/completions", request, model_name)
+            .stream_request("/chat/completions", &request, model_name)
             .await?;
 
         Ok(stream
             .map(|response| {
                 if let Some(choice) = response.choices.first() {
                     let content = choice.delta.content.clone().unwrap_or_default();
-                    let reasoning_content = choice.delta.reasoning_content.clone().unwrap_or_default();
+                    let reasoning_content =
+                        choice.delta.reasoning_content.clone().unwrap_or_default();
                     let is_finished = choice.finish_reason.is_some();
                     ChatChunk {
                         content,
