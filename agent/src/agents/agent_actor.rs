@@ -17,7 +17,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::agent_utils::{call_model, call_tools, CallModelEvent, CallToolResult};
+use super::agent_utils::{CallModelEvent, CallToolResult, call_model, call_tools};
 use crate::agents::{AgentState, Context, ToolCall, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
@@ -210,12 +210,25 @@ where
         &mut self.state
     }
 
+    /// 获取上下文
     pub fn context(&self) -> &Context {
         &self.state.context
     }
 
+    /// 获取可变上下文
     pub fn context_mut(&mut self) -> &mut Context {
         &mut self.state.context
+    }
+
+    // ========================================================================
+    // 私有辅助方法
+    // ========================================================================
+
+    /// 发送事件（忽略发送失败）
+    async fn send_event(event_tx: Option<&mpsc::Sender<AgentActorEvent>>, event: AgentActorEvent) {
+        if let Some(tx) = event_tx {
+            let _ = tx.send(event).await;
+        }
     }
 
     /// 执行单步迭代
@@ -246,51 +259,51 @@ where
     ///     }
     /// }
     /// ```
-    pub async fn run_step(&mut self, event_tx: Option<mpsc::Sender<AgentActorEvent>>) -> StepResult {
-        // 增加迭代计数
+    pub async fn run_step(
+        &mut self,
+        event_tx: Option<mpsc::Sender<AgentActorEvent>>,
+    ) -> StepResult {
+        // 增加迭代计数，更新状态为 Running
         self.state.iteration += 1;
-
-        // 更新状态为 Running
         self.state.state = crate::agents::JobState::Running;
 
-        // 从 Context 获取消息列表
+        // 获取消息和工具定义
         let messages = self.state.context.to_messages();
         let tools_def = Some(self.tool_executor.tools().clone());
 
-        // 使用 call_model 纯函数
-        let stream = call_model(&messages, tools_def.as_ref(), self.chat.as_ref());
-        let mut stream = pin!(stream);
+        // 调用模型并处理流
+        let mut stream = pin!(call_model(
+            &messages,
+            tools_def.as_ref(),
+            self.chat.as_ref()
+        ));
 
-        // 处理流事件
-        let mut final_content = String::new();
-        let mut final_reasoning_content: Option<String> = None;
-        let mut final_tool_calls: Option<Vec<ToolCall>> = None;
+        let mut content = String::new();
+        let mut reasoning_content: Option<String> = None;
+        let mut tool_calls: Option<Vec<ToolCall>> = None;
         let mut error: Option<String> = None;
 
         while let Some(event) = stream.next().await {
             match event {
                 CallModelEvent::TextChunk(text) => {
-                    final_content.push_str(&text);
-                    if let Some(ref tx) = event_tx {
-                        let _ = tx.send(AgentActorEvent::Chunk(text)).await;
-                    }
+                    content.push_str(&text);
+                    Self::send_event(event_tx.as_ref(), AgentActorEvent::Chunk(text)).await;
                 }
                 CallModelEvent::ReasoningChunk(text) => {
-                    final_reasoning_content
+                    reasoning_content
                         .get_or_insert_with(String::new)
                         .push_str(&text);
-                    if let Some(ref tx) = event_tx {
-                        let _ = tx.send(AgentActorEvent::ReasoningChunk(text)).await;
-                    }
+                    Self::send_event(event_tx.as_ref(), AgentActorEvent::ReasoningChunk(text))
+                        .await;
                 }
                 CallModelEvent::Completed {
-                    content,
-                    reasoning_content,
-                    tool_calls,
+                    content: c,
+                    reasoning_content: rc,
+                    tool_calls: tc,
                 } => {
-                    final_content = content;
-                    final_reasoning_content = reasoning_content;
-                    final_tool_calls = tool_calls;
+                    content = c;
+                    reasoning_content = rc;
+                    tool_calls = tc;
                 }
                 CallModelEvent::Error(e) => {
                     error = Some(e);
@@ -302,41 +315,33 @@ where
         // 处理错误
         if let Some(e) = error {
             self.state.state = crate::agents::JobState::Failed;
-            if let Some(ref tx) = event_tx {
-                let _ = tx.send(AgentActorEvent::Error(e.clone())).await;
-            }
+            Self::send_event(event_tx.as_ref(), AgentActorEvent::Error(e.clone())).await;
             return StepResult::Error(e);
         }
 
         // 发送 StepCompleted 事件
-        if let Some(ref tx) = event_tx {
-            let _ = tx
-                .send(AgentActorEvent::StepCompleted {
-                    content: final_content.clone(),
-                    reasoning_content: final_reasoning_content.clone(),
-                    tool_calls: final_tool_calls.clone(),
-                })
-                .await;
-        }
+        Self::send_event(
+            event_tx.as_ref(),
+            AgentActorEvent::StepCompleted {
+                content: content.clone(),
+                reasoning_content: reasoning_content.clone(),
+                tool_calls: tool_calls.clone(),
+            },
+        )
+        .await;
 
         // 检查是否有工具调用
-        if let Some(tool_calls) = final_tool_calls {
-            // 发送 ToolCalls 事件
-            if let Some(ref tx) = event_tx {
-                let _ = tx.send(AgentActorEvent::ToolCalls(tool_calls.clone())).await;
-            }
-
+        if let Some(tc) = tool_calls {
+            Self::send_event(event_tx.as_ref(), AgentActorEvent::ToolCalls(tc.clone())).await;
             // 执行工具调用
-            let tool_results = self.execute_tools(&tool_calls, event_tx.as_ref()).await;
+            let tool_results = self.execute_tools(&tc, event_tx.as_ref()).await;
 
-            // 更新 Context：添加 assistant 消息
+            // 更新 Context
             self.state.context.add_message(Message::Assistant {
-                content: final_content.clone(),
-                reasoning_content: final_reasoning_content.clone(),
-                tool_calls: Some(tool_calls.clone()),
+                content: content.clone(),
+                reasoning_content: reasoning_content.clone(),
+                tool_calls: Some(tc.clone()),
             });
-
-            // 更新 Context：添加 tool 结果消息
             for tr in &tool_results {
                 self.state.context.add_message(Message::Tool {
                     tool_call_id: tr.call_id.clone(),
@@ -345,49 +350,43 @@ where
             }
 
             // 发送迭代完成事件
-            if let Some(ref tx) = event_tx {
-                let _ = tx
-                    .send(AgentActorEvent::Iteration {
-                        iteration: self.state.iteration,
-                        message_count: self.state.context.conversation().len(),
-                    })
-                    .await;
-            }
+            Self::send_event(
+                event_tx.as_ref(),
+                AgentActorEvent::Iteration {
+                    iteration: self.state.iteration,
+                    message_count: self.state.context.conversation().len(),
+                },
+            )
+            .await;
 
-            // 更新状态为 WaitingInput（等待下一轮）
             self.state.state = crate::agents::JobState::WaitingInput;
-
             StepResult::Continue {
-                content: final_content,
-                reasoning_content: final_reasoning_content,
-                tool_calls,
+                content,
+                reasoning_content,
+                tool_calls: tc,
                 tool_results,
             }
         } else {
-            // 没有工具调用，执行完成
-            // 更新 Context：添加 assistant 消息
+            // 无工具调用，执行完成
             self.state.context.add_message(Message::Assistant {
-                content: final_content.clone(),
-                reasoning_content: final_reasoning_content.clone(),
+                content: content.clone(),
+                reasoning_content: reasoning_content.clone(),
                 tool_calls: None,
             });
 
-            // 发送迭代完成事件
-            if let Some(ref tx) = event_tx {
-                let _ = tx
-                    .send(AgentActorEvent::Iteration {
-                        iteration: self.state.iteration,
-                        message_count: self.state.context.conversation().len(),
-                    })
-                    .await;
-            }
+            Self::send_event(
+                event_tx.as_ref(),
+                AgentActorEvent::Iteration {
+                    iteration: self.state.iteration,
+                    message_count: self.state.context.conversation().len(),
+                },
+            )
+            .await;
 
-            // 更新状态为 Completed
             self.state.state = crate::agents::JobState::Completed;
-
             StepResult::Done {
-                content: final_content,
-                reasoning_content: final_reasoning_content,
+                content,
+                reasoning_content,
             }
         }
     }
@@ -398,21 +397,18 @@ where
         tool_calls: &[ToolCall],
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
     ) -> Vec<CallToolResult> {
-        let stream = call_tools(self.tool_executor.as_ref(), tool_calls);
-        let mut stream = pin!(stream);
-
+        let mut stream = pin!(call_tools(self.tool_executor.as_ref(), tool_calls));
         let mut results = Vec::new();
         while let Some(result) = stream.next().await {
-            // 发送 ToolResult 事件
-            if let Some(tx) = event_tx {
-                let _ = tx
-                    .send(AgentActorEvent::ToolResult {
-                        call_id: result.call_id.clone(),
-                        success: result.success,
-                        output: result.output.clone(),
-                    })
-                    .await;
-            }
+            Self::send_event(
+                event_tx,
+                AgentActorEvent::ToolResult {
+                    call_id: result.call_id.clone(),
+                    success: result.success,
+                    output: result.output.clone(),
+                },
+            )
+            .await;
             results.push(result);
         }
         results
@@ -433,7 +429,7 @@ where
             let mut cancelled = false;
 
             loop {
-                // 检查命令
+                // 处理所有待处理的命令
                 while let Ok(cmd) = cmd_rx.try_recv() {
                     match cmd {
                         AgentActorCommand::Pause => {
@@ -453,32 +449,55 @@ where
                     }
                 }
 
+                // 检查是否已取消
                 if cancelled {
-                    let _ = event_tx
-                        .send(AgentActorEvent::Error("Cancelled".to_string()))
+                    Self::send_event(Some(&event_tx), AgentActorEvent::Error("Cancelled".into()))
                         .await;
                     break;
                 }
 
+                // 处理暂停状态
                 if paused {
-                    // 等待继续命令
-                    if let Some(AgentActorCommand::Continue) = cmd_rx.recv().await {
-                        paused = false;
-                        self.state.state = crate::agents::JobState::Running;
+                    // 使用 select! 等待命令，同时处理所有类型的命令
+                    loop {
+                        match cmd_rx.recv().await {
+                            Some(AgentActorCommand::Continue) => {
+                                paused = false;
+                                self.state.state = crate::agents::JobState::Running;
+                                break;
+                            }
+                            Some(AgentActorCommand::Cancel) => {
+                                cancelled = true;
+                                self.state.state = crate::agents::JobState::Cancelled;
+                                break;
+                            }
+                            Some(AgentActorCommand::Pause) => {
+                                // 已经暂停，忽略重复的暂停命令
+                            }
+                            None => {
+                                // channel 已关闭，退出
+                                cancelled = true;
+                                break;
+                            }
+                        }
                     }
                     continue;
                 }
 
                 // 执行前检查最大迭代
                 if self.state.iteration >= self.state.max_iterations {
-                    let _ = event_tx
-                        .send(AgentActorEvent::MaxIterations {
+                    Self::send_event(
+                        Some(&event_tx),
+                        AgentActorEvent::MaxIterations {
                             iteration: self.state.iteration,
-                        })
-                        .await;
-                    let _ = event_tx
-                        .send(AgentActorEvent::Error("Max iterations reached".to_string()))
-                        .await;
+                        },
+                    )
+                    .await;
+                    Self::send_event(
+                        Some(&event_tx),
+                        AgentActorEvent::Error("Max iterations reached".into()),
+                    )
+                    .await;
                     break;
                 }
 
@@ -488,15 +507,14 @@ where
                 // 根据结果决定后续行为
                 match result {
                     StepResult::Continue { .. } => {
-                        // 循环模式直接继续下一次迭代
+                        // 继续下一次迭代
                     }
                     StepResult::Done { .. } => {
-                        // 发送完成事件
-                        let _ = event_tx.send(AgentActorEvent::Completed).await;
+                        Self::send_event(Some(&event_tx), AgentActorEvent::Completed).await;
                         break;
                     }
                     StepResult::Error(e) => {
-                        let _ = event_tx.send(AgentActorEvent::Error(e)).await;
+                        Self::send_event(Some(&event_tx), AgentActorEvent::Error(e)).await;
                         break;
                     }
                 }

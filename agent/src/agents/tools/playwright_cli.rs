@@ -14,13 +14,19 @@ pub struct PlaywrightCliTool {
 impl PlaywrightCliTool {
     pub fn new() -> Self {
         let definition = ToolDef {
-            name: "playwright_cli".to_string(),
+            name: "playwright-cli".to_string(),
             description: r#"
-                A browser automation tool for web navigation, content extraction, and interaction.
-                Common commands:
-                - `open <url>` - Navigate to a URL and wait for page load
-                - `--help` - Show all available commands
-                Always start with `open <url>` to navigate to a page before extracting content.
+            A browser automation tool for web navigation, content extraction, and interaction.
+            Common commands:
+            - `open <url>` - Navigate to a URL and wait for page load
+            - `--help` - Show all available commands
+            Strict execution rules (must follow in order):
+            First run: Always start with open <url> to navigate to the target URL and wait for page load.
+            Second run: Immediately execute --help to list all valid commands, parameters, and usage.
+            Subsequent operations:
+            - Only use commands explicitly shown in the --help output.
+            - Never use any command not present in --help.
+            - Do not guess, invent, or run any command blindly.
             "#
             .trim()
             .to_string(),
@@ -42,15 +48,14 @@ impl PlaywrightCliTool {
 
     async fn execute_command(&self, args: &[String]) -> Result<String, ToolExecutorError> {
         let (cmd, cmd_args) = if cfg!(windows) {
-            ("powershell.exe", {
-                let mut full_args = vec!["-Command".to_string(), "playwright-cli".to_string()];
+            ("cmd.exe", {
+                let mut full_args = vec!["/c".to_string(), "playwright-cli".to_string()];
                 full_args.extend_from_slice(args);
                 full_args
             })
         } else {
             ("playwright-cli", args.to_vec())
         };
-
         let output = Command::new(cmd)
             .args(&cmd_args)
             .stdout(Stdio::piped())
@@ -58,6 +63,7 @@ impl PlaywrightCliTool {
             .output()
             .await
             .map_err(|e| {
+                println!("playwright_cli error: {:?}", e);
                 if e.kind() == std::io::ErrorKind::NotFound {
                     ToolExecutorError::ExecutionError(
                         "playwright-cli not found. Please install it with: npm install -g @playwright/cli@latest".to_string()
@@ -66,7 +72,6 @@ impl PlaywrightCliTool {
                     ToolExecutorError::ExecutionError(format!("Failed to execute playwright-cli: {}", e))
                 }
             })?;
-
         let mut result = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !stderr.is_empty() {
