@@ -1,21 +1,19 @@
 #[cfg(test)]
 mod tests {
+    use std::pin::pin;
+
     use crate::agents::tools::playwright_cli::PlaywrightCliTool;
-    use crate::agents::utils::collect_stream;
     use crate::agents::{
-        AgentActor, AgentActorEvent, Context, GenericToolExecutor, Tool, ToolCall,
-        ToolCallFunction, ToolDef, ToolExecutor, call_tools,
+        call_model, call_tools, AgentActor, AgentActorEvent, CallModelEvent, Context,
+        GenericToolExecutor, Tool, ToolCall, ToolDef, ToolExecutor,
     };
     use crate::core::Message;
-    use crate::models::{ChatCapability, ChatChunk, ChatModel};
-    use crate::providers::{DeepSeekProvider, LlamaCppProvider};
+    use crate::models::ChatModel;
+    use crate::providers::DeepSeekProvider;
     use async_trait::async_trait;
     use futures::StreamExt;
-    use futures::stream::BoxStream;
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::Duration;
 
     // ============================================================================
     // Mock Tool for Testing
@@ -96,6 +94,7 @@ mod tests {
             println!("设置活动模型失败: {}", e);
             return;
         }
+        let model = Arc::new(model);
 
         // 2. 创建工具执行器并注册工具
         let mut executor = GenericToolExecutor::new();
@@ -118,39 +117,73 @@ mod tests {
         for iteration in 1..=max_iterations {
             println!("=== Iteration {} ===", iteration);
 
-            // 流式调用模型
-            let stream = model
-                .chat_stream(messages.clone(), Some(executor.tools().clone()))
-                .await;
+            // 克隆消息以避免借用冲突
+            let messages_clone = messages.clone();
 
-            let stream = match stream {
-                Ok(s) => s,
-                Err(e) => {
-                    println!("[Error] 模型调用失败: {:?}", e);
-                    break;
+            // 使用 call_model 纯函数
+            let stream = call_model(&messages_clone, Some(executor.tools()), model.as_ref());
+            let mut stream = pin!(stream);
+
+            let mut content = String::new();
+            let mut reasoning_content: Option<String> = None;
+            let mut tool_calls: Option<Vec<ToolCall>> = None;
+
+            while let Some(event) = stream.next().await {
+                match event {
+                    CallModelEvent::TextChunk(text) => {
+                        content.push_str(&text);
+                        print!("{}", text);
+                    }
+                    CallModelEvent::ReasoningChunk(text) => {
+                        reasoning_content
+                            .get_or_insert_with(String::new)
+                            .push_str(&text);
+                    }
+                    CallModelEvent::Completed {
+                        content: c,
+                        reasoning_content: rc,
+                        tool_calls: tc,
+                    } => {
+                        content = c;
+                        reasoning_content = rc;
+                        tool_calls = tc;
+                    }
+                    CallModelEvent::Error(e) => {
+                        println!("[Error] {}", e);
+                        return;
+                    }
                 }
-            };
+            }
 
-            // 收集流式响应
-            let (content, tool_calls) = collect_stream(stream).await;
+            // drop stream 以释放借用
+            drop(stream);
 
             // 构建助手消息
             let assistant_msg = Message::Assistant {
-                content,
-                reasoning_content: None,
+                content: content.clone(),
+                reasoning_content: reasoning_content.clone(),
                 tool_calls: tool_calls.clone(),
             };
 
-            // 打印助手响应（流式已实时打印，这里打印摘要）
-            println!("\n[Assistant Message] 已接收完整响应");
+            // 打印助手响应
+            println!("\n[Assistant Message] {}", content);
 
             // 添加助手消息到历史
             messages.push(assistant_msg);
 
             // 检查是否有工具调用
             if let Some(calls) = tool_calls {
-                let tools_result = call_tools(&executor, calls).await;
-                messages.extend(tools_result);
+                // 执行工具
+                let tool_stream = call_tools(&executor, &calls);
+                let mut tool_stream = pin!(tool_stream);
+
+                while let Some(result) = tool_stream.next().await {
+                    println!("[Tool] {} -> {}", result.tool_name, result.output);
+                    messages.push(Message::Tool {
+                        tool_call_id: result.call_id,
+                        content: result.output,
+                    });
+                }
                 continue;
             } else {
                 // 没有工具调用，Agent 完成
@@ -256,10 +289,10 @@ mod tests {
         while let Some(event) = handle.event_rx.recv().await {
             match &event {
                 AgentActorEvent::Chunk(content) => {
-                    // print!("{}", content);
+                    print!("{}", content);
                 }
                 AgentActorEvent::ReasoningChunk(content) => {
-                    // print!("{}", content);
+                    print!("{}", content);
                 }
                 AgentActorEvent::ToolCalls(calls) => {
                     println!("\n[Event] ToolCalls: {} 个工具调用", calls.len());

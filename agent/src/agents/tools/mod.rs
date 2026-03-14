@@ -101,7 +101,7 @@ pub enum ToolExecutorError {
 
 // 工具执行器独立
 #[async_trait]
-pub trait ToolExecutor {
+pub trait ToolExecutor: Sync {
     async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolExecutorError>;
     fn tools(&self) -> &Vec<ToolDef>;
 }

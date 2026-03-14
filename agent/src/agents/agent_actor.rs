@@ -7,7 +7,7 @@
 //! - 流式事件输出
 //!
 //! 职责分离：
-//! - 执行逻辑由 `AgentExecutor` 处理（单步执行）
+//! - 执行逻辑由纯函数 `call_model`、`call_tools` 处理
 //! - 本文件负责控制面：命令处理、状态转换、事件发送、迭代控制
 
 use std::pin::pin;
@@ -17,7 +17,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::agent_executor::{AgentExecutor, StepEvent, StepResult};
+use super::agent_utils::{call_model, call_tools, CallModelEvent, CallToolResult};
 use crate::agents::{AgentState, Context, ToolCall, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
@@ -108,6 +108,29 @@ impl AgentActorHandle {
 }
 
 // ============================================================================
+// Step Result
+// ============================================================================
+
+/// 单步执行结果
+#[derive(Debug, Clone)]
+pub enum StepResult {
+    /// 需要继续执行（有工具调用）
+    Continue {
+        content: String,
+        reasoning_content: Option<String>,
+        tool_calls: Vec<ToolCall>,
+        tool_results: Vec<CallToolResult>,
+    },
+    /// 执行完成（无工具调用）
+    Done {
+        content: String,
+        reasoning_content: Option<String>,
+    },
+    /// 执行出错
+    Error(String),
+}
+
+// ============================================================================
 // Agent Actor
 // ============================================================================
 
@@ -123,7 +146,7 @@ impl AgentActorHandle {
 /// - 事件发送
 /// - 迭代控制（最大迭代次数）
 ///
-/// 执行面由 `AgentExecutor` 处理，只负责单步执行。
+/// 执行面由纯函数 `call_model`、`call_tools` 处理。
 /// Context 由 Actor 管理，执行器不持有状态。
 pub struct AgentActor<C, E>
 where
@@ -132,8 +155,10 @@ where
 {
     /// Agent 状态（控制面）
     state: AgentState,
-    /// 执行器（执行面，无状态）
-    executor: AgentExecutor<C, E>,
+    /// Chat 模型
+    chat: Arc<C>,
+    /// 工具执行器
+    tool_executor: Arc<E>,
 }
 
 impl<C, E> AgentActor<C, E>
@@ -142,7 +167,7 @@ where
     E: ToolExecutor + Send + Sync + 'static,
 {
     /// 创建新的 Agent Actor
-    pub fn new(chat: Arc<C>, executor: Arc<E>, context: Context) -> Self {
+    pub fn new(chat: Arc<C>, tool_executor: Arc<E>, context: Context) -> Self {
         Self {
             state: AgentState {
                 job_id: Uuid::new_v4(),
@@ -158,7 +183,8 @@ where
                 iteration: 0,
                 max_iterations: 10,
             },
-            executor: AgentExecutor::new(chat, executor),
+            chat,
+            tool_executor,
         }
     }
 
@@ -229,147 +255,167 @@ where
 
         // 从 Context 获取消息列表
         let messages = self.state.context.to_messages();
+        let tools_def = Some(self.tool_executor.tools().clone());
 
-        // 使用新的 run_step_stream API
-        let stream = super::agent_executor::run_step_stream(&self.executor, messages);
+        // 使用 call_model 纯函数
+        let stream = call_model(&messages, tools_def.as_ref(), self.chat.as_ref());
         let mut stream = pin!(stream);
 
         // 处理流事件
-        let mut result = StepResult::Error("Stream ended without result".to_string());
+        let mut final_content = String::new();
+        let mut final_reasoning_content: Option<String> = None;
+        let mut final_tool_calls: Option<Vec<ToolCall>> = None;
+        let mut error: Option<String> = None;
 
         while let Some(event) = stream.next().await {
             match event {
-                StepEvent::Text(text) => {
+                CallModelEvent::TextChunk(text) => {
+                    final_content.push_str(&text);
                     if let Some(ref tx) = event_tx {
                         let _ = tx.send(AgentActorEvent::Chunk(text)).await;
                     }
                 }
-                StepEvent::Reasoning(text) => {
+                CallModelEvent::ReasoningChunk(text) => {
+                    final_reasoning_content
+                        .get_or_insert_with(String::new)
+                        .push_str(&text);
                     if let Some(ref tx) = event_tx {
                         let _ = tx.send(AgentActorEvent::ReasoningChunk(text)).await;
                     }
                 }
-                StepEvent::LlmCompleted {
+                CallModelEvent::Completed {
                     content,
                     reasoning_content,
                     tool_calls,
                 } => {
-                    if let Some(ref tx) = event_tx {
-                        let _ = tx
-                            .send(AgentActorEvent::StepCompleted {
-                                content,
-                                reasoning_content,
-                                tool_calls,
-                            })
-                            .await;
-                    }
+                    final_content = content;
+                    final_reasoning_content = reasoning_content;
+                    final_tool_calls = tool_calls;
                 }
-                StepEvent::ToolStart { call_id, name } => {
-                    // 可以发送工具开始事件（如果需要）
-                    let _ = (call_id, name); // 暂时忽略
-                }
-                StepEvent::ToolEnd {
-                    call_id,
-                    success,
-                    output,
-                } => {
-                    if let Some(ref tx) = event_tx {
-                        let _ = tx
-                            .send(AgentActorEvent::ToolResult {
-                                call_id,
-                                success,
-                                output,
-                            })
-                            .await;
-                    }
-                }
-                StepEvent::Done(step_result) => {
-                    result = step_result;
-                    break;
-                }
-                StepEvent::Error(e) => {
-                    result = StepResult::Error(e);
+                CallModelEvent::Error(e) => {
+                    error = Some(e);
                     break;
                 }
             }
         }
 
-        // 处理执行结果
-        match &result {
+        // 处理错误
+        if let Some(e) = error {
+            self.state.state = crate::agents::JobState::Failed;
+            if let Some(ref tx) = event_tx {
+                let _ = tx.send(AgentActorEvent::Error(e.clone())).await;
+            }
+            return StepResult::Error(e);
+        }
+
+        // 发送 StepCompleted 事件
+        if let Some(ref tx) = event_tx {
+            let _ = tx
+                .send(AgentActorEvent::StepCompleted {
+                    content: final_content.clone(),
+                    reasoning_content: final_reasoning_content.clone(),
+                    tool_calls: final_tool_calls.clone(),
+                })
+                .await;
+        }
+
+        // 检查是否有工具调用
+        if let Some(tool_calls) = final_tool_calls {
+            // 发送 ToolCalls 事件
+            if let Some(ref tx) = event_tx {
+                let _ = tx.send(AgentActorEvent::ToolCalls(tool_calls.clone())).await;
+            }
+
+            // 执行工具调用
+            let tool_results = self.execute_tools(&tool_calls, event_tx.as_ref()).await;
+
+            // 更新 Context：添加 assistant 消息
+            self.state.context.add_message(Message::Assistant {
+                content: final_content.clone(),
+                reasoning_content: final_reasoning_content.clone(),
+                tool_calls: Some(tool_calls.clone()),
+            });
+
+            // 更新 Context：添加 tool 结果消息
+            for tr in &tool_results {
+                self.state.context.add_message(Message::Tool {
+                    tool_call_id: tr.call_id.clone(),
+                    content: tr.output.clone(),
+                });
+            }
+
+            // 发送迭代完成事件
+            if let Some(ref tx) = event_tx {
+                let _ = tx
+                    .send(AgentActorEvent::Iteration {
+                        iteration: self.state.iteration,
+                        message_count: self.state.context.conversation().len(),
+                    })
+                    .await;
+            }
+
+            // 更新状态为 WaitingInput（等待下一轮）
+            self.state.state = crate::agents::JobState::WaitingInput;
+
             StepResult::Continue {
-                content,
-                reasoning_content,
+                content: final_content,
+                reasoning_content: final_reasoning_content,
                 tool_calls,
                 tool_results,
-            } => {
-                // 更新 Context：添加 assistant 消息
-                self.state.context.add_message(Message::Assistant {
-                    content: content.clone(),
-                    reasoning_content: reasoning_content.clone(),
-                    tool_calls: Some(tool_calls.clone()),
-                });
-
-                // 更新 Context：添加 tool 结果消息
-                for tr in tool_results {
-                    self.state.context.add_message(Message::Tool {
-                        tool_call_id: tr.call_id.clone(),
-                        content: tr.output.clone(),
-                    });
-                }
-
-                // 发送工具调用事件
-                if let Some(ref tx) = event_tx {
-                    let _ = tx.send(AgentActorEvent::ToolCalls(tool_calls.clone())).await;
-                    for tr in tool_results {
-                        let _ = tx
-                            .send(AgentActorEvent::ToolResult {
-                                call_id: tr.call_id.clone(),
-                                success: tr.success,
-                                output: tr.output.clone(),
-                            })
-                            .await;
-                    }
-                    let _ = tx
-                        .send(AgentActorEvent::Iteration {
-                            iteration: self.state.iteration,
-                            message_count: self.state.context.conversation().len(),
-                        })
-                        .await;
-                }
-
-                // 继续状态
-                self.state.state = crate::agents::JobState::WaitingInput;
             }
+        } else {
+            // 没有工具调用，执行完成
+            // 更新 Context：添加 assistant 消息
+            self.state.context.add_message(Message::Assistant {
+                content: final_content.clone(),
+                reasoning_content: final_reasoning_content.clone(),
+                tool_calls: None,
+            });
+
+            // 发送迭代完成事件
+            if let Some(ref tx) = event_tx {
+                let _ = tx
+                    .send(AgentActorEvent::Iteration {
+                        iteration: self.state.iteration,
+                        message_count: self.state.context.conversation().len(),
+                    })
+                    .await;
+            }
+
+            // 更新状态为 Completed
+            self.state.state = crate::agents::JobState::Completed;
+
             StepResult::Done {
-                content,
-                reasoning_content,
-            } => {
-                // 更新 Context：添加 assistant 消息
-                self.state.context.add_message(Message::Assistant {
-                    content: content.clone(),
-                    reasoning_content: reasoning_content.clone(),
-                    tool_calls: None,
-                });
-
-                // 发送迭代完成事件
-                if let Some(ref tx) = event_tx {
-                    let _ = tx
-                        .send(AgentActorEvent::Iteration {
-                            iteration: self.state.iteration,
-                            message_count: self.state.context.conversation().len(),
-                        })
-                        .await;
-                }
-
-                // 完成状态
-                self.state.state = crate::agents::JobState::Completed;
-            }
-            StepResult::Error(_) => {
-                self.state.state = crate::agents::JobState::Failed;
+                content: final_content,
+                reasoning_content: final_reasoning_content,
             }
         }
+    }
 
-        result
+    /// 执行工具调用
+    async fn execute_tools(
+        &self,
+        tool_calls: &[ToolCall],
+        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
+    ) -> Vec<CallToolResult> {
+        let stream = call_tools(self.tool_executor.as_ref(), tool_calls);
+        let mut stream = pin!(stream);
+
+        let mut results = Vec::new();
+        while let Some(result) = stream.next().await {
+            // 发送 ToolResult 事件
+            if let Some(tx) = event_tx {
+                let _ = tx
+                    .send(AgentActorEvent::ToolResult {
+                        call_id: result.call_id.clone(),
+                        success: result.success,
+                        output: result.output.clone(),
+                    })
+                    .await;
+            }
+            results.push(result);
+        }
+        results
     }
 
     /// 启动循环执行，返回控制句柄

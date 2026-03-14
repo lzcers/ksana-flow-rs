@@ -40,7 +40,7 @@ pub enum CallModelEvent {
 pub fn call_model(
     messages: &Vec<Message>,
     tools_def: Option<&Vec<ToolDef>>,
-    model: impl ChatCapability + Send,
+    model: &(dyn ChatCapability + Sync),
 ) -> impl Stream<Item = CallModelEvent> + Send {
     let mut final_content = String::new();
     let mut final_reasoning_content = String::new();
@@ -116,7 +116,7 @@ pub async fn call_tool(tool_executor: &dyn ToolExecutor, call: &ToolCall) -> Cal
 // 并行执行多个工具
 pub fn call_tools(
     tool_executor: &dyn ToolExecutor,
-    tools_call: &Vec<ToolCall>,
+    tools_call: &[ToolCall],
 ) -> impl Stream<Item = CallToolResult> {
     let futures: Vec<_> = tools_call
         .iter()
