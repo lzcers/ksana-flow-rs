@@ -26,7 +26,7 @@ use crate::models::ChatCapability;
 #[derive(Debug, Clone)]
 pub enum AgentActorEvent {
     /// 流式输出片段
-    Chunk(String),
+    ContentChunk(String),
     /// 推理内容片段（DeepSeek 推理模式）
     ReasoningChunk(String),
     /// LLM 响应完成，包含完整的 content 和 tool_calls
@@ -221,7 +221,7 @@ where
             match event {
                 CallModelEvent::TextChunk(text) => {
                     content.push_str(&text);
-                    Self::send_event(event_tx.as_ref(), AgentActorEvent::Chunk(text)).await;
+                    Self::send_event(event_tx.as_ref(), AgentActorEvent::ContentChunk(text)).await;
                 }
                 CallModelEvent::ReasoningChunk(text) => {
                     reasoning_content

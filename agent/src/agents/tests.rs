@@ -288,7 +288,7 @@ mod tests {
 
         while let Some(event) = handle.event_rx.recv().await {
             match &event {
-                AgentActorEvent::Chunk(content) => {
+                AgentActorEvent::ContentChunk(content) => {
                     // print!("{}", content);
                 }
                 AgentActorEvent::ReasoningChunk(content) => {
