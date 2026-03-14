@@ -25,10 +25,14 @@ use crate::models::{ChatCapability, ChatChunk};
 pub enum StreamChunk {
     /// LLM 输出的文本片段
     Text(String),
+    /// DeepSeek 推理模式的推理内容片段
+    Reasoning(String),
     /// LLM 响应完成
     Completed {
         /// 完整的响应内容
         content: String,
+        /// 完整的推理内容（如果有）
+        reasoning_content: Option<String>,
         /// 工具调用列表（如果有）
         tool_calls: Option<Vec<ToolCall>>,
     },
@@ -41,6 +45,8 @@ pub enum StepResult {
     Continue {
         /// LLM 响应内容
         content: String,
+        /// 推理内容（DeepSeek 推理模式）
+        reasoning_content: Option<String>,
         /// 工具调用列表
         tool_calls: Vec<ToolCall>,
         /// 工具执行结果
@@ -50,6 +56,8 @@ pub enum StepResult {
     Done {
         /// LLM 响应内容
         content: String,
+        /// 推理内容（DeepSeek 推理模式）
+        reasoning_content: Option<String>,
     },
     /// 执行错误
     Error(String),
@@ -135,13 +143,15 @@ where
         };
 
         // 收集流式响应并实时发送事件
-        let (content, tool_calls) = collect_stream(stream, stream_tx.as_ref()).await;
+        let (content, reasoning_content, tool_calls) =
+            collect_stream(stream, stream_tx.as_ref()).await;
 
         // 发送 LLM 响应完成事件
         if let Some(ref tx) = stream_tx {
             if let Err(e) = tx
                 .send(StreamChunk::Completed {
                     content: content.clone(),
+                    reasoning_content: reasoning_content.clone(),
                     tool_calls: tool_calls.clone(),
                 })
                 .await
@@ -157,12 +167,16 @@ where
 
             StepResult::Continue {
                 content,
+                reasoning_content,
                 tool_calls,
                 tool_results,
             }
         } else {
             // 没有工具调用，完成
-            StepResult::Done { content }
+            StepResult::Done {
+                content,
+                reasoning_content,
+            }
         }
     }
 
@@ -221,12 +235,13 @@ where
 /// - `stream_tx`: 可选的流式事件发送通道
 ///
 /// # 返回
-/// - `(content, tool_calls)`: 累积的内容和工具调用列表
+/// - `(content, reasoning_content, tool_calls)`: 累积的内容、推理内容和工具调用列表
 async fn collect_stream(
     mut stream: BoxStream<'static, ChatChunk>,
     stream_tx: Option<&mpsc::Sender<StreamChunk>>,
-) -> (String, Option<Vec<ToolCall>>) {
+) -> (String, Option<String>, Option<Vec<ToolCall>>) {
     let mut content = String::new();
+    let mut reasoning_content = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
 
     while let Some(chunk) = stream.next().await {
@@ -238,11 +253,27 @@ async fn collect_stream(
             content.push_str(&chunk.content);
         }
 
+        // 实时发送推理内容片段
+        if !chunk.reasoning_content.is_empty() {
+            if let Some(tx) = stream_tx {
+                let _ = tx
+                    .send(StreamChunk::Reasoning(chunk.reasoning_content.clone()))
+                    .await;
+            }
+            reasoning_content.push_str(&chunk.reasoning_content);
+        }
+
         // 合并工具调用
         if let Some(inc_tool_calls) = chunk.tool_calls {
             merge_tool_calls(&mut tool_calls, inc_tool_calls);
         }
     }
+
+    let final_reasoning = if reasoning_content.is_empty() {
+        None
+    } else {
+        Some(reasoning_content)
+    };
 
     let final_tool_calls = if tool_calls.is_empty() {
         None
@@ -250,7 +281,7 @@ async fn collect_stream(
         Some(tool_calls)
     };
 
-    (content, final_tool_calls)
+    (content, final_reasoning, final_tool_calls)
 }
 
 /// 合并增量 ToolCall

@@ -1,4 +1,5 @@
 mod deepseek;
+mod llamacpp;
 mod openrouter;
 
 use crate::agents::{ToolCall, ToolDef};
@@ -6,6 +7,7 @@ use crate::core::{Message, MessageRole};
 use async_trait::async_trait;
 pub use deepseek::DeepSeekProvider;
 use futures::stream::BoxStream;
+pub use llamacpp::LlamaCppProvider;
 pub use openrouter::OpenRouterProvider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -22,6 +24,13 @@ pub struct Usage {
     pub total_tokens: Option<u32>,
 }
 
+impl Usage {
+    pub fn total(&self) -> u32 {
+        self.total_tokens
+            .unwrap_or(self.prompt_tokens + self.completion_tokens)
+    }
+}
+
 #[derive(Debug)]
 pub enum ProviderError {
     Request(reqwest::Error),
@@ -30,6 +39,16 @@ pub enum ProviderError {
     ApiError { code: u16, message: String },
     MissingApiKey,
     StreamError(String),
+}
+
+impl std::error::Error for ProviderError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ProviderError::Request(e) => Some(e),
+            ProviderError::Serialization(e) => Some(e),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for ProviderError {
@@ -43,16 +62,6 @@ impl std::fmt::Display for ProviderError {
             }
             ProviderError::MissingApiKey => write!(f, "Missing API key"),
             ProviderError::StreamError(msg) => write!(f, "Stream error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ProviderError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ProviderError::Request(e) => Some(e),
-            ProviderError::Serialization(e) => Some(e),
-            _ => None,
         }
     }
 }
@@ -155,6 +164,9 @@ pub struct ChoiceImg {
 pub struct ChoiceMessage {
     pub role: MessageRole,
     pub content: String,
+    /// DeepSeek 推理模式的推理内容（如 deepseek-reasoner）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ChoiceImg>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -193,6 +205,9 @@ pub struct Delta {
     pub role: Option<MessageRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// DeepSeek 推理模式的推理内容（如 deepseek-reasoner）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 }

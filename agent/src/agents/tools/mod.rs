@@ -22,9 +22,14 @@ pub struct ToolDef {
 }
 
 /// OpenAI 兼容的工具调用 function 字段
+///
+/// 注意：流式响应中，增量 chunks 可能只包含部分字段，
+/// 使用 `#[serde(default)]` 允许缺失时使用默认值。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallFunction {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub arguments: String,
 }
 
@@ -33,6 +38,10 @@ pub struct ToolCallFunction {
 pub struct ToolCall {
     /// 工具调用的唯一标识符，用于将结果与调用关联。
     /// 通常由模型生成，执行结果需原样返回。
+    ///
+    /// 注意：流式响应中，后续增量 chunks 不包含 id 字段，
+    /// 使用 `#[serde(default)]` 允许缺失时使用空字符串作为默认值。
+    #[serde(default)]
     pub id: String,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub call_type: Option<String>,
@@ -95,4 +104,75 @@ pub enum ToolExecutorError {
 pub trait ToolExecutor {
     async fn execute(&self, call: ToolCall) -> Result<ToolResult, ToolExecutorError>;
     fn tools(&self) -> &Vec<ToolDef>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_full_tool_call() {
+        // 完整的 ToolCall（包含 id）
+        let json = r#"{"id":"call_123","type":"function","index":0,"function":{"name":"search","arguments":"{\"query\":\"test\"}"}}"#;
+        let tc: ToolCall = serde_json::from_str(json).unwrap();
+        assert_eq!(tc.id, "call_123");
+        assert_eq!(tc.call_type, Some("function".to_string()));
+        assert_eq!(tc.index, Some(0));
+        assert!(tc.function.is_some());
+        let func = tc.function.unwrap();
+        assert_eq!(func.name, "search");
+        assert_eq!(func.arguments, r#"{"query":"test"}"#);
+    }
+
+    #[test]
+    fn test_deserialize_incremental_tool_call() {
+        // 增量 ToolCall（不包含 id 字段）- 流式响应中的后续 chunks
+        let json = r#"{"index":0,"function":{"arguments":"{\"args\":\"test\"}"}}"#;
+        let tc: ToolCall = serde_json::from_str(json).unwrap();
+        assert_eq!(tc.id, ""); // 默认空字符串
+        assert_eq!(tc.index, Some(0));
+        assert!(tc.function.is_some());
+    }
+
+    #[test]
+    fn test_deserialize_minimal_tool_call() {
+        // 最小 ToolCall（只有 index）
+        let json = r#"{"index":1}"#;
+        let tc: ToolCall = serde_json::from_str(json).unwrap();
+        assert_eq!(tc.id, "");
+        assert_eq!(tc.index, Some(1));
+        assert!(tc.function.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_incremental_arguments_only() {
+        // 流式响应中最常见的增量格式：只有 index 和 function.arguments
+        let json = r#"{"index":0,"function":{"arguments":"{\"ci"}}"#;
+        let tc: ToolCall = serde_json::from_str(json).unwrap();
+        assert_eq!(tc.id, "");
+        assert_eq!(tc.index, Some(0));
+        assert!(tc.function.is_some());
+        let func = tc.function.unwrap();
+        assert_eq!(func.name, ""); // 默认空字符串
+        assert_eq!(func.arguments, r#"{"ci"#); // 部分 arguments
+    }
+
+    #[test]
+    fn test_tool_call_getters() {
+        // 测试 getter 方法
+        let tc = ToolCall {
+            id: "test_id".to_string(),
+            call_type: None,
+            index: None,
+            function: Some(ToolCallFunction {
+                name: "test_tool".to_string(),
+                arguments: r#"{"key":"value"}"#.to_string(),
+            }),
+            name: None,
+            arguments: None,
+        };
+        assert_eq!(tc.get_name(), "test_tool");
+        let args = tc.get_arguments();
+        assert_eq!(args["key"], "value");
+    }
 }

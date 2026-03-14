@@ -29,6 +29,9 @@ pub enum Message {
     #[serde(rename = "assistant")]
     Assistant {
         content: String,
+        /// DeepSeek 推理模式的推理内容（如 deepseek-reasoner）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reasoning_content: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         tool_calls: Option<Vec<ToolCall>>,
     },
@@ -55,6 +58,19 @@ impl Message {
     pub fn assistant(content: impl Into<String>) -> Self {
         Self::Assistant {
             content: content.into(),
+            reasoning_content: None,
+            tool_calls: None,
+        }
+    }
+
+    /// 创建带推理内容的 Assistant 消息
+    pub fn assistant_with_reasoning(
+        content: impl Into<String>,
+        reasoning_content: impl Into<String>,
+    ) -> Self {
+        Self::Assistant {
+            content: content.into(),
+            reasoning_content: Some(reasoning_content.into()),
             tool_calls: None,
         }
     }
@@ -66,6 +82,16 @@ impl Message {
             Self::User { content } => content,
             Self::Assistant { content, .. } => content,
             Self::Tool { content, .. } => content,
+        }
+    }
+
+    /// 获取推理内容（仅 Assistant 消息有）
+    pub fn reasoning_content(&self) -> Option<&str> {
+        match self {
+            Self::Assistant {
+                reasoning_content, ..
+            } => reasoning_content.as_deref(),
+            _ => None,
         }
     }
 }

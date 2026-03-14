@@ -29,10 +29,14 @@ use crate::models::ChatCapability;
 pub enum AgentActorEvent {
     /// 流式输出片段
     Chunk(String),
+    /// 推理内容片段（DeepSeek 推理模式）
+    ReasoningChunk(String),
     /// LLM 响应完成，包含完整的 content 和 tool_calls
     StepCompleted {
         /// 完整的响应内容
         content: String,
+        /// 完整的推理内容（如果有）
+        reasoning_content: Option<String>,
         /// 工具调用列表（如果有）
         tool_calls: Option<Vec<ToolCall>>,
     },
@@ -229,12 +233,14 @@ where
         match &result {
             StepResult::Continue {
                 content,
+                reasoning_content,
                 tool_calls,
                 tool_results,
             } => {
                 // 更新 Context：添加 assistant 消息
                 self.state.context.add_message(Message::Assistant {
                     content: content.clone(),
+                    reasoning_content: reasoning_content.clone(),
                     tool_calls: Some(tool_calls.clone()),
                 });
 
@@ -249,10 +255,14 @@ where
                 // 继续状态
                 self.state.state = crate::agents::JobState::WaitingInput;
             }
-            StepResult::Done { content } => {
+            StepResult::Done {
+                content,
+                reasoning_content,
+            } => {
                 // 更新 Context：添加 assistant 消息
                 self.state.context.add_message(Message::Assistant {
                     content: content.clone(),
+                    reasoning_content: reasoning_content.clone(),
                     tool_calls: None,
                 });
 
@@ -348,13 +358,24 @@ where
                                     break;
                                 }
                             }
+                            StreamChunk::Reasoning(text) => {
+                                if event_tx_clone
+                                    .send(AgentActorEvent::ReasoningChunk(text))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
                             StreamChunk::Completed {
                                 content,
+                                reasoning_content,
                                 tool_calls,
                             } => {
                                 if event_tx_clone
                                     .send(AgentActorEvent::StepCompleted {
                                         content,
+                                        reasoning_content,
                                         tool_calls,
                                     })
                                     .await

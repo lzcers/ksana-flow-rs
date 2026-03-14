@@ -29,6 +29,8 @@ pub enum ChatError {
 pub struct ChatChunk {
     /// 本次流式返回的片段内容
     pub content: String,
+    /// DeepSeek 推理模式的推理内容片段（如 deepseek-reasoner）
+    pub reasoning_content: String,
     /// 标记是否是最后一个片段
     pub is_finished: bool,
     /// 结束原因（比如 "stop" / "length"）

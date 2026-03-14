@@ -1,41 +1,41 @@
 use super::{Provider, ProviderError, Request, Response, StreamResponse};
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
+use reqwest::header::{CONTENT_TYPE, HeaderMap};
 use std::env;
 
-/// DeepSeek API 提供商
-/// 支持从环境变量 `DEEPSEEK_API_KEY` 获取 API 密钥
-pub struct DeepSeekProvider {
+/// llama.cpp 本地 API 提供商
+/// 支持从环境变量 `LLAMACPP_BASE_URL` 获取服务器地址，默认为 `http://localhost:8001`
+/// llama.cpp 服务器通常不需要 API 密钥
+pub struct LlamaCppProvider {
     client: reqwest::Client,
-    api_key: String,
     base_url: String,
 }
 
-impl DeepSeekProvider {
-    /// 从环境变量创建 DeepSeekProvider
-    /// 环境变量: DEEPSEEK_API_KEY
+impl LlamaCppProvider {
+    /// 从环境变量创建 LlamaCppProvider
+    /// 环境变量: LLAMACPP_BASE_URL (可选，默认 http://localhost:8001)
     pub fn from_env() -> Result<Self, ProviderError> {
-        let api_key = env::var("DEEPSEEK_API_KEY").map_err(|_| ProviderError::MissingApiKey)?;
+        let base_url =
+            env::var("LLAMACPP_BASE_URL").unwrap_or_else(|_| "http://localhost:8001".to_string());
 
-        Ok(Self::new(api_key))
+        Ok(Self::new(base_url))
     }
 
-    /// 使用指定的 API 密钥创建 DeepSeekProvider
-    pub fn new(api_key: impl Into<String>) -> Self {
+    /// 使用指定的服务器地址创建 LlamaCppProvider
+    pub fn new(base_url: impl Into<String>) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(300)) // 本地推理可能较慢
             .build()
             .expect("Failed to build HTTP client");
 
         Self {
             client,
-            api_key: api_key.into(),
-            base_url: "https://api.deepseek.com".to_string(),
+            base_url: base_url.into(),
         }
     }
 
-    /// 设置自定义基础 URL（用于测试或其他端点）
+    /// 设置自定义基础 URL
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
@@ -43,12 +43,7 @@ impl DeepSeekProvider {
 
     fn build_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            AUTHORIZATION,
-            format!("Bearer {}", self.api_key)
-                .parse()
-                .expect("Invalid API key format"),
-        );
+        // llama.cpp 服务器通常不需要认证
         headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
         headers
     }
@@ -67,7 +62,7 @@ impl DeepSeekProvider {
 }
 
 #[async_trait]
-impl Provider for DeepSeekProvider {
+impl Provider for LlamaCppProvider {
     async fn send_request(
         &self,
         path: &str,
@@ -133,6 +128,7 @@ impl Provider for DeepSeekProvider {
             .json(&request)
             .send()
             .await?;
+
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -153,7 +149,6 @@ impl Provider for DeepSeekProvider {
                 let text = String::from_utf8_lossy(&chunk).to_string();
                 text.lines()
                     .filter_map(|line| {
-                        // println!("{}", line);
                         Self::parse_sse_line(line)
                             .and_then(|json| serde_json::from_value::<StreamResponse>(json).ok())
                     })

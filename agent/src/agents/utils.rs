@@ -112,8 +112,7 @@ pub async fn collect_stream(
 
     println!(
         "[Stream] 结束，finish_reason: {:?}, tool_calls: {:?}",
-        finish_reason,
-        final_tool_calls.as_ref().map(|tc| tc.len())
+        finish_reason, final_tool_calls
     );
 
     (content, final_tool_calls)
@@ -129,10 +128,7 @@ pub async fn collect_stream(
 /// 返回 `Vec<Message::Tool>`，每个消息对应一个工具调用的结果。
 /// 如果工具执行成功，content 为 JSON 输出字符串；
 /// 如果执行失败，content 包含错误信息。
-pub async fn call_tools(
-    executor: &dyn ToolExecutor,
-    tool_calls: Vec<ToolCall>,
-) -> Vec<Message> {
+pub async fn call_tools(executor: &dyn ToolExecutor, tool_calls: Vec<ToolCall>) -> Vec<Message> {
     let mut messages = Vec::with_capacity(tool_calls.len());
 
     for call in tool_calls {
@@ -152,12 +148,10 @@ pub async fn call_tools(
                     .unwrap_or_else(|_| r#"{"error": "Tool execution failed"}"#.to_string())
                 }
             }
-            Err(e) => {
-                serde_json::to_string(&serde_json::json!({
-                    "error": e.to_string()
-                }))
-                .unwrap_or_else(|_| r#"{"error": "Tool execution error"}"#.to_string())
-            }
+            Err(e) => serde_json::to_string(&serde_json::json!({
+                "error": e.to_string()
+            }))
+            .unwrap_or_else(|_| r#"{"error": "Tool execution error"}"#.to_string()),
         };
 
         messages.push(Message::Tool {

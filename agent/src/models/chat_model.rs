@@ -78,6 +78,7 @@ impl ChatCapability for ChatModel {
         match choice.message.role {
             MessageRole::Assistant => Ok(Message::Assistant {
                 content: choice.message.content,
+                reasoning_content: choice.message.reasoning_content,
                 tool_calls: choice.message.tool_calls,
             }),
             MessageRole::User => Ok(Message::User {
@@ -116,9 +117,11 @@ impl ChatCapability for ChatModel {
             .map(|response| {
                 if let Some(choice) = response.choices.first() {
                     let content = choice.delta.content.clone().unwrap_or_default();
+                    let reasoning_content = choice.delta.reasoning_content.clone().unwrap_or_default();
                     let is_finished = choice.finish_reason.is_some();
                     ChatChunk {
                         content,
+                        reasoning_content,
                         is_finished,
                         finish_reason: choice.finish_reason.clone(),
                         tool_calls: choice.delta.tool_calls.clone(),
@@ -126,6 +129,7 @@ impl ChatCapability for ChatModel {
                 } else {
                     ChatChunk {
                         content: String::new(),
+                        reasoning_content: String::new(),
                         is_finished: true,
                         finish_reason: Some("no_choices".to_string()),
                         tool_calls: None,
@@ -213,6 +217,99 @@ mod tests {
         }
 
         assert!(!full_content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_chat_with_deepseek_reasoner() {
+        dotenv::dotenv().ok();
+
+        let provider = match DeepSeekProvider::from_env() {
+            Ok(p) => Arc::new(p),
+            Err(_) => {
+                eprintln!("DEEPSEEK_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        let mut model = ChatModel::new();
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
+
+        if let Err(e) = model.set_active_model("deepseek-reasoner") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
+        let msg = Message::user("What is 15 + 27? Please think step by step.");
+
+        let result = model.chat(vec![msg], None).await;
+        assert!(result.is_ok());
+
+        let message = result.unwrap();
+        if let Message::Assistant {
+            content,
+            reasoning_content,
+            ..
+        } = message
+        {
+            println!("Response: {:?}", content);
+            assert!(!content.is_empty());
+            // 推理模型应该返回推理内容
+            if let Some(rc) = reasoning_content {
+                println!("Reasoning content length: {}", rc.len());
+                assert!(!rc.is_empty(), "Reasoning content should not be empty");
+            }
+        } else {
+            panic!("Expected Assistant message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chat_stream_with_deepseek_reasoner() {
+        dotenv::dotenv().ok();
+
+        let provider = match DeepSeekProvider::from_env() {
+            Ok(p) => Arc::new(p),
+            Err(_) => {
+                eprintln!("DEEPSEEK_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        let mut model = ChatModel::new();
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
+
+        if let Err(e) = model.set_active_model("deepseek-reasoner") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
+        let msg = Message::user("What is 8 * 7? Think step by step.");
+
+        let result = model.chat_stream(vec![msg], None).await;
+        assert!(result.is_ok());
+
+        let mut stream = result.unwrap();
+        let mut full_content = String::new();
+        let mut full_reasoning = String::new();
+
+        while let Some(chunk) = stream.next().await {
+            if !chunk.content.is_empty() {
+                print!("{}", chunk.content);
+                full_content.push_str(&chunk.content);
+            }
+            if !chunk.reasoning_content.is_empty() {
+                full_reasoning.push_str(&chunk.reasoning_content);
+            }
+            if chunk.is_finished {
+                println!("\nFinish reason: {:?}", chunk.finish_reason);
+            }
+        }
+
+        assert!(!full_content.is_empty());
+        // 推理模型应该返回推理内容
+        if !full_reasoning.is_empty() {
+            println!("\nReasoning content length: {}", full_reasoning.len());
+        }
     }
 
     #[tokio::test]
