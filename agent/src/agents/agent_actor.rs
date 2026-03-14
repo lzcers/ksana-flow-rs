@@ -10,12 +10,14 @@
 //! - 执行逻辑由 `AgentExecutor` 处理（单步执行）
 //! - 本文件负责控制面：命令处理、状态转换、事件发送、迭代控制
 
+use std::pin::pin;
 use std::sync::Arc;
 
+use futures::StreamExt;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::agent_executor::{AgentExecutor, StepResult, StreamChunk};
+use super::agent_executor::{AgentExecutor, StepEvent, StepResult};
 use crate::agents::{AgentState, Context, ToolCall, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
@@ -185,16 +187,18 @@ where
     pub fn context(&self) -> &Context {
         &self.state.context
     }
+
     pub fn context_mut(&mut self) -> &mut Context {
         &mut self.state.context
     }
+
     /// 执行单步迭代
     ///
     /// 此方法执行一次 LLM 调用 + 工具执行，然后返回结果。
     /// 可以重复调用来手动控制执行流程。
     ///
     /// # 参数
-    /// - `stream_tx`: 可选的流式事件发送通道，用于接收 `StreamChunk` 事件
+    /// - `event_tx`: 可选的事件发送通道，用于接收 `AgentActorEvent` 事件
     ///
     /// # 返回
     /// - `StepResult`: 执行结果
@@ -208,7 +212,7 @@ where
     /// ```ignore
     /// let mut actor = AgentActor::new(chat, executor, context);
     /// loop {
-    ///     let result = actor.run_step(Some(stream_tx.clone())).await;
+    ///     let result = actor.run_step(Some(event_tx.clone())).await;
     ///     match result {
     ///         StepResult::Done { .. } => break,
     ///         StepResult::Error(_) => break,
@@ -216,7 +220,7 @@ where
     ///     }
     /// }
     /// ```
-    pub async fn run_step(&mut self, stream_tx: Option<mpsc::Sender<StreamChunk>>) -> StepResult {
+    pub async fn run_step(&mut self, event_tx: Option<mpsc::Sender<AgentActorEvent>>) -> StepResult {
         // 增加迭代计数
         self.state.iteration += 1;
 
@@ -226,8 +230,69 @@ where
         // 从 Context 获取消息列表
         let messages = self.state.context.to_messages();
 
-        // 执行单步迭代
-        let result = self.executor.run_step(messages, stream_tx).await;
+        // 使用新的 run_step_stream API
+        let stream = super::agent_executor::run_step_stream(&self.executor, messages);
+        let mut stream = pin!(stream);
+
+        // 处理流事件
+        let mut result = StepResult::Error("Stream ended without result".to_string());
+
+        while let Some(event) = stream.next().await {
+            match event {
+                StepEvent::Text(text) => {
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(AgentActorEvent::Chunk(text)).await;
+                    }
+                }
+                StepEvent::Reasoning(text) => {
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx.send(AgentActorEvent::ReasoningChunk(text)).await;
+                    }
+                }
+                StepEvent::LlmCompleted {
+                    content,
+                    reasoning_content,
+                    tool_calls,
+                } => {
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx
+                            .send(AgentActorEvent::StepCompleted {
+                                content,
+                                reasoning_content,
+                                tool_calls,
+                            })
+                            .await;
+                    }
+                }
+                StepEvent::ToolStart { call_id, name } => {
+                    // 可以发送工具开始事件（如果需要）
+                    let _ = (call_id, name); // 暂时忽略
+                }
+                StepEvent::ToolEnd {
+                    call_id,
+                    success,
+                    output,
+                } => {
+                    if let Some(ref tx) = event_tx {
+                        let _ = tx
+                            .send(AgentActorEvent::ToolResult {
+                                call_id,
+                                success,
+                                output,
+                            })
+                            .await;
+                    }
+                }
+                StepEvent::Done(step_result) => {
+                    result = step_result;
+                    break;
+                }
+                StepEvent::Error(e) => {
+                    result = StepResult::Error(e);
+                    break;
+                }
+            }
+        }
 
         // 处理执行结果
         match &result {
@@ -252,6 +317,26 @@ where
                     });
                 }
 
+                // 发送工具调用事件
+                if let Some(ref tx) = event_tx {
+                    let _ = tx.send(AgentActorEvent::ToolCalls(tool_calls.clone())).await;
+                    for tr in tool_results {
+                        let _ = tx
+                            .send(AgentActorEvent::ToolResult {
+                                call_id: tr.call_id.clone(),
+                                success: tr.success,
+                                output: tr.output.clone(),
+                            })
+                            .await;
+                    }
+                    let _ = tx
+                        .send(AgentActorEvent::Iteration {
+                            iteration: self.state.iteration,
+                            message_count: self.state.context.conversation().len(),
+                        })
+                        .await;
+                }
+
                 // 继续状态
                 self.state.state = crate::agents::JobState::WaitingInput;
             }
@@ -265,6 +350,16 @@ where
                     reasoning_content: reasoning_content.clone(),
                     tool_calls: None,
                 });
+
+                // 发送迭代完成事件
+                if let Some(ref tx) = event_tx {
+                    let _ = tx
+                        .send(AgentActorEvent::Iteration {
+                            iteration: self.state.iteration,
+                            message_count: self.state.context.conversation().len(),
+                        })
+                        .await;
+                }
 
                 // 完成状态
                 self.state.state = crate::agents::JobState::Completed;
@@ -341,106 +436,21 @@ where
                     break;
                 }
 
-                // 创建 StreamChunk channel，在后台转换为 AgentActorEvent
-                let (stream_tx, mut stream_rx) = mpsc::channel::<StreamChunk>(64);
-                let event_tx_clone = event_tx.clone();
-
-                // 后台任务：将 StreamChunk 转换为 AgentActorEvent
-                let convert_handle = tokio::spawn(async move {
-                    while let Some(chunk) = stream_rx.recv().await {
-                        match chunk {
-                            StreamChunk::Text(text) => {
-                                if event_tx_clone
-                                    .send(AgentActorEvent::Chunk(text))
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            StreamChunk::Reasoning(text) => {
-                                if event_tx_clone
-                                    .send(AgentActorEvent::ReasoningChunk(text))
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                            StreamChunk::Completed {
-                                content,
-                                reasoning_content,
-                                tool_calls,
-                            } => {
-                                if event_tx_clone
-                                    .send(AgentActorEvent::StepCompleted {
-                                        content,
-                                        reasoning_content,
-                                        tool_calls,
-                                    })
-                                    .await
-                                    .is_err()
-                                {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // === 执行单步迭代 ===
-                let result = self.run_step(Some(stream_tx)).await;
-
-                // 等待转换任务完成
-                let _ = convert_handle.await;
-
-                // 发送工具相关事件
-                match &result {
-                    StepResult::Continue {
-                        tool_calls,
-                        tool_results,
-                        ..
-                    } => {
-                        let _ = event_tx
-                            .send(AgentActorEvent::ToolCalls(tool_calls.clone()))
-                            .await;
-                        for tr in tool_results {
-                            let _ = event_tx
-                                .send(AgentActorEvent::ToolResult {
-                                    call_id: tr.call_id.clone(),
-                                    success: tr.success,
-                                    output: tr.output.clone(),
-                                })
-                                .await;
-                        }
-                        let _ = event_tx
-                            .send(AgentActorEvent::Iteration {
-                                iteration: self.state.iteration,
-                                message_count: self.state.context.conversation().len(),
-                            })
-                            .await;
-                    }
-                    StepResult::Done { .. } => {
-                        let _ = event_tx
-                            .send(AgentActorEvent::Iteration {
-                                iteration: self.state.iteration,
-                                message_count: self.state.context.conversation().len(),
-                            })
-                            .await;
-                        let _ = event_tx.send(AgentActorEvent::Completed).await;
-                    }
-                    StepResult::Error(e) => {
-                        let _ = event_tx.send(AgentActorEvent::Error(e.clone())).await;
-                    }
-                }
+                // 执行单步迭代
+                let result = self.run_step(Some(event_tx.clone())).await;
 
                 // 根据结果决定后续行为
                 match result {
                     StepResult::Continue { .. } => {
                         // 循环模式直接继续下一次迭代
                     }
-                    StepResult::Done { .. } | StepResult::Error(_) => {
-                        // 完成或错误，退出循环
+                    StepResult::Done { .. } => {
+                        // 发送完成事件
+                        let _ = event_tx.send(AgentActorEvent::Completed).await;
+                        break;
+                    }
+                    StepResult::Error(e) => {
+                        let _ = event_tx.send(AgentActorEvent::Error(e)).await;
                         break;
                     }
                 }
