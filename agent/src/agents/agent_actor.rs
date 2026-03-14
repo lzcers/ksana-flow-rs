@@ -178,6 +178,12 @@ where
         &mut self.state
     }
 
+    pub fn context(&self) -> &Context {
+        &self.state.context
+    }
+    pub fn context_mut(&mut self) -> &mut Context {
+        &mut self.state.context
+    }
     /// 执行单步迭代
     ///
     /// 此方法执行一次 LLM 调用 + 工具执行，然后返回结果。
