@@ -261,7 +261,6 @@ mod tests {
         // 3. 创建工具执行器并注册真实的 Playwright 工具
         let mut executor = GenericToolExecutor::new();
         executor.register(PlaywrightCliTool::new());
-        let executor = Arc::new(executor);
 
         // 4. 创建上下文 - 使用更明确的提示引导模型使用工具
         let mut context = Context::new();
@@ -277,7 +276,7 @@ mod tests {
         );
 
         // 5. 创建 AgentActor - 增加最大迭代次数
-        let actor = AgentActor::new(Arc::new(model), executor, context).with_max_iterations(10);
+        let actor = AgentActor::new(model, executor, context).with_max_iterations(10);
 
         // 6. 启动 Actor
         let mut handle = actor.run_loop();
