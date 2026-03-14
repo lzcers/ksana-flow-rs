@@ -22,10 +22,6 @@ use crate::agents::{AgentState, Context, ToolCall, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
 
-// ============================================================================
-// Actor 事件
-// ============================================================================
-
 /// Actor 产生的事件
 #[derive(Debug, Clone)]
 pub enum AgentActorEvent {
@@ -63,10 +59,6 @@ pub enum AgentActorEvent {
     Error(String),
 }
 
-// ============================================================================
-// Actor 命令
-// ============================================================================
-
 /// 发送给 Actor 的控制命令
 #[derive(Debug)]
 pub enum AgentActorCommand {
@@ -77,10 +69,6 @@ pub enum AgentActorCommand {
     /// 取消执行
     Cancel,
 }
-
-// ============================================================================
-// Actor Handle
-// ============================================================================
 
 /// Actor 的外部控制句柄
 pub struct AgentActorHandle {
@@ -107,10 +95,6 @@ impl AgentActorHandle {
     }
 }
 
-// ============================================================================
-// Step Result
-// ============================================================================
-
 /// 单步执行结果
 #[derive(Debug, Clone)]
 pub enum StepResult {
@@ -130,24 +114,6 @@ pub enum StepResult {
     Error(String),
 }
 
-// ============================================================================
-// Agent Actor
-// ============================================================================
-
-/// Agent Actor - 可插拔的 LLM Agent 控制器
-///
-/// 泛型参数：
-/// - `C`: Chat 模型能力
-/// - `E`: 工具执行器
-///
-/// Actor 负责控制面逻辑：
-/// - 命令处理（暂停、继续、取消、单步）
-/// - 状态管理（JobState、迭代计数、Context）
-/// - 事件发送
-/// - 迭代控制（最大迭代次数）
-///
-/// 执行面由纯函数 `call_model`、`call_tools` 处理。
-/// Context 由 Actor 管理，执行器不持有状态。
 pub struct AgentActor<C, E>
 where
     C: ChatCapability + Send + Sync,
@@ -220,10 +186,6 @@ where
         &mut self.state.context
     }
 
-    // ========================================================================
-    // 私有辅助方法
-    // ========================================================================
-
     /// 发送事件（忽略发送失败）
     async fn send_event(event_tx: Option<&mpsc::Sender<AgentActorEvent>>, event: AgentActorEvent) {
         if let Some(tx) = event_tx {
@@ -231,34 +193,6 @@ where
         }
     }
 
-    /// 执行单步迭代
-    ///
-    /// 此方法执行一次 LLM 调用 + 工具执行，然后返回结果。
-    /// 可以重复调用来手动控制执行流程。
-    ///
-    /// # 参数
-    /// - `event_tx`: 可选的事件发送通道，用于接收 `AgentActorEvent` 事件
-    ///
-    /// # 返回
-    /// - `StepResult`: 执行结果
-    ///
-    /// # 状态更新
-    /// - 自动增加迭代计数
-    /// - 更新 Context（添加 assistant 消息和 tool 消息）
-    /// - 更新 JobState
-    ///
-    /// # 示例
-    /// ```ignore
-    /// let mut actor = AgentActor::new(chat, executor, context);
-    /// loop {
-    ///     let result = actor.run_step(Some(event_tx.clone())).await;
-    ///     match result {
-    ///         StepResult::Done { .. } => break,
-    ///         StepResult::Error(_) => break,
-    ///         StepResult::Continue { .. } => continue,
-    ///     }
-    /// }
-    /// ```
     pub async fn run_step(
         &mut self,
         event_tx: Option<mpsc::Sender<AgentActorEvent>>,
@@ -391,29 +325,6 @@ where
         }
     }
 
-    /// 执行工具调用
-    async fn execute_tools(
-        &self,
-        tool_calls: &[ToolCall],
-        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-    ) -> Vec<CallToolResult> {
-        let mut stream = pin!(call_tools(self.tool_executor.as_ref(), tool_calls));
-        let mut results = Vec::new();
-        while let Some(result) = stream.next().await {
-            Self::send_event(
-                event_tx,
-                AgentActorEvent::ToolResult {
-                    call_id: result.call_id.clone(),
-                    success: result.success,
-                    output: result.output.clone(),
-                },
-            )
-            .await;
-            results.push(result);
-        }
-        results
-    }
-
     /// 启动循环执行，返回控制句柄
     ///
     /// 此方法启动后台任务执行循环，直到完成或被打断。
@@ -522,5 +433,28 @@ where
         });
 
         AgentActorHandle { cmd_tx, event_rx }
+    }
+
+    /// 执行工具调用
+    async fn execute_tools(
+        &self,
+        tool_calls: &[ToolCall],
+        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
+    ) -> Vec<CallToolResult> {
+        let mut stream = pin!(call_tools(self.tool_executor.as_ref(), tool_calls));
+        let mut results = Vec::new();
+        while let Some(result) = stream.next().await {
+            Self::send_event(
+                event_tx,
+                AgentActorEvent::ToolResult {
+                    call_id: result.call_id.clone(),
+                    success: result.success,
+                    output: result.output.clone(),
+                },
+            )
+            .await;
+            results.push(result);
+        }
+        results
     }
 }
