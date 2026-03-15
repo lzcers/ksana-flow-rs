@@ -265,7 +265,7 @@ mod tests {
         // 4. 创建上下文 - 使用更明确的提示引导模型使用工具
         let mut context = Context::new();
         context.add_message(Message::system(
-            r#"你是一个有用的助手。当用户需要访问网页或提取网页内容时, 你可以使用工具, 回答要简洁。"#,
+            r#"你是一个聪明的助手，当用户需要访问网页或提取网页内容时, 你可以使用工具完成任务。"#,
         ));
         context.add_message(Message::user(
             "请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容",
@@ -275,7 +275,7 @@ mod tests {
             "[User] 请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容\n"
         );
 
-        // 5. 创建 AgentActor - 增加最大迭代次数
+        // 5. 创建 AgentActo
         let actor = AgentActor::new(model, executor, context);
 
         // 6. 启动 Actor
