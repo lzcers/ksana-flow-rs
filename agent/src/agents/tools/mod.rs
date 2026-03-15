@@ -22,9 +22,14 @@ pub struct ToolDef {
 }
 
 /// OpenAI 兼容的工具调用 function 字段
+///
+/// 注意：流式响应中，增量 chunks 可能只包含部分字段，
+/// 使用 `#[serde(default)]` 允许缺失时使用默认值。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCallFunction {
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub arguments: String,
 }
 
@@ -33,6 +38,10 @@ pub struct ToolCallFunction {
 pub struct ToolCall {
     /// 工具调用的唯一标识符，用于将结果与调用关联。
     /// 通常由模型生成，执行结果需原样返回。
+    ///
+    /// 注意：流式响应中，后续增量 chunks 不包含 id 字段，
+    /// 使用 `#[serde(default)]` 允许缺失时使用空字符串作为默认值。
+    #[serde(default)]
     pub id: String,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub call_type: Option<String>,
@@ -92,7 +101,7 @@ pub enum ToolExecutorError {
 
 // 工具执行器独立
 #[async_trait]
-pub trait ToolExecutor {
-    async fn execute(&self, call: ToolCall) -> Result<ToolResult, ToolExecutorError>;
+pub trait ToolExecutor: Sync {
+    async fn execute(&self, call: &ToolCall) -> Result<ToolResult, ToolExecutorError>;
     fn tools(&self) -> &Vec<ToolDef>;
 }

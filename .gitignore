@@ -6,3 +6,4 @@ config.toml
 .shared
 .claude
 nul
+.playwright-cli

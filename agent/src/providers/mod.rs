@@ -1,14 +1,154 @@
-mod deepseek;
-mod openrouter;
+mod openai_compatible;
 
 use crate::agents::{ToolCall, ToolDef};
 use crate::core::{Message, MessageRole};
 use async_trait::async_trait;
-pub use deepseek::DeepSeekProvider;
+pub use openai_compatible::OpenAICompatibleProvider;
 use futures::stream::BoxStream;
-pub use openrouter::OpenRouterProvider;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::env;
+
+// ============================================================================
+// 工具函数
+// ============================================================================
+
+/// 解析 SSE 格式的流数据行
+///
+/// SSE 格式为 "data: {json}" 或 "data: [DONE]"
+pub fn parse_sse_line(line: &str) -> Option<Value> {
+    let line = line.trim();
+    if line.is_empty() || line == "data: [DONE]" {
+        return None;
+    }
+    if let Some(data) = line.strip_prefix("data: ") {
+        return serde_json::from_str(data).ok();
+    }
+    None
+}
+
+/// 解析 API 错误响应
+///
+/// 尝试从响应体中提取错误代码和消息
+pub fn parse_api_error(body: &str, status: u16) -> ProviderError {
+    if let Ok(error_json) = serde_json::from_str::<Value>(body) {
+        let code = error_json["error"]["code"]
+            .as_i64()
+            .or_else(|| error_json["error"]["type"].as_str().map(|t| t.len() as i64))
+            .unwrap_or(0) as u16;
+        let message = error_json["error"]["message"]
+            .as_str()
+            .or_else(|| error_json["error"].as_str())
+            .unwrap_or(body)
+            .to_string();
+        return ProviderError::ApiError { code, message };
+    }
+    ProviderError::ApiError {
+        code: status,
+        message: body.to_string(),
+    }
+}
+
+// ============================================================================
+// 工厂函数
+// ============================================================================
+
+/// 创建 DeepSeek provider
+///
+/// # Example
+/// ```no_run
+/// use agent::providers::deepseek_provider;
+/// let provider = deepseek_provider("your-api-key");
+/// ```
+pub fn deepseek_provider(api_key: impl Into<String>) -> OpenAICompatibleProvider {
+    let base_url = env::var("DEEPSEEK_BASE_URL")
+        .unwrap_or_else(|_| "https://api.deepseek.com".to_string());
+    OpenAICompatibleProvider::new("deepseek", api_key, base_url)
+}
+
+/// 从环境变量创建 DeepSeek provider
+///
+/// 环境变量: DEEPSEEK_API_KEY (必需), DEEPSEEK_BASE_URL (可选)
+pub fn deepseek_provider_from_env() -> Result<OpenAICompatibleProvider, ProviderError> {
+    let api_key = env::var("DEEPSEEK_API_KEY").map_err(|_| ProviderError::MissingApiKey)?;
+    Ok(deepseek_provider(api_key))
+}
+
+/// 创建 OpenRouter provider
+///
+/// # Example
+/// ```no_run
+/// use agent::providers::openrouter_provider;
+/// let provider = openrouter_provider("your-api-key");
+/// ```
+pub fn openrouter_provider(api_key: impl Into<String>) -> OpenAICompatibleProvider {
+    let base_url = env::var("OPENROUTER_BASE_URL")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
+    OpenAICompatibleProvider::new("openrouter", api_key, base_url)
+}
+
+/// 创建 OpenRouter provider（带额外配置）
+///
+/// # Arguments
+/// * `api_key` - API 密钥
+/// * `http_referer` - HTTP-Referer 请求头（可选）
+/// * `x_title` - X-Title 请求头（可选）
+pub fn openrouter_provider_with_config(
+    api_key: impl Into<String>,
+    http_referer: Option<String>,
+    x_title: Option<String>,
+) -> OpenAICompatibleProvider {
+    let mut extra = HashMap::new();
+    if let Some(r) = http_referer {
+        extra.insert("HTTP-Referer".into(), r);
+    }
+    if let Some(t) = x_title {
+        extra.insert("X-Title".into(), t);
+    }
+
+    let base_url = env::var("OPENROUTER_BASE_URL")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
+
+    OpenAICompatibleProvider::new("openrouter", api_key, base_url)
+        .with_extra_headers(extra)
+}
+
+/// 从环境变量创建 OpenRouter provider
+///
+/// 环境变量:
+/// - OPENROUTER_API_KEY (必需)
+/// - OPENROUTER_BASE_URL (可选)
+/// - OPENROUTER_HTTP_REFERER (可选)
+/// - OPENROUTER_X_TITLE (可选)
+pub fn openrouter_provider_from_env() -> Result<OpenAICompatibleProvider, ProviderError> {
+    let api_key = env::var("OPENROUTER_API_KEY").map_err(|_| ProviderError::MissingApiKey)?;
+    let http_referer = env::var("OPENROUTER_HTTP_REFERER").ok();
+    let x_title = env::var("OPENROUTER_X_TITLE").ok();
+    Ok(openrouter_provider_with_config(api_key, http_referer, x_title))
+}
+
+// ============================================================================
+// 兼容性别名
+// ============================================================================
+
+/// DeepSeek Provider (已弃用，请使用 `deepseek_provider()`)
+#[deprecated(
+    since = "0.2.0",
+    note = "请使用 `deepseek_provider()` 或 `deepseek_provider_from_env()` 函数"
+)]
+pub type DeepSeekProvider = OpenAICompatibleProvider;
+
+/// OpenRouter Provider (已弃用，请使用 `openrouter_provider()`)
+#[deprecated(
+    since = "0.2.0",
+    note = "请使用 `openrouter_provider()` 或 `openrouter_provider_from_env()` 函数"
+)]
+pub type OpenRouterProvider = OpenAICompatibleProvider;
+
+// ============================================================================
+// 核心类型
+// ============================================================================
 
 /// Token 使用统计
 /// 兼容 OpenAI 和 DeepSeek 的格式（prompt_tokens/input_tokens, completion_tokens/output_tokens）
@@ -22,6 +162,13 @@ pub struct Usage {
     pub total_tokens: Option<u32>,
 }
 
+impl Usage {
+    pub fn total(&self) -> u32 {
+        self.total_tokens
+            .unwrap_or(self.prompt_tokens + self.completion_tokens)
+    }
+}
+
 #[derive(Debug)]
 pub enum ProviderError {
     Request(reqwest::Error),
@@ -30,6 +177,16 @@ pub enum ProviderError {
     ApiError { code: u16, message: String },
     MissingApiKey,
     StreamError(String),
+}
+
+impl std::error::Error for ProviderError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ProviderError::Request(e) => Some(e),
+            ProviderError::Serialization(e) => Some(e),
+            _ => None,
+        }
+    }
 }
 
 impl std::fmt::Display for ProviderError {
@@ -43,16 +200,6 @@ impl std::fmt::Display for ProviderError {
             }
             ProviderError::MissingApiKey => write!(f, "Missing API key"),
             ProviderError::StreamError(msg) => write!(f, "Stream error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ProviderError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            ProviderError::Request(e) => Some(e),
-            ProviderError::Serialization(e) => Some(e),
-            _ => None,
         }
     }
 }
@@ -88,7 +235,7 @@ pub struct Request {
     pub max_tokens: Option<u32>,
     /// 扩展字段，用于供应商特有参数
     #[serde(flatten)]
-    pub extra: std::collections::HashMap<String, serde_json::Value>,
+    pub extra: HashMap<String, Value>,
 }
 
 impl Request {
@@ -99,7 +246,7 @@ impl Request {
             stream: None,
             temperature: None,
             max_tokens: None,
-            extra: std::collections::HashMap::new(),
+            extra: HashMap::new(),
         }
     }
 
@@ -155,6 +302,9 @@ pub struct ChoiceImg {
 pub struct ChoiceMessage {
     pub role: MessageRole,
     pub content: String,
+    /// DeepSeek 推理模式的推理内容（如 deepseek-reasoner）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ChoiceImg>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -193,6 +343,9 @@ pub struct Delta {
     pub role: Option<MessageRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    /// DeepSeek 推理模式的推理内容（如 deepseek-reasoner）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
 }
@@ -205,7 +358,7 @@ pub struct StreamChoice {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logprobs: Option<serde_json::Value>,
+    pub logprobs: Option<Value>,
 }
 
 /// 流式响应块
@@ -221,22 +374,19 @@ pub struct StreamResponse {
     pub usage: Option<Usage>,
 }
 
+// ============================================================================
+// Provider Trait
+// ============================================================================
+
+/// Provider trait - LLM API 提供商的统一接口
 #[async_trait]
 pub trait Provider: Send + Sync {
-    async fn send_request(
-        &self,
-        path: &str,
-        request: &Request,
-        model: &str,
-    ) -> Result<Response, ProviderError>;
+    /// 发送非流式请求
+    async fn chat(&self, request: Request) -> Result<Response, ProviderError>;
 
-    /// 返回原始字节流，每项是一块数据（可能是 SSE 事件的一行，或 JSON Lines 的一行）
-    async fn stream_request(
-        &self,
-        path: &str,
-        request: Request,
-        model: &str,
-    ) -> Result<BoxStream<'static, StreamResponse>, ProviderError>;
+    /// 发送流式请求
+    async fn chat_stream(&self, request: Request) -> Result<BoxStream<'static, StreamResponse>, ProviderError>;
 
-    fn http_client(&self) -> &reqwest::Client;
+    /// Provider 名称（用于日志和调试）
+    fn name(&self) -> &str;
 }

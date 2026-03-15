@@ -90,7 +90,7 @@ impl GenImgCapability for GenImgModel {
         request.extra = extra;
 
         let response: Response = provider
-            .send_request("/chat/completions", &request, model_name)
+            .chat(request)
             .await?;
 
         let choice = response
@@ -118,13 +118,13 @@ impl GenImgCapability for GenImgModel {
 mod tests {
     use super::*;
     use crate::core::Message;
-    use crate::providers::OpenRouterProvider;
+    use crate::providers::{openrouter_provider, openrouter_provider_from_env};
 
     #[tokio::test]
     async fn test_gen_img_with_openrouter() {
         dotenv::dotenv().ok();
 
-        let provider = match OpenRouterProvider::from_env() {
+        let provider = match openrouter_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_model_provider_mapping() {
-        let provider = Arc::new(OpenRouterProvider::new("dummy_key"));
+        let or_provider = Arc::new(openrouter_provider("dummy_key"));
 
         let mut model = GenImgModel::new();
 
@@ -163,7 +163,7 @@ mod tests {
                 "black-forest-labs/flux.2-klein-4b",
                 "black-forest-labs/flux.1-pro",
             ],
-            provider,
+            or_provider,
         );
 
         assert!(
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_set_active_model() {
-        let provider = Arc::new(OpenRouterProvider::new("dummy_key"));
+        let provider = Arc::new(openrouter_provider("dummy_key"));
         let mut model = GenImgModel::new();
         model.add_model_provider("black-forest-labs/flux.2-klein-4b", provider);
 

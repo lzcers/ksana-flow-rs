@@ -66,7 +66,7 @@ impl ChatCapability for ChatModel {
         let request = Request::new(model_name, msg).with_tools(tools);
 
         let response: Response = provider
-            .send_request("/chat/completions", &request, model_name)
+            .chat(request)
             .await?;
 
         let choice = response
@@ -78,6 +78,7 @@ impl ChatCapability for ChatModel {
         match choice.message.role {
             MessageRole::Assistant => Ok(Message::Assistant {
                 content: choice.message.content,
+                reasoning_content: choice.message.reasoning_content,
                 tool_calls: choice.message.tool_calls,
             }),
             MessageRole::User => Ok(Message::User {
@@ -109,24 +110,30 @@ impl ChatCapability for ChatModel {
             .with_tools(tools);
 
         let stream = provider
-            .stream_request("/chat/completions", request, model_name)
+            .chat_stream(request)
             .await?;
 
         Ok(stream
             .map(|response| {
                 if let Some(choice) = response.choices.first() {
                     let content = choice.delta.content.clone().unwrap_or_default();
+                    let reasoning_content =
+                        choice.delta.reasoning_content.clone().unwrap_or_default();
                     let is_finished = choice.finish_reason.is_some();
                     ChatChunk {
                         content,
+                        reasoning_content,
                         is_finished,
                         finish_reason: choice.finish_reason.clone(),
+                        tool_calls: choice.delta.tool_calls.clone(),
                     }
                 } else {
                     ChatChunk {
                         content: String::new(),
+                        reasoning_content: String::new(),
                         is_finished: true,
                         finish_reason: Some("no_choices".to_string()),
+                        tool_calls: None,
                     }
                 }
             })
@@ -138,13 +145,13 @@ impl ChatCapability for ChatModel {
 mod tests {
     use super::*;
     use crate::core::Message;
-    use crate::providers::{DeepSeekProvider, OpenRouterProvider};
+    use crate::providers::{deepseek_provider_from_env, openrouter_provider_from_env, deepseek_provider, openrouter_provider};
 
     #[tokio::test]
     async fn test_chat_with_deepseek_chat() {
         dotenv::dotenv().ok();
 
-        let provider = match DeepSeekProvider::from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
@@ -178,7 +185,7 @@ mod tests {
     async fn test_chat_stream_with_deepseek_chat() {
         dotenv::dotenv().ok();
 
-        let provider = match DeepSeekProvider::from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
@@ -214,10 +221,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_chat_with_deepseek_reasoner() {
+        dotenv::dotenv().ok();
+
+        let provider = match deepseek_provider_from_env() {
+            Ok(p) => Arc::new(p),
+            Err(_) => {
+                eprintln!("DEEPSEEK_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        let mut model = ChatModel::new();
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
+
+        if let Err(e) = model.set_active_model("deepseek-reasoner") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
+        let msg = Message::user("What is 15 + 27? Please think step by step.");
+
+        let result = model.chat(vec![msg], None).await;
+        assert!(result.is_ok());
+
+        let message = result.unwrap();
+        if let Message::Assistant {
+            content,
+            reasoning_content,
+            ..
+        } = message
+        {
+            println!("Response: {:?}", content);
+            assert!(!content.is_empty());
+            // 推理模型应该返回推理内容
+            if let Some(rc) = reasoning_content {
+                println!("Reasoning content length: {}", rc.len());
+                assert!(!rc.is_empty(), "Reasoning content should not be empty");
+            }
+        } else {
+            panic!("Expected Assistant message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_chat_stream_with_deepseek_reasoner() {
+        dotenv::dotenv().ok();
+
+        let provider = match deepseek_provider_from_env() {
+            Ok(p) => Arc::new(p),
+            Err(_) => {
+                eprintln!("DEEPSEEK_API_KEY not set, skipping test");
+                return;
+            }
+        };
+
+        let mut model = ChatModel::new();
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], provider);
+
+        if let Err(e) = model.set_active_model("deepseek-reasoner") {
+            eprintln!("Failed to set active model: {}", e);
+            return;
+        }
+
+        let msg = Message::user("What is 8 * 7? Think step by step.");
+
+        let result = model.chat_stream(vec![msg], None).await;
+        assert!(result.is_ok());
+
+        let mut stream = result.unwrap();
+        let mut full_content = String::new();
+        let mut full_reasoning = String::new();
+
+        while let Some(chunk) = stream.next().await {
+            if !chunk.content.is_empty() {
+                print!("{}", chunk.content);
+                full_content.push_str(&chunk.content);
+            }
+            if !chunk.reasoning_content.is_empty() {
+                full_reasoning.push_str(&chunk.reasoning_content);
+            }
+            if chunk.is_finished {
+                println!("\nFinish reason: {:?}", chunk.finish_reason);
+            }
+        }
+
+        assert!(!full_content.is_empty());
+        // 推理模型应该返回推理内容
+        if !full_reasoning.is_empty() {
+            println!("\nReasoning content length: {}", full_reasoning.len());
+        }
+    }
+
+    #[tokio::test]
     async fn test_chat_with_openrouter_gemini() {
         dotenv::dotenv().ok();
 
-        let provider = match OpenRouterProvider::from_env() {
+        let provider = match openrouter_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
@@ -251,7 +351,7 @@ mod tests {
     async fn test_chat_stream_with_openrouter_gemini() {
         dotenv::dotenv().ok();
 
-        let provider = match OpenRouterProvider::from_env() {
+        let provider = match openrouter_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("OPENROUTER_API_KEY not set, skipping test");
@@ -288,13 +388,13 @@ mod tests {
 
     #[test]
     fn test_model_provider_mapping() {
-        let deepseek_provider = Arc::new(DeepSeekProvider::new("dummy_key"));
-        let openrouter_provider = Arc::new(OpenRouterProvider::new("dummy_key"));
+        let ds_provider = Arc::new(deepseek_provider("dummy_key"));
+        let or_provider = Arc::new(openrouter_provider("dummy_key"));
 
         let mut model = ChatModel::new();
 
-        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], deepseek_provider);
-        model.add_model_provider("google/gemini-3-pro-preview", openrouter_provider);
+        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], ds_provider);
+        model.add_model_provider("google/gemini-3-pro-preview", or_provider);
 
         assert!(model.model_providers.contains_key("deepseek-chat"));
         assert!(model.model_providers.contains_key("deepseek-reasoner"));
@@ -308,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_set_active_model() {
-        let provider = Arc::new(DeepSeekProvider::new("dummy_key"));
+        let provider = Arc::new(deepseek_provider("dummy_key"));
         let mut model = ChatModel::new();
         model.add_model_provider("deepseek-chat", provider);
 

@@ -1,163 +1,19 @@
 #[cfg(test)]
 mod tests {
-    use crate::agents::{GenericToolExecutor, Tool, ToolDef, ToolExecutor, ToolResult};
+    use std::pin::pin;
+
+    use crate::agents::tools::playwright_cli::PlaywrightCliTool;
+    use crate::agents::{
+        AgentActor, AgentActorEvent, CallModelEvent, Context, GenericToolExecutor, Tool, ToolCall,
+        ToolDef, ToolExecutor, call_model, call_tools,
+    };
     use crate::core::Message;
-    use crate::models::{ChatCapability, ChatModel};
-    use crate::providers::DeepSeekProvider;
+    use crate::models::ChatModel;
+    use crate::providers::deepseek_provider_from_env;
     use async_trait::async_trait;
     use futures::StreamExt;
     use serde_json::{Value, json};
     use std::sync::Arc;
-
-    /// 测试带 tools 的流式响应
-    /// 目的：验证 ChatModel 能正确处理带 tools 的请求
-    #[tokio::test]
-    async fn test_stream_response_with_tools() {
-        dotenv::dotenv().ok();
-        // 1. 创建 ChatModel
-        let provider = match DeepSeekProvider::from_env() {
-            Ok(p) => Arc::new(p),
-            Err(_) => {
-                println!("跳过测试: 未设置 DEEPSEEK_API_KEY 环境变量");
-                return;
-            }
-        };
-
-        let mut model = ChatModel::new();
-        model.add_model_provider("deepseek-chat", provider);
-        if let Err(e) = model.set_active_model("deepseek-chat") {
-            println!("设置活动模型失败: {}", e);
-            return;
-        }
-
-        // 2. 定义 tools
-        let tools = vec![ToolDef {
-            name: "get_weather".to_string(),
-            description: "获取指定城市的天气信息".to_string(),
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "城市名称，例如：北京、上海"
-                    }
-                },
-                "required": ["city"]
-            }),
-        }];
-
-        // 3. 构建消息
-        let messages = vec![
-            Message::system("你是一个有用的助手。"),
-            Message::user("北京今天的天气怎么样？"),
-        ];
-
-        // 4. 调用 chat_stream
-        let stream = model.chat_stream(messages, Some(tools)).await;
-        let mut stream = match stream {
-            Ok(s) => s,
-            Err(e) => {
-                println!("流式请求失败: {:?}", e);
-                return;
-            }
-        };
-
-        println!("\n========== 流式响应开始 (带 Tools) ==========\n");
-
-        let mut content_chunks: Vec<String> = Vec::new();
-        let mut chunk_count = 0;
-
-        // 5. 遍历流
-        while let Some(chunk) = stream.next().await {
-            chunk_count += 1;
-            content_chunks.push(chunk.content.clone());
-
-            if !chunk.content.is_empty() {
-                println!("[Chunk {}] {}", chunk_count, chunk.content);
-            }
-
-            if chunk.is_finished {
-                println!("[Finish Reason]: {:?}", chunk.finish_reason);
-            }
-        }
-
-        println!("\n========== 流式响应结束 ==========\n");
-
-        // 打印最终拼接结果
-        println!("=== 最终内容拼接 (共 {} 个 chunk) ===", chunk_count);
-        let full_content = content_chunks.join("");
-        println!("{}", full_content);
-
-        assert!(
-            !full_content.is_empty() || chunk_count > 0,
-            "应该有响应内容"
-        );
-    }
-
-    /// 测试纯文本流式响应
-    /// 目的：验证 ChatModel 流式响应的正确性
-    #[tokio::test]
-    async fn test_stream_response_text_only() {
-        // 1. 创建 ChatModel
-        let provider = match DeepSeekProvider::from_env() {
-            Ok(p) => Arc::new(p),
-            Err(_) => {
-                println!("跳过测试: 未设置 DEEPSEEK_API_KEY 环境变量");
-                return;
-            }
-        };
-
-        let mut model = ChatModel::new();
-        model.add_model_provider("deepseek-chat", provider);
-        if let Err(e) = model.set_active_model("deepseek-chat") {
-            println!("设置活动模型失败: {}", e);
-            return;
-        }
-
-        // 2. 构建消息（不带 tools）
-        let messages = vec![
-            Message::system("你是一个有用的助手。"),
-            Message::user("用一句话介绍 Rust 编程语言。"),
-        ];
-
-        // 3. 调用 chat_stream
-        let stream = model.chat_stream(messages, None).await;
-        let mut stream = match stream {
-            Ok(s) => s,
-            Err(e) => {
-                println!("流式请求失败: {:?}", e);
-                return;
-            }
-        };
-
-        println!("\n========== 流式响应开始 (纯文本) ==========\n");
-
-        let mut content_chunks: Vec<String> = Vec::new();
-        let mut chunk_count = 0;
-
-        // 4. 遍历流
-        while let Some(chunk) = stream.next().await {
-            chunk_count += 1;
-            content_chunks.push(chunk.content.clone());
-
-            if !chunk.content.is_empty() {
-                println!("[Chunk {}] {}", chunk_count, chunk.content);
-            }
-
-            if chunk.is_finished {
-                println!("[Finish Reason]: {:?}", chunk.finish_reason);
-            }
-        }
-
-        println!("\n========== 流式响应结束 ==========\n");
-
-        // 打印最终拼接结果
-        println!("=== 最终内容拼接 (共 {} 个 chunk) ===", chunk_count);
-        let full_content = content_chunks.join("");
-        println!("{}", full_content);
-
-        assert!(!full_content.is_empty(), "应该有响应内容");
-    }
 
     // ============================================================================
     // Mock Tool for Testing
@@ -213,24 +69,18 @@ mod tests {
                 "wind": "东南风 3级"
             });
 
-            println!("\n[Tool Executed] get_weather(city=\"{}\")", city);
-            println!(
-                "[Tool Result] {}\n",
-                serde_json::to_string_pretty(&weather).unwrap()
-            );
-
             Ok(weather)
         }
     }
 
-    /// 测试 Agent Loop - 完整的工具调用流程
-    /// 目的：展示 Agent 调用工具的完整过程
+    /// 测试 Agent Loop - 流式工具调用流程
+    /// 目的：展示 Agent 流式调用工具的完整过程
     #[tokio::test]
     async fn test_agent_loop_with_tools() {
         dotenv::dotenv().ok();
 
         // 1. 创建 ChatModel
-        let provider = match DeepSeekProvider::from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 println!("跳过测试: 未设置 DEEPSEEK_API_KEY 环境变量");
@@ -244,6 +94,7 @@ mod tests {
             println!("设置活动模型失败: {}", e);
             return;
         }
+        let model = Arc::new(model);
 
         // 2. 创建工具执行器并注册工具
         let mut executor = GenericToolExecutor::new();
@@ -259,84 +110,84 @@ mod tests {
 
         let max_iterations = 5;
 
-        println!("\n========== Agent Loop 开始 ==========\n");
+        println!("\n========== Agent Loop (Stream Mode) 开始 ==========\n");
         println!("[User] 北京今天天气怎么样？\n");
 
         // 4. Agent Loop
         for iteration in 1..=max_iterations {
             println!("=== Iteration {} ===", iteration);
 
-            // 调用模型
-            let response = model
-                .chat(messages.clone(), Some(executor.tools().clone()))
-                .await;
+            // 克隆消息以避免借用冲突
+            let messages_clone = messages.clone();
 
-            let assistant_msg = match response {
-                Ok(msg) => msg,
-                Err(e) => {
-                    println!("[Error] 模型调用失败: {:?}", e);
-                    break;
+            // 使用 call_model 纯函数
+            let stream = call_model(&messages_clone, Some(executor.tools()), model.as_ref());
+            let mut stream = pin!(stream);
+
+            let mut content = String::new();
+            let mut reasoning_content: Option<String> = None;
+            let mut tool_calls: Option<Vec<ToolCall>> = None;
+
+            while let Some(event) = stream.next().await {
+                match event {
+                    CallModelEvent::TextChunk(text) => {
+                        content.push_str(&text);
+                        print!("{}", text);
+                    }
+                    CallModelEvent::ReasoningChunk(text) => {
+                        reasoning_content
+                            .get_or_insert_with(String::new)
+                            .push_str(&text);
+                    }
+                    CallModelEvent::Completed {
+                        content: c,
+                        reasoning_content: rc,
+                        tool_calls: tc,
+                    } => {
+                        content = c;
+                        reasoning_content = rc;
+                        tool_calls = tc;
+                    }
+                    CallModelEvent::Error(e) => {
+                        println!("[Error] {}", e);
+                        return;
+                    }
                 }
+            }
+
+            // drop stream 以释放借用
+            drop(stream);
+
+            // 构建助手消息
+            let assistant_msg = Message::Assistant {
+                content: content.clone(),
+                reasoning_content: reasoning_content.clone(),
+                tool_calls: tool_calls.clone(),
             };
 
             // 打印助手响应
-            if let Message::Assistant {
-                content,
-                tool_calls,
-            } = &assistant_msg
-            {
-                if !content.is_empty() {
-                    println!("[Assistant] {}", content);
+            println!("\n[Assistant Message] {}", content);
+
+            // 添加助手消息到历史
+            messages.push(assistant_msg);
+
+            // 检查是否有工具调用
+            if let Some(calls) = tool_calls {
+                // 执行工具
+                let tool_stream = call_tools(&executor, &calls);
+                let mut tool_stream = pin!(tool_stream);
+
+                while let Some(result) = tool_stream.next().await {
+                    println!("[Tool] {} -> {}", result.tool_name, result.output);
+                    messages.push(Message::Tool {
+                        tool_call_id: result.call_id,
+                        content: result.output,
+                    });
                 }
-
-                // 添加助手消息到历史
-                messages.push(assistant_msg.clone());
-
-                // 检查是否有工具调用
-                if let Some(calls) = tool_calls {
-                    println!("\n[Tool Calls] 检测到 {} 个工具调用", calls.len());
-
-                    // 执行每个工具调用
-                    for call in calls {
-                        println!("[Tool Call] id={}, name={}", call.id, call.get_name());
-
-                        // 执行工具
-                        let result = executor.execute(call.clone()).await;
-
-                        match result {
-                            Ok(ToolResult {
-                                id,
-                                success,
-                                output,
-                            }) => {
-                                println!("[Tool Result] id={}, success={}", id, success);
-
-                                // 将工具结果添加到消息历史
-                                messages.push(Message::Tool {
-                                    tool_call_id: id,
-                                    content: serde_json::to_string(&output).unwrap_or_default(),
-                                });
-                            }
-                            Err(e) => {
-                                println!("[Tool Error] {:?}", e);
-                                messages.push(Message::Tool {
-                                    tool_call_id: call.id.clone(),
-                                    content: format!("Error: {:?}", e),
-                                });
-                            }
-                        }
-                    }
-
-                    println!();
-                    // 继续下一轮迭代，让模型处理工具结果
-                    continue;
-                } else {
-                    // 没有工具调用，Agent 完成
-                    println!("\n[Agent Complete] 无更多工具调用");
-                    break;
-                }
+                continue;
             } else {
-                println!("[Unexpected] 非助手消息");
+                // 没有工具调用，Agent 完成
+                println!("\n[Agent Complete] 无更多工具调用");
                 break;
             }
         }
@@ -355,14 +206,16 @@ mod tests {
                 }
                 Message::Assistant {
                     content,
+                    reasoning_content,
                     tool_calls,
                 } => {
                     println!(
                         "[{}] Assistant: {} (tool_calls: {:?})",
-                        i,
-                        content,
-                        tool_calls.as_ref().map(|c| c.len())
+                        i, content, tool_calls
                     );
+                    if let Some(rc) = reasoning_content {
+                        println!("    Reasoning: {}", rc);
+                    }
                 }
                 Message::Tool {
                     tool_call_id,
@@ -373,7 +226,161 @@ mod tests {
             }
         }
 
-        // 验证：应该有至少 3 条消息（system + user + assistant）
+        // 验证：应该有至少 2 条消息（system + user）
         assert!(messages.len() >= 2, "应该有至少 2 条消息");
+    }
+
+    /// 此测试需要设置 DEEPSEEK_API_KEY 环境变量
+    ///
+    /// 注意：由于真实 LLM 行为不可预测，此测试主要验证：
+    /// 1. playwright_cli 工具能够被正确注册和调用
+    /// 2. Agent 能够完成执行（Completed 或 MaxIterations）
+    #[tokio::test]
+    async fn test_agent_actor_with_deepseek_and_playwright() {
+        dotenv::dotenv().ok();
+
+        println!("\n========== AgentActor DeepSeek + Playwright Test ==========\n");
+
+        // 1. 创建 DeepSeek Provider
+        let provider = match deepseek_provider_from_env() {
+            Ok(p) => Arc::new(p),
+            Err(_) => {
+                println!("跳过测试: 未设置 DEEPSEEK_API_KEY 环境变量");
+                return;
+            }
+        };
+
+        // 2. 创建 ChatModel
+        let mut model = ChatModel::new();
+        model.add_model_provider("deepseek-reasoner", provider);
+        if let Err(e) = model.set_active_model("deepseek-reasoner") {
+            println!("设置活动模型失败: {}", e);
+            return;
+        }
+
+        // 3. 创建工具执行器并注册真实的 Playwright 工具
+        let mut executor = GenericToolExecutor::new();
+        executor.register(PlaywrightCliTool::new());
+
+        // 4. 创建上下文 - 使用更明确的提示引导模型使用工具
+        let mut context = Context::new();
+        context.add_message(Message::system(
+            r#"你是一个聪明的助手，当用户需要访问网页或提取网页内容时, 你可以使用工具完成任务。"#,
+        ));
+        context.add_message(Message::user(
+            "请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容",
+        ));
+
+        println!(
+            "[User] 请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容\n"
+        );
+
+        // 5. 创建 AgentActo
+        let actor = AgentActor::new(model, executor, context);
+
+        // 6. 启动 Actor
+        let mut handle = actor.run_loop();
+
+        // 7. 收集事件
+        let mut events: Vec<AgentActorEvent> = Vec::new();
+        let mut tool_calls_log: Vec<String> = Vec::new();
+
+        while let Some(event) = handle.event_rx.recv().await {
+            match &event {
+                AgentActorEvent::ContentChunk(content) => {
+                    // print!("{}", content);
+                }
+                AgentActorEvent::ReasoningChunk(content) => {
+                    // print!("{}", content);
+                }
+                AgentActorEvent::ToolCalls(calls) => {
+                    println!("\n[Event] ToolCalls: {} 个工具调用", calls.len());
+                    for call in calls {
+                        let tool_name = call.get_name();
+                        let args = call.get_arguments();
+                        println!("  → 工具: {}", tool_name);
+                        println!("  → 参数: {}", args);
+                        tool_calls_log.push(tool_name.clone());
+                    }
+                }
+                AgentActorEvent::ToolResult {
+                    call_id,
+                    success,
+                    output,
+                } => {
+                    println!("\n[Event] ToolResult: id={}, success={}", call_id, success);
+                    if let Ok(json_value) = serde_json::from_str::<Value>(output) {
+                        if let Some(stdout) = json_value.get("stdout").and_then(|v| v.as_str()) {
+                            let preview = if stdout.chars().count() > 150 {
+                                format!("{}...", stdout.chars().take(150).collect::<String>())
+                            } else {
+                                stdout.to_string()
+                            };
+                            println!("  → 输出: {}", preview.replace('\n', " "));
+                        } else if let Some(error) = json_value.get("error").and_then(|v| v.as_str())
+                        {
+                            println!("  → 错误: {}", error);
+                        } else {
+                            println!("  → 输出: {}", json_value);
+                        }
+                    }
+                }
+                AgentActorEvent::StepCompleted {
+                    content,
+                    reasoning_content,
+                    tool_calls,
+                } => {
+                    if reasoning_content.is_some() {
+                        println!(
+                            "\n[assistant-reasoning] {}",
+                            reasoning_content.as_ref().unwrap_or(&"".to_string())
+                        );
+                    }
+                    if !content.is_empty() {
+                        println!("\n[assistant] {:?}", content);
+                    }
+                    if tool_calls.is_some() {
+                        let json_str = serde_json::to_string(&tool_calls).unwrap_or_default();
+                        println!("\n[assistant-tool-calls] {}", json_str);
+                    }
+                }
+                AgentActorEvent::Iteration { iteration, .. } => {
+                    println!("\n--- Iteration {} ---", iteration);
+                }
+                AgentActorEvent::Completed => {
+                    println!("\n\n[Event] Completed");
+                }
+                AgentActorEvent::Cancelled => {
+                    println!("\n\n[Event] Cancelled");
+                }
+                AgentActorEvent::Error(e) => {
+                    println!("\n[Event] Error: {}", e);
+                }
+                AgentActorEvent::MaxIterations { iteration } => {
+                    println!("\n[Event] MaxIterations: iteration={}", iteration);
+                }
+            }
+
+            events.push(event.clone());
+
+            if matches!(
+                events.last(),
+                Some(AgentActorEvent::Completed)
+                    | Some(AgentActorEvent::Cancelled)
+                    | Some(AgentActorEvent::Error(_))
+                    | Some(AgentActorEvent::MaxIterations { .. })
+            ) {
+                break;
+            }
+        }
+
+        // 验证执行结束（Completed 或 MaxIterations 都算成功）
+        let finished = events.iter().any(|e| {
+            matches!(
+                e,
+                AgentActorEvent::Completed | AgentActorEvent::MaxIterations { .. }
+            )
+        });
+        assert!(finished, "Agent 应该正常结束执行");
     }
 }

@@ -1,6 +1,7 @@
 mod chat_model;
 mod gen_img_model;
 
+use crate::agents::ToolCall;
 use async_trait::async_trait;
 pub use chat_model::ChatModel;
 pub use gen_img_model::GenImgModel;
@@ -28,10 +29,14 @@ pub enum ChatError {
 pub struct ChatChunk {
     /// 本次流式返回的片段内容
     pub content: String,
+    /// DeepSeek 推理模式的推理内容片段（如 deepseek-reasoner）
+    pub reasoning_content: String,
     /// 标记是否是最后一个片段
     pub is_finished: bool,
     /// 结束原因（比如 "stop" / "length"）
     pub finish_reason: Option<String>,
+    /// 流式输出中的工具调用（用于解析增量工具调用）
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 /// 聊天能力 trait
