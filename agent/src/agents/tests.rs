@@ -130,6 +130,7 @@ mod tests {
 
             while let Some(event) = stream.next().await {
                 match event {
+                    CallModelEvent::Start => {}
                     CallModelEvent::TextChunk(text) => {
                         content.push_str(&text);
                         print!("{}", text);

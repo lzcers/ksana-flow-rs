@@ -21,6 +21,8 @@ pub struct CallToolResult {
 /// 调用模型事件（纯数据）
 #[derive(Debug, Clone)]
 pub enum CallModelEvent {
+    /// 调用开始
+    Start,
     /// LLM 文本片段
     TextChunk(String),
     /// 推理片段
@@ -48,6 +50,7 @@ pub fn call_model(
     let mut final_tool_calls = Vec::new();
     stream! {
         // 流式调用模型
+        yield CallModelEvent::Start;
         let mut response_stream = match model.chat_stream(messages.clone(), tools_def.cloned()).await {
             Ok(s) => s,
             Err(e) => {

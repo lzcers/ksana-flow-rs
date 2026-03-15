@@ -380,6 +380,11 @@ where
         let messages = self.context.read().await.to_messages();
         let tools_def = Some(self.tool_executor.tools().clone());
 
+        let mut content = String::new();
+        let mut reasoning_content: Option<String> = None;
+        let mut tool_calls: Option<Vec<ToolCall>> = None;
+        let mut error: Option<String> = None;
+
         // 调用模型并处理流
         let mut stream = pin!(call_model(
             &messages,
@@ -387,13 +392,11 @@ where
             self.chat.as_ref()
         ));
 
-        let mut content = String::new();
-        let mut reasoning_content: Option<String> = None;
-        let mut tool_calls: Option<Vec<ToolCall>> = None;
-        let mut error: Option<String> = None;
-
         while let Some(event) = stream.next().await {
             match event {
+                CallModelEvent::Start => {
+                    // 暂时什么也不做
+                }
                 CallModelEvent::TextChunk(text) => {
                     content.push_str(&text);
                     Self::send_event(
@@ -571,12 +574,8 @@ where
 
                 // 检查是否已取消
                 if loop_state.is_terminal() {
-                    Self::send_event(
-                        Some(&event_tx),
-                        &self.hooks,
-                        AgentActorEvent::Cancelled,
-                    )
-                    .await;
+                    Self::send_event(Some(&event_tx), &self.hooks, AgentActorEvent::Cancelled)
+                        .await;
                     break;
                 }
 
@@ -634,12 +633,8 @@ where
                         // 继续下一次迭代
                     }
                     StepResult::Done { .. } => {
-                        Self::send_event(
-                            Some(&event_tx),
-                            &self.hooks,
-                            AgentActorEvent::Completed,
-                        )
-                        .await;
+                        Self::send_event(Some(&event_tx), &self.hooks, AgentActorEvent::Completed)
+                            .await;
                         break;
                     }
                     StepResult::Error(e) => {
@@ -695,12 +690,8 @@ where
                 Ok(results) => results,
                 Err(_) => {
                     // 超时时发送错误事件
-                    Self::send_event(
-                        event_tx,
-                        hooks,
-                        AgentActorEvent::Error(AgentError::Timeout),
-                    )
-                    .await;
+                    Self::send_event(event_tx, hooks, AgentActorEvent::Error(AgentError::Timeout))
+                        .await;
                     Vec::new()
                 }
             }
