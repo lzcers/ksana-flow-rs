@@ -2,13 +2,13 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// Re-export Context types from context module
-pub use crate::agents::context::{Context, Layer, LayerKind, LayerMeta};
-
 // ============================================================================
 // AgentState: Agent 状态
 // ============================================================================
 /// Agent 状态 - 可持久化、可追踪的执行实体
+///
+/// 注意：Context 不再包含在 AgentState 中，
+/// 改为由 ContextHandle 独立管理，支持多 Agent 共享。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentState {
     // === 标识信息 ===
@@ -40,11 +40,6 @@ pub struct AgentState {
     /// 实际成本
     #[serde(default)]
     pub actual_cost: Decimal,
-
-    // === 执行上下文 ===
-    /// 分层上下文（对话、记忆、人格等）
-    #[serde(default)]
-    pub context: Context,
 
     // === 执行状态 ===
     /// 当前迭代次数

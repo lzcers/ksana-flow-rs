@@ -4,12 +4,12 @@ mod tests {
 
     use crate::agents::tools::playwright_cli::PlaywrightCliTool;
     use crate::agents::{
-        AgentActor, AgentActorEvent, CallModelEvent, Context, GenericToolExecutor, Tool, ToolCall,
-        ToolDef, ToolExecutor, call_model, call_tools,
+        AgentActor, AgentActorEvent, CallModelEvent, Context, ContextHandle, GenericToolExecutor,
+        Tool, ToolCall, ToolDef, ToolExecutor, call_model, call_tools,
     };
     use crate::core::Message;
     use crate::models::ChatModel;
-    use crate::providers::DeepSeekProvider;
+    use crate::providers::deepseek_provider_from_env;
     use async_trait::async_trait;
     use futures::StreamExt;
     use serde_json::{Value, json};
@@ -80,7 +80,7 @@ mod tests {
         dotenv::dotenv().ok();
 
         // 1. 创建 ChatModel
-        let provider = match DeepSeekProvider::from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 println!("跳过测试: 未设置 DEEPSEEK_API_KEY 环境变量");
@@ -242,7 +242,7 @@ mod tests {
         println!("\n========== AgentActor DeepSeek + Playwright Test ==========\n");
 
         // 1. 创建 DeepSeek Provider
-        let provider = match DeepSeekProvider::from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 println!("跳过测试: 未设置 DEEPSEEK_API_KEY 环境变量");
@@ -275,8 +275,8 @@ mod tests {
             "[User] 请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容\n"
         );
 
-        // 5. 创建 AgentActo
-        let actor = AgentActor::new(model, executor, context);
+        // 5. 创建 AgentActor
+        let actor = AgentActor::new(model, executor, ContextHandle::new(context));
 
         // 6. 启动 Actor
         let mut handle = actor.run_loop();

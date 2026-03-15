@@ -8,8 +8,11 @@
 //! - 对话历史（Conversation）
 //! - 自定义层
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::RwLock;
 
 use crate::core::Message;
 
@@ -315,6 +318,57 @@ impl Layer {
     pub fn with_readonly(mut self, readonly: bool) -> Self {
         self.meta.readonly = readonly;
         self
+    }
+}
+
+// ============================================================================
+// ContextHandle - 共享 Context 的句柄
+// ============================================================================
+
+/// Context 的共享句柄，支持并发读取
+///
+/// 用于多 Agent 共享同一 Context 的黑板模式：
+/// - Actor 通过 `read()` 获取只读快照
+/// - Hook 通过 `write()` 更新 Context
+/// - 多个 Agent 可以共享同一个 ContextHandle
+#[derive(Debug, Clone)]
+pub struct ContextHandle {
+    inner: Arc<RwLock<Context>>,
+}
+
+impl ContextHandle {
+    /// 创建新的 ContextHandle
+    pub fn new(context: Context) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(context)),
+        }
+    }
+
+    /// 读取当前 Context（快照）
+    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, Context> {
+        self.inner.read().await
+    }
+
+    /// 写入 Context（由 Hook 调用）
+    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, Context> {
+        self.inner.write().await
+    }
+
+    /// 获取内部 Arc 的克隆（用于直接传递给需要 Arc<RwLock<Context>> 的地方）
+    pub fn inner(&self) -> Arc<RwLock<Context>> {
+        self.inner.clone()
+    }
+}
+
+impl Default for ContextHandle {
+    fn default() -> Self {
+        Self::new(Context::new())
+    }
+}
+
+impl From<Context> for ContextHandle {
+    fn from(context: Context) -> Self {
+        Self::new(context)
     }
 }
 
