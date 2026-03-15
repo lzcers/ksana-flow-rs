@@ -275,7 +275,7 @@ mod tests {
             "[User] 请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容\n"
         );
 
-// 5. 创建 AgentActor
+        // 5. 创建 AgentActor
         let actor = AgentActor::new(model, executor, ContextHandle::new(context));
 
         // 6. 启动 Actor
