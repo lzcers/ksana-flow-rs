@@ -3,7 +3,7 @@ use crate::prompt::build_user_prompt;
 use agent::{
     core::Message,
     models::{ChatCapability, ChatChunk, ChatModel},
-    providers::{DeepSeekProvider, OpenRouterProvider},
+    providers::{deepseek_provider_from_env, openrouter_provider_from_env},
 };
 use async_trait::async_trait;
 use flow::{
@@ -62,12 +62,12 @@ impl LLMNode {
 
         let mut chat_model = ChatModel::new();
 
-        let provider = DeepSeekProvider::from_env().expect("Failed to create DeepSeek provider");
+        let provider = deepseek_provider_from_env().expect("Failed to create DeepSeek provider");
         chat_model
             .add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], Arc::new(provider));
         if model.contains('/') {
             let provider =
-                OpenRouterProvider::from_env().expect("Failed to create OpenRouter provider");
+                openrouter_provider_from_env().expect("Failed to create OpenRouter provider");
             chat_model.add_model_provider(model, Arc::new(provider));
         }
 

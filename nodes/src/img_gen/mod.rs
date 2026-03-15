@@ -9,7 +9,7 @@ use uuid::Uuid;
 use agent::{
     core::Message,
     models::{ChatError, GenImgCapability, GenImgModel, GenImgResponse},
-    providers::OpenRouterProvider,
+    providers::openrouter_provider_from_env,
 };
 
 mod utils;
@@ -39,7 +39,7 @@ impl ImgGenNode {
             .with_aspect_ratio(aspect_ratio.to_string())
             .with_image_size(image_size.to_string());
 
-        if let Ok(provider) = OpenRouterProvider::from_env() {
+        if let Ok(provider) = openrouter_provider_from_env() {
             gen_img_model.add_model_provider(model, Arc::new(provider));
             let _ = gen_img_model.set_active_model(model);
         }

@@ -224,7 +224,7 @@ mod tests {
     async fn test_chat_with_deepseek_reasoner() {
         dotenv::dotenv().ok();
 
-        let provider = match deepseek_provider_from_env() {
+let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
@@ -268,7 +268,7 @@ mod tests {
     async fn test_chat_stream_with_deepseek_reasoner() {
         dotenv::dotenv().ok();
 
-        let provider = match deepseek_provider_from_env() {
+let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");

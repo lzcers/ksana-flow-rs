@@ -46,21 +46,191 @@ Recent additions include:
 
 ### Agent Module Architecture
 
-The `agent` crate provides a standalone LLM Agent implementation:
+The `agent` crate provides a standalone LLM Agent implementation using an **Actor-based design** with streaming support, state persistence, and layered context management.
 
-1. **Core Types** (`core.rs`): `Message` enum (System/User/Assistant/Tool), `Usage`, `MessageRole`
-2. **Models** (`models/`):
-   - `ChatCapability`: Trait for chat models (non-streaming and streaming)
-   - `GenImgCapability`: Trait for image generation models
-   - `ChatModel`: Multi-provider chat model (DeepSeek, OpenRouter) with dynamic model mapping
-   - `GenImgModel`: Image generation model
-3. **Providers** (`providers/`): DeepSeek and OpenRouter API implementations
-4. **Agents** (`agents/`):
-   - `Agent`: Orchestrates model chat + tool execution loop with max iterations
-   - `ToolExecutor`: Trait for executing tool calls
-   - `ToolDef`: Tool definition schema for model consumption
-   - `ToolRegistry`: Registry of available tools
-   - `WebAgent`: Specialized agent with browser automation via Playwright CLI
+#### Directory Structure
+
+```
+agent/src/
+├── lib.rs           # Module exports
+├── core.rs          # Core types: Message, Usage, MessageRole
+├── models/
+│   ├── mod.rs       # ChatCapability, GenImgCapability traits
+│   ├── chat_model.rs    # ChatModel implementation
+│   └── gen_img_model.rs # Image generation model
+├── providers/
+│   ├── mod.rs       # Provider trait, Request/Response types
+│   ├── deepseek.rs  # DeepSeek API provider
+│   └── openrouter.rs # OpenRouter API provider
+└── agents/
+    ├── mod.rs           # Module exports
+    ├── agent_actor.rs   # AgentActor - the main actor controller
+    ├── agent_state.rs   # AgentState, JobState - state management
+    ├── agent_utils.rs   # Pure functions: call_model, call_tool, call_tools
+    ├── context.rs       # Context, Layer, LayerKind - layered context
+    └── tools/
+        ├── mod.rs       # ToolDef, ToolCall, ToolExecutor trait
+        ├── registry.rs  # ToolRegistry, GenericToolExecutor
+        └── playwright_cli.rs # Browser automation tool
+```
+
+#### Core Types (`core.rs`)
+
+- **Message**: Tagged union with System/User/Assistant/Tool variants
+  - Assistant messages support `reasoning_content` (DeepSeek reasoner mode)
+  - Assistant messages can contain `tool_calls`
+- **Usage**: Token usage statistics
+
+#### Models (`models/`)
+
+- **ChatCapability**: Trait for chat models
+  - `chat()`: Non-streaming chat
+  - `chat_stream()`: Streaming chat returning `BoxStream<ChatChunk>`
+- **ChatChunk**: Stream chunk with `content`, `reasoning_content`, `tool_calls`
+- **ChatModel**: Multi-provider chat model
+  - `add_model_provider(name, provider)`: Register a model with its provider
+  - `set_active_model(name)`: Set the active model
+  - Supports DeepSeek (chat/reasoner) and OpenRouter models
+
+#### Providers (`providers/`)
+
+- **Provider**: Trait for API providers
+  - `send_request()`: Non-streaming request
+  - `stream_request()`: Streaming request returning SSE stream
+- **DeepSeekProvider**: DeepSeek API implementation
+- **OpenRouterProvider**: OpenRouter API implementation
+- **Request/Response/StreamResponse**: OpenAI-compatible types
+
+#### Agent Actor (`agents/agent_actor.rs`)
+
+The main execution unit using the Actor pattern:
+
+```rust
+// Create with builder
+let actor = AgentActorBuilder::new(chat_model, tool_executor)
+    .context(context)
+    .max_iterations(10)
+    .step_timeout(Duration::from_secs(60))
+    .build();
+
+// Option 1: Run loop (automatic iteration)
+let handle = actor.run_loop();
+// handle.pause().await;
+// handle.resume().await;
+// handle.cancel().await;
+let events = handle.wait().await;
+
+// Option 2: Manual step control
+let result = actor.run_step(Some(event_tx)).await;
+```
+
+**AgentActorEvent Types:**
+
+| Event | Description |
+|-------|-------------|
+| `ContentChunk(String)` | LLM text chunk |
+| `ReasoningChunk(String)` | DeepSeek reasoner content chunk |
+| `StepCompleted { content, reasoning_content, tool_calls }` | LLM response complete |
+| `ToolCalls(Vec<ToolCall>)` | Model requested tools |
+| `ToolResult { call_id, success, output }` | Single tool completed |
+| `Iteration { iteration, message_count }` | One cycle complete |
+| `MaxIterations { iteration }` | Reached max iterations |
+| `Completed` | Agent finished |
+| `Cancelled` | User cancelled |
+| `Error(AgentError)` | Error occurred |
+
+**StepResult Types:**
+
+- `Continue { content, reasoning_content, tool_calls, tool_results }`: Has tool calls, continue iteration
+- `Done { content, reasoning_content }`: No tool calls, finished
+- `Error(AgentError)`: Execution error
+
+#### State Management (`agents/agent_state.rs`)
+
+- **AgentState**: Persistable agent state
+  - `job_id`, `user_id`, `conversation_id`: Identifiers
+  - `title`, `description`, `category`: Task metadata
+  - `state`: Current `JobState`
+  - `budget`, `actual_cost`: Resource tracking
+  - `context`: Layered context
+  - `iteration`, `max_iterations`: Execution control
+
+- **JobState**: Execution state machine
+  - `Pending` → `Running` → `Completed`/`Failed`/`Cancelled`
+  - Supports `Paused`, `WaitingInput` for interactive scenarios
+
+#### Layered Context (`agents/context.rs`)
+
+Context is a layered data container supporting multiple data types:
+
+```rust
+let context = Context::new()
+    .layer(Layer::new("system", LayerKind::System, json!("You are helpful."))
+        .with_priority(100))
+    .layer(Layer::new("soul", LayerKind::Soul, json!({
+        "name": "Kśana",
+        "role": "AI Assistant",
+        "guidelines": ["Be helpful", "Be concise"]
+    })))
+    .layer(Layer::new("conversation", LayerKind::Conversation, json!([])));
+
+// Convert to messages for LLM
+let messages = context.to_messages();
+
+// Add message to conversation
+context.add_message(Message::user("Hello"));
+```
+
+**LayerKind Types:**
+- `System`: System instructions
+- `Soul`: Personality/character definition
+- `User`: User profile
+- `Memory`: Long-term memory
+- `Conversation`: Chat history
+- `Tools`: Tool definitions
+- `Custom(String)`: Custom layers
+
+#### Tool System (`agents/tools/`)
+
+- **ToolDef**: Tool definition for model consumption
+- **ToolCall**: Model's tool call request (OpenAI-compatible)
+- **ToolResult**: Tool execution result
+- **ToolExecutor**: Trait for executing tools
+- **GenericToolExecutor**: Registry-based executor
+
+```rust
+// Define a tool
+struct SearchTool { def: ToolDef }
+
+#[async_trait]
+impl Tool for SearchTool {
+    fn definition(&self) -> &ToolDef { &self.def }
+    async fn execute(&self, args: Value) -> Result<Value, ToolExecutorError> {
+        Ok(json!({"result": "search result"}))
+    }
+}
+
+// Register tools
+let mut executor = GenericToolExecutor::new();
+executor.register(SearchTool::new());
+```
+
+#### Execution Utilities (`agents/agent_utils.rs`)
+
+Pure functions for execution:
+
+- `call_model(messages, tools_def, model) -> Stream<CallModelEvent>`: Stream LLM response
+- `call_tool(executor, call) -> CallToolResult`: Execute single tool
+- `call_tools(executor, calls) -> Stream<CallToolResult>`: Execute tools in parallel
+
+#### Key Design Principles
+
+1. **Separation of concerns**: Actor handles control plane, utils handle execution
+2. **Streaming first**: `chat_stream` is primary, `chat` wraps it
+3. **Layered context**: Context supports multiple data types with priorities
+4. **State persistence**: `AgentState` is serializable for persistence
+5. **Control interface**: Pause/Continue/Cancel via `AgentActorHandle`
+6. **Parallel tool execution**: Multiple tools execute concurrently
 
 ## Development Commands
 
@@ -213,13 +383,17 @@ async fn test_my_workflow() {
 
 ### Using the Agent Module
 
-The `agent` crate provides a standalone LLM Agent implementation with streaming support.
+The `agent` crate provides an Actor-based LLM Agent with streaming support and state management.
 
-#### Basic Usage (Non-streaming)
+#### Basic Usage with AgentActor
 
 ```rust
 use agent::{
-    agents::{Agent, Tool, ToolDef, GenericToolExecutor, ToolExecutorError},
+    agents::{
+        AgentActor, AgentActorBuilder, AgentActorEvent,
+        Context, Layer, LayerKind,
+        GenericToolExecutor, Tool, ToolDef, ToolExecutorError,
+    },
     core::Message,
     models::ChatModel,
     providers::DeepSeekProvider,
@@ -227,6 +401,7 @@ use agent::{
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
+use futures::StreamExt;
 
 // Define a custom tool
 struct SearchTool {
@@ -267,7 +442,6 @@ async fn main() -> anyhow::Result<()> {
     // Create chat model with provider
     let mut model = ChatModel::new();
     let provider = Arc::new(DeepSeekProvider::from_env()?);
-
     model.add_model_provider("deepseek-chat", provider);
     model.set_active_model("deepseek-chat")?;
 
@@ -275,62 +449,67 @@ async fn main() -> anyhow::Result<()> {
     let mut tool_executor = GenericToolExecutor::new();
     tool_executor.register(SearchTool::new());
 
-    // Create agent
-    let agent = Agent::new(model, tool_executor)
-        .with_max_iterations(10);
+    // Create context with system prompt
+    let context = Context::new()
+        .layer(Layer::new(
+            "system",
+            LayerKind::System,
+            serde_json::json!("You are a helpful assistant."),
+        ))
+        .layer(Layer::new(
+            "conversation",
+            LayerKind::Conversation,
+            serde_json::json!([]),
+        ));
 
-    // Run agent (non-streaming, blocks until complete)
-    let messages = vec![Message::user("Hello!")];
-    let result = agent.run(messages).await?;
+    // Add user message
+    let mut context = context;
+    context.add_message(Message::user("What is the weather today?"));
 
-    Ok(())
-}
-```
+    // Create agent actor
+    let actor = AgentActorBuilder::new(model, tool_executor)
+        .context(context)
+        .max_iterations(10)
+        .build();
 
-#### Streaming Usage (Recommended)
+    // Run loop and collect events
+    let handle = actor.run_loop();
 
-```rust
-use agent::{
-    agents::{Agent, AgentEvent, GenericToolExecutor},
-    core::Message,
-    models::ChatModel,
-    providers::DeepSeekProvider,
-};
-use futures::StreamExt;
-use std::sync::Arc;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Setup model and executor as above...
-    let mut model = ChatModel::new();
-    let provider = Arc::new(DeepSeekProvider::from_env()?);
-    model.add_model_provider("deepseek-chat", provider);
-    model.set_active_model("deepseek-chat")?;
-
-    let tool_executor = GenericToolExecutor::new();
-    let agent = Agent::new(model, tool_executor);
-
-    let messages = vec![Message::user("What is the weather today?")];
-
-    // Run agent with streaming events
-    let mut stream = agent.run_stream(messages).await?;
-
-    while let Some(event) = stream.next().await {
-        match event? {
-            AgentEvent::AssistantMessage(msg) => {
-                println!("Assistant replied: {:?}", msg);
+    // Process events in real-time
+    while let Some(event) = handle.event_rx.recv().await {
+        match event {
+            AgentActorEvent::ContentChunk(text) => {
+                print!("{}", text);
             }
-            AgentEvent::ToolCalls(calls) => {
-                println!("Tool calls detected: {} calls", calls.len());
+            AgentActorEvent::ReasoningChunk(text) => {
+                eprintln!("[Reasoning] {}", text);
             }
-            AgentEvent::ToolResult { call_id, success, output } => {
+            AgentActorEvent::StepCompleted { content, tool_calls, .. } => {
+                println!("\nStep completed: {}", content);
+            }
+            AgentActorEvent::ToolCalls(calls) => {
+                println!("Tool calls: {:?}", calls.iter().map(|c| c.get_name()).collect::<Vec<_>>());
+            }
+            AgentActorEvent::ToolResult { call_id, success, output } => {
                 println!("Tool {} completed: success={}", call_id, success);
             }
-            AgentEvent::Iteration { iteration, message_count } => {
+            AgentActorEvent::Iteration { iteration, message_count } => {
                 println!("Iteration {} complete, {} messages", iteration, message_count);
             }
-            AgentEvent::Complete(messages) => {
-                println!("Agent completed with {} messages", messages.len());
+            AgentActorEvent::Completed => {
+                println!("Agent completed");
+                break;
+            }
+            AgentActorEvent::Cancelled => {
+                println!("Agent cancelled");
+                break;
+            }
+            AgentActorEvent::Error(e) => {
+                eprintln!("Error: {}", e);
+                break;
+            }
+            AgentActorEvent::MaxIterations { iteration } => {
+                println!("Max iterations reached: {}", iteration);
                 break;
             }
         }
@@ -340,19 +519,51 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
-#### AgentEvent Types
+#### Manual Step Control
 
-| Event | Description |
-|-------|-------------|
-| `AssistantMessage(Message)` | Model generated a response |
-| `ToolCalls(Vec<ToolCall>)` | Model requested tool execution |
-| `ToolResult { call_id, success, output }` | Single tool completed |
-| `Iteration { iteration, message_count }` | One chat+tool cycle completed |
-| `Complete(Vec<Message>)` | Agent finished, contains full conversation |
+For fine-grained control over each iteration:
 
-#### Key Design Changes
+```rust
+let mut actor = AgentActorBuilder::new(model, tool_executor)
+    .context(context)
+    .build();
 
-1. **`run_stream` is the primary method** - `run` is now a wrapper around `run_stream`
-2. **Partial tool failures are handled gracefully** - One tool failing doesn't stop others
-3. **Arc<Mutex<>> internal design** - Agent can be used with `&self`, no `&mut` needed
-4. **Real-time observability** - See each step of the agent loop as it happens
+loop {
+    let result = actor.run_step(None).await;
+
+    match result {
+        StepResult::Continue { content, tool_calls, tool_results, .. } => {
+            println!("Step completed with tools, continuing...");
+            // Optionally inspect or modify state
+        }
+        StepResult::Done { content, .. } => {
+            println!("Agent finished: {}", content);
+            break;
+        }
+        StepResult::Error(e) => {
+            eprintln!("Error: {}", e);
+            break;
+        }
+    }
+}
+```
+
+#### Control Handle
+
+The `AgentActorHandle` provides async control:
+
+```rust
+let handle = actor.run_loop();
+
+// Pause execution
+handle.pause().await;
+
+// Later, resume
+handle.resume().await;
+
+// Or cancel entirely
+handle.cancel().await;
+
+// Wait for completion
+let events = handle.wait().await;
+```

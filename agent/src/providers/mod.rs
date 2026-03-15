@@ -384,7 +384,7 @@ pub trait Provider: Send + Sync {
     /// 发送非流式请求
     async fn chat(&self, request: Request) -> Result<Response, ProviderError>;
 
-    /// 发送流式请求
+/// 发送流式请求
     async fn chat_stream(&self, request: Request) -> Result<BoxStream<'static, StreamResponse>, ProviderError>;
 
     /// Provider 名称（用于日志和调试）
