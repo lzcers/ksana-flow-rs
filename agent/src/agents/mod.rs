@@ -1,4 +1,5 @@
 pub mod agent_actor;
+pub mod agent_loop;
 pub mod agent_state;
 pub mod agent_utils;
 pub mod context;

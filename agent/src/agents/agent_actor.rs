@@ -354,9 +354,9 @@ where
 
         // 调用模型并处理流
         let mut stream = pin!(call_model(
+            self.chat.as_ref(),
             &messages,
             tools_def.as_ref(),
-            self.chat.as_ref()
         ));
 
         let mut content = String::new();

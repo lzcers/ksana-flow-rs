@@ -121,7 +121,7 @@ mod tests {
             let messages_clone = messages.clone();
 
             // 使用 call_model 纯函数
-            let stream = call_model(&messages_clone, Some(executor.tools()), model.as_ref());
+            let stream = call_model(model.as_ref(), &messages_clone, Some(executor.tools()));
             let mut stream = pin!(stream);
 
             let mut content = String::new();

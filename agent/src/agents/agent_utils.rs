@@ -39,9 +39,9 @@ pub enum CallModelEvent {
 
 // 调用一个具备 chat 能力的模型，至少要实现 chat_stream 方法
 pub fn call_model(
+    model: &(dyn ChatCapability + Sync),
     messages: &Vec<Message>,
     tools_def: Option<&Vec<ToolDef>>,
-    model: &(dyn ChatCapability + Sync),
 ) -> impl Stream<Item = CallModelEvent> {
     let mut final_content = String::new();
     let mut final_reasoning_content = String::new();
