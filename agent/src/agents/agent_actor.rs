@@ -5,12 +5,10 @@
 //! - 支持暂停、继续、取消操作
 //! - 状态可持久化和恢复
 //! - 流式事件输出
-//! - Hook 机制处理副作用
 //!
 //! 职责分离：
 //! - 执行逻辑由纯函数 `call_model`、`call_tools` 处理
 //! - 本文件负责控制面：命令处理、状态转换、事件发送、迭代控制
-//! - Hook 系统负责副作用：Context 更新、日志、持久化等
 
 use std::pin::pin;
 use std::sync::Arc;
@@ -21,9 +19,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use super::agent_utils::{CallModelEvent, CallToolResult, call_model, call_tools};
-use super::context::ContextHandle;
-use super::hook::{AgentEvent, HookRegistry};
-use crate::agents::{AgentState, ToolCall, ToolExecutor};
+use crate::agents::{AgentState, Context, ToolCall, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
 
@@ -231,16 +227,12 @@ where
     C: ChatCapability + Send + Sync + 'static,
     E: ToolExecutor + Send + 'static,
 {
-    /// Agent 状态（不包含 Context）
+    /// Agent 状态（控制面）
     state: AgentState,
-    /// Context 句柄（只读访问，通过 Hook 更新）
-    context: ContextHandle,
     /// Chat 模型
     chat: Arc<C>,
     /// 工具执行器
     tool_executor: Arc<E>,
-    /// Hook 注册表
-    hooks: HookRegistry,
     /// 执行指标
     metrics: ExecutionMetrics,
     /// 步骤超时时间
@@ -255,7 +247,7 @@ where
     E: ToolExecutor + Send,
 {
     /// 创建新的 Agent Actor
-    pub fn new(chat: C, tool_executor: E, context: ContextHandle) -> Self {
+    pub fn new(chat: C, tool_executor: E, context: Context) -> Self {
         Self {
             state: AgentState {
                 job_id: Uuid::new_v4(),
@@ -267,13 +259,12 @@ where
                 state: crate::agents::JobState::Pending,
                 budget: None,
                 actual_cost: rust_decimal::Decimal::ZERO,
+                context,
                 iteration: 0,
                 max_iterations: 10,
             },
-            context,
             chat: Arc::new(chat),
             tool_executor: Arc::new(tool_executor),
-            hooks: HookRegistry::new(),
             metrics: ExecutionMetrics::default(),
             step_timeout: None,
             tool_timeout: None,
@@ -290,19 +281,14 @@ where
         &mut self.state
     }
 
-    /// 获取 Context 句柄
-    pub fn context_handle(&self) -> &ContextHandle {
-        &self.context
+    /// 获取上下文
+    pub fn context(&self) -> &Context {
+        &self.state.context
     }
 
-    /// 获取 Hook 注册表
-    pub fn hooks(&self) -> &HookRegistry {
-        &self.hooks
-    }
-
-    /// 获取可变 Hook 注册表
-    pub fn hooks_mut(&mut self) -> &mut HookRegistry {
-        &mut self.hooks
+    /// 获取可变上下文
+    pub fn context_mut(&mut self) -> &mut Context {
+        &mut self.state.context
     }
 
     /// 获取执行指标
@@ -310,25 +296,11 @@ where
         &self.metrics
     }
 
-    /// 发送事件给所有 Hook
-    async fn emit(&self, event: AgentEvent) {
-        if let Err(e) = self.hooks.emit(&event).await {
-            eprintln!("Hook execution failed: {}", e);
-        }
-    }
-
-    /// 发送事件给外部订阅者和 Hook
-    async fn send_event(
-        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        hooks: &HookRegistry,
-        event: AgentActorEvent,
-    ) {
-        // 先发送给外部订阅者
+    /// 发送事件（忽略发送失败）
+    async fn send_event(event_tx: Option<&mpsc::Sender<AgentActorEvent>>, event: AgentActorEvent) {
         if let Some(tx) = event_tx {
-            let _ = tx.send(event.clone()).await;
+            let _ = tx.send(event).await;
         }
-        // 再发送给 Hook 系统
-        let _ = hooks.emit(&AgentEvent::ActorEvent(event)).await;
     }
 
     /// 执行单步迭代
@@ -376,8 +348,8 @@ where
         self.metrics.iterations = self.state.iteration;
         self.state.state = crate::agents::JobState::Running;
 
-        // 读取 Context（快照）
-        let messages = self.context.read().await.to_messages();
+        // 获取消息和工具定义
+        let messages = self.state.context.to_messages();
         let tools_def = Some(self.tool_executor.tools().clone());
 
         // 调用模型并处理流
@@ -396,23 +368,14 @@ where
             match event {
                 CallModelEvent::TextChunk(text) => {
                     content.push_str(&text);
-                    Self::send_event(
-                        event_tx.as_ref(),
-                        &self.hooks,
-                        AgentActorEvent::ContentChunk(text),
-                    )
-                    .await;
+                    Self::send_event(event_tx.as_ref(), AgentActorEvent::ContentChunk(text)).await;
                 }
                 CallModelEvent::ReasoningChunk(text) => {
                     reasoning_content
                         .get_or_insert_with(String::new)
                         .push_str(&text);
-                    Self::send_event(
-                        event_tx.as_ref(),
-                        &self.hooks,
-                        AgentActorEvent::ReasoningChunk(text),
-                    )
-                    .await;
+                    Self::send_event(event_tx.as_ref(), AgentActorEvent::ReasoningChunk(text))
+                        .await;
                 }
                 CallModelEvent::Completed {
                     content: c,
@@ -435,7 +398,6 @@ where
             self.state.state = crate::agents::JobState::Failed;
             Self::send_event(
                 event_tx.as_ref(),
-                &self.hooks,
                 AgentActorEvent::Error(AgentError::Model(e.clone())),
             )
             .await;
@@ -445,7 +407,6 @@ where
         // 发送 StepCompleted 事件
         Self::send_event(
             event_tx.as_ref(),
-            &self.hooks,
             AgentActorEvent::StepCompleted {
                 content: content.clone(),
                 reasoning_content: reasoning_content.clone(),
@@ -457,12 +418,7 @@ where
         // 根据是否有工具调用，选择不同的处理路径
         let result = if let Some(tc) = tool_calls {
             // 先发送 ToolCalls 事件
-            Self::send_event(
-                event_tx.as_ref(),
-                &self.hooks,
-                AgentActorEvent::ToolCalls(tc.clone()),
-            )
-            .await;
+            Self::send_event(event_tx.as_ref(), AgentActorEvent::ToolCalls(tc.clone())).await;
 
             // 执行工具调用（带超时）
             let tool_results = self
@@ -476,23 +432,17 @@ where
             let tc_for_result = tc.clone();
             let content_for_result = content.clone();
 
-            // 通过 Hook 更新 Context（发送建议性事件）
-            self.emit(AgentEvent::SuggestAddMessage {
-                message: Message::Assistant {
-                    content,
-                    reasoning_content: reasoning_content.clone(),
-                    tool_calls: Some(tc),
-                },
-            })
-            .await;
+            // 更新 Context
+            self.state.context.add_message(Message::Assistant {
+                content,
+                reasoning_content: reasoning_content.clone(),
+                tool_calls: Some(tc),
+            });
             for tr in &tool_results {
-                self.emit(AgentEvent::SuggestAddMessage {
-                    message: Message::Tool {
-                        tool_call_id: tr.call_id.clone(),
-                        content: tr.output.clone(),
-                    },
-                })
-                .await;
+                self.state.context.add_message(Message::Tool {
+                    tool_call_id: tr.call_id.clone(),
+                    content: tr.output.clone(),
+                });
             }
 
             self.state.state = crate::agents::JobState::WaitingInput;
@@ -503,15 +453,12 @@ where
                 tool_results,
             }
         } else {
-            // 通过 Hook 更新 Context
-            self.emit(AgentEvent::SuggestAddMessage {
-                message: Message::Assistant {
-                    content: content.clone(),
-                    reasoning_content: reasoning_content.clone(),
-                    tool_calls: None,
-                },
-            })
-            .await;
+            // 更新 Context
+            self.state.context.add_message(Message::Assistant {
+                content: content.clone(),
+                reasoning_content: reasoning_content.clone(),
+                tool_calls: None,
+            });
 
             self.state.state = crate::agents::JobState::Completed;
             StepResult::Done {
@@ -521,13 +468,11 @@ where
         };
 
         // 统一发送迭代完成事件
-        let message_count = self.context.read().await.conversation().len();
         Self::send_event(
             event_tx.as_ref(),
-            &self.hooks,
             AgentActorEvent::Iteration {
                 iteration: self.state.iteration,
-                message_count,
+                message_count: self.state.context.conversation().len(),
             },
         )
         .await;
@@ -571,12 +516,7 @@ where
 
                 // 检查是否已取消
                 if loop_state.is_terminal() {
-                    Self::send_event(
-                        Some(&event_tx),
-                        &self.hooks,
-                        AgentActorEvent::Cancelled,
-                    )
-                    .await;
+                    Self::send_event(Some(&event_tx), AgentActorEvent::Cancelled).await;
                     break;
                 }
 
@@ -610,7 +550,6 @@ where
                 if self.state.iteration >= self.state.max_iterations {
                     Self::send_event(
                         Some(&event_tx),
-                        &self.hooks,
                         AgentActorEvent::MaxIterations {
                             iteration: self.state.iteration,
                         },
@@ -618,7 +557,6 @@ where
                     .await;
                     Self::send_event(
                         Some(&event_tx),
-                        &self.hooks,
                         AgentActorEvent::Error(AgentError::MaxIterations(self.state.iteration)),
                     )
                     .await;
@@ -634,17 +572,11 @@ where
                         // 继续下一次迭代
                     }
                     StepResult::Done { .. } => {
-                        Self::send_event(
-                            Some(&event_tx),
-                            &self.hooks,
-                            AgentActorEvent::Completed,
-                        )
-                        .await;
+                        Self::send_event(Some(&event_tx), AgentActorEvent::Completed).await;
                         break;
                     }
                     StepResult::Error(e) => {
-                        Self::send_event(Some(&event_tx), &self.hooks, AgentActorEvent::Error(e))
-                            .await;
+                        Self::send_event(Some(&event_tx), AgentActorEvent::Error(e)).await;
                         break;
                     }
                 }
@@ -669,14 +601,12 @@ where
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
         timeout: Option<Duration>,
     ) -> Vec<CallToolResult> {
-        let hooks = &self.hooks;
         let execute = async {
             let mut stream = pin!(call_tools(self.tool_executor.as_ref(), tool_calls));
             let mut results = Vec::new();
             while let Some(result) = stream.next().await {
                 Self::send_event(
                     event_tx,
-                    hooks,
                     AgentActorEvent::ToolResult {
                         call_id: result.call_id.clone(),
                         success: result.success,
@@ -695,12 +625,7 @@ where
                 Ok(results) => results,
                 Err(_) => {
                     // 超时时发送错误事件
-                    Self::send_event(
-                        event_tx,
-                        hooks,
-                        AgentActorEvent::Error(AgentError::Timeout),
-                    )
-                    .await;
+                    Self::send_event(event_tx, AgentActorEvent::Error(AgentError::Timeout)).await;
                     Vec::new()
                 }
             }
@@ -722,12 +647,7 @@ where
 {
     chat: C,
     tool_executor: E,
-    /// 独立的 Context（如果没有提供 ContextHandle）
-    standalone_context: super::context::Context,
-    /// Context 句柄（如果提供，用于共享 Context）
-    context_handle: Option<ContextHandle>,
-    /// Hook 列表
-    hooks: Vec<Arc<dyn super::hook::AgentHook>>,
+    context: Context,
     max_iterations: usize,
     user_id: String,
     step_timeout: Option<Duration>,
@@ -744,9 +664,7 @@ where
         Self {
             chat,
             tool_executor,
-            standalone_context: super::context::Context::new(),
-            context_handle: None,
-            hooks: Vec::new(),
+            context: Context::new(),
             max_iterations: 10,
             user_id: "default".to_string(),
             step_timeout: None,
@@ -754,27 +672,9 @@ where
         }
     }
 
-    /// 设置上下文（便捷方法，创建独立的 ContextHandle）
-    pub fn context(mut self, context: super::context::Context) -> Self {
-        self.standalone_context = context;
-        self
-    }
-
-    /// 设置 Context 句柄（用于共享 Context）
-    pub fn context_handle(mut self, context: ContextHandle) -> Self {
-        self.context_handle = Some(context);
-        self
-    }
-
-    /// 添加单个 Hook
-    pub fn hook(mut self, hook: Arc<dyn super::hook::AgentHook>) -> Self {
-        self.hooks.push(hook);
-        self
-    }
-
-    /// 设置 Hook 列表
-    pub fn hooks(mut self, hooks: Vec<Arc<dyn super::hook::AgentHook>>) -> Self {
-        self.hooks = hooks;
+    /// 设置上下文
+    pub fn context(mut self, context: Context) -> Self {
+        self.context = context;
         self
     }
 
@@ -804,32 +704,7 @@ where
 
     /// 构建 AgentActor
     pub fn build(self) -> AgentActor<C, E> {
-        use super::hook::ContextUpdateHook;
-
-        // 如果没有提供 ContextHandle，创建一个独立的
-        let context_handle = self
-            .context_handle
-            .unwrap_or_else(|| ContextHandle::new(self.standalone_context));
-
-        // 检查是否已有 ContextUpdateHook
-        let has_context_hook = self.hooks.iter().any(|h| h.name() == "context_update");
-
-        // 构建 Hook 列表
-        let mut hooks = self.hooks;
-        if !has_context_hook {
-            // 自动添加 ContextUpdateHook
-            hooks.push(Arc::new(ContextUpdateHook::new(context_handle.clone())));
-        }
-
-        // 构建注册表
-        let mut registry = HookRegistry::new();
-        for hook in hooks {
-            registry.register(hook);
-        }
-
-        // 构建 Actor
-        let mut actor = AgentActor::new(self.chat, self.tool_executor, context_handle);
-        actor.hooks = registry;
+        let mut actor = AgentActor::new(self.chat, self.tool_executor, self.context);
         actor.state.max_iterations = self.max_iterations;
         actor.state.user_id = self.user_id;
         actor.step_timeout = self.step_timeout;

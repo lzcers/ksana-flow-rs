@@ -4,8 +4,8 @@ mod tests {
 
     use crate::agents::tools::playwright_cli::PlaywrightCliTool;
     use crate::agents::{
-        AgentActor, AgentActorEvent, CallModelEvent, Context, ContextHandle, GenericToolExecutor,
-        Tool, ToolCall, ToolDef, ToolExecutor, call_model, call_tools,
+        AgentActor, AgentActorEvent, CallModelEvent, Context, GenericToolExecutor, Tool, ToolCall,
+        ToolDef, ToolExecutor, call_model, call_tools,
     };
     use crate::core::Message;
     use crate::models::ChatModel;
@@ -275,8 +275,8 @@ mod tests {
             "[User] 请帮我总结 https://www.peopleapp.com/column/30051629695-500007391518 网页的内容\n"
         );
 
-        // 5. 创建 AgentActor
-        let actor = AgentActor::new(model, executor, ContextHandle::new(context));
+        // 5. 创建 AgentActo
+        let actor = AgentActor::new(model, executor, context);
 
         // 6. 启动 Actor
         let mut handle = actor.run_loop();
