@@ -13,8 +13,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use super::agent_actor::AgentActorEvent;
 use super::context::ContextHandle;
+use super::agent_actor::AgentActorEvent;
 use crate::core::Message;
 
 // ============================================================================
@@ -212,7 +212,7 @@ impl ContextUpdateHook {
         Self {
             name: "context_update".to_string(),
             config: HookConfig {
-                priority: 1000,       // 最后执行
+                priority: 1000, // 最后执行
                 fail_continue: false, // Context 更新失败应停止
                 enabled: true,
             },
@@ -270,7 +270,7 @@ impl LoggingHook {
         Self {
             name: "logging".to_string(),
             config: HookConfig {
-                priority: 0,         // 最先执行
+                priority: 0, // 最先执行
                 fail_continue: true, // 日志失败不影响其他 Hook
                 enabled: true,
             },
@@ -304,5 +304,97 @@ impl AgentHook for LoggingHook {
     async fn on_event(&self, event: &AgentEvent) -> Result<(), HookError> {
         println!("[{}] {:?}", self.prefix, event);
         Ok(())
+    }
+}
+
+// ============================================================================
+// 测试
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hook_config_default() {
+        let config = HookConfig::default();
+        assert_eq!(config.priority, 100);
+        assert!(config.fail_continue);
+        assert!(config.enabled);
+    }
+
+    #[test]
+    fn test_hook_registry_priority_ordering() {
+        struct TestHook {
+            name: String,
+            priority: u32,
+        }
+
+        #[async_trait]
+        impl AgentHook for TestHook {
+            fn name(&self) -> &str {
+                &self.name
+            }
+
+            fn config(&self) -> HookConfig {
+                HookConfig {
+                    priority: self.priority,
+                    fail_continue: true,
+                    enabled: true,
+                }
+            }
+
+            async fn on_event(&self, _event: &AgentEvent) -> Result<(), HookError> {
+                Ok(())
+            }
+        }
+
+        let mut registry = HookRegistry::new();
+
+        // 按乱序注册
+        let hook1 = Arc::new(TestHook {
+            name: "hook1".to_string(),
+            priority: 100,
+        });
+        let hook2 = Arc::new(TestHook {
+            name: "hook2".to_string(),
+            priority: 0,
+        });
+        let hook3 = Arc::new(TestHook {
+            name: "hook3".to_string(),
+            priority: 50,
+        });
+
+        registry.register(hook1);
+        registry.register(hook2);
+        registry.register(hook3);
+
+        let names = registry.hook_names();
+        // 应该按优先级排序：0, 50, 100
+        assert_eq!(names, vec!["hook2", "hook3", "hook1"]);
+    }
+
+    #[tokio::test]
+    async fn test_context_update_hook() {
+        let context = ContextHandle::new(
+            crate::agents::Context::new()
+                .layer(crate::agents::Layer::new(
+                    "conversation",
+                    crate::agents::LayerKind::Conversation,
+                    serde_json::json!([]),
+                )),
+        );
+
+        let hook = ContextUpdateHook::new(context.clone());
+
+        // 测试添加消息
+        let event = AgentEvent::SuggestAddMessage {
+            message: Message::user("Hello"),
+        };
+        hook.on_event(&event).await.unwrap();
+
+        let ctx = context.read().await;
+        let conv = ctx.conversation();
+        assert_eq!(conv.len(), 1);
     }
 }
