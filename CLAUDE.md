@@ -66,15 +66,31 @@ agent/src/
 │   ├── deepseek.rs      # DeepSeek API provider
 │   └── openrouter.rs    # OpenRouter API provider
 └── agents/
-    ├── mod.rs           # Module exports
-    ├── agent_actor.rs   # AgentActor - the main actor controller
-    ├── agent_state.rs   # AgentState, JobState - state management
-    ├── agent_utils.rs   # Pure functions: call_model, call_tool, call_tools
-    ├── agent_loop.rs    # Experimental: future agent loop architecture
-    ├── context.rs       # Context, Layer, LayerKind - layered context
+    ├── mod.rs               # Module exports
+    ├── agent_actor.rs       # Thin facade: AgentActor API + re-exports
+    ├── agent_actor/
+    │   ├── builder.rs       # AgentActorBuilder + timeout hook assembly
+    │   ├── loop_control.rs  # run_loop + pause/resume/cancel state machine
+    │   ├── runtime.rs       # StepRuntime + run_step orchestration
+    │   └── types.rs         # Errors, events, commands, handle, StepResult
+    ├── agent_state.rs       # AgentState, JobState - state management
+    ├── agent_utils.rs       # Pure functions: call_model, call_tool, call_tools
+    ├── context.rs           # Context, Layer, LayerKind - layered context
+    ├── hooks/
+    │   ├── mod.rs           # Hook exports
+    │   ├── registry.rs      # HookRegistry + default hook chain
+    │   ├── runtime.rs       # AgentHook, HookPhase, StepScratchpad, payloads
+    │   ├── lifecycle.rs     # Iteration/state transitions
+    │   ├── max_iterations.rs    # Max-iteration guard
+    │   ├── metrics.rs       # ExecutionMetrics snapshots
+    │   ├── streaming_events.rs  # Content/tool/step event emission
+    │   ├── context_persistence.rs   # Assistant/tool messages -> context
+    │   ├── iteration_events.rs      # Iteration events
+    │   ├── error_events.rs          # Error events
+    │   └── timeout_policy.rs        # Step/tool timeout policy
     └── tools/
-        ├── mod.rs       # ToolDef, ToolCall, ToolExecutor trait
-        ├── registry.rs  # ToolRegistry, GenericToolExecutor
+        ├── mod.rs           # ToolDef, ToolCall, ToolExecutor trait
+        ├── registry.rs      # ToolRegistry, GenericToolExecutor
         └── playwright_cli.rs # Browser automation tool
 ```
 
@@ -113,7 +129,27 @@ agent/src/
 
 #### Agent Actor (`agents/agent_actor.rs`)
 
-The main execution unit using the Actor pattern:
+`AgentActor` is now a thin facade over several focused modules:
+
+- `agent_actor.rs`: owns `state`, `chat`, `tool_executor`, `hooks`
+- `agent_actor/runtime.rs`: executes a single step through the hook pipeline
+- `agent_actor/loop_control.rs`: manages pause/resume/cancel loop control
+- `agent_actor/builder.rs`: assembles hooks, user config, and timeout policy
+- `agent_actor/types.rs`: shared public types
+
+The hook system is the primary extension mechanism. `HookRegistry::default()` currently composes:
+
+1. `MaxIterationsHook`
+2. `LifecycleHook`
+3. `MetricsHook`
+4. `StreamingEventHook`
+5. `ContextPersistenceHook`
+6. `IterationEventHook`
+7. `ErrorEventHook`
+
+`AgentActorBuilder::step_timeout()` and `tool_timeout()` append `TimeoutPolicyHook`, which feeds `ExecutionPolicy` into `run_step`.
+
+Basic usage:
 
 ```rust
 // Create with builder
@@ -154,6 +190,16 @@ let result = actor.run_step(Some(event_tx)).await;
 - `Continue { content, reasoning_content, tool_calls, tool_results }`: Has tool calls, continue iteration
 - `Done { content, reasoning_content }`: No tool calls, finished
 - `Error(AgentError)`: Execution error
+
+**Hook phases:**
+
+- `BeforeStep`
+- `BeforeCallModel`
+- `OnModelEvent`
+- `AfterCallModel`
+- `BeforeCallTools`
+- `AfterCallTools`
+- `AfterStep`
 
 #### State Management (`agents/agent_state.rs`)
 
@@ -250,7 +296,7 @@ Pure functions for execution:
 4. **State persistence**: `AgentState` is serializable (Context integrated inside)
 5. **Control interface**: Pause/Continue/Cancel via `AgentActorHandle`
 6. **Parallel tool execution**: Multiple tools execute concurrently
-7. **No Hook system**: Removed in favor of simpler event-based architecture
+7. **Pluggable hook pipeline**: Lifecycle, metrics, events, persistence, and timeouts are hook-driven
 
 ## Development Commands
 
@@ -407,7 +453,8 @@ The `agent` crate provides an Actor-based LLM Agent with streaming support and s
 
 **Important Architecture Changes:**
 - Context is now integrated into AgentState (accessed via `state.context`)
-- Hook system has been removed for simpler event-based architecture
+- Hook system is active again and is the primary execution extension point
+- `agent_actor.rs` is a facade; step runtime, loop control, builder, and public types live in `agents/agent_actor/`
 - `call_model` parameter order: `(model, messages, tools_def)` - model first
 
 #### Basic Usage with AgentActor
@@ -498,7 +545,7 @@ async fn main() -> anyhow::Result<()> {
         .build();
 
     // Run loop and collect events
-    let handle = actor.run_loop();
+    let mut handle = actor.run_loop();
 
     // Process events in real-time
     while let Some(event) = handle.event_rx.recv().await {
@@ -598,11 +645,8 @@ handle.cancel().await;
 let events = handle.wait().await;
 ```
 
-#### Experimental: agent_loop.rs
+#### Architecture Notes
 
-The `agent_loop.rs` module provides a preview of the future agent architecture with:
-- Explicit lifecycle hooks: `before_call_model_handle`, `processing_call_model_handle`, `after_call_model_handle`
-- Cleaner separation of concerns between control plane and execution
-- Context preprocessing capabilities (validation, compression, transformation)
-
-This is currently experimental and may change in future versions.
+- Default behavior is assembled through `HookRegistry::default()` rather than being hard-coded into `AgentActor`.
+- If you need custom execution behavior, prefer adding a hook over modifying `run_step` directly.
+- For the current module split and responsibility boundaries, see `agent/ARCHITECTURE.md`.

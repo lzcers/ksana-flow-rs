@@ -137,7 +137,7 @@ pub enum StepResult {
         content: String,
         reasoning_content: Option<String>,
         tool_calls: Vec<ToolCall>,
-        tool_results: Vec<crate::agents::agent_utils::CallToolResult>,
+        tool_results: Vec<crate::agents::call_model::CallToolResult>,
     },
     /// 执行完成（无工具调用）
     Done {

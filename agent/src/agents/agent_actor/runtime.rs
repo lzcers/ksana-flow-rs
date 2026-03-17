@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 
 use super::types::step_result_from_draft;
 use super::{AgentActor, AgentActorEvent, AgentError, StepResult};
-use crate::agents::agent_utils::{CallModelEvent, CallToolResult, call_model, call_tools};
+use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call_tools};
 use crate::agents::hooks::{
     AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, ExecutionPolicy,
     HookRegistry, ModelCallOutput, ModelEventCtx, StepHookContext, StepResultDraft, StepScratchpad,

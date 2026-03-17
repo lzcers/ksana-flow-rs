@@ -1,7 +1,7 @@
 pub mod agent_actor;
 // pub mod agent_loop;
 pub mod agent_state;
-pub mod agent_utils;
+pub mod call_model;
 pub mod context;
 pub mod hooks;
 #[cfg(test)]
@@ -13,7 +13,7 @@ pub use agent_actor::{
     AgentError, StepResult,
 };
 pub use agent_state::{AgentState, JobState};
-pub use agent_utils::{CallModelEvent, CallToolResult, call_model, call_tool, call_tools};
+pub use call_model::{CallModelEvent, CallToolResult, call_model, call_tool, call_tools};
 pub use context::{Context, Layer, LayerKind, LayerMeta};
 pub use hooks::{
     AfterCallModel, AfterCallTools, AfterStep, AgentHook, BeforeCallModel, BeforeCallTools,
