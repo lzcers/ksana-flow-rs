@@ -1,19 +1,26 @@
 #[cfg(test)]
 mod tests {
     use std::pin::pin;
+    use std::sync::Mutex;
+    use std::time::Duration;
 
     use crate::agents::tools::playwright_cli::PlaywrightCliTool;
     use crate::agents::{
-        AgentActor, AgentActorEvent, CallModelEvent, Context, GenericToolExecutor, Tool, ToolCall,
-        ToolDef, ToolExecutor, call_model, call_tools,
+        AfterCallModel, AfterCallTools, AfterStep, AgentActor, AgentActorEvent, AgentError,
+        AgentHook, BeforeCallModel, BeforeCallTools, CallModelEvent, Context,
+        ContextPersistenceHook, ExecutionMetrics, GenericToolExecutor, HookError, HookOutcome,
+        HookPhase, HookRegistry, IterationEventHook, LifecycleHook, ModelEventCtx, StepHookContext,
+        StepResult, StepResultDraft, Tool, ToolCall, ToolCallFunction, ToolDef, ToolExecutor,
+        call_model, call_tools,
     };
     use crate::core::Message;
-    use crate::models::ChatModel;
+    use crate::models::{ChatCapability, ChatChunk, ChatError, ChatModel};
     use crate::providers::deepseek_provider_from_env;
     use async_trait::async_trait;
-    use futures::StreamExt;
+    use futures::{StreamExt, stream::BoxStream};
     use serde_json::{Value, json};
     use std::sync::Arc;
+    use tokio::sync::mpsc;
 
     // ============================================================================
     // Mock Tool for Testing
@@ -71,6 +78,621 @@ mod tests {
 
             Ok(weather)
         }
+    }
+
+    struct SlowTool {
+        def: ToolDef,
+        delay: Duration,
+    }
+
+    impl SlowTool {
+        fn new(delay: Duration) -> Self {
+            Self {
+                def: ToolDef {
+                    name: "slow_tool".to_string(),
+                    description: "delays before returning".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {}
+                    }),
+                },
+                delay,
+            }
+        }
+    }
+
+    #[async_trait]
+    impl Tool for SlowTool {
+        fn definition(&self) -> &ToolDef {
+            &self.def
+        }
+
+        async fn execute(
+            &self,
+            _arguments: Value,
+        ) -> Result<Value, crate::agents::ToolExecutorError> {
+            tokio::time::sleep(self.delay).await;
+            Ok(json!({"status": "ok"}))
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockChatModel {
+        chunks: Vec<ChatChunk>,
+    }
+
+    impl MockChatModel {
+        fn new(chunks: Vec<ChatChunk>) -> Self {
+            Self { chunks }
+        }
+    }
+
+    #[derive(Clone)]
+    struct DelayedChatModel {
+        delay: Duration,
+        chunks: Vec<ChatChunk>,
+    }
+
+    impl DelayedChatModel {
+        fn new(delay: Duration, chunks: Vec<ChatChunk>) -> Self {
+            Self { delay, chunks }
+        }
+    }
+
+    #[async_trait]
+    impl ChatCapability for MockChatModel {
+        async fn chat(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<Message, ChatError> {
+            Ok(Message::assistant("unused"))
+        }
+
+        async fn chat_stream(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
+            Ok(futures::stream::iter(self.chunks.clone()).boxed())
+        }
+    }
+
+    #[async_trait]
+    impl ChatCapability for DelayedChatModel {
+        async fn chat(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<Message, ChatError> {
+            Ok(Message::assistant("unused"))
+        }
+
+        async fn chat_stream(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
+            tokio::time::sleep(self.delay).await;
+            Ok(futures::stream::iter(self.chunks.clone()).boxed())
+        }
+    }
+
+    struct RecordingHook {
+        phases: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RecordingHook {
+        fn new(phases: Arc<Mutex<Vec<String>>>) -> Self {
+            Self { phases }
+        }
+
+        fn push(&self, value: impl Into<String>) {
+            self.phases.lock().unwrap().push(value.into());
+        }
+    }
+
+    #[async_trait]
+    impl AgentHook for RecordingHook {
+        fn name(&self) -> &'static str {
+            "recording"
+        }
+
+        async fn before_step(
+            &self,
+            ctx: &mut StepHookContext<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            ctx.scratchpad.insert("event_count", 0usize);
+            self.push("before_step");
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn before_call_model(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+            _input: &mut BeforeCallModel<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            self.push("before_call_model");
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn on_model_event(
+            &self,
+            ctx: &mut StepHookContext<'_>,
+            input: &ModelEventCtx<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            if let Some(event_count) = ctx.scratchpad.get_mut::<usize>("event_count") {
+                *event_count += 1;
+            }
+
+            let phase = match input.event {
+                CallModelEvent::TextChunk(_) => "on_model_event:text",
+                CallModelEvent::ReasoningChunk(_) => "on_model_event:reasoning",
+                CallModelEvent::Completed { .. } => "on_model_event:completed",
+                CallModelEvent::Error(_) => "on_model_event:error",
+            };
+            self.push(phase);
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn after_call_model(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+            input: &mut AfterCallModel<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            self.push(format!(
+                "after_call_model:{}",
+                input.output.tool_calls.len()
+            ));
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn before_call_tools(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+            input: &mut BeforeCallTools<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            self.push(format!("before_call_tools:{}", input.tool_calls.len()));
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn after_call_tools(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+            input: &mut AfterCallTools<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            self.push(format!("after_call_tools:{}", input.tool_results.len()));
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn after_step(
+            &self,
+            ctx: &mut StepHookContext<'_>,
+            _input: &mut AfterStep<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            let event_count = ctx
+                .scratchpad
+                .get::<usize>("event_count")
+                .copied()
+                .unwrap_or_default();
+            self.push(format!("after_step:{event_count}"));
+            Ok(HookOutcome::Continue)
+        }
+    }
+
+    struct FailingHook;
+
+    #[async_trait]
+    impl AgentHook for FailingHook {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+
+        async fn before_call_model(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+            _input: &mut BeforeCallModel<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            Err(HookError::new("forced failure"))
+        }
+    }
+
+    struct TimeoutFinalizeHook {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl AgentHook for TimeoutFinalizeHook {
+        fn name(&self) -> &'static str {
+            "timeout_finalize"
+        }
+
+        async fn before_step(
+            &self,
+            ctx: &mut StepHookContext<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            ctx.scratchpad
+                .insert("timeout_finalize.marker", "before-step".to_string());
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn after_step(
+            &self,
+            ctx: &mut StepHookContext<'_>,
+            input: &mut AfterStep<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            if matches!(input.result, StepResultDraft::Error(AgentError::Timeout)) {
+                let marker = ctx
+                    .scratchpad
+                    .get::<String>("timeout_finalize.marker")
+                    .cloned()
+                    .unwrap_or_else(|| "missing".to_string());
+                self.seen.lock().unwrap().push(marker);
+            }
+            Ok(HookOutcome::Continue)
+        }
+    }
+
+    fn default_test_hooks() -> HookRegistry {
+        HookRegistry::default()
+    }
+
+    fn weather_tool_call() -> ToolCall {
+        ToolCall {
+            id: "call_weather".to_string(),
+            call_type: Some("function".to_string()),
+            index: Some(0),
+            function: Some(ToolCallFunction {
+                name: "get_weather".to_string(),
+                arguments: r#"{"city":"北京"}"#.to_string(),
+            }),
+            name: None,
+            arguments: None,
+        }
+    }
+
+    fn slow_tool_call() -> ToolCall {
+        ToolCall {
+            id: "call_slow".to_string(),
+            call_type: Some("function".to_string()),
+            index: Some(0),
+            function: Some(ToolCallFunction {
+                name: "slow_tool".to_string(),
+                arguments: "{}".to_string(),
+            }),
+            name: None,
+            arguments: None,
+        }
+    }
+
+    fn metrics_snapshot(
+        actor: &AgentActor<impl ChatCapability + Send + Sync, impl ToolExecutor + Send>,
+    ) -> ExecutionMetrics {
+        serde_json::from_value(
+            actor
+                .hook_snapshot("metrics")
+                .expect("metrics snapshot should exist"),
+        )
+        .expect("metrics snapshot should deserialize")
+    }
+
+    #[tokio::test]
+    async fn test_agent_actor_hooks_lifecycle_without_tools() {
+        let model = MockChatModel::new(vec![
+            ChatChunk {
+                content: "Hello".to_string(),
+                reasoning_content: String::new(),
+                is_finished: false,
+                finish_reason: None,
+                tool_calls: None,
+            },
+            ChatChunk {
+                content: " world".to_string(),
+                reasoning_content: "think".to_string(),
+                is_finished: true,
+                finish_reason: Some("stop".to_string()),
+                tool_calls: None,
+            },
+        ]);
+
+        let executor = GenericToolExecutor::new();
+        let mut context = Context::new();
+        context.add_message(Message::system("sys"));
+        context.add_message(Message::user("hello"));
+
+        let phases = Arc::new(Mutex::new(Vec::new()));
+        let hooks = default_test_hooks().register(RecordingHook::new(phases.clone()));
+        let mut actor = AgentActor::with_hooks(model, executor, context, hooks);
+
+        let result = actor.run_step(None).await;
+
+        match result {
+            StepResult::Done {
+                content,
+                reasoning_content,
+            } => {
+                assert_eq!(content, "Hello world");
+                assert_eq!(reasoning_content.as_deref(), Some("think"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        let phases = phases.lock().unwrap().clone();
+        assert_eq!(
+            phases,
+            vec![
+                "before_step",
+                "before_call_model",
+                "on_model_event:text",
+                "on_model_event:text",
+                "on_model_event:reasoning",
+                "on_model_event:completed",
+                "after_call_model:0",
+                "after_step:4",
+            ]
+        );
+
+        assert_eq!(actor.state().iteration, 1);
+        assert_eq!(metrics_snapshot(&actor).iterations, 1);
+        assert_eq!(actor.state().state, crate::agents::JobState::Completed);
+
+        let conversation = actor.context().conversation();
+        assert_eq!(conversation.len(), 3);
+        match conversation.last().unwrap() {
+            Message::Assistant {
+                content,
+                reasoning_content,
+                tool_calls,
+            } => {
+                assert_eq!(content, "Hello world");
+                assert_eq!(reasoning_content.as_deref(), Some("think"));
+                assert!(tool_calls.is_none());
+            }
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_agent_actor_hooks_tool_phases_and_events() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "checking weather".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("tool_calls".to_string()),
+            tool_calls: Some(vec![weather_tool_call()]),
+        }]);
+
+        let mut executor = GenericToolExecutor::new();
+        executor.register(MockWeatherTool::new());
+
+        let mut context = Context::new();
+        context.add_message(Message::system("sys"));
+        context.add_message(Message::user("weather"));
+
+        let phases = Arc::new(Mutex::new(Vec::new()));
+        let hooks = default_test_hooks().register(RecordingHook::new(phases.clone()));
+        let mut actor = AgentActor::with_hooks(model, executor, context, hooks);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+
+        let result = actor.run_step(Some(event_tx)).await;
+
+        match result {
+            StepResult::Continue {
+                content,
+                tool_calls,
+                tool_results,
+                ..
+            } => {
+                assert_eq!(content, "checking weather");
+                assert_eq!(tool_calls.len(), 1);
+                assert_eq!(tool_results.len(), 1);
+                assert!(tool_results[0].success);
+                assert!(tool_results[0].output.contains("北京"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        let phases = phases.lock().unwrap().clone();
+        assert_eq!(
+            phases,
+            vec![
+                "before_step",
+                "before_call_model",
+                "on_model_event:text",
+                "on_model_event:completed",
+                "after_call_model:1",
+                "before_call_tools:1",
+                "after_call_tools:1",
+                "after_step:2",
+            ]
+        );
+
+        assert_eq!(actor.state().state, crate::agents::JobState::WaitingInput);
+        assert_eq!(metrics_snapshot(&actor).tool_calls_count, 1);
+
+        let conversation = actor.context().conversation();
+        assert_eq!(conversation.len(), 4);
+        match &conversation[2] {
+            Message::Assistant {
+                content,
+                tool_calls,
+                ..
+            } => {
+                assert_eq!(content, "checking weather");
+                assert_eq!(tool_calls.as_ref().map(Vec::len), Some(1));
+            }
+            other => panic!("unexpected assistant message: {other:?}"),
+        }
+        match &conversation[3] {
+            Message::Tool {
+                tool_call_id,
+                content,
+            } => {
+                assert_eq!(tool_call_id, "call_weather");
+                assert!(content.contains("北京"));
+            }
+            other => panic!("unexpected tool message: {other:?}"),
+        }
+
+        let mut saw_step_completed = false;
+        let mut saw_tool_calls = false;
+        let mut saw_tool_result = false;
+        let mut saw_iteration = false;
+        while let Ok(event) = event_rx.try_recv() {
+            match event {
+                AgentActorEvent::StepCompleted { .. } => saw_step_completed = true,
+                AgentActorEvent::ToolCalls(calls) => {
+                    saw_tool_calls = true;
+                    assert_eq!(calls.len(), 1);
+                }
+                AgentActorEvent::ToolResult { success, .. } => {
+                    saw_tool_result = true;
+                    assert!(success);
+                }
+                AgentActorEvent::Iteration { iteration, .. } => {
+                    saw_iteration = true;
+                    assert_eq!(iteration, 1);
+                }
+                AgentActorEvent::ContentChunk(_)
+                | AgentActorEvent::ReasoningChunk(_)
+                | AgentActorEvent::Completed
+                | AgentActorEvent::Cancelled
+                | AgentActorEvent::Error(_)
+                | AgentActorEvent::MaxIterations { .. } => {}
+            }
+        }
+        assert!(saw_step_completed);
+        assert!(saw_tool_calls);
+        assert!(saw_tool_result);
+        assert!(saw_iteration);
+    }
+
+    #[tokio::test]
+    async fn test_agent_actor_hook_failure_transitions_state() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "unused".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let hooks = HookRegistry::empty()
+            .register(LifecycleHook)
+            .register(FailingHook)
+            .register(ContextPersistenceHook)
+            .register(IterationEventHook);
+        let mut actor = AgentActor::with_hooks(model, executor, context, hooks);
+
+        let result = actor.run_step(None).await;
+
+        match result {
+            StepResult::Error(AgentError::Hook {
+                plugin,
+                phase,
+                message,
+            }) => {
+                assert_eq!(plugin, "failing");
+                assert_eq!(phase, HookPhase::BeforeCallModel);
+                assert_eq!(message, "forced failure");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(actor.state().state, crate::agents::JobState::Failed);
+        assert_eq!(actor.context().conversation().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_agent_actor_hook_step_timeout_policy_and_snapshots() {
+        let model = DelayedChatModel::new(
+            Duration::from_millis(30),
+            vec![ChatChunk {
+                content: "late".to_string(),
+                reasoning_content: String::new(),
+                is_finished: true,
+                finish_reason: Some("stop".to_string()),
+                tool_calls: None,
+            }],
+        );
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let mut actor = crate::agents::AgentActorBuilder::new(model, executor)
+            .context(context)
+            .hook(TimeoutFinalizeHook { seen: seen.clone() })
+            .step_timeout(Duration::from_millis(5))
+            .build();
+
+        let result = actor.run_step(None).await;
+
+        match result {
+            StepResult::Error(AgentError::Timeout) => {}
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(actor.state().state, crate::agents::JobState::Failed);
+        assert_eq!(
+            actor.hook_snapshot("timeout_policy"),
+            Some(json!({
+                "step_timeout_ms": 5_u64,
+                "tool_timeout_ms": Value::Null,
+            }))
+        );
+
+        let metrics = metrics_snapshot(&actor);
+        assert_eq!(metrics.iterations, 1);
+        assert!(metrics.total_duration >= Duration::from_millis(5));
+        assert_eq!(seen.lock().unwrap().as_slice(), ["before-step"]);
+
+        let snapshots = actor.hook_snapshots();
+        assert!(snapshots.contains_key("metrics"));
+        assert!(snapshots.contains_key("timeout_policy"));
+    }
+
+    #[tokio::test]
+    async fn test_agent_actor_hook_tool_timeout_policy_execution() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "run slow tool".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("tool_calls".to_string()),
+            tool_calls: Some(vec![slow_tool_call()]),
+        }]);
+
+        let mut executor = GenericToolExecutor::new();
+        executor.register(SlowTool::new(Duration::from_millis(30)));
+
+        let mut context = Context::new();
+        context.add_message(Message::user("slow tool"));
+
+        let mut actor = crate::agents::AgentActorBuilder::new(model, executor)
+            .context(context)
+            .tool_timeout(Duration::from_millis(5))
+            .build();
+
+        let result = actor.run_step(None).await;
+
+        match result {
+            StepResult::Error(AgentError::Timeout) => {}
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(actor.state().state, crate::agents::JobState::Failed);
+        assert_eq!(
+            actor.hook_snapshot("timeout_policy"),
+            Some(json!({
+                "step_timeout_ms": Value::Null,
+                "tool_timeout_ms": 5_u64,
+            }))
+        );
     }
 
     /// 测试 Agent Loop - 流式工具调用流程
@@ -287,10 +909,10 @@ mod tests {
 
         while let Some(event) = handle.event_rx.recv().await {
             match &event {
-                AgentActorEvent::ContentChunk(content) => {
+                AgentActorEvent::ContentChunk(_) => {
                     // print!("{}", content);
                 }
-                AgentActorEvent::ReasoningChunk(content) => {
+                AgentActorEvent::ReasoningChunk(_) => {
                     // print!("{}", content);
                 }
                 AgentActorEvent::ToolCalls(calls) => {
