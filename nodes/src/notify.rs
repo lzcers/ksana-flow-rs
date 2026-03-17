@@ -58,11 +58,7 @@ impl EmailNotifyNode {
 
 #[async_trait]
 impl Node for EmailNotifyNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        _input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
         if let Err(e) = email_notify(&self.subject, &self.body) {
             error!("EmailNotifyNode failed to send email: {:?}", e);
         }

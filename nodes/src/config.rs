@@ -27,7 +27,7 @@ pub struct Config {
 pub fn get_config() -> Result<Config> {
     // 1. Try finding config.toml in current working directory (Runtime)
     let cwd_config = std::path::Path::new("config.toml");
-    
+
     // 2. Fallback to CARGO_MANIFEST_DIR (Development)
     let config_path = if cwd_config.exists() {
         cwd_config.to_path_buf()
@@ -36,7 +36,10 @@ pub fn get_config() -> Result<Config> {
     };
 
     if !config_path.exists() {
-        return Err(anyhow::anyhow!("config.toml not found at {:?}", config_path));
+        return Err(anyhow::anyhow!(
+            "config.toml not found at {:?}",
+            config_path
+        ));
     }
 
     let config_content = fs::read_to_string(&config_path)?;
@@ -48,7 +51,10 @@ pub fn get_config() -> Result<Config> {
     let base_dir = if cwd_config.exists() {
         std::env::current_dir()?
     } else {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .to_path_buf()
     };
 
     let db_path = std::path::Path::new(&config.source.db_uri);

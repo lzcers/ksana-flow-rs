@@ -29,11 +29,7 @@ pub struct BacktesterOutput {
 
 #[async_trait]
 impl Node for Backtester {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
         let input: BacktesterInput = input
             .get_any_as()
             .ok_or_else(|| "Backtester expected BacktesterInput".to_string())?;

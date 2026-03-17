@@ -58,11 +58,7 @@ impl Observable<(), ()> for TimerObservable {
 
 #[async_trait]
 impl Node for TimerNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        _input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
         let schedule = Schedule::from_str(&self.cron_expr).expect("Invalid cron expression");
         let observable = TimerObservable { schedule };
         let stream = ReactiveStream::from_observable(observable);
@@ -90,7 +86,8 @@ mod tests {
         let mut node = TimerNode::new("* * * * * * *").unwrap();
 
         let start = Instant::now();
-        let out = node.run(&ctx, &Input::new(HashMap::<String, Value>::new()))
+        let out = node
+            .run(&ctx, &Input::new(HashMap::<String, Value>::new()))
             .await
             .unwrap();
         let stream = out.into_stream().expect("Expected stream output");

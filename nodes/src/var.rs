@@ -26,13 +26,8 @@ where
     T: Serialize + Clone + Send + Sync + 'static,
     I: Send + Sync,
 {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        _input: &Input,
-    ) -> Result<Output, String> {
-        let v =
-            serde_json::to_value(self.value.clone()).map_err(|e| format!("VarNode: {}", e))?;
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
+        let v = serde_json::to_value(self.value.clone()).map_err(|e| format!("VarNode: {}", e))?;
         Ok(v.into())
     }
 }

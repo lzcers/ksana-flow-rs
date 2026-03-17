@@ -89,9 +89,7 @@ impl GenImgCapability for GenImgModel {
         let mut request = Request::new(model_name, msgs);
         request.extra = extra;
 
-        let response: Response = provider
-            .chat(request)
-            .await?;
+        let response: Response = provider.chat(request).await?;
 
         let choice = response
             .choices

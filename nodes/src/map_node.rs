@@ -267,9 +267,8 @@ impl MapNode {
                                 .acquire_owned()
                                 .await
                                 .map_err(|e| format!("Failed to acquire permit: {}", e))?;
-                            let result: Result<Value, String> = flow::scope_current_node(
-                                node_id_for_scope,
-                                async move {
+                            let result: Result<Value, String> =
+                                flow::scope_current_node(node_id_for_scope, async move {
                                     executor
                                         .execute_with_controller_and_parent(
                                             item,
@@ -279,9 +278,8 @@ impl MapNode {
                                         )
                                         .await
                                         .map_err(|e| e.to_string())
-                                },
-                            )
-                            .await;
+                                })
+                                .await;
                             drop(permit);
                             match result {
                                 Ok(output) => {
@@ -291,7 +289,7 @@ impl MapNode {
                                             json!({"kind":"item","index":idx,"output":output}),
                                         ))
                                         .await;
-                                        Ok::<(usize, Value), String>((idx, output))
+                                    Ok::<(usize, Value), String>((idx, output))
                                 }
                                 Err(e) => Err(e),
                             }

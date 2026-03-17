@@ -84,11 +84,7 @@ impl TextMergeNode {
 
 #[async_trait]
 impl Node for TextMergeNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
         fn extract_text<'a>(v: &'a Value) -> Option<&'a str> {
             match v {
                 Value::String(s) => Some(s.as_str()),
@@ -100,7 +96,10 @@ impl Node for TextMergeNode {
         let mut entries: Vec<_> = input.get_values().iter().collect();
         entries.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-        let parts: Vec<&str> = entries.iter().filter_map(|(_, v)| extract_text(v)).collect();
+        let parts: Vec<&str> = entries
+            .iter()
+            .filter_map(|(_, v)| extract_text(v))
+            .collect();
         Ok(Value::String(parts.join(&self.separator)).into())
     }
 }

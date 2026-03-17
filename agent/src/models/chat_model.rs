@@ -65,9 +65,7 @@ impl ChatCapability for ChatModel {
         let provider = self.get_provider(model_name)?;
         let request = Request::new(model_name, msg).with_tools(tools);
 
-        let response: Response = provider
-            .chat(request)
-            .await?;
+        let response: Response = provider.chat(request).await?;
 
         let choice = response
             .choices
@@ -109,9 +107,7 @@ impl ChatCapability for ChatModel {
             .with_stream(true)
             .with_tools(tools);
 
-        let stream = provider
-            .chat_stream(request)
-            .await?;
+        let stream = provider.chat_stream(request).await?;
 
         Ok(stream
             .map(|response| {
@@ -145,7 +141,10 @@ impl ChatCapability for ChatModel {
 mod tests {
     use super::*;
     use crate::core::Message;
-    use crate::providers::{deepseek_provider_from_env, openrouter_provider_from_env, deepseek_provider, openrouter_provider};
+    use crate::providers::{
+        deepseek_provider, deepseek_provider_from_env, openrouter_provider,
+        openrouter_provider_from_env,
+    };
 
     #[tokio::test]
     async fn test_chat_with_deepseek_chat() {
@@ -224,7 +223,7 @@ mod tests {
     async fn test_chat_with_deepseek_reasoner() {
         dotenv::dotenv().ok();
 
-let provider = match deepseek_provider_from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");
@@ -268,7 +267,7 @@ let provider = match deepseek_provider_from_env() {
     async fn test_chat_stream_with_deepseek_reasoner() {
         dotenv::dotenv().ok();
 
-let provider = match deepseek_provider_from_env() {
+        let provider = match deepseek_provider_from_env() {
             Ok(p) => Arc::new(p),
             Err(_) => {
                 eprintln!("DEEPSEEK_API_KEY not set, skipping test");

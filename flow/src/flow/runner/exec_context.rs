@@ -1,8 +1,8 @@
 use super::logger::log_node_state_change;
 use super::task_guard::TaskTracker;
+use crate::RunnerId;
 use crate::flow::{graph::NodeId, runner::task_guard::TaskGuard};
 use crate::observable::Subscription;
-use crate::RunnerId;
 use dashmap::DashMap;
 use serde_json::Value;
 use std::sync::Arc;
@@ -71,7 +71,8 @@ impl ExecutionContext {
         match state {
             NodeState::Running => {
                 // 节点开始执行，记录开始时间
-                self.node_start_times.insert(node_id.clone(), Instant::now());
+                self.node_start_times
+                    .insert(node_id.clone(), Instant::now());
             }
             NodeState::Completed | NodeState::Failed => {
                 // 节点执行结束，可以在这里获取执行时间

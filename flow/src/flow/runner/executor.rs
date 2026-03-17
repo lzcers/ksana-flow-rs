@@ -107,87 +107,91 @@ impl Executor {
         let cancel = self.cancel.clone();
         let node_id_for_scope = node_id.clone();
 
-        let fut = scope_runner(controller, runner_id, scope_current_node(node_id_for_scope, async move {
-            let _keep_alive = _guard; // Force capture
-            let node_id_for_cancel = node_id.clone();
-            tokio::select! {
-                _ = cancel.cancelled() => {
-                    Self::send_task_event(&task_sender, TaskEvent::Error(node_id_for_cancel, "Cancelled".to_string())).await;
-                    return;
-                }
-                _ = async {
-                    let _permit = match semaphore {
-                        Some(sem) => match sem.acquire_owned().await {
-                            Ok(permit) => Some(permit),
-                            Err(e) => {
-                                Self::send_task_event(
-                                    &task_sender,
-                                    TaskEvent::Error(node_id, format!("Semaphore acquire failed: {}", e)),
-                                )
-                                .await;
-                                return;
-                            }
-                        },
-                        None => None,
-                    };
-                    let mut node = node.write().await;
-
-                    info!(node_id = %node_id, "Node tasks start");
-                    let result = AssertUnwindSafe(node.run(ctx.as_ref(), &input))
-                        .catch_unwind()
-                        .await;
-
-                    let output: Result<Output, String> = match result {
-                        Ok(res) => res,
-                        Err(panic_err) => {
-                            let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
-                                format!("Panic: {}", s)
-                            } else if let Some(s) = panic_err.downcast_ref::<String>() {
-                                format!("Panic: {}", s)
-                            } else {
-                                "Panic: unknown error".to_string()
-                            };
-                            Err(msg)
-                        }
-                    };
-
-                    debug!(node_id = %node_id, "Node logic executed");
-
-                    match output {
-                        Ok(out) => {
-                            let is_stream = out.is_stream();
-                            if is_stream {
-                                match out.into_stream() {
-                                    Some(stream) => {
-                                        Self::send_task_event(
-                                            &task_sender,
-                                            TaskEvent::Stream(node_id, stream.subscribe),
-                                        )
-                                        .await;
-                                    }
-                                    None => {
-                                        Self::send_task_event(
-                                            &task_sender,
-                                            TaskEvent::Error(node_id, "Missing stream".to_string()),
-                                        )
-                                        .await;
-                                    }
-                                }
-                            } else {
-                                Self::send_task_event(
-                                    &task_sender,
-                                    TaskEvent::Completed(node_id, out.into_value()),
-                                )
-                                .await;
-                            }
-                        }
-                        Err(e) => {
-                            Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
-                        }
+        let fut = scope_runner(
+            controller,
+            runner_id,
+            scope_current_node(node_id_for_scope, async move {
+                let _keep_alive = _guard; // Force capture
+                let node_id_for_cancel = node_id.clone();
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        Self::send_task_event(&task_sender, TaskEvent::Error(node_id_for_cancel, "Cancelled".to_string())).await;
+                        return;
                     }
-                } => {}
-            }
-        }));
+                    _ = async {
+                        let _permit = match semaphore {
+                            Some(sem) => match sem.acquire_owned().await {
+                                Ok(permit) => Some(permit),
+                                Err(e) => {
+                                    Self::send_task_event(
+                                        &task_sender,
+                                        TaskEvent::Error(node_id, format!("Semaphore acquire failed: {}", e)),
+                                    )
+                                    .await;
+                                    return;
+                                }
+                            },
+                            None => None,
+                        };
+                        let mut node = node.write().await;
+
+                        info!(node_id = %node_id, "Node tasks start");
+                        let result = AssertUnwindSafe(node.run(ctx.as_ref(), &input))
+                            .catch_unwind()
+                            .await;
+
+                        let output: Result<Output, String> = match result {
+                            Ok(res) => res,
+                            Err(panic_err) => {
+                                let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                                    format!("Panic: {}", s)
+                                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                                    format!("Panic: {}", s)
+                                } else {
+                                    "Panic: unknown error".to_string()
+                                };
+                                Err(msg)
+                            }
+                        };
+
+                        debug!(node_id = %node_id, "Node logic executed");
+
+                        match output {
+                            Ok(out) => {
+                                let is_stream = out.is_stream();
+                                if is_stream {
+                                    match out.into_stream() {
+                                        Some(stream) => {
+                                            Self::send_task_event(
+                                                &task_sender,
+                                                TaskEvent::Stream(node_id, stream.subscribe),
+                                            )
+                                            .await;
+                                        }
+                                        None => {
+                                            Self::send_task_event(
+                                                &task_sender,
+                                                TaskEvent::Error(node_id, "Missing stream".to_string()),
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                } else {
+                                    Self::send_task_event(
+                                        &task_sender,
+                                        TaskEvent::Completed(node_id, out.into_value()),
+                                    )
+                                    .await;
+                                }
+                            }
+                            Err(e) => {
+                                Self::send_task_event(&task_sender, TaskEvent::Error(node_id, e)).await;
+                            }
+                        }
+                    } => {}
+                }
+            }),
+        );
 
         if let Ok(mut tasks) = self.tasks.lock() {
             tasks.spawn(fut);

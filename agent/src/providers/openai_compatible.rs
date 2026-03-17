@@ -4,7 +4,9 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use std::collections::HashMap;
 use std::time::Duration;
 
-use super::{parse_api_error, parse_sse_line, Provider, ProviderError, Request, Response, StreamResponse};
+use super::{
+    Provider, ProviderError, Request, Response, StreamResponse, parse_api_error, parse_sse_line,
+};
 
 /// OpenAI 兼容的 Provider 实现
 ///
@@ -175,11 +177,8 @@ mod tests {
 
     #[test]
     fn test_provider_creation() {
-        let provider = OpenAICompatibleProvider::new(
-            "test",
-            "test-api-key",
-            "https://api.example.com",
-        );
+        let provider =
+            OpenAICompatibleProvider::new("test", "test-api-key", "https://api.example.com");
 
         assert_eq!(provider.name(), "test");
         assert_eq!(provider.api_key, "test-api-key");
@@ -191,12 +190,9 @@ mod tests {
         let mut extra = HashMap::new();
         extra.insert("X-Custom-Header".to_string(), "custom-value".to_string());
 
-        let provider = OpenAICompatibleProvider::new(
-            "test",
-            "test-api-key",
-            "https://api.example.com",
-        )
-        .with_extra_headers(extra);
+        let provider =
+            OpenAICompatibleProvider::new("test", "test-api-key", "https://api.example.com")
+                .with_extra_headers(extra);
 
         assert_eq!(provider.extra_headers.len(), 1);
         assert_eq!(
@@ -207,12 +203,9 @@ mod tests {
 
     #[test]
     fn test_with_timeout() {
-        let provider = OpenAICompatibleProvider::new(
-            "test",
-            "test-api-key",
-            "https://api.example.com",
-        )
-        .with_timeout(Duration::from_secs(60));
+        let provider =
+            OpenAICompatibleProvider::new("test", "test-api-key", "https://api.example.com")
+                .with_timeout(Duration::from_secs(60));
 
         // 验证 provider 创建成功
         assert_eq!(provider.name(), "test");

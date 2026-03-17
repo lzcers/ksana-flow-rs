@@ -59,14 +59,18 @@ agent/src/
 │   ├── chat_model.rs    # ChatModel implementation
 │   └── gen_img_model.rs # Image generation model
 ├── providers/
-│   ├── mod.rs       # Provider trait, Request/Response types
-│   ├── deepseek.rs  # DeepSeek API provider
-│   └── openrouter.rs # OpenRouter API provider
+│   ├── mod.rs           # Provider trait, re-exports
+│   ├── types.rs         # Request, Response, StreamResponse, Usage, ProviderError
+│   ├── utils.rs         # parse_api_error, parse_sse_line
+│   ├── openai_compatible.rs  # OpenAI-compatible base provider
+│   ├── deepseek.rs      # DeepSeek API provider
+│   └── openrouter.rs    # OpenRouter API provider
 └── agents/
     ├── mod.rs           # Module exports
     ├── agent_actor.rs   # AgentActor - the main actor controller
     ├── agent_state.rs   # AgentState, JobState - state management
     ├── agent_utils.rs   # Pure functions: call_model, call_tool, call_tools
+    ├── agent_loop.rs    # Experimental: future agent loop architecture
     ├── context.rs       # Context, Layer, LayerKind - layered context
     └── tools/
         ├── mod.rs       # ToolDef, ToolCall, ToolExecutor trait
@@ -95,11 +99,17 @@ agent/src/
 #### Providers (`providers/`)
 
 - **Provider**: Trait for API providers
-  - `send_request()`: Non-streaming request
-  - `stream_request()`: Streaming request returning SSE stream
-- **DeepSeekProvider**: DeepSeek API implementation
+  - `chat()`: Non-streaming request
+  - `chat_stream()`: Streaming request returning `BoxStream<StreamResponse>`
+  - `name()`: Provider name for logging
+- **OpenAICompatibleProvider**: Base implementation for OpenAI-compatible APIs
+- **DeepSeekProvider**: DeepSeek API implementation (chat/reasoner models)
 - **OpenRouterProvider**: OpenRouter API implementation
-- **Request/Response/StreamResponse**: OpenAI-compatible types
+- **Request**: Request parameters with builder pattern
+  - `with_stream()`, `with_temperature()`, `with_max_tokens()`, `with_tools()`
+- **Response/StreamResponse**: OpenAI-compatible response types
+- **Usage**: Token usage statistics (supports both OpenAI and DeepSeek formats)
+- **ProviderError**: Error types for API operations
 
 #### Agent Actor (`agents/agent_actor.rs`)
 
@@ -147,17 +157,19 @@ let result = actor.run_step(Some(event_tx)).await;
 
 #### State Management (`agents/agent_state.rs`)
 
-- **AgentState**: Persistable agent state
+- **AgentState**: Persistable agent state with Context integrated
   - `job_id`, `user_id`, `conversation_id`: Identifiers
   - `title`, `description`, `category`: Task metadata
   - `state`: Current `JobState`
   - `budget`, `actual_cost`: Resource tracking
-  - `context`: Layered context
+  - `context`: Layered context (integrated, not separate)
   - `iteration`, `max_iterations`: Execution control
 
 - **JobState**: Execution state machine
   - `Pending` → `Running` → `Completed`/`Failed`/`Cancelled`
   - Supports `Paused`, `WaitingInput` for interactive scenarios
+
+**Note**: Context is now a field of AgentState (`state.context`), not a separate entity passed around. This simplifies state persistence and enables better encapsulation.
 
 #### Layered Context (`agents/context.rs`)
 
@@ -219,18 +231,26 @@ executor.register(SearchTool::new());
 
 Pure functions for execution:
 
-- `call_model(messages, tools_def, model) -> Stream<CallModelEvent>`: Stream LLM response
+- `call_model(model, messages, tools_def) -> Stream<CallModelEvent>`: Stream LLM response
+  - **Note**: Parameter order is `(model, messages, tools_def)` - model first
 - `call_tool(executor, call) -> CallToolResult`: Execute single tool
 - `call_tools(executor, calls) -> Stream<CallToolResult>`: Execute tools in parallel
+
+**CallModelEvent Types:**
+- `TextChunk(String)`: LLM text chunk
+- `ReasoningChunk(String)`: DeepSeek reasoner content chunk
+- `Completed { content, reasoning_content, tool_calls }`: LLM response complete
+- `Error(String)`: Error occurred
 
 #### Key Design Principles
 
 1. **Separation of concerns**: Actor handles control plane, utils handle execution
 2. **Streaming first**: `chat_stream` is primary, `chat` wraps it
 3. **Layered context**: Context supports multiple data types with priorities
-4. **State persistence**: `AgentState` is serializable for persistence
+4. **State persistence**: `AgentState` is serializable (Context integrated inside)
 5. **Control interface**: Pause/Continue/Cancel via `AgentActorHandle`
 6. **Parallel tool execution**: Multiple tools execute concurrently
+7. **No Hook system**: Removed in favor of simpler event-based architecture
 
 ## Development Commands
 
@@ -385,6 +405,11 @@ async fn test_my_workflow() {
 
 The `agent` crate provides an Actor-based LLM Agent with streaming support and state management.
 
+**Important Architecture Changes:**
+- Context is now integrated into AgentState (accessed via `state.context`)
+- Hook system has been removed for simpler event-based architecture
+- `call_model` parameter order: `(model, messages, tools_def)` - model first
+
 #### Basic Usage with AgentActor
 
 ```rust
@@ -462,7 +487,7 @@ async fn main() -> anyhow::Result<()> {
             serde_json::json!([]),
         ));
 
-    // Add user message
+    // Add user message to context
     let mut context = context;
     context.add_message(Message::user("What is the weather today?"));
 
@@ -534,7 +559,7 @@ loop {
     match result {
         StepResult::Continue { content, tool_calls, tool_results, .. } => {
             println!("Step completed with tools, continuing...");
-            // Optionally inspect or modify state
+            // Access state: actor.state().context, actor.state().iteration
         }
         StepResult::Done { content, .. } => {
             println!("Agent finished: {}", content);
@@ -546,6 +571,11 @@ loop {
         }
     }
 }
+
+// Access final state
+let state = actor.state();
+println!("Total iterations: {}", state.iteration);
+println!("Final context: {:?}", state.context);
 ```
 
 #### Control Handle
@@ -567,3 +597,12 @@ handle.cancel().await;
 // Wait for completion
 let events = handle.wait().await;
 ```
+
+#### Experimental: agent_loop.rs
+
+The `agent_loop.rs` module provides a preview of the future agent architecture with:
+- Explicit lifecycle hooks: `before_call_model_handle`, `processing_call_model_handle`, `after_call_model_handle`
+- Cleaner separation of concerns between control plane and execution
+- Context preprocessing capabilities (validation, compression, transformation)
+
+This is currently experimental and may change in future versions.

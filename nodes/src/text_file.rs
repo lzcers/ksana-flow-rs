@@ -17,11 +17,7 @@ impl TextFileNode {
 
 #[async_trait]
 impl Node for TextFileNode {
-    async fn run(
-        &mut self,
-        _ctx: &Context,
-        _input: &Input,
-    ) -> Result<Output, String> {
+    async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
         let config = match get_config() {
             Ok(c) => c,
             Err(e) => return Ok(Value::String(format!("Error loading config: {}", e)).into()),

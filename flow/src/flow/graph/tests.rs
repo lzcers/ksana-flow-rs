@@ -1,5 +1,6 @@
 use super::{
-    BlueprintEdge, BlueprintNode, EdgeKind, SubgraphConfig, SubgraphError, SubgraphExecutor, compile_graph,
+    BlueprintEdge, BlueprintNode, EdgeKind, SubgraphConfig, SubgraphError, SubgraphExecutor,
+    compile_graph,
     graph::{AnyNode, Edge, Graph, Node, NodeFactory},
     io::{Input, Output},
 };

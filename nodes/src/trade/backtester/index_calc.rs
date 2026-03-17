@@ -1,5 +1,5 @@
-use ndarray::Array;
 use super::trading::Position;
+use ndarray::Array;
 
 pub fn calc_positions_value(positions: &[Position]) -> f64 {
     let mut asset_value = 0.0;
