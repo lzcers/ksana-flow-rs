@@ -1,264 +1,484 @@
-# AgentActor 模块解耦与 Hook 架构设计
+# Agent Actor 架构文档
 
-## 背景
+本文档详细描述 `agent_actor` 模块的设计与实现。
 
-`agent/src/agents/agent_actor.rs` 原先同时承担以下职责：
+## 一、模块职责拆分
 
-- 对外暴露 `AgentActor`、`Builder`、事件、命令、错误类型
-- `run_step` 的执行编排
-- `run_loop` 的暂停、继续、取消控制
-- 超时与工具执行包装
+| 子模块 | 职责 |
+|--------|------|
+| `mod.rs` | 核心结构 `AgentActor` 定义，状态管理，公共 API |
+| `types.rs` | 对外可见的数据类型：错误、事件、命令、句柄、结果 |
+| `builder.rs` | `AgentActorBuilder` 构建器，初始化参数装配 |
+| `runtime.rs` | `StepRuntime` 单步执行流程，hook 调度，模型/工具调用 |
+| `loop_control.rs` | `run_loop` 循环执行，暂停/继续/取消状态机 |
 
-随着 Hook 体系重新引入，单文件同时承载控制面和执行面会让以下问题逐渐放大：
+---
 
-- 文件过长，难以定位责任边界
-- `run_step` 和 `run_loop` 的关注点混在一起
-- Hook 运行时细节影响 `AgentActor` 可读性
-- 文档和实现容易逐步漂移
+## 二、关键 Trait
 
-本次重构目标是让 `agent_actor` 只保留高层壳层语义，把可独立演化的实现细节拆到子模块。
+### `AgentHook`
 
-## 设计目标
+定义于 `agents/hooks/runtime.rs`，是插件化扩展的核心机制。
 
-1. `agent_actor.rs` 保持足够小，只负责公开 API、核心字段和最小编排。
-2. 单步执行、循环控制、类型定义、构建器分别拥有独立文件。
-3. 保持对外 API 基本不变，避免影响调用方。
-4. Hook 成为执行期扩展点，而不是把副作用重新塞回 `AgentActor`。
-5. 让默认行为由 `HookRegistry::default()` 组合出来，而不是散落在 `run_step` 里。
+```rust
+#[async_trait]
+pub trait AgentHook: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn configure_execution_policy(&self, _state: &AgentState, _policy: &mut ExecutionPolicy) {}
+    fn snapshot(&self) -> Option<Value> { None }
 
-## 模块划分
-
-当前结构：
-
-```text
-agent/src/agents/
-├── agent_actor.rs
-├── agent_actor/
-│   ├── builder.rs
-│   ├── loop_control.rs
-│   ├── runtime.rs
-│   └── types.rs
-├── hooks/
-│   ├── mod.rs
-│   ├── registry.rs
-│   ├── runtime.rs
-│   ├── lifecycle.rs
-│   ├── max_iterations.rs
-│   ├── metrics.rs
-│   ├── streaming_events.rs
-│   ├── context_persistence.rs
-│   ├── iteration_events.rs
-│   ├── error_events.rs
-│   └── timeout_policy.rs
-├── agent_state.rs
-├── agent_utils.rs
-├── context.rs
-└── tools/
+    // 7 个生命周期钩子方法
+    async fn before_step(&self, ctx: &mut StepHookContext<'_>) -> Result<HookOutcome, HookError>;
+    async fn before_call_model(&self, ctx, input: &mut BeforeCallModel<'_>) -> Result<HookOutcome, HookError>;
+    async fn on_model_event(&self, ctx, input: &ModelEventCtx<'_>) -> Result<HookOutcome, HookError>;
+    async fn after_call_model(&self, ctx, input: &mut AfterCallModel<'_>) -> Result<HookOutcome, HookError>;
+    async fn before_call_tools(&self, ctx, input: &mut BeforeCallTools<'_>) -> Result<HookOutcome, HookError>;
+    async fn after_call_tools(&self, ctx, input: &mut AfterCallTools<'_>) -> Result<HookOutcome, HookError>;
+    async fn after_step(&self, ctx, input: &mut AfterStep<'_>) -> Result<HookOutcome, HookError>;
+}
 ```
 
-各文件职责：
+**作用**：所有执行行为都通过 hook 组合实现，支持自定义扩展。
 
-- `agent_actor.rs`
-  - `AgentActor<C, E>` 的结构体定义
-  - `new` / `with_hooks`
-  - `state/context/hooks` 访问器
-  - 统一事件发送入口
-  - 对子模块类型的 re-export
-- `agent_actor/types.rs`
-  - `AgentError`
-  - `AgentActorEvent`
-  - `AgentActorCommand`
-  - `AgentActorHandle`
-  - `StepResult`
-  - `StepResultDraft -> StepResult` 转换
-- `agent_actor/runtime.rs`
-  - `StepRuntime`
-  - `run_step`
-  - 模型流式读取与工具执行包装
-  - `after_step` 收尾与错误收敛
-- `agent_actor/loop_control.rs`
-  - `LoopState`
-  - `run_loop`
-  - Pause / Continue / Cancel 控制
-  - 后台循环的终止条件
-- `agent_actor/builder.rs`
-  - `AgentActorBuilder`
-  - 组装 `Context` / `max_iterations` / `user_id`
-  - 按需注入 `TimeoutPolicyHook`
+---
 
-## AgentActor 的责任边界
+## 三、关键 Struct
 
-`AgentActor` 现在只持有四类核心资源：
+### 1. `AgentActor<C, E>`
 
-- `state: AgentState`
-- `chat: Arc<C>`
-- `tool_executor: Arc<E>`
-- `hooks: HookRegistry`
+定义于 `agent_actor/mod.rs`，是 Agent 的核心门面结构。
 
-也就是说，`AgentActor` 负责“拥有资源”和“暴露入口”，不再直接承载完整执行过程。
-
-这让后续演进更清晰：
-
-- 要改执行顺序，主要看 `agent_actor/runtime.rs`
-- 要改循环控制，主要看 `agent_actor/loop_control.rs`
-- 要改默认行为，主要看 `hooks/registry.rs`
-- 要加扩展能力，优先通过 Hook 落地
-
-## Step 执行流程
-
-`run_step` 的主流程如下：
-
-```text
-AgentActor::run_step
-├── 从 HookRegistry 生成 ExecutionPolicy
-├── 创建 StepRuntime
-├── 如配置了 step timeout，则包裹 execute_core
-├── StepRuntime::execute_core
-│   ├── before_step
-│   ├── before_call_model
-│   ├── stream_model_output
-│   ├── after_call_model
-│   ├── before_call_tools
-│   ├── execute_tools_with_timeout
-│   └── after_call_tools
-└── StepRuntime::finish
-    ├── after_step
-    └── StepResultDraft -> StepResult
+```rust
+pub struct AgentActor<C, E>
+where
+    C: ChatCapability + Send + Sync + 'static,
+    E: ToolExecutor + Send + 'static,
+{
+    state: AgentState,           // Agent 状态（控制面）
+    chat: Arc<C>,                // Chat 模型
+    tool_executor: Arc<E>,       // 工具执行器
+    hooks: HookRegistry,         // 生命周期 hooks
+}
 ```
 
-几个关键点：
+**职责**：
+- 持有核心组件引用
+- 提供 `run_step()` 和 `run_loop()` 两个执行入口
+- 暴露状态访问 API
 
-- `stream_model_output` 只负责把 `call_model` 产生的流聚合成 `ModelCallOutput`。
-- 是否发送事件、是否持久化 context、是否更新 metrics，不由 `runtime.rs` 写死，而由 hooks 决定。
-- `StepResultDraft` 是 Hook 运行时内部结果；对外统一暴露 `StepResult`。
+### 2. `StepRuntime<'a>`
 
-## Hook 架构
+定义于 `agent_actor/runtime.rs`，负责单步执行的编排。
 
-Hook 的核心协议定义在 `agent/src/agents/hooks/runtime.rs`：
-
-- `AgentHook`
-- `HookPhase`
-- `HookOutcome`
-- `StepHookContext`
-- `ExecutionPolicy`
-- `StepScratchpad`
-
-### Hook Phase
-
-执行期共有 7 个 phase：
-
-1. `BeforeStep`
-2. `BeforeCallModel`
-3. `OnModelEvent`
-4. `AfterCallModel`
-5. `BeforeCallTools`
-6. `AfterCallTools`
-7. `AfterStep`
-
-### HookRegistry 默认链路
-
-`HookRegistry::default()` 当前按如下顺序注册：
-
-1. `MaxIterationsHook`
-2. `LifecycleHook`
-3. `MetricsHook`
-4. `StreamingEventHook`
-5. `ContextPersistenceHook`
-6. `IterationEventHook`
-7. `ErrorEventHook`
-
-这条默认链路的职责分布很明确：
-
-- `MaxIterationsHook` 负责提前终止
-- `LifecycleHook` 负责 `JobState` 与 `iteration`
-- `MetricsHook` 负责执行统计
-- `StreamingEventHook` 负责流式事件对外发送
-- `ContextPersistenceHook` 负责把 Assistant/Tool 结果写回 context
-- `IterationEventHook` 负责迭代完成事件
-- `ErrorEventHook` 负责错误事件发射
-
-因此，`run_step` 可以专注于“拿到模型输出和工具结果”，而不是在主流程里夹杂状态写回和事件逻辑。
-
-### ExecutionPolicy
-
-Hook 还可以通过 `configure_execution_policy` 注入执行策略，目前主要用于超时：
-
-- `step_timeout`
-- `tool_timeout`
-
-`TimeoutPolicyHook` 是这类策略 Hook 的实现，Builder 在设置超时时会自动追加它。
-
-### StepScratchpad
-
-`StepScratchpad` 是单步作用域的临时数据容器，适合放：
-
-- 本步开始时间
-- 事件计数器
-- Hook 间共享但不需要持久化到 `AgentState` 的上下文
-
-它的意义是避免 Hook 之间为了传递临时数据而污染 `AgentState`。
-
-## Loop 控制流程
-
-`run_loop` 已被独立到 `agent_actor/loop_control.rs`，责任是：
-
-- 管理 `LoopState`
-- 消费控制命令
-- 在暂停时阻塞等待
-- 在取消或 channel 关闭时终止
-- 调用 `run_step` 并依据 `StepResult` 决定是否继续
-
-状态机比较简单：
-
-```text
-Running <-> Paused
-Running -> Cancelled
-Paused  -> Cancelled
+```rust
+struct StepRuntime<'a> {
+    state: &'a mut AgentState,
+    hooks: &'a HookRegistry,
+    event_tx: Option<&'a mpsc::Sender<AgentActorEvent>>,
+    scratchpad: StepScratchpad,      // 步骤间数据暂存
+    execution_policy: ExecutionPolicy, // 超时策略
+}
 ```
 
-设计原则是让 `run_loop` 只关心控制平面，不重复实现 step 内部的业务逻辑。
+**职责**：
+- 驱动 hook 流水线
+- 编排模型调用和工具执行
+- 处理流式输出
 
-## Builder 设计
+### 3. `AgentActorBuilder<C, E>`
 
-`AgentActorBuilder` 保留为面向使用者的组装入口，负责：
+定义于 `agent_actor/builder.rs`，实现构建器模式。
 
-- 初始化 `Context`
-- 配置 `max_iterations`
-- 配置 `user_id`
-- 替换或追加 Hook
-- 在需要时自动注入 `TimeoutPolicyHook`
+```rust
+pub struct AgentActorBuilder<C, E> {
+    chat: C,
+    tool_executor: E,
+    context: Context,
+    max_iterations: usize,
+    user_id: String,
+    hooks: HookRegistry,
+    step_timeout: Option<Duration>,
+    tool_timeout: Option<Duration>,
+}
+```
 
-这让常规使用者不需要了解 `ExecutionPolicy` 和 Hook 链的内部细节。
+**职责**：
+- 组装 Actor 配置
+- 支持链式调用
+- 自动添加 `TimeoutPolicyHook`
 
-## 当前架构收益
+### 4. `AgentActorHandle`
 
-重构后的直接收益：
+定义于 `agent_actor/types.rs`，外部控制句柄。
 
-- `agent_actor.rs` 从大体量实现文件变为轻量 facade
-- 控制面和执行面边界更清晰
-- Hook 体系成为明确的一等扩展点
-- 事件、状态、context 持久化逻辑可以独立测试
-- 新增能力时更容易决定应该落在 `runtime`、`loop_control` 还是某个 hook
+```rust
+pub struct AgentActorHandle {
+    pub cmd_tx: mpsc::Sender<AgentActorCommand>,
+    pub event_rx: mpsc::Receiver<AgentActorEvent>,
+}
+```
 
-## 后续约束
+**方法**：
+- `pause()` - 暂停执行
+- `resume()` - 恢复执行
+- `cancel()` - 取消执行
+- `wait()` - 等待完成并收集所有事件
 
-后续继续演进时建议遵守以下边界：
+### 5. `HookRegistry`
 
-1. 不要把新的副作用直接塞回 `AgentActor::run_step`。
-2. 需要修改执行行为时，优先评估是否应通过 Hook 实现。
-3. 只有真正属于 actor 资源拥有关系的内容，才放回 `agent_actor.rs`。
-4. `loop_control.rs` 不应重复承担 context 写回或事件细节。
-5. 默认行为变更时，先检查 `HookRegistry::default()` 顺序是否受影响。
+定义于 `agents/hooks/registry.rs`，hook 容器。
 
-## 结论
+```rust
+pub struct HookRegistry {
+    hooks: Vec<Box<dyn AgentHook>>,
+}
+```
 
-现在的 `AgentActor` 架构已经从“一个大文件包办全部逻辑”，收敛为“薄 facade + runtime + loop control + builder + types + hooks”。
+**职责**：
+- 按顺序执行所有注册的 hook
+- 提供 `default()` 组装默认 hook 链
 
-这套结构更适合继续扩展：
+---
 
-- 增加新的状态策略
-- 定制事件发射
-- 插入审计、缓存、压缩、记忆等 hook
-- 为不同 agent 类型复用统一的执行骨架
+## 四、关键 Enum
 
-在不破坏外部 API 的前提下，这次拆分把 `AgentActor` 的职责压回到了合理范围。
+### `StepResult`
+
+单步执行结果，定义于 `agent_actor/types.rs`。
+
+```rust
+pub enum StepResult {
+    Continue { content, reasoning_content, tool_calls, tool_results },  // 有工具，继续
+    Done { content, reasoning_content },                                 // 无工具，完成
+    Error(AgentError),                                                   // 出错
+}
+```
+
+### `AgentActorEvent`
+
+运行时事件，定义于 `agent_actor/types.rs`。
+
+```rust
+pub enum AgentActorEvent {
+    ContentChunk(String),           // LLM 文本流
+    ReasoningChunk(String),         // 推理内容流（DeepSeek reasoner）
+    StepCompleted { ... },          // 单步完成
+    ToolCalls(Vec<ToolCall>),       // 请求工具
+    ToolResult { call_id, success, output },  // 工具结果
+    Iteration { iteration, message_count },   // 迭代完成
+    MaxIterations { iteration },              // 达到上限
+    Completed,                      // Agent 完成
+    Cancelled,                      // 用户取消
+    Error(AgentError),              // 错误
+}
+```
+
+### `HookOutcome`
+
+Hook 返回结果，定义于 `agents/hooks/runtime.rs`。
+
+```rust
+pub enum HookOutcome {
+    Continue,                 // 继续执行
+    Finish(StepResultDraft),  // 提前终止当前步骤
+}
+```
+
+### `HookPhase`
+
+Hook 执行阶段，用于错误报告。
+
+```rust
+pub enum HookPhase {
+    BeforeStep, BeforeCallModel, OnModelEvent, AfterCallModel,
+    BeforeCallTools, AfterCallTools, AfterStep,
+}
+```
+
+---
+
+## 五、架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              AgentActor<C, E>                                │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────┐  ┌─────────────────┐  │
+│  │ AgentState  │  │    Chat<C>   │  │ ToolExecutor  │  │  HookRegistry   │  │
+│  │  (状态)      │  │   (模型)     │  │   (工具)      │  │    (钩子链)     │  │
+│  └─────────────┘  └──────────────┘  └───────────────┘  └─────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+        ┌──────────────────────┐      ┌──────────────────────────┐
+        │   run_loop()         │      │      run_step()          │
+        │   (loop_control.rs)  │      │      (runtime.rs)        │
+        └──────────────────────┘      └──────────────────────────┘
+                    │                               │
+                    ▼                               ▼
+        ┌──────────────────────┐      ┌──────────────────────────┐
+        │   AgentActorHandle   │      │      StepRuntime         │
+        │   - cmd_tx           │      │  ┌─────────────────────┐ │
+        │   - event_rx         │      │  │  StepScratchpad     │ │
+        │                      │      │  │  ExecutionPolicy    │ │
+        │   方法:              │      │  └─────────────────────┘ │
+        │   - pause()          │      │                          │
+        │   - resume()         │      │  执行流程:               │
+        │   - cancel()         │      │  before_step()           │
+        │   - wait()           │      │      ▼                   │
+        └──────────────────────┘      │  before_call_model()     │
+                                      │      ▼                   │
+                                      │  stream_model_output()   │
+                                      │      │                   │
+                                      │      ├── on_model_event()│
+                                      │      ▼                   │
+                                      │  after_call_model()      │
+                                      │      ▼                   │
+                                      │  [有工具调用?]            │
+                                      │      ├── 是 ──┐          │
+                                      │      └── 否 ──┴─► Done   │
+                                      │                ▼          │
+                                      │         before_call_tools()│
+                                      │                ▼          │
+                                      │         execute_tools()   │
+                                      │                ▼          │
+                                      │         after_call_tools()│
+                                      │                ▼          │
+                                      │             Continue      │
+                                      │                          │
+                                      │  after_step() ◄──────────┤
+                                      └──────────────────────────┘
+```
+
+---
+
+## 六、Hook 流水线
+
+默认 hook 链通过 `HookRegistry::default()` 组装：
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           HookRegistry::default()                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│  1. MaxIterationsHook      ── 检查迭代上限                               │
+│  2. LifecycleHook          ── 状态转换 (Pending→Running 等)              │
+│  3. MetricsHook            ── 执行指标统计                               │
+│  4. StreamingEventHook     ── 发送 ContentChunk/ReasoningChunk 事件      │
+│  5. ContextPersistenceHook ── 持久化消息到 Context                       │
+│  6. IterationEventHook     ── 发送 Iteration 事件                        │
+│  7. ErrorEventHook         ── 错误事件处理                               │
+│  [可选] TimeoutPolicyHook  ── 步骤/工具超时控制                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+各 Hook 职责详见 `agents/hooks/` 目录下对应文件。
+
+---
+
+## 七、执行流程
+
+### 单步执行 (`run_step`)
+
+```
+before_step()
+    │
+    ▼
+before_call_model()
+    │
+    ▼
+stream_model_output()  ◄─── call_model() ◄─── 模型 API
+    │
+    ├── on_model_event() (每个 chunk)
+    │
+    ▼
+after_call_model()
+    │
+    ▼
+[有工具调用?]
+    │
+    ├── 否 ──────────────────────────► Done
+    │
+    ├── 是
+    │     │
+    │     ▼
+    │   before_call_tools()
+    │     │
+    │     ▼
+    │   execute_tools()  ◄─── call_tools() ◄─── 工具执行
+    │     │
+    │     ▼
+    │   after_call_tools()
+    │     │
+    │     ▼
+    │   Continue
+    │
+    ▼
+after_step()
+```
+
+### 循环执行 (`run_loop`)
+
+```
+spawn(tokio task)
+    │
+    ▼
+┌─────────────────────────────┐
+│         主循环               │
+│  ┌───────────────────────┐  │
+│  │  drain_commands()     │  │  ◄── 处理暂停/继续/取消命令
+│  └───────────────────────┘  │
+│              │              │
+│              ▼              │
+│  ┌───────────────────────┐  │
+│  │  is_terminal()?       │  │  ◄── 检查是否已取消
+│  └───────────────────────┘  │
+│              │              │
+│              ▼              │
+│  ┌───────────────────────┐  │
+│  │  wait_if_paused()     │  │  ◄── 暂停时阻塞等待
+│  └───────────────────────┘  │
+│              │              │
+│              ▼              │
+│  ┌───────────────────────┐  │
+│  │  run_step()           │  │  ◄── 执行单步
+│  └───────────────────────┘  │
+│              │              │
+│              ▼              │
+│  ┌───────────────────────┐  │
+│  │  handle_step_result() │  │  ◄── 处理结果，决定是否继续
+│  └───────────────────────┘  │
+│              │              │
+│              └──────────────┤
+│                             │
+└─────────────────────────────┘
+```
+
+---
+
+## 八、控制流
+
+```
+用户代码                     AgentActor                      Hooks                     模型/工具
+   │                           │                              │                          │
+   │  ActorBuilder::new()      │                              │                          │
+   │  .context()               │                              │                          │
+   │  .max_iterations()        │                              │                          │
+   │  .build()                 │                              │                          │
+   │ ─────────────────────────►│                              │                          │
+   │                           │                              │                          │
+   │  run_loop()               │                              │                          │
+   │ ─────────────────────────►│                              │                          │
+   │                           │  spawn(tokio task)           │                          │
+   │  ◄────────────────────────│                              │                          │
+   │  AgentActorHandle         │                              │                          │
+   │                           │                              │                          │
+   │  pause()                  │                              │                          │
+   │ ─────────────────────────►│  LoopState::Paused           │                          │
+   │                           │                              │                          │
+   │  resume()                 │                              │                          │
+   │ ─────────────────────────►│  LoopState::Running          │                          │
+   │                           │                              │                          │
+   │  cancel()                 │                              │                          │
+   │ ─────────────────────────►│  LoopState::Cancelled        │                          │
+   │  ◄── Cancelled ───────────│                              │                          │
+   │                           │                              │                          │
+   │  wait()                   │                              │                          │
+   │ ─────────────────────────►│  收集所有事件                 │                          │
+   │  ◄── Vec<AgentActorEvent> │                              │                          │
+```
+
+---
+
+## 九、设计原则
+
+1. **职责分离**
+   - `AgentActor` 只做组合，不包含执行逻辑
+   - `StepRuntime` 负责单步编排
+   - `loop_control` 负责循环控制
+   - `builder` 负责配置组装
+
+2. **Hook 驱动**
+   - 所有扩展行为通过 hook 实现
+   - 默认行为通过 `HookRegistry::default()` 组装
+   - 自定义行为通过 `AgentActorBuilder::hook()` 添加
+
+3. **流式优先**
+   - `call_model()` 返回 Stream
+   - `on_model_event()` hook 实时处理每个 chunk
+   - 支持 DeepSeek reasoner 模式的 `reasoning_content`
+
+4. **异步控制**
+   - 通过 channel 实现 pause/resume/cancel
+   - 控制逻辑与执行逻辑解耦
+   - 支持实时事件推送
+
+5. **Builder 模式**
+   - 灵活组装 Actor 配置
+   - 支持自定义 hook 链
+   - 自动处理超时策略
+
+---
+
+## 十、使用示例
+
+### 基本用法
+
+```rust
+let actor = AgentActorBuilder::new(model, tool_executor)
+    .context(context)
+    .max_iterations(10)
+    .step_timeout(Duration::from_secs(60))
+    .build();
+
+let handle = actor.run_loop();
+
+// 实时处理事件
+while let Some(event) = handle.event_rx.recv().await {
+    match event {
+        AgentActorEvent::ContentChunk(text) => print!("{}", text),
+        AgentActorEvent::Completed => break,
+        _ => {}
+    }
+}
+```
+
+### 手动控制
+
+```rust
+let mut actor = AgentActorBuilder::new(model, tool_executor)
+    .context(context)
+    .build();
+
+loop {
+    let result = actor.run_step(None).await;
+    match result {
+        StepResult::Continue { .. } => continue,
+        StepResult::Done { .. } => break,
+        StepResult::Error(e) => return Err(e.into()),
+    }
+}
+```
+
+### 自定义 Hook
+
+```rust
+struct MyHook;
+
+#[async_trait]
+impl AgentHook for MyHook {
+    fn name(&self) -> &'static str { "MyHook" }
+
+    async fn before_call_model(
+        &self,
+        ctx: &mut StepHookContext<'_>,
+        _input: &mut BeforeCallModel<'_>,
+    ) -> Result<HookOutcome, HookError> {
+        // 自定义逻辑
+        Ok(HookOutcome::Continue)
+    }
+}
+
+let actor = AgentActorBuilder::new(model, tool_executor)
+    .hook(MyHook)
+    .build();
+```
