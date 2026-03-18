@@ -1,10 +1,12 @@
 import { castDraft, type Immutable } from "immer";
 import type { StateCreator } from "zustand";
 import type { StoreState, Canvas } from "./types";
-import type { Node, Edge, NodeChange, EdgeChange, Connection } from "../model/workflow/types";
+import type { Node, Edge, NodeChange, EdgeChange, Connection, NodeData } from "../model/workflow/types";
 import { sortNodesByParent } from "../model/workflow/utils";
 import { workflowManager, type GraphKey } from "../model/workflowManager";
 import type { Subscription } from "rxjs";
+import type { OnNodeDrag } from "@xyflow/react";
+import { getNodeMetadata } from "../model/nodeRegistry";
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => {
     let viewStateSubscription: Subscription | null = null;
@@ -221,23 +223,18 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
             }
         },
 
-        onNodeDrag: (_event: any, draggedNode: any) => {
-            const nodeId = typeof draggedNode?.id === "string" ? draggedNode.id : null;
-            if (!nodeId) {
-                set({ dragOverNodeId: null });
-                return;
-            }
+        onNodeDrag: ((_event, draggedNode) => {
+            const nodeId = draggedNode.id;
             const { nodes } = getActiveModel().getSnapshot();
             const targetId = findDropTargetGroup(nodeId, nodes as Immutable<Node[]>);
             set({ dragOverNodeId: targetId });
-        },
+        }) satisfies OnNodeDrag<Node>,
 
-        onNodeDragStop: (_event: any, draggedNode: any) => {
-            const nodeId = typeof draggedNode?.id === "string" ? draggedNode.id : null;
+        onNodeDragStop: ((_event, draggedNode) => {
+            const nodeId = draggedNode.id;
             set({ dragOverNodeId: null });
-            if (!nodeId) return;
             getActiveModel().action.handleNodeDragStop(nodeId);
-        },
+        }) satisfies OnNodeDrag<Node>,
 
         onConnect: (connection: Connection) => {
             getActiveModel().action.onConnect(connection);
@@ -260,13 +257,15 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
             }
             const id = `${type}-${nextNum}`;
             const meta = nodeTypes.find(t => t.name === type);
+            const nodeMetadata = getNodeMetadata(type);
+            const initialData: Partial<NodeData> = {
+                label: nodeMetadata?.displayName ?? type,
+                config: meta?.config ?? nodeMetadata?.defaultConfig ?? {},
+                status: "idle",
+            };
             getActiveModel().action.addNode(type, position, {
                 id,
-                data: {
-                    label: type,
-                    config: meta?.config || {},
-                    status: "idle",
-                },
+                data: initialData,
             });
             set({ selectedNodeId: [id] });
         },
@@ -275,7 +274,7 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
             getActiveModel().action.deleteNode(id);
         },
 
-        updateNodeData: (id: string, data: Record<string, any>) => {
+        updateNodeData: (id: string, data: Partial<NodeData>) => {
             getActiveModel().action.updateNodeData(id, data);
         },
 

@@ -130,7 +130,9 @@ export function useImgGenNodeController({
         updateValue: next => updateConfig({ user_prompt_template: next }),
     });
 
-    const [model, setModel] = useState<string | undefined>(data.config?.model);
+    const [model, setModel] = useState<string | undefined>(
+        typeof data.config?.model === "string" ? data.config.model : undefined,
+    );
     const [aspectRatio, setAspectRatio] = useState<string>(String(data.config?.aspect_ratio ?? "1:1"));
     const [imageSize, setImageSize] = useState<string>(String(data.config?.image_size ?? "1K"));
     const [inputImageFileId, setInputImageFileId] = useState<string>(String(data.config?.input_image_file_id ?? ""));
@@ -178,7 +180,7 @@ export function useImgGenNodeController({
     }, []);
 
     useEffect(() => {
-        setModel(data.config?.model);
+        setModel(typeof data.config?.model === "string" ? data.config.model : undefined);
         setAspectRatio(String(data.config?.aspect_ratio ?? "1:1"));
         setImageSize(String(data.config?.image_size ?? "1K"));
         setInputImageFileId(String(data.config?.input_image_file_id ?? ""));
@@ -202,7 +204,7 @@ export function useImgGenNodeController({
     }, [data.status]);
 
     useEffect(() => {
-        const value = data.outputs && "output" in data.outputs ? (data.outputs as any).output : data.lastMessage;
+        const value = data.outputs && "output" in data.outputs ? data.outputs.output : data.lastMessage;
         if (value == null) return;
         const nextRaw = typeof value === "string" ? value : JSON.stringify(value);
         setOutputRaw(nextRaw);

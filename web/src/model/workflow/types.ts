@@ -4,6 +4,7 @@ import type {
   Node as XNode,
   Edge as XEdge,
   NodeChange as XNodeChange,
+  XYPosition,
 } from '@xyflow/react';
 import type { DataType } from '../nodeRegistry/types';
 
@@ -11,6 +12,7 @@ export type NodeType =
   | 'LLMNode'
   | 'TextNode'
   | 'TextMergeNode'
+  | 'TextSplitNode'
   | 'TextFileNode'
   | 'EmailNotifyNode'
   | 'TimerNode'
@@ -21,7 +23,6 @@ export type NodeType =
   | 'MapNode'
   | 'ReduceNode'
   | 'ImgGenNode'
-  | 'SourceNode'
   | string;
 
 export type NodeStatus = 'idle' | 'running' | 'completed' | 'error';
@@ -35,18 +36,33 @@ export type WorkflowStatus = 'idle' | 'running' | 'paused';
  */
 export type EdgeKind = 'control' | 'data';
 
+export type NodePortValues = Record<string, unknown>;
+export type NodeConfig = Record<string, unknown>;
+
 export interface NodeData extends Record<string, unknown> {
   label?: string;   // 名称
-  inputs?: Record<string, any>;   // 端口输入值（从数据流边接收）
-  outputs?: Record<string, any>;  // 端口输出值（节点执行后产生）
-  config?: Record<string, any>; // 配置
+  inputs?: NodePortValues;   // 端口输入值（从数据流边接收）
+  outputs?: NodePortValues;  // 端口输出值（节点执行后产生）
+  config?: NodeConfig; // 配置
   status?: NodeStatus; // 运行状态
   errorMessage?: string; // 错误消息
-  lastMessage?: any;    // 最后的消息
+  lastMessage?: unknown;    // 最后的消息
   isOutputStream?: boolean; // 是否输出流
   expanded?: boolean; // 是否展开，Node Group
   expandedSize?: { width: number; height: number }; // 展开大小
   collapsedSize?: { width: number; height: number }; // 收起大小
+}
+
+export interface NodeUpdate {
+  data?: Partial<NodeData>;
+  position?: XYPosition;
+  dimensions?: { width: number; height: number };
+  status?: NodeStatus;
+  errorMessage?: string;
+  inputs?: NodePortValues;
+  outputs?: NodePortValues;
+  isOutputStream?: boolean;
+  lastMessage?: unknown;
 }
 
 export interface EdgeData extends Record<string, unknown> {

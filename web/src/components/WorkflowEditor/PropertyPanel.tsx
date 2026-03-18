@@ -13,6 +13,9 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
   onUpdateData,
   onDelete
 }) => {
+  const systemPrompt = typeof node.data.config?.system_prompt === 'string' ? node.data.config.system_prompt : '';
+  const userPromptTemplate = typeof node.data.config?.user_prompt_template === 'string' ? node.data.config.user_prompt_template : '';
+
   return (
     <aside className="w-72 border-l border-white/10 bg-zinc-900/95 backdrop-blur-xl p-6 z-10 overflow-y-auto shadow-2xl">
       <div className="flex items-center justify-between mb-8">
@@ -54,7 +57,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">System Prompt</label>
               <textarea
-                value={node.data.config?.system_prompt || ''}
+                value={systemPrompt}
                 onChange={(e) => onUpdateData(node.id, {
                   config: {
                     ...node.data.config,
@@ -69,7 +72,7 @@ export const PropertyPanel: React.FC<PropertyPanelProps> = ({
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">User Prompt Template</label>
               <textarea
-                value={node.data.config?.user_prompt_template || ''}
+                value={userPromptTemplate}
                 onChange={(e) => onUpdateData(node.id, {
                   config: {
                     ...node.data.config,

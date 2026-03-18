@@ -91,9 +91,7 @@ export const processUpdateNode = (state: Immutable<WorkflowState>, command: Upda
         // 更新 dimensions (同时更新 style 和 width/height)
         if (updates.dimensions) {
             const { width, height } = updates.dimensions;
-            if (!node.style) node.style = {};
-            (node.style as any).width = width;
-            (node.style as any).height = height;
+            node.style = { ...node.style, width, height };
             node.width = width;
             node.height = height;
 
@@ -110,7 +108,7 @@ export const processUpdateNode = (state: Immutable<WorkflowState>, command: Upda
         }
 
         // 更新 status
-        if (updates.status) {
+        if (updates.status !== undefined) {
             if (!node.data) node.data = {};
             node.data.status = updates.status;
             if (updates.errorMessage !== undefined) {

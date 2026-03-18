@@ -1,7 +1,8 @@
-import type { NodeMetadata } from "../api";
-import type { Node, Edge, NodeChange, EdgeChange, Connection, WorkflowStatus } from "../model/workflow/types";
+import type { NodeMetadata, UploadedFile } from "../api";
+import type { Node, Edge, NodeChange, EdgeChange, Connection, WorkflowStatus, NodeData } from "../model/workflow/types";
 import type { WorkflowBlueprint } from "@/model/workflow/adapters/blueprintAdapter";
 import type { GraphKey } from "../model/workflowManager";
+import type { OnNodeDrag } from "@xyflow/react";
 
 // WorkflowBlueprint type is now imported from adapter
 
@@ -24,9 +25,9 @@ export interface Workflow {
     renameWorkflow: (id: number, newName: string) => Promise<void>;
     deleteWorkflow: (id: number) => Promise<void>;
     createNewWorkflow: () => Promise<void>;
-    importWorkflow: (blueprint: any) => void;
+    importWorkflow: (blueprint: WorkflowBlueprint) => void;
     getWorkflowBlueprint: () => WorkflowBlueprint;
-    uploadFile: (file: File) => Promise<any>;
+    uploadFile: (file: File) => Promise<UploadedFile>;
     setWorkflows: (workflows: { id: number; name: string }[]) => void;
     setCurrentWorkflowId: (id: number | null) => void;
     setNodeTypes: (types: NodeMetadata[]) => void;
@@ -51,12 +52,12 @@ export interface Canvas {
     switchCanvas: (graphKey: GraphKey) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
-    onNodeDrag: (event: any, node: any) => void;
-    onNodeDragStop: (event: any, node: any) => void;
+    onNodeDrag: OnNodeDrag<Node>;
+    onNodeDragStop: OnNodeDrag<Node>;
     onConnect: (connection: Connection) => void;
     addNode: (type: string, position?: { x: number; y: number }) => void;
     deleteNode: (id: string) => void;
-    updateNodeData: (id: string, data: Record<string, any>) => void;
+    updateNodeData: (id: string, data: Partial<NodeData>) => void;
     updateNodeDimensions: (id: string, width: number, height: number) => void;
     selectNode: (id: string[]) => void;
     setNodes: (nodes: Node[]) => void;

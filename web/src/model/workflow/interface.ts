@@ -1,7 +1,7 @@
 import type { Observable } from 'rxjs';
 import type { Immutable } from 'immer';
 import { RxWorkflow, type RxWorkflowOptions } from './RxWorkflow';
-import type { WorkflowState, Node, Edge, NodeStatus, NodeData } from './types';
+import type { WorkflowState, Node, Edge, NodeStatus, NodeData, NodeUpdate } from './types';
 import type { CommandMeta, GraphCommand } from './commands';
 import type { XYPosition, Connection, EdgeChange, NodeChange } from '@xyflow/react';
 
@@ -13,12 +13,12 @@ export interface WorkflowModelDispatchers {
   addNode: (
     type: string,
     position: XYPosition,
-    options?: { id?: string; data?: Record<string, any> },
+    options?: { id?: string; data?: Partial<NodeData> },
     meta?: CommandMeta,
   ) => void;
   setNodes: (nodes: WorkflowState['nodes'], meta?: CommandMeta) => void;
   deleteNode: (id: string, meta?: CommandMeta) => void;
-  updateNodeData: (id: string, data: Partial<NodeData> & Record<string, any>, meta?: CommandMeta) => void;
+  updateNodeData: (id: string, data: Partial<NodeData>, meta?: CommandMeta) => void;
   updateNodePosition: (id: string, position: XYPosition, meta?: CommandMeta) => void;
   updateNodeDimensions: (id: string, width: number, height: number, meta?: CommandMeta) => void;
   updateNodeStatus: (id: string, status: NodeStatus, meta?: CommandMeta) => void;
@@ -77,18 +77,18 @@ export function createWorkflowModel(
     updateNodeStatus: (id, status, meta) => dispatch({
       type: "UPDATE_NODE", payload: {
         id,
-        updates: { status }
+        updates: { status } satisfies NodeUpdate
       },
       meta
     }),
     updateNodeData: (id, data, meta) =>
       dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { data } }, meta }),
     updateNodePosition: (id, position, meta) =>
-      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { position } }, meta }),
+      dispatch({ type: 'UPDATE_NODE', payload: { id, updates: { position } satisfies NodeUpdate }, meta }),
     updateNodeDimensions: (id, width, height, meta) =>
       dispatch({
         type: 'UPDATE_NODE',
-        payload: { id, updates: { dimensions: { width, height } } },
+        payload: { id, updates: { dimensions: { width, height } } satisfies NodeUpdate },
         meta
       }),
     groupNodes: (nodeIds, meta) =>

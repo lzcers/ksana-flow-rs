@@ -5,6 +5,11 @@ import {
     Controls,
     type NodeTypes,
     type EdgeTypes,
+    type OnConnect,
+    type OnNodesChange,
+    type OnEdgesChange,
+    type OnNodeDrag,
+    type IsValidConnection,
     Panel,
     useReactFlow,
     useViewport,
@@ -23,9 +28,10 @@ import { SelectionToolbar } from "./SelectionToolbar";
 import { useKeyboardShortcuts } from "./useKeyboardShortcuts";
 import { useSwipeToDelete } from "./useSwipeToDelete";
 import { SwipeToDeleteContext } from "./SwipeToDeleteContext";
-import type { Node, Edge } from "../../model/workflow/types";
+import type { Node, Edge, Connection } from "../../model/workflow/types";
 import type { WorkflowStatus } from "../../hooks/useWorkflow";
 import type { NodeMetadata } from "../../api";
+import { validateConnection } from "../../model/workflow/utils/connection";
 
 interface CanvasProps {
     graphKey?: string | null;
@@ -33,11 +39,11 @@ interface CanvasProps {
     edges: Edge[];
     workflowStatus: WorkflowStatus;
     availableNodes: NodeMetadata[];
-    onNodesChange: (changes: any) => void;
-    onEdgesChange: (changes: any) => void;
-    onNodeDrag: (event: any, node: any) => void;
-    onNodeDragStop: (event: any, node: any) => void;
-    onConnect: (connection: any) => void;
+    onNodesChange: OnNodesChange<Node>;
+    onEdgesChange: OnEdgesChange<Edge>;
+    onNodeDrag: OnNodeDrag<Node>;
+    onNodeDragStop: OnNodeDrag<Node>;
+    onConnect: OnConnect;
     onAddNode: (type: string, position: { x: number; y: number }) => void;
     onRun: () => void;
     onPause: () => void;
@@ -220,6 +226,20 @@ export const Canvas: React.FC<CanvasProps> = ({
         setConnectionState?.(false, null);
     }, [setConnectionState]);
 
+    const isValidConnection = React.useCallback<IsValidConnection>(
+        edgeOrConnection => {
+            const candidate: Connection = {
+                source: edgeOrConnection.source,
+                target: edgeOrConnection.target,
+                sourceHandle: edgeOrConnection.sourceHandle ?? null,
+                targetHandle: edgeOrConnection.targetHandle ?? null,
+            };
+
+            return validateConnection(candidate, nodes, edges).valid;
+        },
+        [edges, nodes],
+    );
+
     const swipeToDeleteContextValue = React.useMemo(
         () => ({
             markedEdgeIds,
@@ -247,6 +267,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     onNodeDrag={onNodeDrag}
                     onNodeDragStop={onNodeDragStop}
                     onConnect={onConnect}
+                    isValidConnection={isValidConnection}
                     onConnectStart={onConnectStart}
                     onConnectEnd={onConnectEnd}
                     onDrop={onDrop}

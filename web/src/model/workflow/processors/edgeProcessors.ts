@@ -19,20 +19,17 @@ export const processUpdateEdges = (
     // 处理连接
     if (connect) {
       // 验证连接并获取边数据
-      const validation = validateConnection(connect, draft.nodes as any);
+      const validation = validateConnection(connect, draft.nodes, draft.edges);
 
-      if (validation.valid) {
+      if (validation.valid && validation.connection) {
         // 使用验证后的边数据创建边
         const edgeWithData = {
-          ...connect,
+          ...validation.connection,
           data: validation.edgeData || {},
         };
         draft.edges = addEdgeXyflow(edgeWithData, draft.edges);
       } else {
-        // 连接无效，记录警告但不阻止（或可以选择静默忽略）
         console.warn(`连接验证失败: ${validation.error}`);
-        // 仍然创建边，但不包含端口信息（向后兼容）
-        draft.edges = addEdgeXyflow(connect, draft.edges);
       }
     }
 

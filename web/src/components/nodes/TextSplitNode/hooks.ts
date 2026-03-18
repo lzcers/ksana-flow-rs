@@ -2,49 +2,83 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNodeConfig } from '../shared/hooks/useNodeConfig';
 import type { NodeData } from '@/model/workflow/types';
 
+type LineCountMode = { max_lines_per_part?: number };
+type HeadingKeywordsRule = { keywords?: string[]; require_prefix?: string | null };
+type RuleMode = { rule?: { heading_keywords?: HeadingKeywordsRule } };
+type LineNumbersConfig = { enabled?: boolean; template?: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getLineCountMode(mode: unknown): LineCountMode | undefined {
+  if (!isRecord(mode) || !('by_line_count' in mode) || !isRecord(mode.by_line_count)) {
+    return undefined;
+  }
+
+  return mode.by_line_count as LineCountMode;
+}
+
+function getRuleMode(mode: unknown): RuleMode | undefined {
+  if (!isRecord(mode) || !('by_rule' in mode) || !isRecord(mode.by_rule)) {
+    return undefined;
+  }
+
+  return mode.by_rule as RuleMode;
+}
+
+function getHeadingKeywordsRule(mode: unknown): HeadingKeywordsRule | undefined {
+  const ruleMode = getRuleMode(mode);
+  if (!ruleMode?.rule || !isRecord(ruleMode.rule.heading_keywords)) {
+    return undefined;
+  }
+
+  return ruleMode.rule.heading_keywords as HeadingKeywordsRule;
+}
+
+function getLineNumbersConfig(value: unknown): LineNumbersConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return value as LineNumbersConfig;
+}
+
 export function useTextSplitNodeController(id: string, data: NodeData) {
   const { updateConfig } = useNodeConfig(id, data.config);
 
   // Mode configuration
   const mode = useMemo(() => {
     const modeConfig = data.config?.mode;
-    if (modeConfig && typeof modeConfig === 'object') {
-      if ('by_rule' in modeConfig) return 'by_rule' as const;
-      if ('by_line_count' in modeConfig) return 'by_line_count' as const;
-    }
+    if (getRuleMode(modeConfig)) return 'by_rule' as const;
+    if (getLineCountMode(modeConfig)) return 'by_line_count' as const;
     return 'by_line_count' as const;
   }, [data.config?.mode]);
 
   const [maxLinesPerPart, setMaxLinesPerPart] = useState(() => {
-    const modeConfig = data.config?.mode;
-    if (modeConfig && typeof modeConfig === 'object' && 'by_line_count' in modeConfig) {
-      return Number(modeConfig.by_line_count?.max_lines_per_part ?? 200);
+    const lineCountMode = getLineCountMode(data.config?.mode);
+    if (lineCountMode) {
+      return Number(lineCountMode.max_lines_per_part ?? 200);
     }
     return 200;
   });
 
   // Rule settings
   const [keywords, setKeywords] = useState(() => {
-    const modeConfig = data.config?.mode;
-    if (modeConfig && typeof modeConfig === 'object' && 'by_rule' in modeConfig) {
-      const rule = modeConfig.by_rule?.rule;
-      if (rule && typeof rule === 'object' && 'heading_keywords' in rule) {
-        const kws = rule.heading_keywords?.keywords;
-        if (Array.isArray(kws)) {
-          return kws.join(', ');
-        }
+    const rule = getHeadingKeywordsRule(data.config?.mode);
+    if (rule) {
+      const keywordsValue = rule.keywords;
+      if (Array.isArray(keywordsValue)) {
+        return keywordsValue.join(', ');
       }
     }
     return '';
   });
 
   const [requirePrefix, setRequirePrefix] = useState(() => {
-    const modeConfig = data.config?.mode;
-    if (modeConfig && typeof modeConfig === 'object' && 'by_rule' in modeConfig) {
-      const rule = modeConfig.by_rule?.rule;
-      if (rule && typeof rule === 'object' && 'heading_keywords' in rule) {
-        return rule.heading_keywords?.require_prefix ?? '';
-      }
+    const rule = getHeadingKeywordsRule(data.config?.mode);
+    if (rule) {
+      return rule.require_prefix ?? '';
     }
     return '';
   });
@@ -55,16 +89,16 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
   );
 
   const [lineNumbersEnabled, setLineNumbersEnabled] = useState(() => {
-    const lineNums = data.config?.line_numbers;
-    if (lineNums && typeof lineNums === 'object') {
+    const lineNums = getLineNumbersConfig(data.config?.line_numbers);
+    if (lineNums) {
       return Boolean(lineNums.enabled ?? false);
     }
     return false;
   });
 
   const [lineNumbersTemplate, setLineNumbersTemplate] = useState(() => {
-    const lineNums = data.config?.line_numbers;
-    if (lineNums && typeof lineNums === 'object') {
+    const lineNums = getLineNumbersConfig(data.config?.line_numbers);
+    if (lineNums) {
       return String(lineNums.template ?? '{line}: ');
     }
     return '{line}: ';
@@ -77,11 +111,9 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
 
   // Sync with external config changes
   useEffect(() => {
-    const modeConfig = data.config?.mode;
-    if (modeConfig && typeof modeConfig === 'object') {
-      if ('by_line_count' in modeConfig) {
-        setMaxLinesPerPart(Number(modeConfig.by_line_count?.max_lines_per_part ?? 200));
-      }
+    const lineCountMode = getLineCountMode(data.config?.mode);
+    if (lineCountMode) {
+      setMaxLinesPerPart(Number(lineCountMode.max_lines_per_part ?? 200));
     }
   }, [data.config?.mode]);
 
@@ -94,8 +126,8 @@ export function useTextSplitNodeController(id: string, data: NodeData) {
   }, [data.config?.rule_only_keep_matched_ranges]);
 
   useEffect(() => {
-    const lineNums = data.config?.line_numbers;
-    if (lineNums && typeof lineNums === 'object') {
+    const lineNums = getLineNumbersConfig(data.config?.line_numbers);
+    if (lineNums) {
       setLineNumbersEnabled(Boolean(lineNums.enabled ?? false));
       setLineNumbersTemplate(String(lineNums.template ?? '{line}: '));
     }

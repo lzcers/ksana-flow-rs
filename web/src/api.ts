@@ -19,6 +19,12 @@ export interface Workflow {
     };
 }
 
+export interface UploadedFile {
+    id: string;
+    filename: string;
+    size: number;
+}
+
 export const fetchNodes = async (spaceId: string): Promise<NodeMetadata[]> => {
     // spaceId is no longer required by the backend for getting nodes
     void spaceId;
@@ -105,7 +111,7 @@ export const stopWorkflow = async (_spaceId: string, runId: string) => {
     return res.json();
 };
 
-export const uploadFile = async (spaceId: string, file: File) => {
+export const uploadFile = async (spaceId: string, file: File): Promise<UploadedFile> => {
     const formData = new FormData();
     formData.append("space_id", spaceId);
     formData.append("file", file);

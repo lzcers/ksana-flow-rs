@@ -5,6 +5,7 @@
  */
 
 import type { NodeMetadata, NodePorts, PortDef, DataType } from './types';
+import { CONTROL_HANDLE_ID, isControlHandle, isDataHandle } from './types';
 import { Position } from '@xyflow/react';
 
 // ============ 注册表存储 ============
@@ -83,23 +84,25 @@ export function getPortByHandleId(
 ): PortDef | undefined {
   const ports = getNodePorts(nodeType);
   if (!ports) return undefined;
+  const portList = handleType === 'source' ? ports.outputs : ports.inputs;
 
-  // 控制流端口
-  if (handleId === 'ctrl') {
-    const portList = handleType === 'source' ? ports.outputs : ports.inputs;
+  // 缺省 handle 视为默认控制流端口，兼容旧控制流边
+  if (!handleId || handleId === CONTROL_HANDLE_ID) {
     return portList.find(p => p.kind === 'control');
   }
 
   // 数据流端口
-  if (handleId.startsWith('data:')) {
+  if (isDataHandle(handleId)) {
     const portId = handleId.slice(5);
-    const portList = handleType === 'source' ? ports.outputs : ports.inputs;
     return portList.find(p => p.id === portId);
   }
 
-  // 兼容旧格式
-  const portList = handleType === 'source' ? ports.outputs : ports.inputs;
-  return portList.find(p => p.kind === 'control');
+  // 兼容旧控制流 handle 格式
+  if (isControlHandle(handleId)) {
+    return portList.find(p => p.kind === 'control');
+  }
+
+  return undefined;
 }
 
 // ============ 数据类型兼容性检查 ============
@@ -325,19 +328,66 @@ registerNode({
 });
 
 registerNode({
-  type: 'SourceNode',
+  type: 'ReactiveSourceNode',
   displayName: 'Source',
   category: 'trigger',
   icon: 'play',
-  description: '工作流起始节点',
+  description: '行情数据源节点',
   ports: {
     inputs: [],
     outputs: [
       { id: 'ctrl', label: '', kind: 'control', position: Position.Right },
+      { id: 'marketData', label: 'Market Data', kind: 'data', dataType: 'json', position: Position.Right },
     ],
   },
   defaultConfig: {},
   defaultSize: { width: 120, height: 80 },
+});
+
+registerNode({
+  type: 'VOLMFINode',
+  displayName: 'VOL MFI',
+  category: 'logic',
+  icon: 'activity',
+  description: '成交量与资金流策略节点',
+  ports: {
+    inputs: [
+      { id: 'ctrl', label: '', kind: 'control', position: Position.Left },
+      { id: 'marketData', label: 'Market Data', kind: 'data', dataType: 'json', position: Position.Left },
+    ],
+    outputs: [
+      { id: 'ctrl', label: '', kind: 'control', position: Position.Right },
+      { id: 'signal', label: 'Signal', kind: 'data', dataType: 'json', position: Position.Right },
+    ],
+  },
+  defaultConfig: {
+    ema_period: 8,
+    mfi_period: 8,
+  },
+  defaultSize: { width: 220, height: 140 },
+});
+
+registerNode({
+  type: 'Backtester',
+  displayName: 'Backtester',
+  category: 'output',
+  icon: 'line-chart',
+  description: '回测执行节点',
+  ports: {
+    inputs: [
+      { id: 'ctrl', label: '', kind: 'control', position: Position.Left },
+      { id: 'signal', label: 'Signal', kind: 'data', dataType: 'json', position: Position.Left },
+    ],
+    outputs: [
+      { id: 'ctrl', label: '', kind: 'control', position: Position.Right },
+      { id: 'report', label: 'Report', kind: 'data', dataType: 'json', position: Position.Right },
+    ],
+  },
+  defaultConfig: {
+    initial_capital: 500000,
+    transaction_cost: 0.0002354,
+  },
+  defaultSize: { width: 220, height: 140 },
 });
 
 registerNode({

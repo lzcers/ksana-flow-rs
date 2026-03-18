@@ -2,6 +2,7 @@ import React from "react";
 import { BaseEdge, getBezierPath, type EdgeProps } from "@xyflow/react";
 import type { Edge, EdgeData } from "../../model/workflow/types";
 import { useSwipeToDeleteContext } from "./SwipeToDeleteContext";
+import { getEdgeKindFromHandles } from "../../model/workflow/utils/connection";
 
 /**
  * 边样式配置
@@ -33,12 +34,14 @@ export const WorkflowEdge: React.FC<EdgeProps<Edge>> = ({
     style,
     markerEnd,
     data,
+    sourceHandleId,
+    targetHandleId,
 }) => {
     const { markedEdgeIds, isShiftPressed, markEdgeForDeletion } = useSwipeToDeleteContext();
     const isMarkedForDeletion = markedEdgeIds.has(id);
 
     // 获取边类型
-    const edgeKind = (data as EdgeData | undefined)?.kind || 'control';
+    const edgeKind = (data as EdgeData | undefined)?.kind ?? getEdgeKindFromHandles(sourceHandleId, targetHandleId);
     const baseEdgeStyle = EDGE_STYLES[edgeKind] || EDGE_STYLES.default;
 
     const [edgePath] = getBezierPath({

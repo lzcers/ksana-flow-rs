@@ -1,5 +1,5 @@
 import type { XYPosition, Connection } from '@xyflow/react';
-import type { Node, NodeData, Edge, NodeChange, EdgeChange } from './types';
+import type { Node, NodeData, NodeUpdate, Edge, NodeChange, EdgeChange } from './types';
 
 export type CommandMeta = {
   skipHistory?: boolean;
@@ -32,7 +32,7 @@ export interface UpdateNodeCommand extends BaseCommand {
   type: 'UPDATE_NODE';
   payload: {
     id: string;
-    updates: Partial<NodeData> & Record<string, any>;
+    updates: NodeUpdate;
   };
 }
 

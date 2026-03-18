@@ -9,6 +9,9 @@ export const TextFileNode = memo((props: NodeProps & { data: NodeData }) => {
   const { id, data } = props;
   const { uploadFile } = useStore();
   const { updateConfig } = useNodeConfig(id, data.config);
+  const fileId = typeof data.config?.file_id === 'string' ? data.config.file_id : undefined;
+  const filename = typeof data.config?.filename === 'string' ? data.config.filename : undefined;
+  const size = typeof data.config?.size === 'number' ? data.config.size : undefined;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -49,9 +52,9 @@ export const TextFileNode = memo((props: NodeProps & { data: NodeData }) => {
     <TextFileNodeView
       {...props}
       fileInputRef={fileInputRef}
-      fileId={data.config?.file_id}
-      filename={data.config?.filename}
-      size={data.config?.size}
+      fileId={fileId}
+      filename={filename}
+      size={size}
       isUploading={isUploading}
       error={error}
       onUploadClick={handleUploadClick}

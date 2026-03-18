@@ -31,6 +31,11 @@ interface NodeWrapperProps {
     headerActions?: React.ReactNode;
 }
 
+interface PositionedPort {
+    port: PortDef;
+    style: React.CSSProperties;
+}
+
 // 端口位置样式映射
 const HANDLE_POSITION_STYLES: Record<Position, React.CSSProperties> = {
     [Position.Top]: { top: -6, left: "50%", transform: "translateX(-50%)" },
@@ -77,7 +82,8 @@ function renderHandle(
     port: PortDef,
     handleType: "source" | "target",
     styles: typeof nodeWrapperStyles,
-    isVisible: boolean
+    isVisible: boolean,
+    handleStyle: React.CSSProperties,
 ): React.ReactNode {
     const isControl = port.kind === "control";
     const handleId = isControl ? CONTROL_HANDLE_ID : dataHandleId(port.id);
@@ -102,7 +108,7 @@ function renderHandle(
                 isVisible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 port.required && styles.handleRequired
             )}
-            style={HANDLE_POSITION_STYLES[port.position]}
+            style={handleStyle}
         >
             {/* 数据端口显示标签 */}
             {!isControl && port.label && (
@@ -115,6 +121,49 @@ function renderHandle(
             )}
         </Handle>
     );
+}
+
+function layoutPorts(ports: PortDef[]): PositionedPort[] {
+    const groupedPorts = new Map<Position, PortDef[]>();
+
+    ports.forEach(port => {
+        const group = groupedPorts.get(port.position);
+        if (group) {
+            group.push(port);
+            return;
+        }
+        groupedPorts.set(port.position, [port]);
+    });
+
+    return ports.map(port => {
+        const group = groupedPorts.get(port.position) ?? [port];
+        const index = group.indexOf(port);
+
+        if (group.length <= 1 || index < 0) {
+            return { port, style: HANDLE_POSITION_STYLES[port.position] };
+        }
+
+        const ratio = `${((index + 1) / (group.length + 1)) * 100}%`;
+        if (port.position === Position.Left || port.position === Position.Right) {
+            return {
+                port,
+                style: {
+                    ...HANDLE_POSITION_STYLES[port.position],
+                    top: ratio,
+                    transform: "translateY(-50%)",
+                },
+            };
+        }
+
+        return {
+            port,
+            style: {
+                ...HANDLE_POSITION_STYLES[port.position],
+                left: ratio,
+                transform: "translateX(-50%)",
+            },
+        };
+    });
 }
 
 export const NodeWrapper: React.FC<NodeWrapperProps> = ({
@@ -136,6 +185,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
 }) => {
     const status = data.status || "idle";
     const { runNode, updateNodeDimensions, isConnecting, connectionSourceId, currentWorkflowStatus, updateNodeData } = useStore();
+    const registeredPorts = useMemo(() => getNodePorts(type), [type]);
 
     const { editingLabel, setEditingLabel, labelDraft, setLabelDraft, inputRef, commitLabel, cancelLabel } = useNodeLabel({
         id,
@@ -146,13 +196,18 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
     // 解析端口定义：优先使用传入的 ports，其次从注册表获取，最后使用旧版兼容
     const resolvedPorts: NodePorts = useMemo(() => {
         if (ports) return ports;
-        const registeredPorts = getNodePorts(type);
         if (registeredPorts) return registeredPorts;
-        return legacyPositionToPorts(sourceHandles, targetHandles);
-    }, [ports, type, sourceHandles, targetHandles]);
+        if (sourceHandles.length > 0 || targetHandles.length > 0) {
+            return legacyPositionToPorts(sourceHandles, targetHandles);
+        }
+        return { inputs: [], outputs: [] };
+    }, [ports, registeredPorts, sourceHandles, targetHandles]);
 
     // 是否使用新端口系统
-    const useNewPorts = ports !== undefined || getNodePorts(type) !== undefined;
+    const useNewPorts = ports !== undefined || registeredPorts !== undefined;
+
+    const positionedInputPorts = useMemo(() => layoutPorts(resolvedPorts.inputs), [resolvedPorts.inputs]);
+    const positionedOutputPorts = useMemo(() => layoutPorts(resolvedPorts.outputs), [resolvedPorts.outputs]);
 
     const handleRun = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -201,7 +256,7 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
                                 setEditingLabel(true);
                             }}
                         >
-                            {data.label}
+                            {data.label ?? type}
                         </span>
                     )}
                 </div>
@@ -259,11 +314,11 @@ export const NodeWrapper: React.FC<NodeWrapperProps> = ({
                 {/* 新端口系统渲染 */}
                 {useNewPorts ? (
                     <>
-                        {resolvedPorts.inputs.map(port =>
-                            renderHandle(port, "target", nodeWrapperStyles, isConnecting && id !== connectionSourceId)
+                        {positionedInputPorts.map(({ port, style: handleStyle }) =>
+                            renderHandle(port, "target", nodeWrapperStyles, isConnecting && id !== connectionSourceId, handleStyle)
                         )}
-                        {resolvedPorts.outputs.map(port =>
-                            renderHandle(port, "source", nodeWrapperStyles, !isConnecting || id === connectionSourceId)
+                        {positionedOutputPorts.map(({ port, style: handleStyle }) =>
+                            renderHandle(port, "source", nodeWrapperStyles, !isConnecting || id === connectionSourceId, handleStyle)
                         )}
                     </>
                 ) : (
