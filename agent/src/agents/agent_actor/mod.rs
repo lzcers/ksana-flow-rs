@@ -1,14 +1,26 @@
-//! Actor 控制器 - 高层编排与 API 暴露
+//! `agent_actor` 模块负责 Agent 的高层编排，对外暴露统一的执行入口、
+//! 控制句柄与构建 API。
 //!
-//! 具体职责拆分：
-//! - `types`: 错误、事件、命令、句柄、StepResult
-//! - `runtime`: 单步执行与 hook 驱动运行时
-//! - `loop_control`: 后台循环与暂停/继续/取消控制
-//! - `builder`: 构建器与超时策略装配
+//! 实现按职责拆分在以下子模块中：
+//! - `types`: 定义 Actor 对外可见的数据结构，包括错误类型、运行事件、
+//!   控制命令、控制句柄，以及单步执行结果。
+//! - `runtime`: 实现 `run_step` 相关的单步执行流程，负责 hook 调度、
+//!   模型调用流处理、工具调用以及 step 结果组装。
+//! - `loop_control`: 实现后台循环执行与暂停、继续、取消等控制逻辑，
+//!   对应 `run_loop` 的运行时行为。
+//! - `builder`: 实现 `AgentActorBuilder`，负责 Actor 初始化参数装配，
+//!   包括上下文、迭代次数、用户 ID 与超时策略 hook。
+//!
+//! 当前文件作为目录模块入口，只保留共享状态定义、公共导出以及少量
+//! 跨子模块复用的辅助方法。
 
+/// 构建器相关实现位于 `builder` 子模块。
 mod builder;
+/// 后台循环控制逻辑位于 `loop_control` 子模块。
 mod loop_control;
+/// 单步执行与 hook 驱动运行时位于 `runtime` 子模块。
 mod runtime;
+/// 错误、事件、命令和结果类型位于 `types` 子模块。
 mod types;
 
 use std::collections::HashMap;
