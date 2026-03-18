@@ -1,7 +1,7 @@
 import { type NodeProps } from '@xyflow/react';
-import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '@/model/workflow/types';
-import { reduceNodeStyles } from './styles';
+import { FormNodeView } from '../shared/FormNodeView';
+import { nodeFormStyles } from '../shared/formStyles';
 import type { ReduceReducer } from './hooks';
 
 const LABEL_BY_REDUCER: Record<ReduceReducer, string> = {
@@ -38,64 +38,59 @@ export function ReduceNodeView({
   outputPreview: string;
 }) {
   return (
-    <NodeWrapper
+    <FormNodeView
       id={id}
       type={type}
       data={data}
       selected={selected}
-      className="flex flex-col"
+      width={width}
+      height={height}
       minWidth={300}
       minHeight={220}
-      style={{ width, height }}
+      contentClassName="space-y-3"
+      groups={[
+        {
+          fields: [
+            {
+              kind: 'select',
+              label: 'Reducer',
+              value: reducer,
+              onChange: next => onReducerChange(next as ReduceReducer),
+              options: Object.entries(LABEL_BY_REDUCER).map(([value, label]) => ({ value, label })),
+              hint: '输入为数组；输出为单值。Merge Array 适用于数组拼接；Deep Merge Object 适用于对象深合并。',
+              controlVariant: 'plain',
+              controlClassName: 'text-xs',
+            },
+          ],
+        },
+        ...(reducer === 'concat'
+          ? [
+              {
+                fields: [
+                  {
+                    kind: 'input' as const,
+                    label: 'Separator',
+                    value: separator,
+                    onChange: onSeparatorChange,
+                    onBlur: onSeparatorBlur,
+                    placeholder: '\\n',
+                    controlVariant: 'plain' as const,
+                    controlClassName: 'text-xs',
+                  },
+                ],
+              },
+            ]
+          : []),
+      ]}
     >
-      <div className={reduceNodeStyles.container}>
-        <div className={reduceNodeStyles.title}>Reduce</div>
-
-        <div className="flex flex-col gap-1">
-          <div className={reduceNodeStyles.fieldLabel}>Reducer</div>
-          <select
-            className={reduceNodeStyles.select}
-            value={reducer}
-            onChange={(e) => onReducerChange(e.target.value as ReduceReducer)}
-            onKeyDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            {Object.entries(LABEL_BY_REDUCER).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <div className={reduceNodeStyles.hint}>
-            输入为数组；输出为单值。Merge Array 适用于数组拼接；Deep Merge Object 适用于对象深合并。
+      {outputPreview ? (
+        <div className={nodeFormStyles.field}>
+          <div className={nodeFormStyles.label}>Last Output</div>
+          <div className="truncate text-[11px] text-zinc-400" title={outputPreview}>
+            {outputPreview}
           </div>
         </div>
-
-        {reducer === 'concat' && (
-          <div className="flex flex-col gap-1">
-            <div className={reduceNodeStyles.fieldLabel}>Separator</div>
-            <input
-              className={reduceNodeStyles.input}
-              value={separator}
-              onChange={(e) => onSeparatorChange(e.target.value)}
-              onBlur={onSeparatorBlur}
-              placeholder="\\n"
-              onKeyDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            />
-          </div>
-        )}
-
-        {outputPreview && (
-          <div className="flex flex-col gap-1">
-            <div className={reduceNodeStyles.fieldLabel}>Last Output</div>
-            <div className={reduceNodeStyles.preview} title={outputPreview}>
-              {outputPreview}
-            </div>
-          </div>
-        )}
-      </div>
-    </NodeWrapper>
+      ) : null}
+    </FormNodeView>
   );
 }
-

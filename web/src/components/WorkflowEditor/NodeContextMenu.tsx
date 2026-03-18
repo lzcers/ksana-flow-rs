@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { NODE_TYPES } from './nodeRegistry';
+import { getNodeRegistryItem } from './nodeRegistry';
 import { FileText, Search } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import type { NodeMetadata } from '../../api';
@@ -13,12 +13,16 @@ interface NodeContextMenuProps {
 }
 
 const getIcon = (name: string) => {
-  const nodeType = NODE_TYPES.find(i => i.type === name);
-  return nodeType?.icon || FileText;
+  return getNodeRegistryItem(name)?.icon || FileText;
 };
 
-const getColorForCategory = () => {
-  return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/20';
+const getColorForCategory = (name: string) => {
+  const color = getNodeRegistryItem(name)?.color;
+  if (!color) {
+    return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/20';
+  }
+
+  return `${color} border border-current/20`;
 };
 
 export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
@@ -51,9 +55,11 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
     };
   }, [visible, onClose]);
 
-  const filteredNodeTypes = nodeTypes.filter(nodeType =>
-    nodeType.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredNodeTypes = nodeTypes.filter(nodeType => {
+    const registryItem = getNodeRegistryItem(nodeType.name);
+    const query = searchQuery.toLowerCase();
+    return nodeType.name.toLowerCase().includes(query) || registryItem?.label.toLowerCase().includes(query);
+  });
 
   if (!visible) return null;
 
@@ -85,8 +91,10 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
           </div>
         ) : (
           filteredNodeTypes.map(nodeType => {
+            const registryItem = getNodeRegistryItem(nodeType.name);
             const Icon = getIcon(nodeType.name);
-            const colorClass = getColorForCategory();
+            const colorClass = getColorForCategory(nodeType.name);
+            const displayLabel = registryItem?.label ?? nodeType.name;
 
             return (
               <button
@@ -99,9 +107,11 @@ export const NodeContextMenu: React.FC<NodeContextMenuProps> = ({
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[13px] font-medium text-zinc-300 group-hover:text-white transition-colors">
+                    {displayLabel}
+                  </span>
+                  <span className="text-[9px] text-zinc-500 group-hover:text-zinc-400 leading-none mt-0.5">
                     {nodeType.name}
                   </span>
-                  <span className="text-[9px] text-zinc-500 group-hover:text-zinc-400 capitalize leading-none mt-0.5">{NODE_TYPES.find(i => i.type === nodeType.name)?.label ?? ""}</span>
                 </div>
               </button>
             );

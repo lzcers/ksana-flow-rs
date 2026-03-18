@@ -2,7 +2,7 @@ import { memo, useCallback, useState, useEffect } from "react";
 import { type NodeProps } from "@xyflow/react";
 import type { NodeData } from "@/model/workflow/types";
 import { useNodeConfig } from "../shared/hooks/useNodeConfig";
-import { useNodeConfigField } from "../shared/hooks/useNodeConfigField";
+import { useNumericStringNodeConfigField } from "../shared/hooks/useNodeConfigValueField";
 import { useStore } from "@/store";
 import { useMapNodeStream } from "./hooks";
 import { MapNodeView } from "./view";
@@ -17,12 +17,14 @@ export const MapNode = memo((props: NodeProps & { data: NodeData }) => {
         if (toggleSubgraph) toggleSubgraph(id);
     }, [id, toggleSubgraph]);
 
-    const maxConcurrencyField = useNodeConfigField<string>({
-        value: String(data.config?.max_concurrency ?? 2),
-        commitMode: "change",
-        updateValue: next => {
+    const maxConcurrencyField = useNumericStringNodeConfigField({
+        id,
+        config: data.config,
+        configKey: "max_concurrency",
+        defaultValue: "2",
+        parse: next => {
             const n = parseInt(next, 10);
-            if (Number.isFinite(n) && n >= 0) updateConfig({ max_concurrency: n });
+            return Number.isFinite(n) && n >= 0 ? n : undefined;
         },
     });
 

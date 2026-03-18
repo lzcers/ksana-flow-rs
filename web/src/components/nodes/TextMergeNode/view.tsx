@@ -1,7 +1,6 @@
 import { type NodeProps } from '@xyflow/react';
-import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '@/model/workflow/types';
-import { textMergeNodeStyles } from './styles';
+import { FormNodeView } from '../shared/FormNodeView';
 
 export function TextMergeNodeView({
   id,
@@ -21,29 +20,30 @@ export function TextMergeNodeView({
   onSeparatorBlur: () => void;
 }) {
   return (
-    <NodeWrapper
+    <FormNodeView
       id={id}
       type={type}
       data={data}
       selected={selected}
-      className="flex flex-col"
+      width={width}
+      height={height}
       minWidth={180}
       minHeight={150}
-      style={{ width, height }}
-    >
-      <div className={textMergeNodeStyles.container}>
-        <div className={textMergeNodeStyles.title}>Separator</div>
-        <input
-          className={textMergeNodeStyles.input}
-          value={separator}
-          onChange={(e) => onSeparatorChange(e.target.value)}
-          onBlur={onSeparatorBlur}
-          placeholder="Separator"
-          onKeyDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        />
-        <div className={textMergeNodeStyles.hint}>Inputs are merged in alphabetical order of source node IDs.</div>
-      </div>
-    </NodeWrapper>
+      groups={[
+        {
+          fields: [
+            {
+              kind: 'input',
+              label: 'Separator',
+              value: separator,
+              onChange: onSeparatorChange,
+              onBlur: onSeparatorBlur,
+              placeholder: 'Separator',
+              hint: 'Inputs are merged in alphabetical order of source node IDs.',
+            },
+          ],
+        },
+      ]}
+    />
   );
 }

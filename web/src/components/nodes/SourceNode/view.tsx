@@ -1,7 +1,6 @@
 import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
-import { NodeWrapper } from '../shared/NodeWrapper';
-import { sourceNodeStyles } from './styles';
+import { FormNodeView } from '../shared/FormNodeView';
 
 export function SourceNodeView({
   id,
@@ -31,65 +30,60 @@ export function SourceNodeView({
   onProductChange: (next: string) => void;
 }) {
   return (
-    <NodeWrapper
+    <FormNodeView
       id={id}
       type={type}
       data={data}
       selected={selected}
+      width={width}
+      height={height}
       minWidth={280}
       minHeight={140}
-      style={{ width, height }}
-    >
-      <div className={sourceNodeStyles.section}>
-        <div className={sourceNodeStyles.grid2}>
-          <div>
-            <label className={sourceNodeStyles.label}>Code</label>
-            <input
-              className={sourceNodeStyles.input}
-              value={code}
-              onChange={(e) => onCodeChange(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="e.g. 399300.SZ"
-            />
-          </div>
-          <div>
-            <label className={sourceNodeStyles.label}>Product</label>
-            <select
-              className={sourceNodeStyles.select}
-              value={product}
-              onChange={(e) => onProductChange(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-            >
-              <option value="STOCK">Stock</option>
-              <option value="FUND">Fund</option>
-              <option value="INDEX">Index</option>
-            </select>
-          </div>
-        </div>
-
-        <div className={sourceNodeStyles.grid2}>
-          <div>
-            <label className={sourceNodeStyles.label}>Start Time</label>
-            <input
-              className={sourceNodeStyles.inputPlain}
-              value={startTime}
-              onChange={(e) => onStartTimeChange(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="YYYYMMDD"
-            />
-          </div>
-          <div>
-            <label className={sourceNodeStyles.label}>End Time</label>
-            <input
-              className={sourceNodeStyles.input}
-              value={endTime}
-              onChange={(e) => onEndTimeChange(e.target.value)}
-              onKeyDown={(e) => e.stopPropagation()}
-              placeholder="Optional"
-            />
-          </div>
-        </div>
-      </div>
-    </NodeWrapper>
+      groups={[
+        {
+          layout: 'grid2',
+          fields: [
+            {
+              kind: 'input',
+              label: 'Code',
+              value: code,
+              onChange: onCodeChange,
+              placeholder: 'e.g. 399300.SZ',
+            },
+            {
+              kind: 'select',
+              label: 'Product',
+              value: product,
+              onChange: onProductChange,
+              options: [
+                { value: 'STOCK', label: 'Stock' },
+                { value: 'FUND', label: 'Fund' },
+                { value: 'INDEX', label: 'Index' },
+              ],
+            },
+          ],
+        },
+        {
+          layout: 'grid2',
+          fields: [
+            {
+              kind: 'input',
+              label: 'Start Time',
+              value: startTime,
+              onChange: onStartTimeChange,
+              placeholder: 'YYYYMMDD',
+              controlVariant: 'plain',
+            },
+            {
+              kind: 'input',
+              label: 'End Time',
+              value: endTime,
+              onChange: onEndTimeChange,
+              placeholder: 'Optional',
+            },
+          ],
+        },
+      ]}
+    />
   );
 }

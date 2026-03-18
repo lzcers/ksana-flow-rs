@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-type CommitMode = 'change' | 'blur' | 'manual';
+export type CommitMode = 'change' | 'blur' | 'manual';
 
 export function useNodeConfigField<T>({
   value,

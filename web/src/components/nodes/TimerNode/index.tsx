@@ -1,19 +1,12 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
-import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
+import { useStringNodeConfigField } from '../shared/hooks/useNodeConfigValueField';
 import { TimerNodeView } from './view';
 
 export const TimerNode = memo((props: NodeProps & { data: NodeData }) => {
   const { id, data } = props;
-  const { updateConfig } = useNodeConfig(id, data.config);
-
-  const cronExprField = useNodeConfigField<string>({
-    value: String(data.config?.cron_expr ?? ''),
-    commitMode: 'change',
-    updateValue: (next) => updateConfig({ cron_expr: next }),
-  });
+  const cronExprField = useStringNodeConfigField({ id, config: data.config, configKey: 'cron_expr' });
 
   return <TimerNodeView {...props} cronExpr={cronExprField.draft} onCronChange={cronExprField.onChange} />;
 });

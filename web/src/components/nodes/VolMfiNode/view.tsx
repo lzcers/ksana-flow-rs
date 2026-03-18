@@ -1,7 +1,6 @@
 import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
-import { NodeWrapper } from '../shared/NodeWrapper';
-import { volMfiNodeStyles } from './styles';
+import { FormNodeView } from '../shared/FormNodeView';
 
 export function VolMfiNodeView({
   id,
@@ -23,39 +22,37 @@ export function VolMfiNodeView({
   onMfiPeriodChange: (next: string) => void;
 }) {
   return (
-    <NodeWrapper
+    <FormNodeView
       id={id}
       type={type}
       data={data}
       selected={selected}
+      width={width}
+      height={height}
       minWidth={250}
       minHeight={140}
-      style={{ width, height }}
-    >
-      <div className={volMfiNodeStyles.section}>
-        <div>
-          <label className={volMfiNodeStyles.label}>EMA Period</label>
-          <input
-            type="number"
-            className={volMfiNodeStyles.input}
-            value={emaPeriod}
-            onChange={(e) => onEmaPeriodChange(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-            min="1"
-          />
-        </div>
-        <div>
-          <label className={volMfiNodeStyles.label}>MFI Period</label>
-          <input
-            type="number"
-            className={volMfiNodeStyles.input}
-            value={mfiPeriod}
-            onChange={(e) => onMfiPeriodChange(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-            min="1"
-          />
-        </div>
-      </div>
-    </NodeWrapper>
+      groups={[
+        {
+          fields: [
+            {
+              kind: 'input',
+              label: 'EMA Period',
+              value: emaPeriod,
+              onChange: onEmaPeriodChange,
+              inputType: 'number',
+              min: '1',
+            },
+            {
+              kind: 'input',
+              label: 'MFI Period',
+              value: mfiPeriod,
+              onChange: onMfiPeriodChange,
+              inputType: 'number',
+              min: '1',
+            },
+          ],
+        },
+      ]}
+    />
   );
 }

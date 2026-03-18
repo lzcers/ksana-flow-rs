@@ -7,34 +7,39 @@ import { produce, type Draft, type Immutable } from "immer";
 import type { WorkflowState, Node, NodeData, NodeChange } from "../types";
 import type { AddNodeCommand, RemoveNodeCommand, UpdateNodeCommand, ApplyNodeChangesCommand, ResetAllNodeStatusCommand } from "../commands";
 import { applyNodeChangesXyflow, getNextNodeId } from "../utils";
+import { getNodeDefaultConfig, getNodeDefaultSize, getNodeMetadata } from "../../nodeRegistry";
 
 export { getNextNodeId };
 
 // 默认节点数据
 const getDefaultNodeData = (type: string): Partial<NodeData> => {
-    const defaults: Record<string, Partial<NodeData>> = {
-        LLMNode: {
-            label: "LLM",
-            config: { model: "gpt-4", temperature: 0.7 },
-        },
-        TextNode: {
-            label: "Text",
-            config: { content: "" },
-        },
-        SubgraphNode: {
-            label: "Subgraph",
-            expanded: true,
-            expandedSize: { width: 400, height: 300 },
-            collapsedSize: { width: 200, height: 50 },
-        },
-        MapNode: {
-            label: "Map",
-            expanded: true,
-            expandedSize: { width: 400, height: 300 },
-            collapsedSize: { width: 200, height: 50 },
-        },
+    const metadata = getNodeMetadata(type);
+    const defaultConfig = getNodeDefaultConfig(type);
+    const defaultSize = getNodeDefaultSize(type);
+    const baseData: Partial<NodeData> = {
+        label: metadata?.displayName ?? type,
+        ...(defaultConfig ? { config: defaultConfig } : {}),
     };
-    return defaults[type] || { label: type };
+
+    if (type === "SubgraphNode") {
+        return {
+            ...baseData,
+            expanded: true,
+            expandedSize: defaultSize ?? { width: 400, height: 300 },
+            collapsedSize: { width: 260, height: 200 },
+        };
+    }
+
+    if (type === "MapNode") {
+        return {
+            ...baseData,
+            expanded: true,
+            expandedSize: defaultSize ?? { width: 600, height: 400 },
+            collapsedSize: { width: 260, height: 200 },
+        };
+    }
+
+    return baseData;
 };
 
 // ===== 处理器函数 =====
@@ -44,15 +49,28 @@ export const processAddNode = (state: Immutable<WorkflowState>, command: AddNode
 
     return produce(state, draft => {
         const id = requestedId ?? getNextNodeId(draft.nodes, nodeType);
+        const defaultData = getDefaultNodeData(nodeType);
+        const defaultSize = getNodeDefaultSize(nodeType);
+        const mergedConfig =
+            defaultData.config || data?.config
+                ? {
+                      ...(defaultData.config ?? {}),
+                      ...((data?.config as Record<string, unknown> | undefined) ?? {}),
+                  }
+                : undefined;
         const newNode: Node = {
             id,
             type: nodeType,
             position,
+            width: defaultSize?.width,
+            height: defaultSize?.height,
+            style: defaultSize ? { width: defaultSize.width, height: defaultSize.height } : undefined,
             data: {
-                ...getDefaultNodeData(nodeType),
+                ...defaultData,
                 ...data,
-                label: data?.label ?? id,
-                status: "idle",
+                ...(mergedConfig ? { config: mergedConfig } : {}),
+                label: data?.label ?? defaultData.label ?? id,
+                status: data?.status ?? "idle",
             },
         };
         draft.nodes.push(newNode);

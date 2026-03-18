@@ -27,6 +27,8 @@ export {
   registerNode,
   getNodeMetadata,
   getNodePorts,
+  getNodeDefaultConfig,
+  getNodeDefaultSize,
   getRegisteredNodeTypes,
   getAllNodeMetadata,
   getNodesByCategory,
@@ -34,3 +36,5 @@ export {
   getPortByHandleId,
   isDataTypeCompatible,
 } from './registry';
+
+export { BUILTIN_NODE_METADATA } from './builtinNodes';

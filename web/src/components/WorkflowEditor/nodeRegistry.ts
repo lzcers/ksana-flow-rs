@@ -1,51 +1,89 @@
-import type { ComponentType } from "react";
-import type { NodeProps } from "@xyflow/react";
-import { Activity, Box, FileText, GitMerge, Image, Mail, Sparkles, Timer, Type, Database, Group, Repeat2, Sigma, type LucideIcon } from "lucide-react";
-import type { NodeData, NodeType } from "../../model/workflow/types";
 import {
-    BacktesterNode,
-    EmailNotifyNode,
-    ImgGenNode,
-    LLMNode,
-    MapNode,
-    ReduceNode,
-    SourceNode,
-    TextFileNode,
-    TextMergeNode,
-    TextNode,
-    TextSplitNode,
-    TimerNode,
-    VolMfiNode,
-    SubgraphNode,
-} from "../nodes";
+    Activity,
+    Box,
+    Database,
+    FileText,
+    GitMerge,
+    Group,
+    Image,
+    Mail,
+    Repeat2,
+    Sigma,
+    Sparkles,
+    Timer,
+    type LucideIcon,
+} from "lucide-react";
+import type { NodeType } from "../../model/workflow/types";
+import type { NodeMetadata as RegistryNodeMetadata } from "../../model/nodeRegistry";
+import { BUILTIN_NODE_MANIFESTS } from "../nodes/manifests";
+import type { NodeComponent } from "../nodes/nodeManifest";
 
 export type NodeRegistryItem = {
     type: NodeType;
     label: string;
     icon: LucideIcon;
     color: string;
-    Component: ComponentType<NodeProps & { data: NodeData }>;
+    metadata: RegistryNodeMetadata;
+    Component: NodeComponent;
 };
 
-export const NODE_REGISTRY: NodeRegistryItem[] = [
-    { type: "TextNode", label: "Text", icon: Type, color: "text-slate-500 bg-slate-50", Component: TextNode },
-    { type: "TextMergeNode", label: "Merge", icon: GitMerge, color: "text-cyan-500 bg-cyan-50", Component: TextMergeNode },
-    { type: "TextFileNode", label: "File", icon: FileText, color: "text-slate-500 bg-slate-50", Component: TextFileNode },
-    { type: "TextSplitNode", label: "Split", icon: FileText, color: "text-slate-500 bg-slate-50", Component: TextSplitNode },
-    { type: "MapNode", label: "Map", icon: Repeat2, color: "text-zinc-500 bg-zinc-50", Component: MapNode },
-    { type: "ReduceNode", label: "Reduce", icon: Sigma, color: "text-zinc-500 bg-zinc-50", Component: ReduceNode },
-    { type: "LLMNode", label: "LLM", icon: Sparkles, color: "text-purple-500 bg-purple-50", Component: LLMNode },
-    { type: "ImgGenNode", label: "Image", icon: Image, color: "text-emerald-500 bg-emerald-50", Component: ImgGenNode },
-    { type: "ReactiveSourceNode", label: "Source", icon: Database, color: "text-indigo-500 bg-indigo-50", Component: SourceNode },
-    { type: "VOLMFINode", label: "Strategy", icon: Activity, color: "text-orange-500 bg-orange-50", Component: VolMfiNode },
-    { type: "Backtester", label: "Backtest", icon: Box, color: "text-indigo-500 bg-indigo-50", Component: BacktesterNode },
-    { type: "EmailNotifyNode", label: "EmailNotifyNode", icon: Mail, color: "text-indigo-500 bg-indigo-50", Component: EmailNotifyNode },
-    { type: "TimerNode", label: "TimerNode", icon: Timer, color: "text-indigo-500 bg-indigo-50", Component: TimerNode },
-    { type: "SubgraphNode", label: "Group", icon: Group, color: "text-zinc-500 bg-zinc-50", Component: SubgraphNode },
-];
+const ICON_BY_NAME: Record<string, LucideIcon> = {
+    activity: Activity,
+    bot: Sparkles,
+    clock: Timer,
+    "file-text": FileText,
+    file: FileText,
+    image: Image,
+    layers: Repeat2,
+    "git-branch": Group,
+    "git-merge": Sigma,
+    "line-chart": Box,
+    mail: Mail,
+    merge: GitMerge,
+    play: Database,
+    split: FileText,
+};
+
+const COLOR_BY_CATEGORY: Record<string, string> = {
+    input: "text-slate-500 bg-slate-50",
+    transform: "text-cyan-500 bg-cyan-50",
+    flow: "text-zinc-500 bg-zinc-50",
+    ai: "text-purple-500 bg-purple-50",
+    trigger: "text-indigo-500 bg-indigo-50",
+    logic: "text-orange-500 bg-orange-50",
+    output: "text-indigo-500 bg-indigo-50",
+};
+
+export const NODE_REGISTRY: NodeRegistryItem[] = BUILTIN_NODE_MANIFESTS.map(manifest => {
+        const metadata = manifest.metadata;
+        const type = metadata.type as NodeType;
+        const icon = metadata.icon ? ICON_BY_NAME[metadata.icon] : undefined;
+
+        if (!icon) {
+            return null;
+        }
+
+        return {
+            type,
+            label: metadata.displayName,
+            icon,
+            color: manifest.color ?? COLOR_BY_CATEGORY[metadata.category] ?? "text-zinc-500 bg-zinc-50",
+            metadata,
+            Component: manifest.Component,
+        } satisfies NodeRegistryItem;
+    })
+    .filter((item): item is NodeRegistryItem => item !== null);
 
 export const NODE_TYPES = NODE_REGISTRY.map(({ type, label, icon, color }) => ({ type, label, icon, color }));
 
-export const NODE_COMPONENTS: Partial<Record<NodeType, ComponentType<NodeProps & { data: NodeData }>>> = Object.fromEntries(
+export const NODE_COMPONENTS: Partial<Record<NodeType, NodeComponent>> = Object.fromEntries(
     NODE_REGISTRY.map(({ type, Component }) => [type, Component]),
 );
+
+export const NODE_REGISTRY_BY_TYPE = Object.fromEntries(
+    NODE_REGISTRY.map(item => [item.type, item]),
+) as Partial<Record<NodeType, NodeRegistryItem>>;
+
+export function getNodeRegistryItem(type: string): NodeRegistryItem | undefined {
+    return NODE_REGISTRY_BY_TYPE[type as NodeType];
+}

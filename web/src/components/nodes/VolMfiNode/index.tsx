@@ -1,29 +1,29 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
-import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
+import { useNumericStringNodeConfigField } from '../shared/hooks/useNodeConfigValueField';
 import { VolMfiNodeView } from './view';
 
 export const VolMfiNode = memo((props: NodeProps & { data: NodeData }) => {
   const { id, data } = props;
-  const { updateConfig } = useNodeConfig(id, data.config);
-
-  const emaPeriodField = useNodeConfigField<string>({
-    value: String(data.config?.ema_period ?? 20),
-    commitMode: 'change',
-    updateValue: (next) => {
+  const emaPeriodField = useNumericStringNodeConfigField({
+    id,
+    config: data.config,
+    configKey: 'ema_period',
+    defaultValue: '20',
+    parse: (next) => {
       const n = parseInt(next, 10);
-      if (Number.isFinite(n)) updateConfig({ ema_period: n });
+      return Number.isFinite(n) ? n : undefined;
     },
   });
-
-  const mfiPeriodField = useNodeConfigField<string>({
-    value: String(data.config?.mfi_period ?? 14),
-    commitMode: 'change',
-    updateValue: (next) => {
+  const mfiPeriodField = useNumericStringNodeConfigField({
+    id,
+    config: data.config,
+    configKey: 'mfi_period',
+    defaultValue: '14',
+    parse: (next) => {
       const n = parseInt(next, 10);
-      if (Number.isFinite(n)) updateConfig({ mfi_period: n });
+      return Number.isFinite(n) ? n : undefined;
     },
   });
 

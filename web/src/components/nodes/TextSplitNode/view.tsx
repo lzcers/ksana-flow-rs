@@ -1,7 +1,6 @@
 import { type NodeProps } from '@xyflow/react';
-import { NodeWrapper } from '../shared/NodeWrapper';
 import { type NodeData } from '@/model/workflow/types';
-import { textSplitNodeStyles } from './styles';
+import { FormNodeView } from '../shared/FormNodeView';
 
 export function TextSplitNodeView({
   id,
@@ -47,121 +46,105 @@ export function TextSplitNodeView({
   onRuleOnlyKeepMatchedChange: (next: boolean) => void;
 }) {
   return (
-    <NodeWrapper
+    <FormNodeView
       id={id}
       type={type}
       data={data}
       selected={selected}
-      className="flex flex-col"
+      width={width}
+      height={height}
       minWidth={320}
       minHeight={450}
-      style={{ width, height }}
-    >
-      <div className={textSplitNodeStyles.container}>
-        {/* Mode Selection */}
-        <div className={textSplitNodeStyles.section}>
-          <div className={textSplitNodeStyles.configRow}>
-            <span className={textSplitNodeStyles.configLabel}>Split Mode</span>
-            <select
-              className={textSplitNodeStyles.select}
-              value={mode}
-              onChange={(e) => onModeChange(e.target.value as 'by_line_count' | 'by_rule')}
-            >
-              <option value="by_line_count">By Line Count</option>
-              <option value="by_rule">By Rule (Keywords)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Mode-specific settings */}
-        {mode === 'by_line_count' ? (
-          <div className={textSplitNodeStyles.section}>
-            <span className={textSplitNodeStyles.sectionTitle}>Line Count Settings</span>
-            <div className={textSplitNodeStyles.configRow}>
-              <span className={textSplitNodeStyles.configLabel}>Max Lines Per Part</span>
-              <input
-                type="number"
-                className={textSplitNodeStyles.numberInput}
-                value={maxLinesPerPart}
-                onChange={(e) => onMaxLinesChange(parseInt(e.target.value) || 1)}
-                min={1}
-                max={10000}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className={textSplitNodeStyles.section}>
-            <span className={textSplitNodeStyles.sectionTitle}>Rule Settings</span>
-            <div className={textSplitNodeStyles.configRow}>
-              <span className={textSplitNodeStyles.configLabel}>Keywords (comma-separated)</span>
-            </div>
-            <input
-              type="text"
-              className={textSplitNodeStyles.tagInput}
-              value={keywords}
-              onChange={(e) => onKeywordsChange(e.target.value)}
-              placeholder="e.g., Chapter, Section, Part"
-              onKeyDown={(e) => e.stopPropagation()}
-            />
-            <div className={textSplitNodeStyles.configRow}>
-              <span className={textSplitNodeStyles.configLabel}>Require Prefix</span>
-              <input
-                type="text"
-                className={textSplitNodeStyles.input}
-                value={requirePrefix}
-                onChange={(e) => onRequirePrefixChange(e.target.value)}
-                placeholder="Optional prefix"
-                onKeyDown={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div className={textSplitNodeStyles.configRow}>
-              <span className={textSplitNodeStyles.configLabel}>Only Keep Matched Ranges</span>
-              <input
-                type="checkbox"
-                className={textSplitNodeStyles.checkbox}
-                checked={ruleOnlyKeepMatched}
-                onChange={(e) => onRuleOnlyKeepMatchedChange(e.target.checked)}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* General Options */}
-        <div className={textSplitNodeStyles.section}>
-          <span className={textSplitNodeStyles.sectionTitle}>Options</span>
-          <div className={textSplitNodeStyles.configRow}>
-            <span className={textSplitNodeStyles.configLabel}>Remove Empty Lines</span>
-            <input
-              type="checkbox"
-              className={textSplitNodeStyles.checkbox}
-              checked={removeEmptyLines}
-              onChange={(e) => onRemoveEmptyLinesChange(e.target.checked)}
-            />
-          </div>
-          <div className={textSplitNodeStyles.configRow}>
-            <span className={textSplitNodeStyles.configLabel}>Add Line Numbers</span>
-            <input
-              type="checkbox"
-              className={textSplitNodeStyles.checkbox}
-              checked={lineNumbersEnabled}
-              onChange={(e) => onLineNumbersEnabledChange(e.target.checked)}
-            />
-          </div>
-          {lineNumbersEnabled && (
-            <div className={textSplitNodeStyles.configRow}>
-              <span className={textSplitNodeStyles.configLabel}>Template</span>
-              <input
-                type="text"
-                className={textSplitNodeStyles.input}
-                value={lineNumbersTemplate}
-                onChange={(e) => onLineNumbersTemplateChange(e.target.value)}
-                placeholder="{line}: "
-                onKeyDown={(e) => e.stopPropagation()}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-    </NodeWrapper>
+      contentClassName="space-y-3"
+      groups={[
+        {
+          fields: [
+            {
+              kind: 'select',
+              label: 'Split Mode',
+              value: mode,
+              onChange: next => onModeChange(next as 'by_line_count' | 'by_rule'),
+              options: [
+                { value: 'by_line_count', label: 'By Line Count' },
+                { value: 'by_rule', label: 'By Rule (Keywords)' },
+              ],
+            },
+          ],
+        },
+        ...(mode === 'by_line_count'
+          ? [
+              {
+                title: 'Line Count Settings',
+                fields: [
+                  {
+                    kind: 'input' as const,
+                    label: 'Max Lines Per Part',
+                    value: String(maxLinesPerPart),
+                    onChange: (next: string) => onMaxLinesChange(parseInt(next, 10) || 1),
+                    inputType: 'number' as const,
+                    min: 1,
+                    max: 10000,
+                    controlClassName: 'w-20 text-center',
+                  },
+                ],
+              },
+            ]
+          : [
+              {
+                title: 'Rule Settings',
+                fields: [
+                  {
+                    kind: 'input' as const,
+                    label: 'Keywords (comma-separated)',
+                    value: keywords,
+                    onChange: onKeywordsChange,
+                    placeholder: 'e.g., Chapter, Section, Part',
+                  },
+                  {
+                    kind: 'input' as const,
+                    label: 'Require Prefix',
+                    value: requirePrefix,
+                    onChange: onRequirePrefixChange,
+                    placeholder: 'Optional prefix',
+                  },
+                  {
+                    kind: 'checkbox' as const,
+                    label: 'Only Keep Matched Ranges',
+                    checked: ruleOnlyKeepMatched,
+                    onChange: onRuleOnlyKeepMatchedChange,
+                  },
+                ],
+              },
+            ]),
+        {
+          title: 'Options',
+          fields: [
+            {
+              kind: 'checkbox',
+              label: 'Remove Empty Lines',
+              checked: removeEmptyLines,
+              onChange: onRemoveEmptyLinesChange,
+            },
+            {
+              kind: 'checkbox',
+              label: 'Add Line Numbers',
+              checked: lineNumbersEnabled,
+              onChange: onLineNumbersEnabledChange,
+            },
+            ...(lineNumbersEnabled
+              ? [
+                  {
+                    kind: 'input' as const,
+                    label: 'Template',
+                    value: lineNumbersTemplate,
+                    onChange: onLineNumbersTemplateChange,
+                    placeholder: '{line}: ',
+                  },
+                ]
+              : []),
+          ],
+        },
+      ]}
+    />
   );
 }

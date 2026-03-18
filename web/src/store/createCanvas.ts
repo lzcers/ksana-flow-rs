@@ -6,7 +6,6 @@ import { sortNodesByParent } from "../model/workflow/utils";
 import { workflowManager, type GraphKey } from "../model/workflowManager";
 import type { Subscription } from "rxjs";
 import type { OnNodeDrag } from "@xyflow/react";
-import { getNodeMetadata } from "../model/nodeRegistry";
 
 export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get) => {
     let viewStateSubscription: Subscription | null = null;
@@ -257,15 +256,9 @@ export const createCanvas: StateCreator<StoreState, [], [], Canvas> = (set, get)
             }
             const id = `${type}-${nextNum}`;
             const meta = nodeTypes.find(t => t.name === type);
-            const nodeMetadata = getNodeMetadata(type);
-            const initialData: Partial<NodeData> = {
-                label: nodeMetadata?.displayName ?? type,
-                config: meta?.config ?? nodeMetadata?.defaultConfig ?? {},
-                status: "idle",
-            };
             getActiveModel().action.addNode(type, position, {
                 id,
-                data: initialData,
+                data: meta?.config ? { config: meta.config } : undefined,
             });
             set({ selectedNodeId: [id] });
         },

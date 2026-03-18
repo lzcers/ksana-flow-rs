@@ -1,7 +1,6 @@
 import { type NodeProps } from '@xyflow/react';
 import type { NodeData } from '@/model/workflow/types';
-import { NodeWrapper } from '../shared/NodeWrapper';
-import { emailNotifyNodeStyles } from './styles';
+import { FormNodeView } from '../shared/FormNodeView';
 
 export function EmailNotifyNodeView({
   id,
@@ -27,40 +26,39 @@ export function EmailNotifyNodeView({
   onBodyCompositionEnd?: (next: string) => void;
 }) {
   return (
-    <NodeWrapper
+    <FormNodeView
       id={id}
       type={type}
       data={data}
       selected={selected}
+      width={width}
+      height={height}
       minWidth={300}
       minHeight={180}
-      style={{ width, height }}
-    >
-      <div className={emailNotifyNodeStyles.section}>
-        <div>
-          <label className={emailNotifyNodeStyles.label}>Subject</label>
-          <input
-            className={emailNotifyNodeStyles.subjectInput}
-            value={subject}
-            onChange={(e) => onSubjectChange(e.target.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-            placeholder="Email subject..."
-          />
-        </div>
-        <div>
-          <label className={emailNotifyNodeStyles.label}>Body</label>
-          <textarea
-            className={emailNotifyNodeStyles.bodyTextarea}
-            rows={4}
-            value={body}
-            onChange={(e) => onBodyChange(e.target.value)}
-            onCompositionStart={() => onBodyCompositionStart?.()}
-            onCompositionEnd={(e) => onBodyCompositionEnd?.(e.currentTarget.value)}
-            onKeyDown={(e) => e.stopPropagation()}
-            placeholder="Email body..."
-          />
-        </div>
-      </div>
-    </NodeWrapper>
+      groups={[
+        {
+          fields: [
+            {
+              kind: 'input',
+              label: 'Subject',
+              value: subject,
+              onChange: onSubjectChange,
+              placeholder: 'Email subject...',
+              controlVariant: 'plain',
+            },
+            {
+              kind: 'textarea',
+              label: 'Body',
+              value: body,
+              onChange: onBodyChange,
+              rows: 4,
+              placeholder: 'Email body...',
+              onCompositionStart: onBodyCompositionStart,
+              onCompositionEnd: onBodyCompositionEnd,
+            },
+          ],
+        },
+      ]}
+    />
   );
 }

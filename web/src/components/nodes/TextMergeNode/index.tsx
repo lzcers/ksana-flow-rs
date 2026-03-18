@@ -1,18 +1,17 @@
 import { memo } from 'react';
 import { type NodeProps } from '@xyflow/react';
 import { type NodeData } from '@/model/workflow/types';
-import { useNodeConfig } from '../shared/hooks/useNodeConfig';
-import { useNodeConfigField } from '../shared/hooks/useNodeConfigField';
+import { useStringNodeConfigField } from '../shared/hooks/useNodeConfigValueField';
 import { TextMergeNodeView } from './view';
 
 export const TextMergeNode = memo((props: NodeProps & { data: NodeData }) => {
   const { id, data } = props;
-  const { updateConfig } = useNodeConfig(id, data.config);
-
-  const separatorField = useNodeConfigField<string>({
-    value: String(data.config?.separator ?? '\n'),
+  const separatorField = useStringNodeConfigField({
+    id,
+    config: data.config,
+    configKey: 'separator',
+    defaultValue: '\n',
     commitMode: 'blur',
-    updateValue: (next) => updateConfig({ separator: next }),
   });
 
   return (
