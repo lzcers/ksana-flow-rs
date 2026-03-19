@@ -1,16 +1,16 @@
 use std::ops::ControlFlow;
-use std::pin::pin;
+use std::pin::{Pin, pin};
 use std::time::Duration;
 
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use tokio::sync::mpsc;
 
 use super::types::step_result_from_draft;
 use super::{AgentActorEvent, AgentError, StepResult};
-use crate::agents::call_model::{call_model, call_tools, CallModelEvent, CallToolResult};
+use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call_tools};
 use crate::agents::hooks::{
-    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, ExecutionPolicy,
-    HookRegistry, ModelCallOutput, ModelEventCtx, StepHookContext, StepResultDraft, StepScratchpad,
+    ExecutionPolicy, HookPipeline, HookRegistry, ModelCallOutput, RuntimeHookRegistry,
+    StepResultDraft,
 };
 use crate::agents::{AgentState, ToolCall, ToolDef, ToolExecutor};
 use crate::models::ChatCapability;
@@ -19,24 +19,23 @@ pub(super) type StepControl<T = ()> = ControlFlow<StepResultDraft, T>;
 
 pub(super) struct StepLifecycle<'a> {
     state: &'a mut AgentState,
-    hooks: &'a HookRegistry,
     event_tx: Option<&'a mpsc::Sender<AgentActorEvent>>,
-    scratchpad: StepScratchpad,
+    hooks: HookPipeline<'a>,
     execution_policy: ExecutionPolicy,
 }
 
 impl<'a> StepLifecycle<'a> {
     pub(super) fn new(
         state: &'a mut AgentState,
+        runtime_hooks: &'a RuntimeHookRegistry,
         hooks: &'a HookRegistry,
         event_tx: Option<&'a mpsc::Sender<AgentActorEvent>>,
         execution_policy: ExecutionPolicy,
     ) -> Self {
         Self {
             state,
-            hooks,
             event_tx,
-            scratchpad: StepScratchpad::default(),
+            hooks: HookPipeline::new(runtime_hooks, hooks),
             execution_policy,
         }
     }
@@ -49,76 +48,44 @@ impl<'a> StepLifecycle<'a> {
         self.execution_policy.tool_timeout
     }
 
-    fn make_ctx<'b>(
-        state: &'b mut AgentState,
-        event_tx: Option<&'b mpsc::Sender<AgentActorEvent>>,
-        scratchpad: &'b mut StepScratchpad,
-    ) -> StepHookContext<'b> {
-        StepHookContext {
-            state,
-            event_tx,
-            scratchpad,
-        }
-    }
-
     async fn before_step(&mut self) -> StepControl {
-        let result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            hooks.before_step(&mut ctx).await
-        };
-        Self::phase_control(result)
+        Self::phase_control(
+            self.hooks
+                .before_step(&mut *self.state, self.event_tx)
+                .await,
+        )
     }
 
     async fn before_call_model(&mut self, tools: &[ToolDef]) -> StepControl {
-        let result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            let mut before_call_model = BeforeCallModel { tools };
-            hooks
-                .before_call_model(&mut ctx, &mut before_call_model)
-                .await
-        };
-        Self::phase_control(result)
+        Self::phase_control(
+            self.hooks
+                .before_call_model(&mut *self.state, self.event_tx, tools)
+                .await,
+        )
     }
 
     async fn on_model_event(&mut self, event: &CallModelEvent) -> StepControl {
-        let result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            let model_event = ModelEventCtx { event };
-            hooks.on_model_event(&mut ctx, &model_event).await
-        };
-        Self::phase_control(result)
+        Self::phase_control(
+            self.hooks
+                .on_model_event(&mut *self.state, self.event_tx, event)
+                .await,
+        )
     }
 
     async fn after_call_model(&mut self, output: &mut ModelCallOutput) -> StepControl {
-        let result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            let mut after_call_model = AfterCallModel { output };
-            hooks
-                .after_call_model(&mut ctx, &mut after_call_model)
-                .await
-        };
-        Self::phase_control(result)
+        Self::phase_control(
+            self.hooks
+                .after_call_model(&mut *self.state, self.event_tx, output)
+                .await,
+        )
     }
 
     async fn before_call_tools(&mut self, tool_calls: &mut Vec<ToolCall>) -> StepControl {
-        let result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            let mut before_call_tools = BeforeCallTools { tool_calls };
-            hooks
-                .before_call_tools(&mut ctx, &mut before_call_tools)
-                .await
-        };
-        Self::phase_control(result)
+        Self::phase_control(
+            self.hooks
+                .before_call_tools(&mut *self.state, self.event_tx, tool_calls)
+                .await,
+        )
     }
 
     async fn after_call_tools(
@@ -126,75 +93,17 @@ impl<'a> StepLifecycle<'a> {
         tool_calls: &[ToolCall],
         tool_results: &mut Vec<CallToolResult>,
     ) -> StepControl {
-        let result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            let mut after_call_tools = AfterCallTools {
-                tool_calls,
-                tool_results,
-            };
-            hooks
-                .after_call_tools(&mut ctx, &mut after_call_tools)
-                .await
-        };
-        Self::phase_control(result)
-    }
-
-    pub(super) async fn start(
-        &mut self,
-        model: &(dyn ChatCapability + Sync),
-        tool_executor: &dyn ToolExecutor,
-    ) -> StepControl<StepResultDraft> {
-        let tools = tool_executor.tools().clone();
-
-        self.before_step().await?;
-        self.before_call_model(&tools).await?;
-
-        let mut model_output = self.stream_model_output(model, &tools).await?;
-
-        self.after_call_model(&mut model_output).await?;
-
-        if model_output.tool_calls.is_empty() {
-            return ControlFlow::Continue(StepResultDraft::Done {
-                content: model_output.content,
-                reasoning_content: model_output.reasoning_content,
-            });
-        }
-
-        let mut tool_calls = model_output.tool_calls.clone();
-        self.before_call_tools(&mut tool_calls).await?;
-
-        if tool_calls.is_empty() {
-            return ControlFlow::Continue(StepResultDraft::Done {
-                content: model_output.content,
-                reasoning_content: model_output.reasoning_content,
-            });
-        }
-
-        let mut tool_results = Self::agent_error_control(
-            execute_tools_with_timeout(tool_executor, &tool_calls, self.tool_timeout()).await,
-        )?;
-
-        self.after_call_tools(&tool_calls, &mut tool_results)
-            .await?;
-
-        ControlFlow::Continue(StepResultDraft::Continue {
-            content: model_output.content,
-            reasoning_content: model_output.reasoning_content,
-            tool_calls,
-            tool_results,
-        })
+        Self::phase_control(
+            self.hooks
+                .after_call_tools(&mut *self.state, self.event_tx, tool_calls, tool_results)
+                .await,
+        )
     }
 
     async fn stream_model_output(
         &mut self,
-        model: &(dyn ChatCapability + Sync),
-        tools: &[ToolDef],
+        mut stream: Pin<&mut impl Stream<Item = CallModelEvent>>,
     ) -> StepControl<ModelCallOutput> {
-        let messages = self.state.context.to_messages();
-        let tools = tools.to_vec();
-        let mut stream = pin!(call_model(model, &messages, Some(&tools)));
         let mut model_output = ModelCallOutput::default();
         let mut model_error: Option<AgentError> = None;
 
@@ -233,32 +142,6 @@ impl<'a> StepLifecycle<'a> {
         ControlFlow::Continue(model_output)
     }
 
-    pub(super) async fn finish(&mut self, mut result: StepResultDraft) -> StepResult {
-        let after_step_result = {
-            let hooks = self.hooks;
-            let event_tx = self.event_tx;
-            let mut ctx = Self::make_ctx(&mut *self.state, event_tx, &mut self.scratchpad);
-            let mut after_step = AfterStep {
-                result: &mut result,
-            };
-            hooks.after_step(&mut ctx, &mut after_step).await
-        };
-
-        match after_step_result {
-            Ok(Some(next_result)) => result = next_result,
-            Ok(None) => {}
-            Err(err) => {
-                self.state.state = crate::agents::JobState::Failed;
-                if let Some(event_tx) = self.event_tx {
-                    let _ = event_tx.send(AgentActorEvent::Error(err.clone())).await;
-                }
-                return StepResult::Error(err);
-            }
-        }
-
-        step_result_from_draft(result)
-    }
-
     fn phase_control(result: Result<Option<StepResultDraft>, AgentError>) -> StepControl {
         match result {
             Ok(Some(result)) => ControlFlow::Break(result),
@@ -282,6 +165,74 @@ impl<'a> StepLifecycle<'a> {
             ControlFlow::Break(result) => result,
             ControlFlow::Continue(value) => on_continue(value),
         }
+    }
+
+    pub(super) async fn start(
+        &mut self,
+        model: &(dyn ChatCapability + Sync),
+        tool_executor: &dyn ToolExecutor,
+    ) -> StepControl<StepResultDraft> {
+        let tools = tool_executor.tools();
+        let messages = self.state.context.to_messages();
+
+        self.before_step().await?;
+        self.before_call_model(tools).await?;
+
+        // 调用模型
+        let stream = pin!(call_model(model, &messages, Some(tools)));
+        let mut model_output = self.stream_model_output(stream).await?;
+
+        self.after_call_model(&mut model_output).await?;
+
+        if model_output.tool_calls.is_empty() {
+            return ControlFlow::Continue(StepResultDraft::Done {
+                content: model_output.content,
+                reasoning_content: model_output.reasoning_content,
+            });
+        }
+
+        let mut tool_calls = model_output.tool_calls;
+        self.before_call_tools(&mut tool_calls).await?;
+
+        if tool_calls.is_empty() {
+            return ControlFlow::Continue(StepResultDraft::Done {
+                content: model_output.content,
+                reasoning_content: model_output.reasoning_content,
+            });
+        }
+
+        let mut tool_results = Self::agent_error_control(
+            execute_tools_with_timeout(tool_executor, &tool_calls, self.tool_timeout()).await,
+        )?;
+
+        self.after_call_tools(&tool_calls, &mut tool_results)
+            .await?;
+
+        ControlFlow::Continue(StepResultDraft::Continue {
+            content: model_output.content,
+            reasoning_content: model_output.reasoning_content,
+            tool_calls,
+            tool_results,
+        })
+    }
+
+    pub(super) async fn finish(&mut self, mut result: StepResultDraft) -> StepResult {
+        match self
+            .hooks
+            .after_step(&mut *self.state, self.event_tx, &mut result)
+            .await
+        {
+            Ok(()) => {}
+            Err(err) => {
+                self.state.state = crate::agents::JobState::Failed;
+                if let Some(event_tx) = self.event_tx {
+                    let _ = event_tx.send(AgentActorEvent::Error(err.clone())).await;
+                }
+                return StepResult::Error(err);
+            }
+        }
+
+        step_result_from_draft(result)
     }
 }
 

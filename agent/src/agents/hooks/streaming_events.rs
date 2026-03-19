@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
 use super::{
-    AfterCallModel, AfterCallTools, AgentHook, BeforeCallTools, HookError, HookOutcome,
-    ModelEventCtx, StepHookContext,
+    AfterCallModel, AfterCallTools, BeforeCallTools, HookError, HookOutcome, ModelEventCtx,
+    RuntimeHook, StepHookContext,
 };
 use crate::agents::{AgentActorEvent, CallModelEvent};
 
@@ -10,7 +10,7 @@ use crate::agents::{AgentActorEvent, CallModelEvent};
 pub struct StreamingEventHook;
 
 #[async_trait]
-impl AgentHook for StreamingEventHook {
+impl RuntimeHook for StreamingEventHook {
     fn name(&self) -> &'static str {
         "streaming_events"
     }

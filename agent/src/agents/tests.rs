@@ -2,16 +2,19 @@
 mod tests {
     use std::pin::pin;
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use crate::agents::tools::playwright_cli::PlaywrightCliTool;
     use crate::agents::{
-        AfterCallModel, AfterCallTools, AfterStep, AgentActor, AgentActorEvent, AgentError,
-        AgentHook, BeforeCallModel, BeforeCallTools, CallModelEvent, Context,
-        ContextPersistenceHook, ExecutionMetrics, GenericToolExecutor, HookError, HookOutcome,
-        HookPhase, HookRegistry, IterationEventHook, LifecycleHook, ModelEventCtx, StepHookContext,
-        StepResult, StepResultDraft, Tool, ToolCall, ToolCallFunction, ToolDef, ToolExecutor,
-        call_model, call_tools,
+        AfterCallModel, AfterCallTools, AfterStep, AfterStepInput, AgentActor, AgentActorEvent,
+        AgentError, BeforeCallModel, BeforeCallTools, BeforeStepInput, CallModelEvent, Context,
+        ContextPersistenceHook, ExecutionMetrics, GenericToolExecutor, Hook, HookContinueStep,
+        HookDoneStep, HookEffect, HookError, HookEvent, HookOutcome, HookPhase, HookRegistry,
+        HookStepResult, HookStepUpdate, HookToolCall, IterationEventHook, JobState, LifecycleHook,
+        ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepHookContext, StepResult,
+        StepResultDraft, Tool, ToolCall, ToolCallFunction, ToolDef, ToolExecutor, call_model,
+        call_tools,
     };
     use crate::core::Message;
     use crate::models::{ChatCapability, ChatChunk, ChatError, ChatModel};
@@ -139,6 +142,21 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct RoundTripChatModel {
+        call_count: Arc<AtomicUsize>,
+        seen_messages: Arc<Mutex<Vec<Vec<Message>>>>,
+    }
+
+    impl RoundTripChatModel {
+        fn new(seen_messages: Arc<Mutex<Vec<Vec<Message>>>>) -> Self {
+            Self {
+                call_count: Arc::new(AtomicUsize::new(0)),
+                seen_messages,
+            }
+        }
+    }
+
     #[async_trait]
     impl ChatCapability for MockChatModel {
         async fn chat(
@@ -178,6 +196,43 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl ChatCapability for RoundTripChatModel {
+        async fn chat(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<Message, ChatError> {
+            Ok(Message::assistant("unused"))
+        }
+
+        async fn chat_stream(
+            &self,
+            msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
+            self.seen_messages.lock().unwrap().push(msgs);
+            let call_index = self.call_count.fetch_add(1, Ordering::SeqCst);
+            let chunks = match call_index {
+                0 => vec![ChatChunk {
+                    content: "checking weather".to_string(),
+                    reasoning_content: String::new(),
+                    is_finished: true,
+                    finish_reason: Some("tool_calls".to_string()),
+                    tool_calls: Some(vec![weather_tool_call()]),
+                }],
+                _ => vec![ChatChunk {
+                    content: "final answer".to_string(),
+                    reasoning_content: String::new(),
+                    is_finished: true,
+                    finish_reason: Some("stop".to_string()),
+                    tool_calls: None,
+                }],
+            };
+            Ok(futures::stream::iter(chunks).boxed())
+        }
+    }
+
     struct RecordingHook {
         phases: Arc<Mutex<Vec<String>>>,
     }
@@ -193,7 +248,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl AgentHook for RecordingHook {
+    impl RuntimeHook for RecordingHook {
         fn name(&self) -> &'static str {
             "recording"
         }
@@ -283,7 +338,7 @@ mod tests {
     struct FailingHook;
 
     #[async_trait]
-    impl AgentHook for FailingHook {
+    impl RuntimeHook for FailingHook {
         fn name(&self) -> &'static str {
             "failing"
         }
@@ -302,7 +357,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl AgentHook for TimeoutFinalizeHook {
+    impl RuntimeHook for TimeoutFinalizeHook {
         fn name(&self) -> &'static str {
             "timeout_finalize"
         }
@@ -333,8 +388,190 @@ mod tests {
         }
     }
 
-    fn default_test_hooks() -> HookRegistry {
-        HookRegistry::default()
+    struct OrderingInternalHook {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl OrderingInternalHook {
+        fn push(&self, value: impl Into<String>) {
+            self.seen.lock().unwrap().push(value.into());
+        }
+    }
+
+    #[async_trait]
+    impl RuntimeHook for OrderingInternalHook {
+        fn name(&self) -> &'static str {
+            "ordering_internal"
+        }
+
+        async fn before_step(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            self.push("internal.before_step");
+            Ok(HookOutcome::Continue)
+        }
+
+        async fn after_step(
+            &self,
+            _ctx: &mut StepHookContext<'_>,
+            input: &mut AfterStep<'_>,
+        ) -> Result<HookOutcome, HookError> {
+            let phase = match input.result {
+                StepResultDraft::Continue { .. } => "continue",
+                StepResultDraft::Done { .. } => "done",
+                StepResultDraft::Error(_) => "error",
+            };
+            self.push(format!("internal.after_step:{phase}"));
+            Ok(HookOutcome::Continue)
+        }
+    }
+
+    struct PublicMetadataHook {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl PublicMetadataHook {
+        fn push(&self, value: impl Into<String>) {
+            self.seen.lock().unwrap().push(value.into());
+        }
+    }
+
+    #[async_trait]
+    impl Hook for PublicMetadataHook {
+        fn name(&self) -> &'static str {
+            "public_metadata"
+        }
+
+        async fn before_step(&self, input: BeforeStepInput) -> Result<Vec<HookEffect>, HookError> {
+            let origin = input
+                .metadata
+                .get("origin")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing");
+            self.push(format!("public.before_step.1:{origin}"));
+            Ok(vec![
+                HookEffect::SetMetadata {
+                    key: "origin".to_string(),
+                    value: json!("public-1"),
+                },
+                HookEffect::EmitEvent(HookEvent {
+                    kind: "before_step".to_string(),
+                    payload: json!({ "source": "public_metadata" }),
+                }),
+            ])
+        }
+    }
+
+    struct PublicMetadataReaderHook {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl PublicMetadataReaderHook {
+        fn push(&self, value: impl Into<String>) {
+            self.seen.lock().unwrap().push(value.into());
+        }
+    }
+
+    #[async_trait]
+    impl Hook for PublicMetadataReaderHook {
+        fn name(&self) -> &'static str {
+            "public_metadata_reader"
+        }
+
+        async fn before_step(&self, input: BeforeStepInput) -> Result<Vec<HookEffect>, HookError> {
+            let origin = input
+                .metadata
+                .get("origin")
+                .and_then(|value| value.as_str())
+                .unwrap_or("missing");
+            self.push(format!("public.before_step.2:{origin}"));
+            Ok(vec![])
+        }
+    }
+
+    struct ReplaceAfterStepPublicHook;
+
+    #[async_trait]
+    impl Hook for ReplaceAfterStepPublicHook {
+        fn name(&self) -> &'static str {
+            "public_replace_after_step"
+        }
+
+        async fn after_step(&self, input: AfterStepInput) -> Result<Vec<HookEffect>, HookError> {
+            assert!(matches!(input.result, HookStepResult::Continue(_)));
+            Ok(vec![HookEffect::ReplaceResult(HookStepUpdate::Done(
+                HookDoneStep {
+                    content: "public override".to_string(),
+                    reasoning_content: Some("public reasoning".to_string()),
+                },
+            ))])
+        }
+    }
+
+    struct AbortAfterStepPublicHook;
+
+    #[async_trait]
+    impl Hook for AbortAfterStepPublicHook {
+        fn name(&self) -> &'static str {
+            "public_abort"
+        }
+
+        async fn after_step(&self, _input: AfterStepInput) -> Result<Vec<HookEffect>, HookError> {
+            Ok(vec![HookEffect::Abort {
+                reason: "stop requested".to_string(),
+            }])
+        }
+    }
+
+    struct InvalidReplaceBeforeStepHook;
+
+    #[async_trait]
+    impl Hook for InvalidReplaceBeforeStepHook {
+        fn name(&self) -> &'static str {
+            "invalid_replace"
+        }
+
+        async fn before_step(&self, _input: BeforeStepInput) -> Result<Vec<HookEffect>, HookError> {
+            Ok(vec![HookEffect::ReplaceResult(HookStepUpdate::Done(
+                HookDoneStep {
+                    content: "invalid".to_string(),
+                    reasoning_content: None,
+                },
+            ))])
+        }
+    }
+
+    struct ReplaceContinuePublicHook;
+
+    #[async_trait]
+    impl Hook for ReplaceContinuePublicHook {
+        fn name(&self) -> &'static str {
+            "public_continue_replace"
+        }
+
+        async fn after_step(&self, input: AfterStepInput) -> Result<Vec<HookEffect>, HookError> {
+            match input.result {
+                HookStepResult::Continue(HookContinueStep {
+                    reasoning_content,
+                    tool_calls,
+                    tool_results,
+                    ..
+                }) => Ok(vec![HookEffect::ReplaceResult(HookStepUpdate::Continue(
+                    HookContinueStep {
+                        content: "public continued".to_string(),
+                        reasoning_content,
+                        tool_calls,
+                        tool_results,
+                    },
+                ))]),
+                _ => Ok(vec![]),
+            }
+        }
+    }
+
+    fn default_test_hooks() -> RuntimeHookRegistry {
+        RuntimeHookRegistry::default()
     }
 
     fn weather_tool_call() -> ToolCall {
@@ -376,6 +613,45 @@ mod tests {
         .expect("metrics snapshot should deserialize")
     }
 
+    #[test]
+    fn test_public_tool_call_normalizes_simplified_internal_shape() {
+        let internal = ToolCall {
+            id: "named_call".to_string(),
+            call_type: None,
+            index: Some(1),
+            function: None,
+            name: Some("get_weather".to_string()),
+            arguments: Some(json!({ "city": "北京" })),
+        };
+
+        let public = HookToolCall::from_tool_call(&internal);
+
+        assert_eq!(public.id, "named_call");
+        assert_eq!(public.call_type, "function");
+        assert_eq!(public.index, Some(1));
+        assert_eq!(public.function.name, "get_weather");
+        assert_eq!(public.function.arguments, r#"{"city":"北京"}"#);
+
+        let round_trip = public.into_tool_call();
+        assert_eq!(round_trip.call_type.as_deref(), Some("function"));
+        assert_eq!(
+            round_trip
+                .function
+                .as_ref()
+                .map(|function| function.name.as_str()),
+            Some("get_weather")
+        );
+        assert_eq!(
+            round_trip
+                .function
+                .as_ref()
+                .map(|function| function.arguments.as_str()),
+            Some(r#"{"city":"北京"}"#)
+        );
+        assert!(round_trip.name.is_none());
+        assert!(round_trip.arguments.is_none());
+    }
+
     #[tokio::test]
     async fn test_agent_actor_hooks_lifecycle_without_tools() {
         let model = MockChatModel::new(vec![
@@ -401,8 +677,14 @@ mod tests {
         context.add_message(Message::user("hello"));
 
         let phases = Arc::new(Mutex::new(Vec::new()));
-        let hooks = default_test_hooks().register(RecordingHook::new(phases.clone()));
-        let mut actor = AgentActor::with_hooks(model, executor, context, hooks);
+        let runtime_hooks = default_test_hooks().register(RecordingHook::new(phases.clone()));
+        let mut actor = AgentActor::with_runtime_hooks(
+            model,
+            executor,
+            context,
+            runtime_hooks,
+            HookRegistry::default(),
+        );
 
         let result = actor.run_step(None).await;
 
@@ -470,8 +752,14 @@ mod tests {
         context.add_message(Message::user("weather"));
 
         let phases = Arc::new(Mutex::new(Vec::new()));
-        let hooks = default_test_hooks().register(RecordingHook::new(phases.clone()));
-        let mut actor = AgentActor::with_hooks(model, executor, context, hooks);
+        let runtime_hooks = default_test_hooks().register(RecordingHook::new(phases.clone()));
+        let mut actor = AgentActor::with_runtime_hooks(
+            model,
+            executor,
+            context,
+            runtime_hooks,
+            HookRegistry::default(),
+        );
         let (event_tx, mut event_rx) = mpsc::channel(16);
 
         let result = actor.run_step(Some(event_tx)).await;
@@ -558,6 +846,7 @@ mod tests {
                 | AgentActorEvent::Completed
                 | AgentActorEvent::Cancelled
                 | AgentActorEvent::Error(_)
+                | AgentActorEvent::HookEvent { .. }
                 | AgentActorEvent::MaxIterations { .. } => {}
             }
         }
@@ -581,12 +870,18 @@ mod tests {
         let mut context = Context::new();
         context.add_message(Message::user("hello"));
 
-        let hooks = HookRegistry::empty()
+        let runtime_hooks = RuntimeHookRegistry::empty()
             .register(LifecycleHook)
             .register(FailingHook)
             .register(ContextPersistenceHook)
             .register(IterationEventHook);
-        let mut actor = AgentActor::with_hooks(model, executor, context, hooks);
+        let mut actor = AgentActor::with_runtime_hooks(
+            model,
+            executor,
+            context,
+            runtime_hooks,
+            HookRegistry::default(),
+        );
 
         let result = actor.run_step(None).await;
 
@@ -627,7 +922,7 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let mut actor = crate::agents::AgentActorBuilder::new(model, executor)
             .context(context)
-            .hook(TimeoutFinalizeHook { seen: seen.clone() })
+            .runtime_hook(TimeoutFinalizeHook { seen: seen.clone() })
             .step_timeout(Duration::from_millis(5))
             .build();
 
@@ -693,6 +988,279 @@ mod tests {
                 "tool_timeout_ms": 5_u64,
             }))
         );
+    }
+
+    #[tokio::test]
+    async fn test_public_hooks_run_before_internal_hooks_and_share_step_metadata() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "hello".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let runtime_hooks = RuntimeHookRegistry::empty()
+            .register(OrderingInternalHook { seen: seen.clone() })
+            .register(LifecycleHook);
+        let mut actor = crate::agents::AgentActorBuilder::new(model, executor)
+            .context(context)
+            .runtime_hooks(runtime_hooks)
+            .hook(PublicMetadataHook { seen: seen.clone() })
+            .hook(PublicMetadataReaderHook { seen: seen.clone() })
+            .build();
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+
+        let result = actor.run_step(Some(event_tx)).await;
+
+        match result {
+            StepResult::Done { content, .. } => assert_eq!(content, "hello"),
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(
+            seen.lock().unwrap().clone(),
+            vec![
+                "public.before_step.1:missing",
+                "public.before_step.2:public-1",
+                "internal.before_step",
+                "internal.after_step:done",
+            ]
+        );
+
+        let mut saw_hook_event = false;
+        while let Ok(event) = event_rx.try_recv() {
+            if let AgentActorEvent::HookEvent {
+                hook,
+                kind,
+                payload,
+            } = event
+            {
+                saw_hook_event = true;
+                assert_eq!(hook, "public_metadata");
+                assert_eq!(kind, "before_step");
+                assert_eq!(payload, json!({ "source": "public_metadata" }));
+            }
+        }
+        assert!(saw_hook_event);
+        assert_eq!(actor.state().state, JobState::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_public_after_step_replace_result_updates_internal_hooks() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "checking weather".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("tool_calls".to_string()),
+            tool_calls: Some(vec![weather_tool_call()]),
+        }]);
+
+        let mut executor = GenericToolExecutor::new();
+        executor.register(MockWeatherTool::new());
+
+        let mut context = Context::new();
+        context.add_message(Message::user("weather"));
+
+        let runtime_hooks = RuntimeHookRegistry::empty()
+            .register(LifecycleHook)
+            .register(ContextPersistenceHook);
+        let hooks = HookRegistry::empty().register(ReplaceAfterStepPublicHook);
+        let mut actor =
+            AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
+
+        let result = actor.run_step(None).await;
+
+        match result {
+            StepResult::Done {
+                content,
+                reasoning_content,
+            } => {
+                assert_eq!(content, "public override");
+                assert_eq!(reasoning_content.as_deref(), Some("public reasoning"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(actor.state().state, JobState::Completed);
+        let conversation = actor.context().conversation();
+        assert_eq!(conversation.len(), 2);
+        match conversation.last().unwrap() {
+            Message::Assistant {
+                content,
+                reasoning_content,
+                tool_calls,
+            } => {
+                assert_eq!(content, "public override");
+                assert_eq!(reasoning_content.as_deref(), Some("public reasoning"));
+                assert!(tool_calls.is_none());
+            }
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_public_after_step_abort_short_circuits_internal_hooks() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "hello".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let runtime_hooks = RuntimeHookRegistry::empty()
+            .register(LifecycleHook)
+            .register(OrderingInternalHook { seen: seen.clone() });
+        let hooks = HookRegistry::empty().register(AbortAfterStepPublicHook);
+        let mut actor =
+            AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+
+        let result = actor.run_step(Some(event_tx)).await;
+
+        match result {
+            StepResult::Error(AgentError::Hook {
+                plugin,
+                phase,
+                message,
+            }) => {
+                assert_eq!(plugin, "public_abort");
+                assert_eq!(phase, HookPhase::AfterStep);
+                assert_eq!(message, "stop requested");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(seen.lock().unwrap().as_slice(), ["internal.before_step"]);
+        assert_eq!(actor.state().state, JobState::Failed);
+
+        let mut saw_error_event = false;
+        while let Ok(event) = event_rx.try_recv() {
+            if let AgentActorEvent::Error(AgentError::Hook {
+                plugin,
+                phase,
+                message,
+            }) = event
+            {
+                saw_error_event = true;
+                assert_eq!(plugin, "public_abort");
+                assert_eq!(phase, HookPhase::AfterStep);
+                assert_eq!(message, "stop requested");
+            }
+        }
+        assert!(saw_error_event);
+    }
+
+    #[tokio::test]
+    async fn test_public_hooks_reject_invalid_effects_for_phase() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "hello".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let runtime_hooks = RuntimeHookRegistry::empty().register(LifecycleHook);
+        let hooks = HookRegistry::empty().register(InvalidReplaceBeforeStepHook);
+        let mut actor =
+            AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
+
+        let result = actor.run_step(None).await;
+
+        match result {
+            StepResult::Error(AgentError::Hook {
+                plugin,
+                phase,
+                message,
+            }) => {
+                assert_eq!(plugin, "invalid_replace");
+                assert_eq!(phase, HookPhase::BeforeStep);
+                assert!(message.contains("ReplaceResult is only supported during after_step"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(actor.state().state, JobState::Failed);
+    }
+
+    #[tokio::test]
+    async fn test_public_continue_replace_preserves_tool_call_wire_shape() {
+        let seen_messages = Arc::new(Mutex::new(Vec::new()));
+        let model = RoundTripChatModel::new(seen_messages.clone());
+
+        let mut executor = GenericToolExecutor::new();
+        executor.register(MockWeatherTool::new());
+
+        let mut context = Context::new();
+        context.add_message(Message::user("weather"));
+
+        let runtime_hooks = RuntimeHookRegistry::empty()
+            .register(LifecycleHook)
+            .register(ContextPersistenceHook);
+        let hooks = HookRegistry::empty().register(ReplaceContinuePublicHook);
+        let mut actor =
+            AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
+
+        let first = actor.run_step(None).await;
+        match first {
+            StepResult::Continue { content, .. } => assert_eq!(content, "public continued"),
+            other => panic!("unexpected first result: {other:?}"),
+        }
+
+        let second = actor.run_step(None).await;
+        match second {
+            StepResult::Done { content, .. } => assert_eq!(content, "final answer"),
+            other => panic!("unexpected second result: {other:?}"),
+        }
+
+        let seen_messages = seen_messages.lock().unwrap();
+        assert_eq!(seen_messages.len(), 2);
+        let second_request = &seen_messages[1];
+        let assistant_message = second_request
+            .iter()
+            .find_map(|message| match message {
+                Message::Assistant { tool_calls, .. } => tool_calls.as_ref(),
+                _ => None,
+            })
+            .expect("assistant tool_calls should be preserved");
+
+        assert_eq!(assistant_message.len(), 1);
+        let tool_call = &assistant_message[0];
+        assert_eq!(tool_call.id, "call_weather");
+        assert_eq!(tool_call.call_type.as_deref(), Some("function"));
+        assert_eq!(tool_call.index, Some(0));
+        assert_eq!(
+            tool_call
+                .function
+                .as_ref()
+                .map(|function| function.name.as_str()),
+            Some("get_weather")
+        );
+        assert_eq!(
+            tool_call
+                .function
+                .as_ref()
+                .map(|function| function.arguments.as_str()),
+            Some(r#"{"city":"北京"}"#)
+        );
+        assert!(tool_call.name.is_none());
+        assert!(tool_call.arguments.is_none());
     }
 
     /// 测试 Agent Loop - 流式工具调用流程
@@ -977,6 +1545,16 @@ mod tests {
                 }
                 AgentActorEvent::Error(e) => {
                     println!("\n[Event] Error: {}", e);
+                }
+                AgentActorEvent::HookEvent {
+                    hook,
+                    kind,
+                    payload,
+                } => {
+                    println!(
+                        "\n[Event] HookEvent: hook={}, kind={}, payload={}",
+                        hook, kind, payload
+                    );
                 }
                 AgentActorEvent::MaxIterations { iteration } => {
                     println!("\n[Event] MaxIterations: iteration={}", iteration);

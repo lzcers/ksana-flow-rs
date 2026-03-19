@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::{AgentHook, ExecutionPolicy};
+use super::{ExecutionPolicy, RuntimeHook};
 use crate::agents::AgentState;
 
 #[derive(Debug, Clone, Default)]
@@ -27,7 +27,7 @@ impl TimeoutPolicyHook {
     }
 }
 
-impl AgentHook for TimeoutPolicyHook {
+impl RuntimeHook for TimeoutPolicyHook {
     fn name(&self) -> &'static str {
         "timeout_policy"
     }

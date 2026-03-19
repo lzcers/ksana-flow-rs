@@ -3,42 +3,42 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use super::{
-    AfterCallModel, AfterCallTools, AfterStep, AgentHook, BeforeCallModel, BeforeCallTools,
+    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools,
     ContextPersistenceHook, ErrorEventHook, ExecutionPolicy, HookError, HookOutcome, HookPhase,
-    IterationEventHook, LifecycleHook, MaxIterationsHook, MetricsHook, ModelEventCtx,
+    IterationEventHook, LifecycleHook, MaxIterationsHook, MetricsHook, ModelEventCtx, RuntimeHook,
     StepHookContext, StepResultDraft, StreamingEventHook,
 };
 use crate::agents::{AgentError, AgentState};
 
-pub struct HookRegistry {
-    hooks: Vec<Box<dyn AgentHook>>,
+pub(crate) struct RuntimeHookRegistry {
+    hooks: Vec<Box<dyn RuntimeHook>>,
 }
 
-impl HookRegistry {
-    pub fn empty() -> Self {
+impl RuntimeHookRegistry {
+    pub(crate) fn empty() -> Self {
         Self { hooks: Vec::new() }
     }
 
-    pub fn register<H>(mut self, hook: H) -> Self
+    pub(crate) fn register<H>(mut self, hook: H) -> Self
     where
-        H: AgentHook + 'static,
+        H: RuntimeHook + 'static,
     {
         self.hooks.push(Box::new(hook));
         self
     }
 
-    pub fn push<H>(&mut self, hook: H)
+    pub(crate) fn push<H>(&mut self, hook: H)
     where
-        H: AgentHook + 'static,
+        H: RuntimeHook + 'static,
     {
         self.hooks.push(Box::new(hook));
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &(dyn AgentHook + '_)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &(dyn RuntimeHook + '_)> {
         self.hooks.iter().map(|hook| hook.as_ref())
     }
 
-    pub fn execution_policy(&self, state: &AgentState) -> ExecutionPolicy {
+    pub(crate) fn execution_policy(&self, state: &AgentState) -> ExecutionPolicy {
         let mut policy = ExecutionPolicy::default();
         for hook in self.iter() {
             hook.configure_execution_policy(state, &mut policy);
@@ -46,13 +46,13 @@ impl HookRegistry {
         policy
     }
 
-    pub fn snapshot(&self, name: &str) -> Option<Value> {
+    pub(crate) fn snapshot(&self, name: &str) -> Option<Value> {
         self.iter()
             .find(|hook| hook.name() == name)
             .and_then(|hook| hook.snapshot())
     }
 
-    pub fn snapshots(&self) -> HashMap<String, Value> {
+    pub(crate) fn snapshots(&self) -> HashMap<String, Value> {
         self.iter()
             .filter_map(|hook| {
                 hook.snapshot()
@@ -62,7 +62,7 @@ impl HookRegistry {
     }
 
     fn resolve_outcome(
-        hook: &(dyn AgentHook + '_),
+        hook: &(dyn RuntimeHook + '_),
         phase: HookPhase,
         result: Result<HookOutcome, HookError>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
@@ -77,7 +77,7 @@ impl HookRegistry {
         }
     }
 
-    pub async fn before_step(
+    pub(crate) async fn before_step(
         &self,
         ctx: &mut StepHookContext<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
@@ -91,7 +91,7 @@ impl HookRegistry {
         Ok(None)
     }
 
-    pub async fn before_call_model(
+    pub(crate) async fn before_call_model(
         &self,
         ctx: &mut StepHookContext<'_>,
         input: &mut BeforeCallModel<'_>,
@@ -108,7 +108,7 @@ impl HookRegistry {
         Ok(None)
     }
 
-    pub async fn on_model_event(
+    pub(crate) async fn on_model_event(
         &self,
         ctx: &mut StepHookContext<'_>,
         input: &ModelEventCtx<'_>,
@@ -125,7 +125,7 @@ impl HookRegistry {
         Ok(None)
     }
 
-    pub async fn after_call_model(
+    pub(crate) async fn after_call_model(
         &self,
         ctx: &mut StepHookContext<'_>,
         input: &mut AfterCallModel<'_>,
@@ -142,7 +142,7 @@ impl HookRegistry {
         Ok(None)
     }
 
-    pub async fn before_call_tools(
+    pub(crate) async fn before_call_tools(
         &self,
         ctx: &mut StepHookContext<'_>,
         input: &mut BeforeCallTools<'_>,
@@ -159,7 +159,7 @@ impl HookRegistry {
         Ok(None)
     }
 
-    pub async fn after_call_tools(
+    pub(crate) async fn after_call_tools(
         &self,
         ctx: &mut StepHookContext<'_>,
         input: &mut AfterCallTools<'_>,
@@ -176,7 +176,7 @@ impl HookRegistry {
         Ok(None)
     }
 
-    pub async fn after_step(
+    pub(crate) async fn after_step(
         &self,
         ctx: &mut StepHookContext<'_>,
         input: &mut AfterStep<'_>,
@@ -194,7 +194,7 @@ impl HookRegistry {
     }
 }
 
-impl Default for HookRegistry {
+impl Default for RuntimeHookRegistry {
     fn default() -> Self {
         Self::empty()
             .register(MaxIterationsHook)

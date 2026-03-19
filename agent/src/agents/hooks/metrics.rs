@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{AfterStep, AgentHook, HookError, HookOutcome, StepHookContext};
+use super::{AfterStep, HookError, HookOutcome, RuntimeHook, StepHookContext};
 
 const ACTIVE_STEP_STARTED_AT_KEY: &str = "metrics.active_step_started_at";
 
@@ -33,7 +33,7 @@ impl MetricsHook {
 }
 
 #[async_trait]
-impl AgentHook for MetricsHook {
+impl RuntimeHook for MetricsHook {
     fn name(&self) -> &'static str {
         "metrics"
     }

@@ -30,7 +30,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::hooks::{AgentHook, HookRegistry};
+use super::hooks::{Hook, HookRegistry, RuntimeHook, RuntimeHookRegistry};
 use crate::agents::{AgentState, Context, ToolExecutor};
 use crate::models::ChatCapability;
 
@@ -52,7 +52,9 @@ where
     chat: Arc<C>,
     /// 工具执行器
     tool_executor: Arc<E>,
-    /// 生命周期 hooks
+    /// 内部生命周期 hooks
+    runtime_hooks: RuntimeHookRegistry,
+    /// 面向外部扩展的 hooks
     hooks: HookRegistry,
 }
 
@@ -63,11 +65,34 @@ where
 {
     /// 创建新的 Agent Actor
     pub fn new(chat: C, tool_executor: E, context: Context) -> Self {
-        Self::with_hooks(chat, tool_executor, context, HookRegistry::default())
+        Self::with_runtime_hooks(
+            chat,
+            tool_executor,
+            context,
+            RuntimeHookRegistry::default(),
+            HookRegistry::default(),
+        )
     }
 
-    /// 创建带自定义 hooks 的 Agent Actor
+    /// 创建带自定义扩展 hooks 的 Agent Actor
     pub fn with_hooks(chat: C, tool_executor: E, context: Context, hooks: HookRegistry) -> Self {
+        Self::with_runtime_hooks(
+            chat,
+            tool_executor,
+            context,
+            RuntimeHookRegistry::default(),
+            hooks,
+        )
+    }
+
+    /// 创建带内部 runtime hooks 和扩展 hooks 的 Agent Actor
+    pub(crate) fn with_runtime_hooks(
+        chat: C,
+        tool_executor: E,
+        context: Context,
+        runtime_hooks: RuntimeHookRegistry,
+        hooks: HookRegistry,
+    ) -> Self {
         Self {
             state: AgentState {
                 job_id: Uuid::new_v4(),
@@ -85,6 +110,7 @@ where
             },
             chat: Arc::new(chat),
             tool_executor: Arc::new(tool_executor),
+            runtime_hooks,
             hooks,
         }
     }
@@ -109,32 +135,40 @@ where
         &mut self.state.context
     }
 
-    /// 获取 hooks 注册表
+    /// 获取扩展 hooks 注册表
     pub fn hooks(&self) -> &HookRegistry {
         &self.hooks
     }
 
-    /// 获取可变 hooks 注册表
+    /// 获取可变扩展 hooks 注册表
     pub fn hooks_mut(&mut self) -> &mut HookRegistry {
         &mut self.hooks
     }
 
     /// 读取单个 hook 的状态快照
     pub fn hook_snapshot(&self, name: &str) -> Option<Value> {
-        self.hooks.snapshot(name)
+        self.runtime_hooks.snapshot(name)
     }
 
     /// 读取所有支持快照的 hook 状态
     pub fn hook_snapshots(&self) -> HashMap<String, Value> {
-        self.hooks.snapshots()
+        self.runtime_hooks.snapshots()
     }
 
-    /// 追加一个 hook
+    /// 追加一个扩展 hook
     pub fn add_hook<H>(&mut self, hook: H)
     where
-        H: AgentHook + 'static,
+        H: Hook + 'static,
     {
         self.hooks.push(hook);
+    }
+
+    /// 追加一个内部 runtime hook
+    pub(crate) fn add_runtime_hook<H>(&mut self, hook: H)
+    where
+        H: RuntimeHook + 'static,
+    {
+        self.runtime_hooks.push(hook);
     }
 
     /// 发送事件（忽略发送失败）

@@ -16,11 +16,16 @@ pub use agent_state::{AgentState, JobState};
 pub use call_model::{CallModelEvent, CallToolResult, call_model, call_tool, call_tools};
 pub use context::{Context, Layer, LayerKind, LayerMeta};
 pub use hooks::{
-    AfterCallModel, AfterCallTools, AfterStep, AgentHook, BeforeCallModel, BeforeCallTools,
-    ContextPersistenceHook, ErrorEventHook, ExecutionMetrics, ExecutionPolicy, HookError,
-    HookOutcome, HookPhase, HookRegistry, IterationEventHook, LifecycleHook, MaxIterationsHook,
-    MetricsHook, ModelCallOutput, ModelEventCtx, StepHookContext, StepResultDraft, StepScratchpad,
-    StreamingEventHook, TimeoutPolicyHook,
+    AfterStepInput, BeforeStepInput, Hook, HookContinueStep, HookDoneStep, HookEffect, HookError,
+    HookEvent, HookModelEvent, HookPhase, HookRegistry, HookStepError, HookStepResult,
+    HookStepUpdate, HookToolCall, HookToolCallFunction, HookToolResult, ModelEventInput,
+};
+
+pub(crate) use hooks::{
+    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools,
+    ContextPersistenceHook, ExecutionMetrics, HookOutcome, IterationEventHook, LifecycleHook,
+    ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepHookContext, StepResultDraft,
+    TimeoutPolicyHook,
 };
 
 pub use tools::{

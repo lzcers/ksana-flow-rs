@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 
-use super::{AfterStep, AgentHook, HookError, HookOutcome, StepHookContext, StepResultDraft};
+use super::{AfterStep, HookError, HookOutcome, RuntimeHook, StepHookContext, StepResultDraft};
 
 #[derive(Default)]
 pub struct LifecycleHook;
 
 #[async_trait]
-impl AgentHook for LifecycleHook {
+impl RuntimeHook for LifecycleHook {
     fn name(&self) -> &'static str {
         "lifecycle"
     }

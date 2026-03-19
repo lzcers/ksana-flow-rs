@@ -6,8 +6,8 @@ use super::lifecycle::StepLifecycle;
 use super::{
     AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, AgentError, StepResult,
 };
-use crate::agents::hooks::StepResultDraft;
 use crate::agents::ToolExecutor;
+use crate::agents::hooks::StepResultDraft;
 use crate::models::ChatCapability;
 
 /// 循环执行状态
@@ -33,50 +33,6 @@ where
     C: ChatCapability + Send + Sync,
     E: ToolExecutor + Send,
 {
-    /// 执行单步迭代
-    ///
-    /// # Arguments
-    /// * `event_tx` - 可选的事件发送器，用于报告执行过程中的各种事件
-    ///
-    /// # Returns
-    /// 返回 `StepResult` 表示执行结果：
-    /// - `Continue`: 有工具调用，需要继续迭代
-    /// - `Done`: 无工具调用，执行完成
-    /// - `Error`: 执行出错
-    pub async fn run_step(
-        &mut self,
-        event_tx: Option<mpsc::Sender<AgentActorEvent>>,
-    ) -> StepResult {
-        let chat = Arc::clone(&self.chat);
-        let tool_executor = Arc::clone(&self.tool_executor);
-        let execution_policy = self.hooks.execution_policy(&self.state);
-        let mut lifecycle = StepLifecycle::new(
-            &mut self.state,
-            &self.hooks,
-            event_tx.as_ref(),
-            execution_policy,
-        );
-
-        let final_result = if let Some(timeout) = lifecycle.step_timeout() {
-            match tokio::time::timeout(
-                timeout,
-                lifecycle.start(chat.as_ref(), tool_executor.as_ref()),
-            )
-            .await
-            {
-                Ok(result) => StepLifecycle::resolve_control(result, |result| result),
-                Err(_) => StepResultDraft::Error(AgentError::Timeout),
-            }
-        } else {
-            StepLifecycle::resolve_control(
-                lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await,
-                |result| result,
-            )
-        };
-
-        lifecycle.finish(final_result).await
-    }
-
     fn set_loop_state(&mut self, loop_state: &mut LoopState, next_state: LoopState) {
         *loop_state = next_state;
         self.state.state = match next_state {
@@ -140,6 +96,51 @@ where
             }
             StepResult::Error(_) => false,
         }
+    }
+
+    /// 执行单步迭代
+    ///
+    /// # Arguments
+    /// * `event_tx` - 可选的事件发送器，用于报告执行过程中的各种事件
+    ///
+    /// # Returns
+    /// 返回 `StepResult` 表示执行结果：
+    /// - `Continue`: 有工具调用，需要继续迭代
+    /// - `Done`: 无工具调用，执行完成
+    /// - `Error`: 执行出错
+    pub async fn run_step(
+        &mut self,
+        event_tx: Option<mpsc::Sender<AgentActorEvent>>,
+    ) -> StepResult {
+        let chat = Arc::clone(&self.chat);
+        let tool_executor = Arc::clone(&self.tool_executor);
+        let execution_policy = self.runtime_hooks.execution_policy(&self.state);
+        let mut lifecycle = StepLifecycle::new(
+            &mut self.state,
+            &self.runtime_hooks,
+            &self.hooks,
+            event_tx.as_ref(),
+            execution_policy,
+        );
+
+        let final_result = if let Some(timeout) = lifecycle.step_timeout() {
+            match tokio::time::timeout(
+                timeout,
+                lifecycle.start(chat.as_ref(), tool_executor.as_ref()),
+            )
+            .await
+            {
+                Ok(result) => StepLifecycle::resolve_control(result, |result| result),
+                Err(_) => StepResultDraft::Error(AgentError::Timeout),
+            }
+        } else {
+            StepLifecycle::resolve_control(
+                lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await,
+                |result| result,
+            )
+        };
+
+        lifecycle.finish(final_result).await
     }
 
     /// 启动循环执行，返回控制句柄

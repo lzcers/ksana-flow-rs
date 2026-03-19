@@ -1,3 +1,4 @@
+use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::agents::hooks::{HookPhase, StepResultDraft};
@@ -58,6 +59,12 @@ pub enum AgentActorEvent {
     Iteration {
         iteration: usize,
         message_count: usize,
+    },
+    /// 公共 hook 发送的自定义事件
+    HookEvent {
+        hook: String,
+        kind: String,
+        payload: Value,
     },
     /// 达到最大迭代次数
     MaxIterations { iteration: usize },

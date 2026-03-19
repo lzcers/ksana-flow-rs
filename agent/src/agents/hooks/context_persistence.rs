@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 
-use super::{AfterStep, AgentHook, HookError, HookOutcome, StepHookContext, StepResultDraft};
+use super::{AfterStep, HookError, HookOutcome, RuntimeHook, StepHookContext, StepResultDraft};
 use crate::core::Message;
 
 #[derive(Default)]
 pub struct ContextPersistenceHook;
 
 #[async_trait]
-impl AgentHook for ContextPersistenceHook {
+impl RuntimeHook for ContextPersistenceHook {
     fn name(&self) -> &'static str {
         "context_persistence"
     }

@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 
-use super::{AgentHook, HookError, HookOutcome, StepHookContext, StepResultDraft};
+use super::{HookError, HookOutcome, RuntimeHook, StepHookContext, StepResultDraft};
 use crate::{agents::AgentActorEvent, agents::AgentError};
 
 #[derive(Default)]
 pub struct MaxIterationsHook;
 
 #[async_trait]
-impl AgentHook for MaxIterationsHook {
+impl RuntimeHook for MaxIterationsHook {
     fn name(&self) -> &'static str {
         "max_iterations"
     }

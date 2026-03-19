@@ -1,13 +1,13 @@
 use async_trait::async_trait;
 
-use super::{AfterStep, AgentHook, HookError, HookOutcome, StepHookContext, StepResultDraft};
+use super::{AfterStep, HookError, HookOutcome, RuntimeHook, StepHookContext, StepResultDraft};
 use crate::agents::AgentActorEvent;
 
 #[derive(Default)]
 pub struct IterationEventHook;
 
 #[async_trait]
-impl AgentHook for IterationEventHook {
+impl RuntimeHook for IterationEventHook {
     fn name(&self) -> &'static str {
         "iteration_events"
     }
