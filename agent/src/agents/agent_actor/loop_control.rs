@@ -1,6 +1,12 @@
+use std::sync::Arc;
+
 use tokio::sync::mpsc;
 
-use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
+use super::lifecycle::StepLifecycle;
+use super::{
+    AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, AgentError, StepResult,
+};
+use crate::agents::hooks::StepResultDraft;
 use crate::agents::ToolExecutor;
 use crate::models::ChatCapability;
 
@@ -27,6 +33,51 @@ where
     C: ChatCapability + Send + Sync,
     E: ToolExecutor + Send,
 {
+    /// 执行单步迭代
+    ///
+    /// # Arguments
+    /// * `event_tx` - 可选的事件发送器，用于报告执行过程中的各种事件
+    ///
+    /// # Returns
+    /// 返回 `StepResult` 表示执行结果：
+    /// - `Continue`: 有工具调用，需要继续迭代
+    /// - `Done`: 无工具调用，执行完成
+    /// - `Error`: 执行出错
+    pub async fn run_step(
+        &mut self,
+        event_tx: Option<mpsc::Sender<AgentActorEvent>>,
+    ) -> StepResult {
+        let chat = Arc::clone(&self.chat);
+        let tool_executor = Arc::clone(&self.tool_executor);
+        let execution_policy = self.hooks.execution_policy(&self.state);
+        let mut step = StepLifecycle::new(
+            &mut self.state,
+            &self.hooks,
+            event_tx.as_ref(),
+            execution_policy,
+        );
+
+        let final_result = if let Some(timeout) = step.step_timeout() {
+            match tokio::time::timeout(
+                timeout,
+                step.execute_core(chat.as_ref(), tool_executor.as_ref()),
+            )
+            .await
+            {
+                Ok(result) => StepLifecycle::settle_control(result, |result| result),
+                Err(_) => StepResultDraft::Error(AgentError::Timeout),
+            }
+        } else {
+            StepLifecycle::settle_control(
+                step.execute_core(chat.as_ref(), tool_executor.as_ref())
+                    .await,
+                |result| result,
+            )
+        };
+
+        step.finish(final_result).await
+    }
+
     fn set_loop_state(&mut self, loop_state: &mut LoopState, next_state: LoopState) {
         *loop_state = next_state;
         self.state.state = match next_state {
