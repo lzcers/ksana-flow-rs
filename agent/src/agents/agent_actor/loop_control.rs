@@ -123,24 +123,21 @@ where
             execution_policy,
         );
 
-        let final_result = if let Some(timeout) = lifecycle.step_timeout() {
+        if let Some(timeout) = lifecycle.step_timeout() {
             match tokio::time::timeout(
                 timeout,
                 lifecycle.start(chat.as_ref(), tool_executor.as_ref()),
             )
             .await
             {
-                Ok(result) => StepLifecycle::resolve_control(result, |result| result),
-                Err(_) => StepResultDraft::Error(AgentError::Timeout),
+                Ok(()) => {}
+                Err(_) => lifecycle.set_result(StepResultDraft::Error(AgentError::Timeout)),
             }
         } else {
-            StepLifecycle::resolve_control(
-                lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await,
-                |result| result,
-            )
-        };
+            lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+        }
 
-        lifecycle.finish(final_result).await
+        lifecycle.finish().await
     }
 
     /// 启动循环执行，返回控制句柄

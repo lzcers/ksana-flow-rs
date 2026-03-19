@@ -6,6 +6,8 @@
 //!   控制命令、控制句柄，以及单步执行结果。
 //! - `lifecycle`: 实现单步执行的生命周期内部流程，负责 hook 调度、
 //!   模型调用流处理、工具调用以及 step 结果组装。
+//! - `commit`: 实现单步最终结果的 reducer / committer，把状态迁移、
+//!   上下文持久化和提交事件统一收口。
 //! - `loop_control`: 实现 `run_step`、后台循环执行与暂停、继续、取消等
 //!   控制逻辑，对应 Actor 的对外运行控制行为。
 //! - `builder`: 实现 `AgentActorBuilder`，负责 Actor 初始化参数装配，
@@ -16,6 +18,8 @@
 
 /// 构建器相关实现位于 `builder` 子模块。
 mod builder;
+/// 单步提交 reducer / committer 位于 `commit` 子模块。
+mod commit;
 /// 单步执行生命周期位于 `lifecycle` 子模块。
 mod lifecycle;
 /// 后台循环控制逻辑位于 `loop_control` 子模块。

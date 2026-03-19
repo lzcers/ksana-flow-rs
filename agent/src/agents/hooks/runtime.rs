@@ -2,11 +2,9 @@ use std::{any::Any, collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
 use serde_json::Value;
-use tokio::sync::mpsc;
 
-use crate::agents::{
-    AgentActorEvent, AgentError, AgentState, CallModelEvent, CallToolResult, ToolCall, ToolDef,
-};
+use super::{Effect, StepFrame};
+use crate::agents::{AgentError, AgentState, CallModelEvent, CallToolResult, ToolCall, ToolDef};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookPhase {
@@ -48,12 +46,6 @@ pub(crate) enum StepResultDraft {
     Error(AgentError),
 }
 
-#[derive(Debug, Clone)]
-pub(crate) enum HookOutcome {
-    Continue,
-    Finish(StepResultDraft),
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ExecutionPolicy {
     pub step_timeout: Option<Duration>,
@@ -66,42 +58,32 @@ pub(crate) struct StepScratchpad {
 }
 
 impl StepScratchpad {
-    pub(crate) fn insert<T: Send + Sync + 'static>(&mut self, key: &'static str, value: T) {
-        self.inner.insert(key, Box::new(value));
+    pub(crate) fn insert_box(&mut self, key: &'static str, value: Box<dyn Any + Send + Sync>) {
+        self.inner.insert(key, value);
     }
 
     pub(crate) fn get<T: Send + Sync + 'static>(&self, key: &'static str) -> Option<&T> {
         self.inner.get(key)?.downcast_ref::<T>()
     }
-
-    pub(crate) fn get_mut<T: Send + Sync + 'static>(
-        &mut self,
-        key: &'static str,
-    ) -> Option<&mut T> {
-        self.inner.get_mut(key)?.downcast_mut::<T>()
-    }
 }
 
-pub(crate) struct StepHookContext<'a> {
-    pub state: &'a mut AgentState,
-    pub event_tx: Option<&'a mpsc::Sender<AgentActorEvent>>,
-    pub scratchpad: &'a mut StepScratchpad,
-}
-
-impl StepHookContext<'_> {
-    pub(crate) async fn send_event(&self, event: AgentActorEvent) {
-        if let Some(tx) = self.event_tx {
-            let _ = tx.send(event).await;
-        }
-    }
+#[allow(dead_code)]
+pub(crate) struct BeforeStep<'a> {
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
 }
 
 #[allow(dead_code)]
 pub(crate) struct BeforeCallModel<'a> {
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
     pub tools: &'a [ToolDef],
 }
 
+#[allow(dead_code)]
 pub(crate) struct ModelEventCtx<'a> {
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
     pub event: &'a CallModelEvent,
 }
 
@@ -122,21 +104,33 @@ impl ModelCallOutput {
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct AfterCallModel<'a> {
-    pub output: &'a mut ModelCallOutput,
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
+    pub output: &'a ModelCallOutput,
 }
 
+#[allow(dead_code)]
 pub(crate) struct BeforeCallTools<'a> {
-    pub tool_calls: &'a mut Vec<ToolCall>,
-}
-
-pub(crate) struct AfterCallTools<'a> {
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
     pub tool_calls: &'a [ToolCall],
-    pub tool_results: &'a mut Vec<CallToolResult>,
 }
 
+#[allow(dead_code)]
+pub(crate) struct AfterCallTools<'a> {
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
+    pub tool_calls: &'a [ToolCall],
+    pub tool_results: &'a [CallToolResult],
+}
+
+#[allow(dead_code)]
 pub(crate) struct AfterStep<'a> {
-    pub result: &'a mut StepResultDraft,
+    pub state: &'a AgentState,
+    pub frame: &'a StepFrame,
+    pub result: &'a StepResultDraft,
 }
 
 #[async_trait]
@@ -149,55 +143,37 @@ pub(crate) trait RuntimeHook: Send + Sync {
         None
     }
 
-    async fn before_step(&self, _ctx: &mut StepHookContext<'_>) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+    async fn before_step(&self, _input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 
     async fn before_call_model(
         &self,
-        _ctx: &mut StepHookContext<'_>,
-        _input: &mut BeforeCallModel<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+        _input: BeforeCallModel<'_>,
+    ) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 
-    async fn on_model_event(
-        &self,
-        _ctx: &mut StepHookContext<'_>,
-        _input: &ModelEventCtx<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+    async fn on_model_event(&self, _input: ModelEventCtx<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 
-    async fn after_call_model(
-        &self,
-        _ctx: &mut StepHookContext<'_>,
-        _input: &mut AfterCallModel<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+    async fn after_call_model(&self, _input: AfterCallModel<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 
     async fn before_call_tools(
         &self,
-        _ctx: &mut StepHookContext<'_>,
-        _input: &mut BeforeCallTools<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+        _input: BeforeCallTools<'_>,
+    ) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 
-    async fn after_call_tools(
-        &self,
-        _ctx: &mut StepHookContext<'_>,
-        _input: &mut AfterCallTools<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+    async fn after_call_tools(&self, _input: AfterCallTools<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 
-    async fn after_step(
-        &self,
-        _ctx: &mut StepHookContext<'_>,
-        _input: &mut AfterStep<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        Ok(HookOutcome::Continue)
+    async fn after_step(&self, _input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![])
     }
 }

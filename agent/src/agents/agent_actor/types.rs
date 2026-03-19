@@ -47,6 +47,8 @@ pub enum AgentActorEvent {
         /// 工具调用列表（如果有）
         tool_calls: Option<Vec<ToolCall>>,
     },
+    /// 单步结果已提交，表示最终落地到状态/上下文的结果
+    StepFinalized { result: StepResult },
     /// 模型请求工具调用
     ToolCalls(Vec<ToolCall>),
     /// 单个工具执行完成

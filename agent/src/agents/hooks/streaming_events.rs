@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 
 use super::{
-    AfterCallModel, AfterCallTools, BeforeCallTools, HookError, HookOutcome, ModelEventCtx,
-    RuntimeHook, StepHookContext,
+    AfterCallModel, AfterCallTools, BeforeCallTools, Effect, HookError, ModelEventCtx, RuntimeHook,
 };
 use crate::agents::{AgentActorEvent, CallModelEvent};
 
@@ -15,64 +14,51 @@ impl RuntimeHook for StreamingEventHook {
         "streaming_events"
     }
 
-    async fn on_model_event(
-        &self,
-        ctx: &mut StepHookContext<'_>,
-        input: &ModelEventCtx<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        match input.event {
+    async fn on_model_event(&self, input: ModelEventCtx<'_>) -> Result<Vec<Effect>, HookError> {
+        let effect = match input.event {
             CallModelEvent::TextChunk(text) => {
-                ctx.send_event(AgentActorEvent::ContentChunk(text.clone()))
-                    .await;
+                Some(Effect::EmitNow(AgentActorEvent::ContentChunk(text.clone())))
             }
-            CallModelEvent::ReasoningChunk(text) => {
-                ctx.send_event(AgentActorEvent::ReasoningChunk(text.clone()))
-                    .await;
-            }
-            CallModelEvent::Completed { .. } | CallModelEvent::Error(_) => {}
-        }
-        Ok(HookOutcome::Continue)
+            CallModelEvent::ReasoningChunk(text) => Some(Effect::EmitNow(
+                AgentActorEvent::ReasoningChunk(text.clone()),
+            )),
+            CallModelEvent::Completed { .. } | CallModelEvent::Error(_) => None,
+        };
+        Ok(effect.into_iter().collect())
     }
 
-    async fn after_call_model(
-        &self,
-        ctx: &mut StepHookContext<'_>,
-        input: &mut AfterCallModel<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        ctx.send_event(AgentActorEvent::StepCompleted {
+    async fn after_call_model(&self, input: AfterCallModel<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(vec![Effect::EmitNow(AgentActorEvent::StepCompleted {
             content: input.output.content.clone(),
             reasoning_content: input.output.reasoning_content.clone(),
             tool_calls: input.output.tool_calls_option(),
-        })
-        .await;
-        Ok(HookOutcome::Continue)
+        })])
     }
 
     async fn before_call_tools(
         &self,
-        ctx: &mut StepHookContext<'_>,
-        input: &mut BeforeCallTools<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        if !input.tool_calls.is_empty() {
-            ctx.send_event(AgentActorEvent::ToolCalls(input.tool_calls.clone()))
-                .await;
+        input: BeforeCallTools<'_>,
+    ) -> Result<Vec<Effect>, HookError> {
+        if input.tool_calls.is_empty() {
+            Ok(vec![])
+        } else {
+            Ok(vec![Effect::EmitNow(AgentActorEvent::ToolCalls(
+                input.tool_calls.to_vec(),
+            ))])
         }
-        Ok(HookOutcome::Continue)
     }
 
-    async fn after_call_tools(
-        &self,
-        ctx: &mut StepHookContext<'_>,
-        input: &mut AfterCallTools<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        for result in input.tool_results.iter() {
-            ctx.send_event(AgentActorEvent::ToolResult {
-                call_id: result.call_id.clone(),
-                success: result.success,
-                output: result.output.clone(),
+    async fn after_call_tools(&self, input: AfterCallTools<'_>) -> Result<Vec<Effect>, HookError> {
+        Ok(input
+            .tool_results
+            .iter()
+            .map(|result| {
+                Effect::EmitNow(AgentActorEvent::ToolResult {
+                    call_id: result.call_id.clone(),
+                    success: result.success,
+                    output: result.output.clone(),
+                })
             })
-            .await;
-        }
-        Ok(HookOutcome::Continue)
+            .collect())
     }
 }

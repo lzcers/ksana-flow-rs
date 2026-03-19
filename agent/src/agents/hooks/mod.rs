@@ -1,8 +1,5 @@
-mod context_persistence;
-mod error_events;
-mod iteration_events;
-mod lifecycle;
-mod max_iterations;
+mod effects;
+mod frame;
 mod metrics;
 mod pipeline;
 mod public;
@@ -18,18 +15,16 @@ pub use public::{
 };
 pub use runtime::{HookError, HookPhase};
 
-pub(crate) use context_persistence::ContextPersistenceHook;
-pub(crate) use error_events::ErrorEventHook;
-pub(crate) use iteration_events::IterationEventHook;
-pub(crate) use lifecycle::LifecycleHook;
-pub(crate) use max_iterations::MaxIterationsHook;
-pub(crate) use metrics::{ExecutionMetrics, MetricsHook};
+pub(crate) use effects::{Effect, EffectHandle, EffectSignal};
+pub(crate) use frame::StepFrame;
+#[cfg(test)]
+pub(crate) use metrics::ExecutionMetrics;
+pub(crate) use metrics::MetricsHook;
 pub(crate) use pipeline::HookPipeline;
 pub(crate) use registry::RuntimeHookRegistry;
 pub(crate) use runtime::{
-    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, ExecutionPolicy,
-    HookOutcome, ModelCallOutput, ModelEventCtx, RuntimeHook, StepHookContext, StepResultDraft,
-    StepScratchpad,
+    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, BeforeStep,
+    ExecutionPolicy, ModelCallOutput, ModelEventCtx, RuntimeHook, StepResultDraft, StepScratchpad,
 };
 pub(crate) use streaming_events::StreamingEventHook;
 pub(crate) use timeout_policy::TimeoutPolicyHook;

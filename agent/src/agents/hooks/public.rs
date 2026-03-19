@@ -273,7 +273,7 @@ impl AfterStepInput {
         Self {
             job_id: state.job_id,
             iteration: state.iteration,
-            job_state: state.state,
+            job_state: predicted_job_state(result),
             result: HookStepResult::from_draft(result),
             metadata: metadata.clone(),
         }
@@ -378,5 +378,14 @@ fn hook_error_kind(err: &AgentError) -> &'static str {
         AgentError::Cancelled => "cancelled",
         AgentError::Timeout => "timeout",
         AgentError::MaxIterations(_) => "max_iterations",
+    }
+}
+
+fn predicted_job_state(result: &StepResultDraft) -> JobState {
+    match result {
+        StepResultDraft::Continue { .. } => JobState::WaitingInput,
+        StepResultDraft::Done { .. } => JobState::Completed,
+        StepResultDraft::Error(AgentError::Cancelled) => JobState::Cancelled,
+        StepResultDraft::Error(_) => JobState::Failed,
     }
 }

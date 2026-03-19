@@ -8,13 +8,12 @@ mod tests {
     use crate::agents::tools::playwright_cli::PlaywrightCliTool;
     use crate::agents::{
         AfterCallModel, AfterCallTools, AfterStep, AfterStepInput, AgentActor, AgentActorEvent,
-        AgentError, BeforeCallModel, BeforeCallTools, BeforeStepInput, CallModelEvent, Context,
-        ContextPersistenceHook, ExecutionMetrics, GenericToolExecutor, Hook, HookContinueStep,
-        HookDoneStep, HookEffect, HookError, HookEvent, HookOutcome, HookPhase, HookRegistry,
-        HookStepResult, HookStepUpdate, HookToolCall, IterationEventHook, JobState, LifecycleHook,
-        ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepHookContext, StepResult,
-        StepResultDraft, Tool, ToolCall, ToolCallFunction, ToolDef, ToolExecutor, call_model,
-        call_tools,
+        AgentError, BeforeCallModel, BeforeCallTools, BeforeStep, BeforeStepInput, CallModelEvent,
+        Context, Effect, ExecutionMetrics, GenericToolExecutor, Hook, HookContinueStep,
+        HookDoneStep, HookEffect, HookError, HookEvent, HookPhase, HookRegistry, HookStepResult,
+        HookStepUpdate, HookToolCall, JobState, ModelEventCtx, RuntimeHook, RuntimeHookRegistry,
+        StepResult, StepResultDraft, Tool, ToolCall, ToolCallFunction, ToolDef, ToolExecutor,
+        call_model, call_tools,
     };
     use crate::core::Message;
     use crate::models::{ChatCapability, ChatChunk, ChatError, ChatModel};
@@ -253,33 +252,27 @@ mod tests {
             "recording"
         }
 
-        async fn before_step(
-            &self,
-            ctx: &mut StepHookContext<'_>,
-        ) -> Result<HookOutcome, HookError> {
-            ctx.scratchpad.insert("event_count", 0usize);
+        async fn before_step(&self, _input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
             self.push("before_step");
-            Ok(HookOutcome::Continue)
+            Ok(vec![Effect::store_scratchpad("event_count", 0usize)])
         }
 
         async fn before_call_model(
             &self,
-            _ctx: &mut StepHookContext<'_>,
-            _input: &mut BeforeCallModel<'_>,
-        ) -> Result<HookOutcome, HookError> {
+            _input: BeforeCallModel<'_>,
+        ) -> Result<Vec<Effect>, HookError> {
             self.push("before_call_model");
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
 
-        async fn on_model_event(
-            &self,
-            ctx: &mut StepHookContext<'_>,
-            input: &ModelEventCtx<'_>,
-        ) -> Result<HookOutcome, HookError> {
-            if let Some(event_count) = ctx.scratchpad.get_mut::<usize>("event_count") {
-                *event_count += 1;
-            }
-
+        async fn on_model_event(&self, input: ModelEventCtx<'_>) -> Result<Vec<Effect>, HookError> {
+            let event_count = input
+                .frame
+                .scratchpad
+                .get::<usize>("event_count")
+                .copied()
+                .unwrap_or_default()
+                + 1;
             let phase = match input.event {
                 CallModelEvent::TextChunk(_) => "on_model_event:text",
                 CallModelEvent::ReasoningChunk(_) => "on_model_event:reasoning",
@@ -287,51 +280,45 @@ mod tests {
                 CallModelEvent::Error(_) => "on_model_event:error",
             };
             self.push(phase);
-            Ok(HookOutcome::Continue)
+            Ok(vec![Effect::store_scratchpad("event_count", event_count)])
         }
 
         async fn after_call_model(
             &self,
-            _ctx: &mut StepHookContext<'_>,
-            input: &mut AfterCallModel<'_>,
-        ) -> Result<HookOutcome, HookError> {
+            input: AfterCallModel<'_>,
+        ) -> Result<Vec<Effect>, HookError> {
             self.push(format!(
                 "after_call_model:{}",
                 input.output.tool_calls.len()
             ));
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
 
         async fn before_call_tools(
             &self,
-            _ctx: &mut StepHookContext<'_>,
-            input: &mut BeforeCallTools<'_>,
-        ) -> Result<HookOutcome, HookError> {
+            input: BeforeCallTools<'_>,
+        ) -> Result<Vec<Effect>, HookError> {
             self.push(format!("before_call_tools:{}", input.tool_calls.len()));
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
 
         async fn after_call_tools(
             &self,
-            _ctx: &mut StepHookContext<'_>,
-            input: &mut AfterCallTools<'_>,
-        ) -> Result<HookOutcome, HookError> {
+            input: AfterCallTools<'_>,
+        ) -> Result<Vec<Effect>, HookError> {
             self.push(format!("after_call_tools:{}", input.tool_results.len()));
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
 
-        async fn after_step(
-            &self,
-            ctx: &mut StepHookContext<'_>,
-            _input: &mut AfterStep<'_>,
-        ) -> Result<HookOutcome, HookError> {
-            let event_count = ctx
+        async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
+            let event_count = input
+                .frame
                 .scratchpad
                 .get::<usize>("event_count")
                 .copied()
                 .unwrap_or_default();
             self.push(format!("after_step:{event_count}"));
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
     }
 
@@ -345,9 +332,8 @@ mod tests {
 
         async fn before_call_model(
             &self,
-            _ctx: &mut StepHookContext<'_>,
-            _input: &mut BeforeCallModel<'_>,
-        ) -> Result<HookOutcome, HookError> {
+            _input: BeforeCallModel<'_>,
+        ) -> Result<Vec<Effect>, HookError> {
             Err(HookError::new("forced failure"))
         }
     }
@@ -362,29 +348,24 @@ mod tests {
             "timeout_finalize"
         }
 
-        async fn before_step(
-            &self,
-            ctx: &mut StepHookContext<'_>,
-        ) -> Result<HookOutcome, HookError> {
-            ctx.scratchpad
-                .insert("timeout_finalize.marker", "before-step".to_string());
-            Ok(HookOutcome::Continue)
+        async fn before_step(&self, _input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
+            Ok(vec![Effect::store_scratchpad(
+                "timeout_finalize.marker",
+                "before-step".to_string(),
+            )])
         }
 
-        async fn after_step(
-            &self,
-            ctx: &mut StepHookContext<'_>,
-            input: &mut AfterStep<'_>,
-        ) -> Result<HookOutcome, HookError> {
+        async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
             if matches!(input.result, StepResultDraft::Error(AgentError::Timeout)) {
-                let marker = ctx
+                let marker = input
+                    .frame
                     .scratchpad
                     .get::<String>("timeout_finalize.marker")
                     .cloned()
                     .unwrap_or_else(|| "missing".to_string());
                 self.seen.lock().unwrap().push(marker);
             }
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
     }
 
@@ -404,26 +385,19 @@ mod tests {
             "ordering_internal"
         }
 
-        async fn before_step(
-            &self,
-            _ctx: &mut StepHookContext<'_>,
-        ) -> Result<HookOutcome, HookError> {
+        async fn before_step(&self, _input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
             self.push("internal.before_step");
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
 
-        async fn after_step(
-            &self,
-            _ctx: &mut StepHookContext<'_>,
-            input: &mut AfterStep<'_>,
-        ) -> Result<HookOutcome, HookError> {
+        async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
             let phase = match input.result {
                 StepResultDraft::Continue { .. } => "continue",
                 StepResultDraft::Done { .. } => "done",
                 StepResultDraft::Error(_) => "error",
             };
             self.push(format!("internal.after_step:{phase}"));
-            Ok(HookOutcome::Continue)
+            Ok(vec![])
         }
     }
 
@@ -823,12 +797,17 @@ mod tests {
         }
 
         let mut saw_step_completed = false;
+        let mut saw_step_finalized = false;
         let mut saw_tool_calls = false;
         let mut saw_tool_result = false;
         let mut saw_iteration = false;
         while let Ok(event) = event_rx.try_recv() {
             match event {
                 AgentActorEvent::StepCompleted { .. } => saw_step_completed = true,
+                AgentActorEvent::StepFinalized { result } => {
+                    saw_step_finalized = true;
+                    assert!(matches!(result, StepResult::Continue { .. }));
+                }
                 AgentActorEvent::ToolCalls(calls) => {
                     saw_tool_calls = true;
                     assert_eq!(calls.len(), 1);
@@ -851,6 +830,7 @@ mod tests {
             }
         }
         assert!(saw_step_completed);
+        assert!(saw_step_finalized);
         assert!(saw_tool_calls);
         assert!(saw_tool_result);
         assert!(saw_iteration);
@@ -870,11 +850,7 @@ mod tests {
         let mut context = Context::new();
         context.add_message(Message::user("hello"));
 
-        let runtime_hooks = RuntimeHookRegistry::empty()
-            .register(LifecycleHook)
-            .register(FailingHook)
-            .register(ContextPersistenceHook)
-            .register(IterationEventHook);
+        let runtime_hooks = RuntimeHookRegistry::empty().register(FailingHook);
         let mut actor = AgentActor::with_runtime_hooks(
             model,
             executor,
@@ -1005,9 +981,8 @@ mod tests {
         context.add_message(Message::user("hello"));
 
         let seen = Arc::new(Mutex::new(Vec::new()));
-        let runtime_hooks = RuntimeHookRegistry::empty()
-            .register(OrderingInternalHook { seen: seen.clone() })
-            .register(LifecycleHook);
+        let runtime_hooks =
+            RuntimeHookRegistry::empty().register(OrderingInternalHook { seen: seen.clone() });
         let mut actor = crate::agents::AgentActorBuilder::new(model, executor)
             .context(context)
             .runtime_hooks(runtime_hooks)
@@ -1067,9 +1042,7 @@ mod tests {
         let mut context = Context::new();
         context.add_message(Message::user("weather"));
 
-        let runtime_hooks = RuntimeHookRegistry::empty()
-            .register(LifecycleHook)
-            .register(ContextPersistenceHook);
+        let runtime_hooks = RuntimeHookRegistry::empty();
         let hooks = HookRegistry::empty().register(ReplaceAfterStepPublicHook);
         let mut actor =
             AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
@@ -1119,9 +1092,8 @@ mod tests {
         context.add_message(Message::user("hello"));
 
         let seen = Arc::new(Mutex::new(Vec::new()));
-        let runtime_hooks = RuntimeHookRegistry::empty()
-            .register(LifecycleHook)
-            .register(OrderingInternalHook { seen: seen.clone() });
+        let runtime_hooks =
+            RuntimeHookRegistry::empty().register(OrderingInternalHook { seen: seen.clone() });
         let hooks = HookRegistry::empty().register(AbortAfterStepPublicHook);
         let mut actor =
             AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
@@ -1142,7 +1114,10 @@ mod tests {
             other => panic!("unexpected result: {other:?}"),
         }
 
-        assert_eq!(seen.lock().unwrap().as_slice(), ["internal.before_step"]);
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            ["internal.before_step", "internal.after_step:error"]
+        );
         assert_eq!(actor.state().state, JobState::Failed);
 
         let mut saw_error_event = false;
@@ -1176,7 +1151,7 @@ mod tests {
         let mut context = Context::new();
         context.add_message(Message::user("hello"));
 
-        let runtime_hooks = RuntimeHookRegistry::empty().register(LifecycleHook);
+        let runtime_hooks = RuntimeHookRegistry::empty();
         let hooks = HookRegistry::empty().register(InvalidReplaceBeforeStepHook);
         let mut actor =
             AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
@@ -1210,9 +1185,7 @@ mod tests {
         let mut context = Context::new();
         context.add_message(Message::user("weather"));
 
-        let runtime_hooks = RuntimeHookRegistry::empty()
-            .register(LifecycleHook)
-            .register(ContextPersistenceHook);
+        let runtime_hooks = RuntimeHookRegistry::empty();
         let hooks = HookRegistry::empty().register(ReplaceContinuePublicHook);
         let mut actor =
             AgentActor::with_runtime_hooks(model, executor, context, runtime_hooks, hooks);
@@ -1533,6 +1506,9 @@ mod tests {
                         let json_str = serde_json::to_string(&tool_calls).unwrap_or_default();
                         println!("\n[assistant-tool-calls] {}", json_str);
                     }
+                }
+                AgentActorEvent::StepFinalized { result } => {
+                    println!("\n[Event] StepFinalized: {:?}", result);
                 }
                 AgentActorEvent::Iteration { iteration, .. } => {
                     println!("\n--- Iteration {} ---", iteration);

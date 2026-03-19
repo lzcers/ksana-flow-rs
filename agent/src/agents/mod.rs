@@ -21,11 +21,12 @@ pub use hooks::{
     HookStepUpdate, HookToolCall, HookToolCallFunction, HookToolResult, ModelEventInput,
 };
 
+pub(crate) use hooks::TimeoutPolicyHook;
+
+#[cfg(test)]
 pub(crate) use hooks::{
-    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools,
-    ContextPersistenceHook, ExecutionMetrics, HookOutcome, IterationEventHook, LifecycleHook,
-    ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepHookContext, StepResultDraft,
-    TimeoutPolicyHook,
+    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, BeforeStep,
+    Effect, ExecutionMetrics, ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepResultDraft,
 };
 
 pub use tools::{

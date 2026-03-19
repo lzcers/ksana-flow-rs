@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{AfterStep, HookError, HookOutcome, RuntimeHook, StepHookContext};
+use super::{AfterCallTools, AfterStep, BeforeStep, Effect, HookError, RuntimeHook};
 
 const ACTIVE_STEP_STARTED_AT_KEY: &str = "metrics.active_step_started_at";
 
@@ -42,34 +42,28 @@ impl RuntimeHook for MetricsHook {
         serde_json::to_value(self.metrics()).ok()
     }
 
-    async fn before_step(&self, ctx: &mut StepHookContext<'_>) -> Result<HookOutcome, HookError> {
+    async fn before_step(&self, input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
         let started_at = Instant::now();
         {
             let mut state = self.state.lock().unwrap();
-            state.metrics.iterations = ctx.state.iteration;
+            state.metrics.iterations = input.state.iteration;
             state.active_step_started_at = Some(started_at);
         }
-        ctx.scratchpad
-            .insert(ACTIVE_STEP_STARTED_AT_KEY, started_at);
-        Ok(HookOutcome::Continue)
+        Ok(vec![Effect::store_scratchpad(
+            ACTIVE_STEP_STARTED_AT_KEY,
+            started_at,
+        )])
     }
 
-    async fn after_call_tools(
-        &self,
-        _ctx: &mut StepHookContext<'_>,
-        input: &mut super::AfterCallTools<'_>,
-    ) -> Result<HookOutcome, HookError> {
+    async fn after_call_tools(&self, input: AfterCallTools<'_>) -> Result<Vec<Effect>, HookError> {
         let mut state = self.state.lock().unwrap();
         state.metrics.tool_calls_count += input.tool_calls.len();
-        Ok(HookOutcome::Continue)
+        Ok(vec![])
     }
 
-    async fn after_step(
-        &self,
-        ctx: &mut StepHookContext<'_>,
-        _input: &mut AfterStep<'_>,
-    ) -> Result<HookOutcome, HookError> {
-        let started_at = ctx
+    async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
+        let started_at = input
+            .frame
             .scratchpad
             .get::<Instant>(ACTIVE_STEP_STARTED_AT_KEY)
             .copied()
@@ -81,6 +75,6 @@ impl RuntimeHook for MetricsHook {
             state.active_step_started_at = None;
         }
 
-        Ok(HookOutcome::Continue)
+        Ok(vec![])
     }
 }

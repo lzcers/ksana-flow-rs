@@ -1,24 +1,17 @@
-use std::collections::HashMap;
-
-use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::agents::{
-    AgentActorEvent, AgentError, AgentState, CallModelEvent, CallToolResult, ToolCall, ToolDef,
-};
+use crate::agents::{AgentActorEvent, AgentError, AgentState, CallModelEvent, ToolDef};
 
 use super::{
     AfterCallModel, AfterCallTools, AfterStep, AfterStepInput, BeforeCallModel, BeforeCallTools,
-    BeforeStepInput, HookEffect, HookError, HookPhase, HookRegistry, ModelCallOutput,
-    ModelEventCtx, ModelEventInput, RuntimeHookRegistry, StepHookContext, StepResultDraft,
-    StepScratchpad,
+    BeforeStep, BeforeStepInput, Effect, EffectHandle, EffectSignal, HookEffect, HookError,
+    HookPhase, HookRegistry, ModelEventCtx, ModelEventInput, RuntimeHookRegistry, StepFrame,
+    StepResultDraft,
 };
 
 pub(crate) struct HookPipeline<'a> {
     runtime_hooks: &'a RuntimeHookRegistry,
     hooks: &'a HookRegistry,
-    scratchpad: StepScratchpad,
-    metadata: HashMap<String, Value>,
 }
 
 impl<'a> HookPipeline<'a> {
@@ -26,20 +19,6 @@ impl<'a> HookPipeline<'a> {
         Self {
             runtime_hooks,
             hooks,
-            scratchpad: StepScratchpad::default(),
-            metadata: HashMap::new(),
-        }
-    }
-
-    fn make_ctx<'b>(
-        state: &'b mut AgentState,
-        event_tx: Option<&'b mpsc::Sender<AgentActorEvent>>,
-        scratchpad: &'b mut StepScratchpad,
-    ) -> StepHookContext<'b> {
-        StepHookContext {
-            state,
-            event_tx,
-            scratchpad,
         }
     }
 
@@ -55,269 +34,336 @@ impl<'a> HookPipeline<'a> {
         }
     }
 
-    async fn apply_effects(
-        &mut self,
+    fn into_public_effect(
         hook_name: &'static str,
         phase: HookPhase,
+        effect: HookEffect,
+    ) -> Result<Effect, AgentError> {
+        match effect {
+            HookEffect::EmitEvent(event) => Ok(Effect::EmitNow(AgentActorEvent::HookEvent {
+                hook: hook_name.to_string(),
+                kind: event.kind,
+                payload: event.payload,
+            })),
+            HookEffect::ReplaceResult(next_result) => {
+                if phase != HookPhase::AfterStep {
+                    return Err(Self::hook_error(
+                        hook_name,
+                        phase,
+                        "ReplaceResult is only supported during after_step",
+                    ));
+                }
+                Ok(Effect::SetResult(next_result.into_draft()))
+            }
+            HookEffect::Abort { reason } => {
+                Ok(Effect::Abort(Self::hook_error(hook_name, phase, reason)))
+            }
+            HookEffect::SetMetadata { key, value } => Ok(Effect::SetMetadata { key, value }),
+            HookEffect::RemoveMetadata { key } => Ok(Effect::RemoveMetadata { key }),
+        }
+    }
+
+    async fn apply_public_effects(
+        hook_name: &'static str,
+        phase: HookPhase,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
         effects: Vec<HookEffect>,
-        mut current_result: Option<&mut StepResultDraft>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
+    ) -> Result<EffectSignal, AgentError> {
         for effect in effects {
-            match effect {
-                HookEffect::EmitEvent(event) => {
-                    if let Some(tx) = event_tx {
-                        let _ = tx
-                            .send(AgentActorEvent::HookEvent {
-                                hook: hook_name.to_string(),
-                                kind: event.kind,
-                                payload: event.payload,
-                            })
-                            .await;
-                    }
-                }
-                HookEffect::ReplaceResult(next_result) => {
-                    if phase != HookPhase::AfterStep {
-                        return Err(Self::hook_error(
-                            hook_name,
-                            phase,
-                            "ReplaceResult is only supported during after_step",
-                        ));
-                    }
-
-                    let Some(result) = current_result.as_deref_mut() else {
-                        return Err(Self::hook_error(
-                            hook_name,
-                            phase,
-                            "missing step result while applying ReplaceResult",
-                        ));
-                    };
-
-                    *result = next_result.into_draft();
-                }
-                HookEffect::Abort { reason } => {
-                    let next_result =
-                        StepResultDraft::Error(Self::hook_error(hook_name, phase, reason));
-                    if let Some(result) = current_result.as_deref_mut() {
-                        *result = next_result.clone();
-                    }
-                    return Ok(Some(next_result));
-                }
-                HookEffect::SetMetadata { key, value } => {
-                    self.metadata.insert(key, value);
-                }
-                HookEffect::RemoveMetadata { key } => {
-                    self.metadata.remove(&key);
-                }
+            let effect = Self::into_public_effect(hook_name, phase, effect)?;
+            let signal = EffectHandle::apply(frame, event_tx, effect).await;
+            if signal != EffectSignal::Continue {
+                return Ok(signal);
             }
         }
 
-        Ok(None)
+        Ok(EffectSignal::Continue)
     }
 
-    async fn resolve_hook(
-        &mut self,
-        hook_name: &'static str,
-        phase: HookPhase,
+    async fn apply_runtime_effects(
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        result: Result<Vec<HookEffect>, HookError>,
-        current_result: Option<&mut StepResultDraft>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        let effects = match result {
-            Ok(effects) => effects,
-            Err(HookError { message }) => {
-                return Ok(Some(StepResultDraft::Error(Self::hook_error(
-                    hook_name, phase, message,
-                ))));
-            }
-        };
-
-        self.apply_effects(hook_name, phase, event_tx, effects, current_result)
-            .await
-    }
-
-    async fn run_hooks_before_step(
-        &mut self,
-        state: &AgentState,
-        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        for hook in self.hooks.iter() {
-            let input = BeforeStepInput::capture(state, &self.metadata);
-            if let Some(result) = self
-                .resolve_hook(
-                    hook.name(),
-                    HookPhase::BeforeStep,
-                    event_tx,
-                    hook.before_step(input).await,
-                    None,
-                )
-                .await?
-            {
-                return Ok(Some(result));
+        effects: Vec<Effect>,
+    ) -> EffectSignal {
+        for effect in effects {
+            let signal = EffectHandle::apply(frame, event_tx, effect).await;
+            if signal != EffectSignal::Continue {
+                return signal;
             }
         }
 
-        Ok(None)
-    }
-
-    async fn run_hooks_on_model_event(
-        &mut self,
-        state: &AgentState,
-        event: &CallModelEvent,
-        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        for hook in self.hooks.iter() {
-            let input = ModelEventInput::capture(state, event, &self.metadata);
-            if let Some(result) = self
-                .resolve_hook(
-                    hook.name(),
-                    HookPhase::OnModelEvent,
-                    event_tx,
-                    hook.on_model_event(input).await,
-                    None,
-                )
-                .await?
-            {
-                return Ok(Some(result));
-            }
-        }
-
-        Ok(None)
-    }
-
-    async fn run_hooks_after_step(
-        &mut self,
-        state: &AgentState,
-        result: &mut StepResultDraft,
-        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        for hook in self.hooks.iter() {
-            let input = AfterStepInput::capture(state, result, &self.metadata);
-            if let Some(next_result) = self
-                .resolve_hook(
-                    hook.name(),
-                    HookPhase::AfterStep,
-                    event_tx,
-                    hook.after_step(input).await,
-                    Some(result),
-                )
-                .await?
-            {
-                return Ok(Some(next_result));
-            }
-        }
-
-        Ok(None)
+        EffectSignal::Continue
     }
 
     pub(crate) async fn before_step(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        if let Some(result) = self.run_hooks_before_step(&*state, event_tx).await? {
-            return Ok(Some(result));
+    ) -> Result<(), AgentError> {
+        for hook in self.hooks.iter() {
+            let input = BeforeStepInput::capture(state, &frame.metadata);
+            let effects = hook
+                .before_step(input)
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::BeforeStep, message)
+                })?;
+            if Self::apply_public_effects(
+                hook.name(),
+                HookPhase::BeforeStep,
+                frame,
+                event_tx,
+                effects,
+            )
+            .await?
+                != EffectSignal::Continue
+            {
+                return Ok(());
+            }
         }
 
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        self.runtime_hooks.before_step(&mut ctx).await
+        for hook in self.runtime_hooks.iter() {
+            let input = BeforeStep { state, frame };
+            let effects = hook
+                .before_step(input)
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::BeforeStep, message)
+                })?;
+            if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
+            {
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn before_call_model(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
         tools: &[ToolDef],
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        let mut input = BeforeCallModel { tools };
-        self.runtime_hooks
-            .before_call_model(&mut ctx, &mut input)
-            .await
+    ) -> Result<(), AgentError> {
+        for hook in self.runtime_hooks.iter() {
+            let input = BeforeCallModel {
+                state,
+                frame,
+                tools,
+            };
+            let effects =
+                hook.before_call_model(input)
+                    .await
+                    .map_err(|HookError { message }| {
+                        Self::hook_error(hook.name(), HookPhase::BeforeCallModel, message)
+                    })?;
+            if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
+            {
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn on_model_event(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
         event: &CallModelEvent,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        if let Some(result) = self
-            .run_hooks_on_model_event(&*state, event, event_tx)
+    ) -> Result<(), AgentError> {
+        for hook in self.hooks.iter() {
+            let input = ModelEventInput::capture(state, event, &frame.metadata);
+            let effects = hook
+                .on_model_event(input)
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::OnModelEvent, message)
+                })?;
+            if Self::apply_public_effects(
+                hook.name(),
+                HookPhase::OnModelEvent,
+                frame,
+                event_tx,
+                effects,
+            )
             .await?
-        {
-            return Ok(Some(result));
+                != EffectSignal::Continue
+            {
+                return Ok(());
+            }
         }
 
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        let input = ModelEventCtx { event };
-        self.runtime_hooks.on_model_event(&mut ctx, &input).await
+        for hook in self.runtime_hooks.iter() {
+            let input = ModelEventCtx {
+                state,
+                frame,
+                event,
+            };
+            let effects = hook
+                .on_model_event(input)
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::OnModelEvent, message)
+                })?;
+            if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
+            {
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn after_call_model(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        output: &mut ModelCallOutput,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        let mut input = AfterCallModel { output };
-        self.runtime_hooks
-            .after_call_model(&mut ctx, &mut input)
-            .await
+    ) -> Result<(), AgentError> {
+        for hook in self.runtime_hooks.iter() {
+            let input = AfterCallModel {
+                state,
+                frame,
+                output: &frame.model_output,
+            };
+            let effects = hook
+                .after_call_model(input)
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::AfterCallModel, message)
+                })?;
+            if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
+            {
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn before_call_tools(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        tool_calls: &mut Vec<ToolCall>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        let mut input = BeforeCallTools { tool_calls };
-        self.runtime_hooks
-            .before_call_tools(&mut ctx, &mut input)
-            .await
+    ) -> Result<(), AgentError> {
+        for hook in self.runtime_hooks.iter() {
+            let input = BeforeCallTools {
+                state,
+                frame,
+                tool_calls: &frame.tool_calls,
+            };
+            let effects =
+                hook.before_call_tools(input)
+                    .await
+                    .map_err(|HookError { message }| {
+                        Self::hook_error(hook.name(), HookPhase::BeforeCallTools, message)
+                    })?;
+            if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
+            {
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn after_call_tools(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        tool_calls: &[ToolCall],
-        tool_results: &mut Vec<CallToolResult>,
-    ) -> Result<Option<StepResultDraft>, AgentError> {
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        let mut input = AfterCallTools {
-            tool_calls,
-            tool_results,
-        };
-        self.runtime_hooks
-            .after_call_tools(&mut ctx, &mut input)
-            .await
+    ) -> Result<(), AgentError> {
+        for hook in self.runtime_hooks.iter() {
+            let input = AfterCallTools {
+                state,
+                frame,
+                tool_calls: &frame.tool_calls,
+                tool_results: &frame.tool_results,
+            };
+            let effects = hook
+                .after_call_tools(input)
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::AfterCallTools, message)
+                })?;
+            if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
+            {
+                return Ok(());
+            }
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn after_step(
-        &mut self,
-        state: &mut AgentState,
+        &self,
+        state: &AgentState,
+        frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        result: &mut StepResultDraft,
-    ) -> Result<(), AgentError> {
-        if let Some(next_result) = self.run_hooks_after_step(&*state, result, event_tx).await? {
-            return match next_result {
-                StepResultDraft::Error(err) => Err(err),
-                other => {
-                    *result = other;
-                    Ok(())
+    ) {
+        for hook in self.hooks.iter() {
+            let Some(result) = frame.result() else {
+                return;
+            };
+            let input = AfterStepInput::capture(state, result, &frame.metadata);
+            let effects = match hook.after_step(input).await {
+                Ok(effects) => effects,
+                Err(HookError { message }) => {
+                    frame.set_result(StepResultDraft::Error(Self::hook_error(
+                        hook.name(),
+                        HookPhase::AfterStep,
+                        message,
+                    )));
+                    break;
                 }
             };
+
+            match Self::apply_public_effects(
+                hook.name(),
+                HookPhase::AfterStep,
+                frame,
+                event_tx,
+                effects,
+            )
+            .await
+            {
+                Ok(EffectSignal::Continue | EffectSignal::ResultSet) => {}
+                Ok(EffectSignal::Aborted) => break,
+                Err(err) => {
+                    frame.set_result(StepResultDraft::Error(err));
+                    break;
+                }
+            }
         }
 
-        let mut ctx = Self::make_ctx(state, event_tx, &mut self.scratchpad);
-        let mut input = AfterStep { result };
-        if let Some(next_result) = self.runtime_hooks.after_step(&mut ctx, &mut input).await? {
-            *input.result = next_result;
+        for hook in self.runtime_hooks.iter() {
+            let Some(result) = frame.result() else {
+                return;
+            };
+            let input = AfterStep {
+                state,
+                frame,
+                result,
+            };
+            let effects = match hook.after_step(input).await {
+                Ok(effects) => effects,
+                Err(HookError { message }) => {
+                    frame.set_result(StepResultDraft::Error(Self::hook_error(
+                        hook.name(),
+                        HookPhase::AfterStep,
+                        message,
+                    )));
+                    continue;
+                }
+            };
+
+            let _ = Self::apply_runtime_effects(frame, event_tx, effects).await;
         }
-        Ok(())
     }
 }

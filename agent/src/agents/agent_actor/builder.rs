@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use super::AgentActor;
-use crate::agents::hooks::{Hook, HookRegistry, RuntimeHook, RuntimeHookRegistry};
+#[cfg(test)]
+use crate::agents::hooks::RuntimeHook;
+use crate::agents::hooks::{Hook, HookRegistry, RuntimeHookRegistry};
 use crate::agents::{Context, TimeoutPolicyHook, ToolExecutor};
 use crate::models::ChatCapability;
 
@@ -67,6 +69,7 @@ where
     }
 
     /// 替换内部 runtime hooks 注册表
+    #[cfg(test)]
     pub(crate) fn runtime_hooks(mut self, hooks: RuntimeHookRegistry) -> Self {
         self.runtime_hooks = hooks;
         self
@@ -82,6 +85,7 @@ where
     }
 
     /// 追加一个内部 runtime hook
+    #[cfg(test)]
     pub(crate) fn runtime_hook<H>(mut self, hook: H) -> Self
     where
         H: RuntimeHook + 'static,
