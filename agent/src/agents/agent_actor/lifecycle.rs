@@ -16,7 +16,6 @@ use crate::agents::{AgentState, ToolCall, ToolDef, ToolExecutor};
 use crate::models::ChatCapability;
 
 pub(super) type StepControl<T = ()> = ControlFlow<StepResultDraft, T>;
-type PhaseControl = StepControl<()>;
 
 pub(super) struct StepLifecycle<'a> {
     state: &'a mut AgentState,
@@ -62,7 +61,7 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    async fn before_step(&mut self) -> PhaseControl {
+    async fn before_step(&mut self) -> StepControl {
         let result = {
             let hooks = self.hooks;
             let event_tx = self.event_tx;
@@ -72,7 +71,7 @@ impl<'a> StepLifecycle<'a> {
         Self::phase_control(result)
     }
 
-    async fn before_call_model(&mut self, tools: &[ToolDef]) -> PhaseControl {
+    async fn before_call_model(&mut self, tools: &[ToolDef]) -> StepControl {
         let result = {
             let hooks = self.hooks;
             let event_tx = self.event_tx;
@@ -85,7 +84,7 @@ impl<'a> StepLifecycle<'a> {
         Self::phase_control(result)
     }
 
-    async fn on_model_event(&mut self, event: &CallModelEvent) -> PhaseControl {
+    async fn on_model_event(&mut self, event: &CallModelEvent) -> StepControl {
         let result = {
             let hooks = self.hooks;
             let event_tx = self.event_tx;
@@ -96,7 +95,7 @@ impl<'a> StepLifecycle<'a> {
         Self::phase_control(result)
     }
 
-    async fn after_call_model(&mut self, output: &mut ModelCallOutput) -> PhaseControl {
+    async fn after_call_model(&mut self, output: &mut ModelCallOutput) -> StepControl {
         let result = {
             let hooks = self.hooks;
             let event_tx = self.event_tx;
@@ -109,7 +108,7 @@ impl<'a> StepLifecycle<'a> {
         Self::phase_control(result)
     }
 
-    async fn before_call_tools(&mut self, tool_calls: &mut Vec<ToolCall>) -> PhaseControl {
+    async fn before_call_tools(&mut self, tool_calls: &mut Vec<ToolCall>) -> StepControl {
         let result = {
             let hooks = self.hooks;
             let event_tx = self.event_tx;
@@ -126,7 +125,7 @@ impl<'a> StepLifecycle<'a> {
         &mut self,
         tool_calls: &[ToolCall],
         tool_results: &mut Vec<CallToolResult>,
-    ) -> PhaseControl {
+    ) -> StepControl {
         let result = {
             let hooks = self.hooks;
             let event_tx = self.event_tx;
@@ -142,7 +141,7 @@ impl<'a> StepLifecycle<'a> {
         Self::phase_control(result)
     }
 
-    pub(super) async fn execute_core(
+    pub(super) async fn start(
         &mut self,
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
@@ -260,7 +259,7 @@ impl<'a> StepLifecycle<'a> {
         step_result_from_draft(result)
     }
 
-    fn phase_control(result: Result<Option<StepResultDraft>, AgentError>) -> PhaseControl {
+    fn phase_control(result: Result<Option<StepResultDraft>, AgentError>) -> StepControl {
         match result {
             Ok(Some(result)) => ControlFlow::Break(result),
             Ok(None) => ControlFlow::Continue(()),
@@ -275,7 +274,7 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    pub(super) fn settle_control<T>(
+    pub(super) fn resolve_control<T>(
         result: StepControl<T>,
         on_continue: impl FnOnce(T) -> StepResultDraft,
     ) -> StepResultDraft {

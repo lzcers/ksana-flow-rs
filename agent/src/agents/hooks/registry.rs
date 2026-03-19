@@ -61,7 +61,7 @@ impl HookRegistry {
             .collect()
     }
 
-    async fn run_outcome(
+    fn resolve_outcome(
         hook: &(dyn AgentHook + '_),
         phase: HookPhase,
         result: Result<HookOutcome, HookError>,
@@ -83,7 +83,7 @@ impl HookRegistry {
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
             if let Some(result) =
-                Self::run_outcome(hook, HookPhase::BeforeStep, hook.before_step(ctx).await).await?
+                Self::resolve_outcome(hook, HookPhase::BeforeStep, hook.before_step(ctx).await)?
             {
                 return Ok(Some(result));
             }
@@ -97,13 +97,11 @@ impl HookRegistry {
         input: &mut BeforeCallModel<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
-            if let Some(result) = Self::run_outcome(
+            if let Some(result) = Self::resolve_outcome(
                 hook,
                 HookPhase::BeforeCallModel,
                 hook.before_call_model(ctx, input).await,
-            )
-            .await?
-            {
+            )? {
                 return Ok(Some(result));
             }
         }
@@ -116,13 +114,11 @@ impl HookRegistry {
         input: &ModelEventCtx<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
-            if let Some(result) = Self::run_outcome(
+            if let Some(result) = Self::resolve_outcome(
                 hook,
                 HookPhase::OnModelEvent,
                 hook.on_model_event(ctx, input).await,
-            )
-            .await?
-            {
+            )? {
                 return Ok(Some(result));
             }
         }
@@ -135,13 +131,11 @@ impl HookRegistry {
         input: &mut AfterCallModel<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
-            if let Some(result) = Self::run_outcome(
+            if let Some(result) = Self::resolve_outcome(
                 hook,
                 HookPhase::AfterCallModel,
                 hook.after_call_model(ctx, input).await,
-            )
-            .await?
-            {
+            )? {
                 return Ok(Some(result));
             }
         }
@@ -154,13 +148,11 @@ impl HookRegistry {
         input: &mut BeforeCallTools<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
-            if let Some(result) = Self::run_outcome(
+            if let Some(result) = Self::resolve_outcome(
                 hook,
                 HookPhase::BeforeCallTools,
                 hook.before_call_tools(ctx, input).await,
-            )
-            .await?
-            {
+            )? {
                 return Ok(Some(result));
             }
         }
@@ -173,13 +165,11 @@ impl HookRegistry {
         input: &mut AfterCallTools<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
-            if let Some(result) = Self::run_outcome(
+            if let Some(result) = Self::resolve_outcome(
                 hook,
                 HookPhase::AfterCallTools,
                 hook.after_call_tools(ctx, input).await,
-            )
-            .await?
-            {
+            )? {
                 return Ok(Some(result));
             }
         }
@@ -192,13 +182,11 @@ impl HookRegistry {
         input: &mut AfterStep<'_>,
     ) -> Result<Option<StepResultDraft>, AgentError> {
         for hook in self.iter() {
-            if let Some(result) = Self::run_outcome(
+            if let Some(result) = Self::resolve_outcome(
                 hook,
                 HookPhase::AfterStep,
                 hook.after_step(ctx, input).await,
-            )
-            .await?
-            {
+            )? {
                 return Ok(Some(result));
             }
         }

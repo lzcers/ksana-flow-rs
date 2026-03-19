@@ -50,32 +50,31 @@ where
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
         let execution_policy = self.hooks.execution_policy(&self.state);
-        let mut step = StepLifecycle::new(
+        let mut lifecycle = StepLifecycle::new(
             &mut self.state,
             &self.hooks,
             event_tx.as_ref(),
             execution_policy,
         );
 
-        let final_result = if let Some(timeout) = step.step_timeout() {
+        let final_result = if let Some(timeout) = lifecycle.step_timeout() {
             match tokio::time::timeout(
                 timeout,
-                step.execute_core(chat.as_ref(), tool_executor.as_ref()),
+                lifecycle.start(chat.as_ref(), tool_executor.as_ref()),
             )
             .await
             {
-                Ok(result) => StepLifecycle::settle_control(result, |result| result),
+                Ok(result) => StepLifecycle::resolve_control(result, |result| result),
                 Err(_) => StepResultDraft::Error(AgentError::Timeout),
             }
         } else {
-            StepLifecycle::settle_control(
-                step.execute_core(chat.as_ref(), tool_executor.as_ref())
-                    .await,
+            StepLifecycle::resolve_control(
+                lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await,
                 |result| result,
             )
         };
 
-        step.finish(final_result).await
+        lifecycle.finish(final_result).await
     }
 
     fn set_loop_state(&mut self, loop_state: &mut LoopState, next_state: LoopState) {
@@ -129,7 +128,7 @@ where
         }
     }
 
-    async fn handle_step_result(
+    async fn should_continue_after_step(
         event_tx: &mpsc::Sender<AgentActorEvent>,
         result: StepResult,
     ) -> bool {
@@ -176,7 +175,7 @@ where
                 }
 
                 let result = self.run_step(Some(event_tx.clone())).await;
-                if !Self::handle_step_result(&event_tx, result).await {
+                if !Self::should_continue_after_step(&event_tx, result).await {
                     break;
                 }
             }
