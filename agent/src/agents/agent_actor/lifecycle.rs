@@ -11,7 +11,7 @@ use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call
 use crate::agents::hooks::{
     ExecutionPolicy, HookPipeline, HookRegistry, RuntimeHookRegistry, StepFrame, StepResultDraft,
 };
-use crate::agents::{AgentState, ToolDef, ToolExecutor};
+use crate::agents::{AgentState, ToolExecutor};
 use crate::models::ChatCapability;
 
 pub(super) struct StepLifecycle<'a> {
@@ -202,10 +202,12 @@ impl<'a> StepLifecycle<'a> {
     ) {
         let messages = self.state.context.to_messages();
         let tools = tool_executor.tools().clone();
-        let stream = pin!(call_model(model, &messages, Some(&tools)));
+
         if self.begin_step() || self.before_step().await || self.before_call_model().await {
             return;
         }
+
+        let stream = pin!(call_model(model, &messages, Some(&tools)));
 
         if self.stream_model_output(stream).await || self.after_call_model().await {
             return;
