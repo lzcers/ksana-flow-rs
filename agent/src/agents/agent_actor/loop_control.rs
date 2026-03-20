@@ -124,6 +124,14 @@ where
             execution_policy,
         );
 
+        fn apply_control(lifecycle: &mut StepLifecycle, control: StepControl) {
+            if let StepControl::Continue(()) = control {
+                lifecycle.set_result(StepResultDraft::Error(AgentError::Model(
+                    "step lifecycle returned Continue without a final result".to_string(),
+                )));
+            }
+        }
+
         if let Some(timeout) = lifecycle.step_timeout() {
             match tokio::time::timeout(
                 timeout,
@@ -131,14 +139,12 @@ where
             )
             .await
             {
-                Ok(StepControl::Continue(_)) => {}
-                Ok(StepControl::Break(_)) => {
-                    lifecycle.set_result(StepResultDraft::Error(AgentError::Timeout))
-                }
+                Ok(control) => apply_control(&mut lifecycle, control),
                 Err(_) => lifecycle.set_result(StepResultDraft::Error(AgentError::Timeout)),
             }
         } else {
-            lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+            let control = lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+            apply_control(&mut lifecycle, control);
         }
 
         lifecycle.finish().await
