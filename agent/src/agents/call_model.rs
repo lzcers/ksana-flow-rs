@@ -40,15 +40,18 @@ pub enum CallModelEvent {
 // 调用一个具备 chat 能力的模型，至少要实现 chat_stream 方法
 pub fn call_model(
     model: &(dyn ChatCapability + Sync),
-    messages: &Vec<Message>,
-    tools_def: Option<&Vec<ToolDef>>,
+    messages: &[Message],
+    tools_def: Option<&[ToolDef]>,
 ) -> impl Stream<Item = CallModelEvent> {
     let mut final_content = String::new();
     let mut final_reasoning_content = String::new();
     let mut final_tool_calls = Vec::new();
     stream! {
         // 流式调用模型
-        let mut response_stream = match model.chat_stream(messages.clone(), tools_def.cloned()).await {
+        let mut response_stream = match model
+            .chat_stream(messages.to_vec(), tools_def.map(|tools| tools.to_vec()))
+            .await
+        {
             Ok(s) => s,
             Err(e) => {
                 yield CallModelEvent::Error(e.to_string());
@@ -140,10 +143,8 @@ fn merge_tool_calls(accumulated: &mut Vec<ToolCall>, incremental: Vec<ToolCall>)
             // 优先按 index 匹配，其次按 id 匹配
             if let (Some(idx1), Some(idx2)) = (tc.index, inc.index) {
                 idx1 == idx2
-            } else if !tc.id.is_empty() && tc.id == inc.id {
-                true
             } else {
-                false
+                !tc.id.is_empty() && tc.id == inc.id
             }
         });
 

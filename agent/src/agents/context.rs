@@ -144,7 +144,7 @@ impl Context {
             .collect();
 
         if !system_parts.is_empty() {
-            messages.push(Message::system(&system_parts.join("\n\n---\n\n")));
+            messages.push(Message::system(system_parts.join("\n\n---\n\n")));
         }
 
         // 添加对话历史

@@ -71,8 +71,6 @@ pub(crate) struct BeforeStep<'a> {
     pub state: &'a AgentState,
 }
 
-pub(crate) struct BeforeCallModel;
-
 pub(crate) struct ModelEventCtx<'a> {
     pub event: &'a CallModelEvent,
 }
@@ -125,7 +123,7 @@ pub(crate) trait RuntimeHook: Send + Sync {
         Ok(vec![])
     }
 
-    async fn before_call_model(&self, _input: BeforeCallModel) -> Result<Vec<Effect>, HookError> {
+    async fn before_call_model(&self) -> Result<Vec<Effect>, HookError> {
         Ok(vec![])
     }
 

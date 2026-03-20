@@ -90,7 +90,7 @@ pub(crate) trait RuntimeHook: Send + Sync {
     fn snapshot(&self) -> Option<Value> { None }
 
     async fn before_step(&self, input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError>;
-    async fn before_call_model(&self, input: BeforeCallModel<'_>) -> Result<Vec<Effect>, HookError>;
+    async fn before_call_model(&self) -> Result<Vec<Effect>, HookError>;
     async fn on_model_event(&self, input: ModelEventCtx<'_>) -> Result<Vec<Effect>, HookError>;
     async fn after_call_model(&self, input: AfterCallModel<'_>) -> Result<Vec<Effect>, HookError>;
     async fn before_call_tools(&self, input: BeforeCallTools<'_>) -> Result<Vec<Effect>, HookError>;
@@ -104,7 +104,7 @@ pub(crate) trait RuntimeHook: Send + Sync {
 - 输入是只读 runtime view
 - runtime view 已收紧为“最小必要视图”：
   - `BeforeStep`：`state`
-  - `BeforeCallModel`：当前为空标记上下文
+  - `before_call_model()`：当前不需要额外上下文
   - `ModelEventCtx`：`event`
   - `AfterCallModel`：`output`
   - `BeforeCallTools`：`tool_calls`
@@ -199,7 +199,7 @@ pub(crate) struct StepFrame {
 
 - 状态迁移
 - context 持久化
-- iteration / error / max-iterations 提交事件
+- iteration / error / max-iterations / cancelled 提交事件
 
 这些逻辑不再依赖 hook 顺序偶然成立。
 

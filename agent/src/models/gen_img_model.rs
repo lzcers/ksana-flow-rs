@@ -15,6 +15,12 @@ pub struct GenImgModel {
     image_size: String,
 }
 
+impl Default for GenImgModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GenImgModel {
     pub fn new() -> Self {
         Self {

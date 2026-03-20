@@ -25,8 +25,8 @@ pub(crate) use hooks::TimeoutPolicyHook;
 
 #[cfg(test)]
 pub(crate) use hooks::{
-    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, BeforeStep,
-    Effect, ExecutionMetrics, ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepResultDraft,
+    AfterCallModel, AfterCallTools, AfterStep, BeforeCallTools, BeforeStep, Effect,
+    ExecutionMetrics, ModelEventCtx, RuntimeHook, RuntimeHookRegistry, StepResultDraft,
 };
 
 pub use tools::{

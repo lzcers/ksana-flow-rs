@@ -3,10 +3,9 @@ use tokio::sync::mpsc;
 use crate::agents::{AgentActorEvent, AgentError, AgentState, CallModelEvent};
 
 use super::{
-    AfterCallModel, AfterCallTools, AfterStep, AfterStepInput, BeforeCallModel, BeforeCallTools,
-    BeforeStep, BeforeStepInput, Effect, EffectHandle, EffectSignal, HookEffect, HookError,
-    HookPhase, HookRegistry, ModelEventCtx, ModelEventInput, RuntimeHookRegistry, StepFrame,
-    StepResultDraft,
+    AfterCallModel, AfterCallTools, AfterStep, AfterStepInput, BeforeCallTools, BeforeStep,
+    BeforeStepInput, Effect, EffectHandle, EffectSignal, HookEffect, HookError, HookPhase,
+    HookRegistry, ModelEventCtx, ModelEventInput, RuntimeHookRegistry, StepFrame, StepResultDraft,
 };
 
 pub(crate) struct HookPipeline<'a> {
@@ -147,13 +146,12 @@ impl<'a> HookPipeline<'a> {
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
     ) -> Result<(), AgentError> {
         for hook in self.runtime_hooks.iter() {
-            let input = BeforeCallModel;
-            let effects =
-                hook.before_call_model(input)
-                    .await
-                    .map_err(|HookError { message }| {
-                        Self::hook_error(hook.name(), HookPhase::BeforeCallModel, message)
-                    })?;
+            let effects = hook
+                .before_call_model()
+                .await
+                .map_err(|HookError { message }| {
+                    Self::hook_error(hook.name(), HookPhase::BeforeCallModel, message)
+                })?;
             if Self::apply_runtime_effects(frame, event_tx, effects).await != EffectSignal::Continue
             {
                 return Ok(());

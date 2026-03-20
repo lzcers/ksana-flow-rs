@@ -23,8 +23,8 @@ pub(crate) use metrics::MetricsHook;
 pub(crate) use pipeline::HookPipeline;
 pub(crate) use registry::RuntimeHookRegistry;
 pub(crate) use runtime::{
-    AfterCallModel, AfterCallTools, AfterStep, BeforeCallModel, BeforeCallTools, BeforeStep,
-    ExecutionPolicy, ModelCallOutput, ModelEventCtx, RuntimeHook, StepResultDraft, StepScratchpad,
+    AfterCallModel, AfterCallTools, AfterStep, BeforeCallTools, BeforeStep, ExecutionPolicy,
+    ModelCallOutput, ModelEventCtx, RuntimeHook, StepResultDraft, StepScratchpad,
 };
 pub(crate) use streaming_events::StreamingEventHook;
 pub(crate) use timeout_policy::TimeoutPolicyHook;

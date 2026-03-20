@@ -15,6 +15,12 @@ pub struct ChatModel {
     active_model: Option<String>,
 }
 
+impl Default for ChatModel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChatModel {
     pub fn new() -> Self {
         Self {
