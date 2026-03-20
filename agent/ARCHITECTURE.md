@@ -102,7 +102,14 @@ pub(crate) trait RuntimeHook: Send + Sync {
 特点：
 
 - 输入是只读 runtime view
-- 运行时内部扩展仍可访问 state/frame 的视图
+- runtime view 已收紧为“最小必要视图”：
+  - `BeforeStep`：`state`
+  - `BeforeCallModel`：当前为空标记上下文
+  - `ModelEventCtx`：`event`
+  - `AfterCallModel`：`output`
+  - `BeforeCallTools`：`tool_calls`
+  - `AfterCallTools`：`tool_results`
+  - `AfterStep`：`frame + result`
 - 改写能力也统一收口到 `Effect`
 - 不再直接持有 `event_tx` 或 `&mut AgentState`
 
@@ -124,7 +131,6 @@ pub(crate) trait RuntimeHook: Send + Sync {
 ```rust
 pub(crate) enum Effect {
     EmitNow(AgentActorEvent),
-    EmitOnCommit(AgentActorEvent),
     SetMetadata { key: String, value: Value },
     RemoveMetadata { key: String },
     StoreScratchpad { key: &'static str, value: Box<dyn Any + Send + Sync> },
@@ -136,7 +142,6 @@ pub(crate) enum Effect {
 `EffectHandle` 负责把 effect 应用到 `StepFrame`：
 
 - `EmitNow`：立即发送事件
-- `EmitOnCommit`：挂到 `StepFrame.pending_events`
 - `SetMetadata` / `RemoveMetadata`：修改 step 级 metadata
 - `StoreScratchpad`：写 step 级 scratchpad
 - `SetResult` / `Abort`：改写 `StepFrame.final_result`
@@ -157,7 +162,6 @@ pub(crate) struct StepFrame {
     pub tool_calls: Vec<ToolCall>,
     pub tool_results: Vec<CallToolResult>,
     pub final_result: Option<StepResultDraft>,
-    pub pending_events: Vec<AgentActorEvent>,
 }
 ```
 
@@ -308,6 +312,8 @@ pub(super) struct CommitPlan {
 
 三者已经对齐到同一个最终版本。
 
+`Completed` 则只在 `run_loop()` 里出现，表示 actor 级循环已经在某个 `Done` step 提交之后结束。
+
 ---
 
 ## 九、默认 runtime hook 链
@@ -370,7 +376,10 @@ after_call_model
 3. StepCommitter::apply()
    - state
    - context
-   - StepFinalized / Iteration / Error / MaxIterations
+   - StepFinalized / Iteration / Error / MaxIterations / Cancelled
+
+4. 如果 `run_loop()` 收到 `Done`
+   - 在 step 已经提交完成之后额外发送 actor 级 `Completed`
 ```
 
 ---

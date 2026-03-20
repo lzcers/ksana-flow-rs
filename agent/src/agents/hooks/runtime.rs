@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::{Effect, StepFrame};
-use crate::agents::{AgentError, AgentState, CallModelEvent, CallToolResult, ToolCall, ToolDef};
+use crate::agents::{AgentError, AgentState, CallModelEvent, CallToolResult, ToolCall};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookPhase {
@@ -67,23 +67,13 @@ impl StepScratchpad {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) struct BeforeStep<'a> {
     pub state: &'a AgentState,
-    pub frame: &'a StepFrame,
 }
 
-#[allow(dead_code)]
-pub(crate) struct BeforeCallModel<'a> {
-    pub state: &'a AgentState,
-    pub frame: &'a StepFrame,
-    pub tools: &'a [ToolDef],
-}
+pub(crate) struct BeforeCallModel;
 
-#[allow(dead_code)]
 pub(crate) struct ModelEventCtx<'a> {
-    pub state: &'a AgentState,
-    pub frame: &'a StepFrame,
     pub event: &'a CallModelEvent,
 }
 
@@ -104,31 +94,19 @@ impl ModelCallOutput {
     }
 }
 
-#[allow(dead_code)]
 pub(crate) struct AfterCallModel<'a> {
-    pub state: &'a AgentState,
-    pub frame: &'a StepFrame,
     pub output: &'a ModelCallOutput,
 }
 
-#[allow(dead_code)]
 pub(crate) struct BeforeCallTools<'a> {
-    pub state: &'a AgentState,
-    pub frame: &'a StepFrame,
     pub tool_calls: &'a [ToolCall],
 }
 
-#[allow(dead_code)]
 pub(crate) struct AfterCallTools<'a> {
-    pub state: &'a AgentState,
-    pub frame: &'a StepFrame,
-    pub tool_calls: &'a [ToolCall],
     pub tool_results: &'a [CallToolResult],
 }
 
-#[allow(dead_code)]
 pub(crate) struct AfterStep<'a> {
-    pub state: &'a AgentState,
     pub frame: &'a StepFrame,
     pub result: &'a StepResultDraft,
 }
@@ -147,10 +125,7 @@ pub(crate) trait RuntimeHook: Send + Sync {
         Ok(vec![])
     }
 
-    async fn before_call_model(
-        &self,
-        _input: BeforeCallModel<'_>,
-    ) -> Result<Vec<Effect>, HookError> {
+    async fn before_call_model(&self, _input: BeforeCallModel) -> Result<Vec<Effect>, HookError> {
         Ok(vec![])
     }
 

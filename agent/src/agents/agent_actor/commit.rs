@@ -2,7 +2,7 @@ use tokio::sync::mpsc;
 
 use super::AgentActorEvent;
 use super::types::step_result_from_draft;
-use crate::agents::hooks::{StepFrame, StepResultDraft};
+use crate::agents::hooks::StepResultDraft;
 use crate::agents::{AgentError, AgentState, JobState};
 use crate::core::Message;
 
@@ -15,19 +15,14 @@ pub(super) struct CommitPlan {
 pub(super) struct CommitReducer;
 
 impl CommitReducer {
-    pub(super) fn reduce(
-        state: &AgentState,
-        frame: &StepFrame,
-        result: &StepResultDraft,
-    ) -> CommitPlan {
+    pub(super) fn reduce(state: &AgentState, result: &StepResultDraft) -> CommitPlan {
         let context_messages = Self::context_messages(result);
         let message_count = state.context.conversation().len() + context_messages.len();
         let committed_result = step_result_from_draft(result.clone());
 
-        let mut events = frame.pending_events.clone();
-        events.push(AgentActorEvent::StepFinalized {
+        let mut events = vec![AgentActorEvent::StepFinalized {
             result: committed_result.clone(),
-        });
+        }];
 
         match result {
             StepResultDraft::Continue { .. } | StepResultDraft::Done { .. } => {

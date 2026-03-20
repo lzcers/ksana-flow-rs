@@ -1,6 +1,6 @@
 use tokio::sync::mpsc;
 
-use crate::agents::{AgentActorEvent, AgentError, AgentState, CallModelEvent, ToolDef};
+use crate::agents::{AgentActorEvent, AgentError, AgentState, CallModelEvent};
 
 use super::{
     AfterCallModel, AfterCallTools, AfterStep, AfterStepInput, BeforeCallModel, BeforeCallTools,
@@ -125,7 +125,7 @@ impl<'a> HookPipeline<'a> {
         }
 
         for hook in self.runtime_hooks.iter() {
-            let input = BeforeStep { state, frame };
+            let input = BeforeStep { state };
             let effects = hook
                 .before_step(input)
                 .await
@@ -143,17 +143,11 @@ impl<'a> HookPipeline<'a> {
 
     pub(crate) async fn before_call_model(
         &self,
-        state: &AgentState,
         frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
-        tools: &[ToolDef],
     ) -> Result<(), AgentError> {
         for hook in self.runtime_hooks.iter() {
-            let input = BeforeCallModel {
-                state,
-                frame,
-                tools,
-            };
+            let input = BeforeCallModel;
             let effects =
                 hook.before_call_model(input)
                     .await
@@ -199,11 +193,7 @@ impl<'a> HookPipeline<'a> {
         }
 
         for hook in self.runtime_hooks.iter() {
-            let input = ModelEventCtx {
-                state,
-                frame,
-                event,
-            };
+            let input = ModelEventCtx { event };
             let effects = hook
                 .on_model_event(input)
                 .await
@@ -221,14 +211,11 @@ impl<'a> HookPipeline<'a> {
 
     pub(crate) async fn after_call_model(
         &self,
-        state: &AgentState,
         frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
     ) -> Result<(), AgentError> {
         for hook in self.runtime_hooks.iter() {
             let input = AfterCallModel {
-                state,
-                frame,
                 output: &frame.model_output,
             };
             let effects = hook
@@ -248,14 +235,11 @@ impl<'a> HookPipeline<'a> {
 
     pub(crate) async fn before_call_tools(
         &self,
-        state: &AgentState,
         frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
     ) -> Result<(), AgentError> {
         for hook in self.runtime_hooks.iter() {
             let input = BeforeCallTools {
-                state,
-                frame,
                 tool_calls: &frame.tool_calls,
             };
             let effects =
@@ -275,15 +259,11 @@ impl<'a> HookPipeline<'a> {
 
     pub(crate) async fn after_call_tools(
         &self,
-        state: &AgentState,
         frame: &mut StepFrame,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
     ) -> Result<(), AgentError> {
         for hook in self.runtime_hooks.iter() {
             let input = AfterCallTools {
-                state,
-                frame,
-                tool_calls: &frame.tool_calls,
                 tool_results: &frame.tool_results,
             };
             let effects = hook
@@ -346,11 +326,7 @@ impl<'a> HookPipeline<'a> {
             let Some(result) = frame.result() else {
                 return;
             };
-            let input = AfterStep {
-                state,
-                frame,
-                result,
-            };
+            let input = AfterStep { frame, result };
             let effects = match hook.after_step(input).await {
                 Ok(effects) => effects,
                 Err(HookError { message }) => {

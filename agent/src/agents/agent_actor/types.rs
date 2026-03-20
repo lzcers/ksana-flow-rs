@@ -38,7 +38,7 @@ pub enum AgentActorEvent {
     ContentChunk(String),
     /// 推理内容片段（DeepSeek 推理模式）
     ReasoningChunk(String),
-    /// LLM 响应完成，包含完整的 content 和 tool_calls
+    /// LLM 响应完成，包含完整的 content 和 tool_calls；此时 step 尚未提交
     StepCompleted {
         /// 完整的响应内容
         content: String,
@@ -68,13 +68,13 @@ pub enum AgentActorEvent {
         kind: String,
         payload: Value,
     },
-    /// 达到最大迭代次数
+    /// 当前 step 提交后触发的 max-iterations 终态事件
     MaxIterations { iteration: usize },
-    /// Agent 执行完成
+    /// `run_loop()` 在 `Done` step 完成提交后发送的 actor 级终态事件
     Completed,
-    /// 用户取消执行
+    /// 用户取消执行；可能来自 step 提交，也可能来自 loop 在步间取消
     Cancelled,
-    /// 发生错误
+    /// 当前 step 提交后触发的错误终态事件
     Error(AgentError),
 }
 

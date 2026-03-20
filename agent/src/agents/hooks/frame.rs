@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use super::{ModelCallOutput, StepResultDraft, StepScratchpad};
-use crate::agents::{AgentActorEvent, CallToolResult, ToolCall};
+use crate::agents::{CallToolResult, ToolCall};
 
 #[derive(Default)]
 pub(crate) struct StepFrame {
@@ -13,7 +13,6 @@ pub(crate) struct StepFrame {
     pub tool_calls: Vec<ToolCall>,
     pub tool_results: Vec<CallToolResult>,
     pub final_result: Option<StepResultDraft>,
-    pub pending_events: Vec<AgentActorEvent>,
 }
 
 impl StepFrame {

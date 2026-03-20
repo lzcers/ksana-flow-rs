@@ -234,11 +234,15 @@ mod tests {
 
     struct RecordingHook {
         phases: Arc<Mutex<Vec<String>>>,
+        event_count: AtomicUsize,
     }
 
     impl RecordingHook {
         fn new(phases: Arc<Mutex<Vec<String>>>) -> Self {
-            Self { phases }
+            Self {
+                phases,
+                event_count: AtomicUsize::new(0),
+            }
         }
 
         fn push(&self, value: impl Into<String>) {
@@ -254,25 +258,20 @@ mod tests {
 
         async fn before_step(&self, _input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
             self.push("before_step");
-            Ok(vec![Effect::store_scratchpad("event_count", 0usize)])
+            self.event_count.store(0, Ordering::SeqCst);
+            Ok(vec![])
         }
 
         async fn before_call_model(
             &self,
-            _input: BeforeCallModel<'_>,
+            _input: BeforeCallModel,
         ) -> Result<Vec<Effect>, HookError> {
             self.push("before_call_model");
             Ok(vec![])
         }
 
         async fn on_model_event(&self, input: ModelEventCtx<'_>) -> Result<Vec<Effect>, HookError> {
-            let event_count = input
-                .frame
-                .scratchpad
-                .get::<usize>("event_count")
-                .copied()
-                .unwrap_or_default()
-                + 1;
+            let event_count = self.event_count.fetch_add(1, Ordering::SeqCst) + 1;
             let phase = match input.event {
                 CallModelEvent::TextChunk(_) => "on_model_event:text",
                 CallModelEvent::ReasoningChunk(_) => "on_model_event:reasoning",
@@ -280,7 +279,8 @@ mod tests {
                 CallModelEvent::Error(_) => "on_model_event:error",
             };
             self.push(phase);
-            Ok(vec![Effect::store_scratchpad("event_count", event_count)])
+            self.event_count.store(event_count, Ordering::SeqCst);
+            Ok(vec![])
         }
 
         async fn after_call_model(
@@ -310,13 +310,8 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
-            let event_count = input
-                .frame
-                .scratchpad
-                .get::<usize>("event_count")
-                .copied()
-                .unwrap_or_default();
+        async fn after_step(&self, _input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
+            let event_count = self.event_count.load(Ordering::SeqCst);
             self.push(format!("after_step:{event_count}"));
             Ok(vec![])
         }
@@ -332,7 +327,7 @@ mod tests {
 
         async fn before_call_model(
             &self,
-            _input: BeforeCallModel<'_>,
+            _input: BeforeCallModel,
         ) -> Result<Vec<Effect>, HookError> {
             Err(HookError::new("forced failure"))
         }
@@ -397,6 +392,39 @@ mod tests {
                 StepResultDraft::Error(_) => "error",
             };
             self.push(format!("internal.after_step:{phase}"));
+            Ok(vec![])
+        }
+    }
+
+    struct MaxIterationProbeHook {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MaxIterationProbeHook {
+        fn push(&self, value: impl Into<String>) {
+            self.seen.lock().unwrap().push(value.into());
+        }
+    }
+
+    #[async_trait]
+    impl RuntimeHook for MaxIterationProbeHook {
+        fn name(&self) -> &'static str {
+            "max_iteration_probe"
+        }
+
+        async fn before_step(&self, _input: BeforeStep<'_>) -> Result<Vec<Effect>, HookError> {
+            self.push("before_step");
+            Ok(vec![])
+        }
+
+        async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
+            let label = match input.result {
+                StepResultDraft::Error(AgentError::MaxIterations(iteration)) => {
+                    format!("after_step:max_iterations:{iteration}")
+                }
+                other => format!("after_step:unexpected:{other:?}"),
+            };
+            self.push(label);
             Ok(vec![])
         }
     }
@@ -585,6 +613,80 @@ mod tests {
                 .expect("metrics snapshot should exist"),
         )
         .expect("metrics snapshot should deserialize")
+    }
+
+    fn assert_step_result_matches(actual: &StepResult, expected: &StepResult) {
+        match (actual, expected) {
+            (
+                StepResult::Continue {
+                    content: actual_content,
+                    reasoning_content: actual_reasoning,
+                    tool_calls: actual_calls,
+                    tool_results: actual_results,
+                },
+                StepResult::Continue {
+                    content: expected_content,
+                    reasoning_content: expected_reasoning,
+                    tool_calls: expected_calls,
+                    tool_results: expected_results,
+                },
+            ) => {
+                assert_eq!(actual_content, expected_content);
+                assert_eq!(actual_reasoning, expected_reasoning);
+                assert_eq!(actual_calls.len(), expected_calls.len());
+                assert_eq!(actual_results.len(), expected_results.len());
+                for (actual_call, expected_call) in actual_calls.iter().zip(expected_calls.iter()) {
+                    assert_eq!(actual_call.id, expected_call.id);
+                    assert_eq!(actual_call.call_type, expected_call.call_type);
+                    assert_eq!(actual_call.index, expected_call.index);
+                    assert_eq!(
+                        actual_call
+                            .function
+                            .as_ref()
+                            .map(|function| function.name.as_str()),
+                        expected_call
+                            .function
+                            .as_ref()
+                            .map(|function| function.name.as_str())
+                    );
+                    assert_eq!(
+                        actual_call
+                            .function
+                            .as_ref()
+                            .map(|function| function.arguments.as_str()),
+                        expected_call
+                            .function
+                            .as_ref()
+                            .map(|function| function.arguments.as_str())
+                    );
+                }
+                for (actual_result, expected_result) in
+                    actual_results.iter().zip(expected_results.iter())
+                {
+                    assert_eq!(actual_result.call_id, expected_result.call_id);
+                    assert_eq!(actual_result.tool_name, expected_result.tool_name);
+                    assert_eq!(actual_result.success, expected_result.success);
+                    assert_eq!(actual_result.output, expected_result.output);
+                }
+            }
+            (
+                StepResult::Done {
+                    content: actual_content,
+                    reasoning_content: actual_reasoning,
+                },
+                StepResult::Done {
+                    content: expected_content,
+                    reasoning_content: expected_reasoning,
+                },
+            ) => {
+                assert_eq!(actual_content, expected_content);
+                assert_eq!(actual_reasoning, expected_reasoning);
+            }
+            (StepResult::Error(actual_err), StepResult::Error(expected_err)) => {
+                assert_eq!(format!("{actual_err:?}"), format!("{expected_err:?}"));
+            }
+            _ => panic!("step results have different variants: {actual:?} vs {expected:?}"),
+        }
     }
 
     #[test]
@@ -1078,7 +1180,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_public_after_step_abort_short_circuits_internal_hooks() {
+    async fn test_public_after_step_abort_still_runs_runtime_after_step_finalizers() {
         let model = MockChatModel::new(vec![ChatChunk {
             content: "hello".to_string(),
             reasoning_content: String::new(),
@@ -1121,20 +1223,37 @@ mod tests {
         assert_eq!(actor.state().state, JobState::Failed);
 
         let mut saw_error_event = false;
+        let mut saw_step_finalized = false;
         while let Ok(event) = event_rx.try_recv() {
-            if let AgentActorEvent::Error(AgentError::Hook {
-                plugin,
-                phase,
-                message,
-            }) = event
-            {
-                saw_error_event = true;
-                assert_eq!(plugin, "public_abort");
-                assert_eq!(phase, HookPhase::AfterStep);
-                assert_eq!(message, "stop requested");
+            match event {
+                AgentActorEvent::StepFinalized {
+                    result:
+                        StepResult::Error(AgentError::Hook {
+                            plugin,
+                            phase,
+                            message,
+                        }),
+                } => {
+                    saw_step_finalized = true;
+                    assert_eq!(plugin, "public_abort");
+                    assert_eq!(phase, HookPhase::AfterStep);
+                    assert_eq!(message, "stop requested");
+                }
+                AgentActorEvent::Error(AgentError::Hook {
+                    plugin,
+                    phase,
+                    message,
+                }) => {
+                    saw_error_event = true;
+                    assert_eq!(plugin, "public_abort");
+                    assert_eq!(phase, HookPhase::AfterStep);
+                    assert_eq!(message, "stop requested");
+                }
+                _ => {}
             }
         }
         assert!(saw_error_event);
+        assert!(saw_step_finalized);
     }
 
     #[tokio::test]
@@ -1234,6 +1353,245 @@ mod tests {
         );
         assert!(tool_call.name.is_none());
         assert!(tool_call.arguments.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_step_finalized_matches_return_value_and_context() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "checking weather".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("tool_calls".to_string()),
+            tool_calls: Some(vec![weather_tool_call()]),
+        }]);
+
+        let mut executor = GenericToolExecutor::new();
+        executor.register(MockWeatherTool::new());
+
+        let mut context = Context::new();
+        context.add_message(Message::user("weather"));
+
+        let mut actor = AgentActor::new(model, executor, context);
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+
+        let result = actor.run_step(Some(event_tx)).await;
+
+        let finalized = loop {
+            let event = event_rx
+                .recv()
+                .await
+                .expect("step finalized event should exist");
+            if let AgentActorEvent::StepFinalized { result } = event {
+                break result;
+            }
+        };
+
+        assert_step_result_matches(&result, &finalized);
+        assert_eq!(actor.state().state, JobState::WaitingInput);
+
+        let conversation = actor.context().conversation();
+        assert_eq!(conversation.len(), 3);
+        match &finalized {
+            StepResult::Continue {
+                content,
+                reasoning_content,
+                tool_calls,
+                tool_results,
+            } => {
+                match &conversation[1] {
+                    Message::Assistant {
+                        content: message_content,
+                        reasoning_content: message_reasoning,
+                        tool_calls: message_tool_calls,
+                    } => {
+                        assert_eq!(message_content, content);
+                        assert_eq!(message_reasoning, reasoning_content);
+                        let message_tool_calls = message_tool_calls
+                            .as_ref()
+                            .expect("assistant message should include tool calls");
+                        assert_eq!(message_tool_calls.len(), tool_calls.len());
+                        assert_eq!(message_tool_calls[0].id, tool_calls[0].id);
+                    }
+                    other => panic!("unexpected assistant message: {other:?}"),
+                }
+                match &conversation[2] {
+                    Message::Tool {
+                        tool_call_id,
+                        content: tool_content,
+                    } => {
+                        assert_eq!(tool_call_id, &tool_results[0].call_id);
+                        assert_eq!(tool_content, &tool_results[0].output);
+                    }
+                    other => panic!("unexpected tool message: {other:?}"),
+                }
+            }
+            other => panic!("unexpected finalized result: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_max_iterations_short_circuits_before_hooks() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "should not run".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let runtime_hooks =
+            RuntimeHookRegistry::empty().register(MaxIterationProbeHook { seen: seen.clone() });
+        let mut actor = crate::agents::AgentActorBuilder::new(model, executor)
+            .context(context)
+            .max_iterations(0)
+            .runtime_hooks(runtime_hooks)
+            .build();
+        let (event_tx, mut event_rx) = mpsc::channel(16);
+
+        let result = actor.run_step(Some(event_tx)).await;
+
+        match result {
+            StepResult::Error(AgentError::MaxIterations(iteration)) => {
+                assert_eq!(iteration, 0);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            ["after_step:max_iterations:0"]
+        );
+        assert_eq!(actor.state().iteration, 0);
+        assert_eq!(actor.state().state, JobState::Failed);
+        assert_eq!(actor.context().conversation().len(), 1);
+
+        let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
+        let finalized_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    AgentActorEvent::StepFinalized {
+                        result: StepResult::Error(AgentError::MaxIterations(0)),
+                    }
+                )
+            })
+            .expect("expected step finalized event");
+        let max_iterations_index = events
+            .iter()
+            .position(|event| matches!(event, AgentActorEvent::MaxIterations { iteration: 0 }))
+            .expect("expected max iterations event");
+        assert!(finalized_index < max_iterations_index);
+    }
+
+    #[tokio::test]
+    async fn test_run_loop_emits_step_finalized_before_completed() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "done".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let events = AgentActor::new(model, executor, context)
+            .run_loop()
+            .wait()
+            .await;
+
+        let step_finalized_index = events
+            .iter()
+            .position(|event| matches!(event, AgentActorEvent::StepFinalized { .. }))
+            .expect("expected step finalized event");
+        let iteration_index = events
+            .iter()
+            .position(|event| matches!(event, AgentActorEvent::Iteration { iteration: 1, .. }))
+            .expect("expected iteration event");
+        let completed_index = events
+            .iter()
+            .position(|event| matches!(event, AgentActorEvent::Completed))
+            .expect("expected completed event");
+
+        assert!(step_finalized_index < iteration_index);
+        assert!(iteration_index < completed_index);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, AgentActorEvent::Completed))
+                .count(),
+            1
+        );
+        assert!(!events.iter().any(|event| {
+            matches!(
+                event,
+                AgentActorEvent::Cancelled
+                    | AgentActorEvent::Error(_)
+                    | AgentActorEvent::MaxIterations { .. }
+            )
+        }));
+    }
+
+    #[tokio::test]
+    async fn test_run_loop_max_iterations_emits_terminal_event_once() {
+        let model = MockChatModel::new(vec![ChatChunk {
+            content: "unused".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+        }]);
+        let executor = GenericToolExecutor::new();
+
+        let mut context = Context::new();
+        context.add_message(Message::user("hello"));
+
+        let events = crate::agents::AgentActorBuilder::new(model, executor)
+            .context(context)
+            .max_iterations(0)
+            .build()
+            .run_loop()
+            .wait()
+            .await;
+
+        let step_finalized_index = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    AgentActorEvent::StepFinalized {
+                        result: StepResult::Error(AgentError::MaxIterations(0)),
+                    }
+                )
+            })
+            .expect("expected step finalized event");
+        let max_iterations_index = events
+            .iter()
+            .position(|event| matches!(event, AgentActorEvent::MaxIterations { iteration: 0 }))
+            .expect("expected max iterations event");
+
+        assert!(step_finalized_index < max_iterations_index);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, AgentActorEvent::MaxIterations { .. }))
+                .count(),
+            1
+        );
+        assert!(!events.iter().any(|event| {
+            matches!(
+                event,
+                AgentActorEvent::Completed | AgentActorEvent::Cancelled | AgentActorEvent::Error(_)
+            )
+        }));
     }
 
     /// 测试 Agent Loop - 流式工具调用流程

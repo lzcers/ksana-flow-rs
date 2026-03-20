@@ -8,8 +8,6 @@ use crate::agents::{AgentActorEvent, AgentError};
 
 pub(crate) enum Effect {
     EmitNow(AgentActorEvent),
-    #[allow(dead_code)]
-    EmitOnCommit(AgentActorEvent),
     SetMetadata {
         key: String,
         value: Value,
@@ -57,10 +55,6 @@ impl EffectHandle {
                 if let Some(tx) = event_tx {
                     let _ = tx.send(event).await;
                 }
-                EffectSignal::Continue
-            }
-            Effect::EmitOnCommit(event) => {
-                frame.pending_events.push(event);
                 EffectSignal::Continue
             }
             Effect::SetMetadata { key, value } => {

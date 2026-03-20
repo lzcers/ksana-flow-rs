@@ -82,10 +82,10 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    async fn before_call_model(&mut self, tools: &[ToolDef]) -> bool {
+    async fn before_call_model(&mut self) -> bool {
         match self
             .hooks
-            .before_call_model(&*self.state, &mut self.frame, self.event_tx, tools)
+            .before_call_model(&mut self.frame, self.event_tx)
             .await
         {
             Ok(()) => self.has_result(),
@@ -99,7 +99,7 @@ impl<'a> StepLifecycle<'a> {
     async fn after_call_model(&mut self) -> bool {
         match self
             .hooks
-            .after_call_model(&*self.state, &mut self.frame, self.event_tx)
+            .after_call_model(&mut self.frame, self.event_tx)
             .await
         {
             Ok(()) => self.has_result(),
@@ -113,7 +113,7 @@ impl<'a> StepLifecycle<'a> {
     async fn before_call_tools(&mut self) -> bool {
         match self
             .hooks
-            .before_call_tools(&*self.state, &mut self.frame, self.event_tx)
+            .before_call_tools(&mut self.frame, self.event_tx)
             .await
         {
             Ok(()) => self.has_result(),
@@ -127,7 +127,7 @@ impl<'a> StepLifecycle<'a> {
     async fn after_call_tools(&mut self) -> bool {
         match self
             .hooks
-            .after_call_tools(&*self.state, &mut self.frame, self.event_tx)
+            .after_call_tools(&mut self.frame, self.event_tx)
             .await
         {
             Ok(()) => self.has_result(),
@@ -145,7 +145,7 @@ impl<'a> StepLifecycle<'a> {
     ) {
         let tools = tool_executor.tools().clone();
 
-        if self.begin_step() || self.before_step().await || self.before_call_model(&tools).await {
+        if self.begin_step() || self.before_step().await || self.before_call_model().await {
             return;
         }
 
@@ -279,7 +279,7 @@ impl<'a> StepLifecycle<'a> {
                 "step finalizer removed the final result".to_string(),
             ))
         });
-        let plan = CommitReducer::reduce(&*self.state, &self.frame, &final_result);
+        let plan = CommitReducer::reduce(&*self.state, &final_result);
         StepCommitter::apply(plan, self.state, self.event_tx).await;
 
         step_result_from_draft(final_result)

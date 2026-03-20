@@ -57,11 +57,17 @@ impl RuntimeHook for MetricsHook {
 
     async fn after_call_tools(&self, input: AfterCallTools<'_>) -> Result<Vec<Effect>, HookError> {
         let mut state = self.state.lock().unwrap();
-        state.metrics.tool_calls_count += input.tool_calls.len();
+        state.metrics.tool_calls_count += input.tool_results.len();
         Ok(vec![])
     }
 
     async fn after_step(&self, input: AfterStep<'_>) -> Result<Vec<Effect>, HookError> {
+        match input.result {
+            super::StepResultDraft::Continue { .. }
+            | super::StepResultDraft::Done { .. }
+            | super::StepResultDraft::Error(_) => {}
+        }
+
         let started_at = input
             .frame
             .scratchpad
