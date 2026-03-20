@@ -15,7 +15,7 @@ use crate::agents::hooks::{
 use crate::agents::{AgentState, ToolExecutor};
 use crate::models::ChatCapability;
 
-pub(super) type StepControl = ControlFlow<()>;
+pub(super) type LifecycleFlow = ControlFlow<()>;
 
 pub(super) struct StepLifecycle<'a> {
     state: &'a mut AgentState,
@@ -58,15 +58,15 @@ impl<'a> StepLifecycle<'a> {
         self.frame.result().is_some()
     }
 
-    fn continue_step() -> StepControl {
+    fn continue_step() -> LifecycleFlow {
         ControlFlow::Continue(())
     }
 
-    fn break_step() -> StepControl {
+    fn break_step() -> LifecycleFlow {
         ControlFlow::Break(())
     }
 
-    fn break_if_result(&self) -> StepControl {
+    fn break_if_result(&self) -> LifecycleFlow {
         if self.has_result() {
             Self::break_step()
         } else {
@@ -74,16 +74,16 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    fn stop_with_result(&mut self, result: StepResultDraft) -> StepControl {
+    fn stop_with_result(&mut self, result: StepResultDraft) -> LifecycleFlow {
         self.set_result(result);
         Self::break_step()
     }
 
-    fn stop_with_error(&mut self, err: AgentError) -> StepControl {
+    fn stop_with_error(&mut self, err: AgentError) -> LifecycleFlow {
         self.stop_with_result(StepResultDraft::Error(err))
     }
 
-    fn begin_step(&mut self) -> StepControl {
+    fn begin_step(&mut self) -> LifecycleFlow {
         if self.state.iteration >= self.state.max_iterations {
             return self.stop_with_result(StepResultDraft::Error(AgentError::MaxIterations(
                 self.state.iteration,
@@ -92,10 +92,10 @@ impl<'a> StepLifecycle<'a> {
 
         self.state.iteration += 1;
         self.state.state = crate::agents::JobState::Running;
-        Self::continue_step()
+        ControlFlow::Continue(())
     }
 
-    async fn before_step(&mut self) -> StepControl {
+    async fn before_step(&mut self) -> LifecycleFlow {
         match self
             .hooks
             .before_step(&*self.state, &mut self.frame, self.event_tx)
@@ -106,7 +106,7 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    async fn before_call_model(&mut self) -> StepControl {
+    async fn before_call_model(&mut self) -> LifecycleFlow {
         match self
             .hooks
             .before_call_model(&mut self.frame, self.event_tx)
@@ -117,7 +117,7 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    async fn after_call_model(&mut self) -> StepControl {
+    async fn after_call_model(&mut self) -> LifecycleFlow {
         match self
             .hooks
             .after_call_model(&mut self.frame, self.event_tx)
@@ -128,7 +128,7 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    async fn before_call_tools(&mut self) -> StepControl {
+    async fn before_call_tools(&mut self) -> LifecycleFlow {
         match self
             .hooks
             .before_call_tools(&mut self.frame, self.event_tx)
@@ -139,7 +139,7 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    async fn after_call_tools(&mut self) -> StepControl {
+    async fn after_call_tools(&mut self) -> LifecycleFlow {
         match self
             .hooks
             .after_call_tools(&mut self.frame, self.event_tx)
@@ -153,7 +153,7 @@ impl<'a> StepLifecycle<'a> {
     async fn stream_model_output(
         &mut self,
         mut stream: Pin<&mut impl Stream<Item = CallModelEvent>>,
-    ) -> StepControl {
+    ) -> LifecycleFlow {
         let mut model_error: Option<AgentError> = None;
 
         while let Some(event) = stream.next().await {
@@ -207,7 +207,7 @@ impl<'a> StepLifecycle<'a> {
         &mut self,
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
-    ) -> StepControl {
+    ) -> LifecycleFlow {
         let messages = self.state.context.to_messages();
         let tools = tool_executor.tools().clone();
 

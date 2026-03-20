@@ -7,7 +7,7 @@ use super::{
     AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, AgentError, StepResult,
 };
 use crate::agents::ToolExecutor;
-use crate::agents::agent_actor::lifecycle::StepControl;
+use crate::agents::agent_actor::lifecycle::LifecycleFlow;
 use crate::agents::hooks::StepResultDraft;
 use crate::models::ChatCapability;
 
@@ -124,8 +124,8 @@ where
             execution_policy,
         );
 
-        fn apply_control(lifecycle: &mut StepLifecycle, control: StepControl) {
-            if let StepControl::Continue(()) = control {
+        fn apply_control(lifecycle: &mut StepLifecycle, control: LifecycleFlow) {
+            if let LifecycleFlow::Continue(()) = control {
                 lifecycle.set_result(StepResultDraft::Error(AgentError::Model(
                     "step lifecycle returned Continue without a final result".to_string(),
                 )));
