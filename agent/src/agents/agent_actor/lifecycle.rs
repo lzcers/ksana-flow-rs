@@ -1,7 +1,7 @@
-use std::pin::pin;
+use std::pin::{Pin, pin};
 use std::time::Duration;
 
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use tokio::sync::mpsc;
 
 use super::commit::{CommitReducer, StepCommitter};
@@ -138,78 +138,10 @@ impl<'a> StepLifecycle<'a> {
         }
     }
 
-    pub(super) async fn start(
-        &mut self,
-        model: &(dyn ChatCapability + Sync),
-        tool_executor: &dyn ToolExecutor,
-    ) {
-        let tools = tool_executor.tools().clone();
-
-        if self.begin_step() || self.before_step().await || self.before_call_model().await {
-            return;
-        }
-
-        if self.stream_model_output(model, &tools).await || self.after_call_model().await {
-            return;
-        }
-
-        if self.frame.model_output.tool_calls.is_empty() {
-            self.set_result(StepResultDraft::Done {
-                content: self.frame.model_output.content.clone(),
-                reasoning_content: self.frame.model_output.reasoning_content.clone(),
-            });
-            return;
-        }
-
-        self.frame.tool_calls = self.frame.model_output.tool_calls.clone();
-
-        if self.before_call_tools().await {
-            return;
-        }
-
-        if self.frame.tool_calls.is_empty() {
-            self.set_result(StepResultDraft::Done {
-                content: self.frame.model_output.content.clone(),
-                reasoning_content: self.frame.model_output.reasoning_content.clone(),
-            });
-            return;
-        }
-
-        let tool_results = match execute_tools_with_timeout(
-            tool_executor,
-            &self.frame.tool_calls,
-            self.tool_timeout(),
-        )
-        .await
-        {
-            Ok(results) => results,
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                return;
-            }
-        };
-        self.frame.tool_results = tool_results;
-
-        if self.after_call_tools().await {
-            return;
-        }
-
-        self.set_result(StepResultDraft::Continue {
-            content: self.frame.model_output.content.clone(),
-            reasoning_content: self.frame.model_output.reasoning_content.clone(),
-            tool_calls: self.frame.tool_calls.clone(),
-            tool_results: self.frame.tool_results.clone(),
-        });
-    }
-
     async fn stream_model_output(
         &mut self,
-        model: &(dyn ChatCapability + Sync),
-        tools: &[ToolDef],
+        mut stream: Pin<&mut impl Stream<Item = CallModelEvent>>,
     ) -> bool {
-        let messages = self.state.context.to_messages();
-        let tools = tools.to_vec();
-        let mut stream = pin!(call_model(model, &messages, Some(&tools)));
         let mut model_error: Option<AgentError> = None;
 
         while let Some(event) = stream.next().await {
@@ -261,6 +193,71 @@ impl<'a> StepLifecycle<'a> {
         }
 
         false
+    }
+
+    pub(super) async fn start(
+        &mut self,
+        model: &(dyn ChatCapability + Sync),
+        tool_executor: &dyn ToolExecutor,
+    ) {
+        let messages = self.state.context.to_messages();
+        let tools = tool_executor.tools().clone();
+        let stream = pin!(call_model(model, &messages, Some(&tools)));
+        if self.begin_step() || self.before_step().await || self.before_call_model().await {
+            return;
+        }
+
+        if self.stream_model_output(stream).await || self.after_call_model().await {
+            return;
+        }
+
+        if self.frame.model_output.tool_calls.is_empty() {
+            self.set_result(StepResultDraft::Done {
+                content: self.frame.model_output.content.clone(),
+                reasoning_content: self.frame.model_output.reasoning_content.clone(),
+            });
+            return;
+        }
+
+        self.frame.tool_calls = self.frame.model_output.tool_calls.clone();
+
+        if self.before_call_tools().await {
+            return;
+        }
+
+        if self.frame.tool_calls.is_empty() {
+            self.set_result(StepResultDraft::Done {
+                content: self.frame.model_output.content.clone(),
+                reasoning_content: self.frame.model_output.reasoning_content.clone(),
+            });
+            return;
+        }
+
+        let tool_results = match execute_tools_with_timeout(
+            tool_executor,
+            &self.frame.tool_calls,
+            self.tool_timeout(),
+        )
+        .await
+        {
+            Ok(results) => results,
+            Err(err) => {
+                self.set_result(StepResultDraft::Error(err));
+                return;
+            }
+        };
+        self.frame.tool_results = tool_results;
+
+        if self.after_call_tools().await {
+            return;
+        }
+
+        self.set_result(StepResultDraft::Continue {
+            content: self.frame.model_output.content.clone(),
+            reasoning_content: self.frame.model_output.reasoning_content.clone(),
+            tool_calls: self.frame.tool_calls.clone(),
+            tool_results: self.frame.tool_results.clone(),
+        });
     }
 
     pub(super) async fn finish(&mut self) -> StepResult {
