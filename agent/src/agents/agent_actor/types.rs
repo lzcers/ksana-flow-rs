@@ -1,7 +1,6 @@
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::agents::hooks::{HookPhase, StepResultDraft};
 use crate::agents::tools::ToolCall;
 
 /// Agent 执行错误类型
@@ -13,13 +12,6 @@ pub enum AgentError {
     /// 工具执行错误
     #[error("Tool execution error: {0}")]
     Tool(String),
-    /// Hook 执行错误
-    #[error("Hook `{plugin}` failed at {phase:?}: {message}")]
-    Hook {
-        plugin: &'static str,
-        phase: HookPhase,
-        message: String,
-    },
     /// 用户取消
     #[error("Cancelled by user")]
     Cancelled,
@@ -155,28 +147,4 @@ pub enum StepResult {
     },
     /// 执行出错
     Error(AgentError),
-}
-
-pub(super) fn step_result_from_draft(draft: StepResultDraft) -> StepResult {
-    match draft {
-        StepResultDraft::Continue {
-            content,
-            reasoning_content,
-            tool_calls,
-            tool_results,
-        } => StepResult::Continue {
-            content,
-            reasoning_content,
-            tool_calls,
-            tool_results,
-        },
-        StepResultDraft::Done {
-            content,
-            reasoning_content,
-        } => StepResult::Done {
-            content,
-            reasoning_content,
-        },
-        StepResultDraft::Error(err) => StepResult::Error(err),
-    }
 }

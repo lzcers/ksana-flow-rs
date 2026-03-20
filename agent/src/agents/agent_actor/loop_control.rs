@@ -3,12 +3,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use super::lifecycle::StepLifecycle;
-use super::{
-    AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, AgentError, StepResult,
-};
+use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
 use crate::agents::ToolExecutor;
-use crate::agents::agent_actor::lifecycle::LifecycleFlow;
-use crate::agents::hooks::StepResultDraft;
 use crate::models::ChatCapability;
 
 /// 循环执行状态
@@ -115,39 +111,12 @@ where
     ) -> StepResult {
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
-        let execution_policy = self.runtime_hooks.execution_policy(&self.state);
-        let mut lifecycle = StepLifecycle::new(
-            &mut self.state,
-            &self.runtime_hooks,
-            &self.hooks,
-            event_tx.as_ref(),
-            execution_policy,
-        );
-
-        fn apply_control(lifecycle: &mut StepLifecycle, control: LifecycleFlow) {
-            if let LifecycleFlow::Continue(()) = control {
-                lifecycle.set_result(StepResultDraft::Error(AgentError::Model(
-                    "step lifecycle returned Continue without a final result".to_string(),
-                )));
-            }
+        let mut lifecycle = StepLifecycle::new(self.state.clone());
+        lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+        StepResult::Done {
+            content: "".to_string(),
+            reasoning_content: Some("".to_string()),
         }
-
-        if let Some(timeout) = lifecycle.step_timeout() {
-            match tokio::time::timeout(
-                timeout,
-                lifecycle.start(chat.as_ref(), tool_executor.as_ref()),
-            )
-            .await
-            {
-                Ok(control) => apply_control(&mut lifecycle, control),
-                Err(_) => lifecycle.set_result(StepResultDraft::Error(AgentError::Timeout)),
-            }
-        } else {
-            let control = lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
-            apply_control(&mut lifecycle, control);
-        }
-
-        lifecycle.finish().await
     }
 
     /// 启动循环执行，返回控制句柄
