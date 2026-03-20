@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::pin::{Pin, pin};
 use std::time::Duration;
 
@@ -13,6 +14,8 @@ use crate::agents::hooks::{
 };
 use crate::agents::{AgentState, ToolExecutor};
 use crate::models::ChatCapability;
+
+pub(super) type StepControl = ControlFlow<()>;
 
 pub(super) struct StepLifecycle<'a> {
     state: &'a mut AgentState,
@@ -55,93 +58,102 @@ impl<'a> StepLifecycle<'a> {
         self.frame.result().is_some()
     }
 
-    fn begin_step(&mut self) -> bool {
+    fn continue_step() -> StepControl {
+        ControlFlow::Continue(())
+    }
+
+    fn break_step() -> StepControl {
+        ControlFlow::Break(())
+    }
+
+    fn break_if_result(&self) -> StepControl {
+        if self.has_result() {
+            Self::break_step()
+        } else {
+            Self::continue_step()
+        }
+    }
+
+    fn stop_with_result(&mut self, result: StepResultDraft) -> StepControl {
+        self.set_result(result);
+        Self::break_step()
+    }
+
+    fn stop_with_error(&mut self, err: AgentError) -> StepControl {
+        self.stop_with_result(StepResultDraft::Error(err))
+    }
+
+    fn begin_step(&mut self) -> StepControl {
         if self.state.iteration >= self.state.max_iterations {
-            self.set_result(StepResultDraft::Error(AgentError::MaxIterations(
+            return self.stop_with_result(StepResultDraft::Error(AgentError::MaxIterations(
                 self.state.iteration,
             )));
-            return true;
         }
 
         self.state.iteration += 1;
         self.state.state = crate::agents::JobState::Running;
-        false
+        Self::continue_step()
     }
 
-    async fn before_step(&mut self) -> bool {
+    async fn before_step(&mut self) -> StepControl {
         match self
             .hooks
             .before_step(&*self.state, &mut self.frame, self.event_tx)
             .await
         {
-            Ok(()) => self.has_result(),
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                true
-            }
+            Ok(()) => self.break_if_result(),
+            Err(err) => self.stop_with_error(err),
         }
     }
 
-    async fn before_call_model(&mut self) -> bool {
+    async fn before_call_model(&mut self) -> StepControl {
         match self
             .hooks
             .before_call_model(&mut self.frame, self.event_tx)
             .await
         {
-            Ok(()) => self.has_result(),
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                true
-            }
+            Ok(()) => self.break_if_result(),
+            Err(err) => self.stop_with_error(err),
         }
     }
 
-    async fn after_call_model(&mut self) -> bool {
+    async fn after_call_model(&mut self) -> StepControl {
         match self
             .hooks
             .after_call_model(&mut self.frame, self.event_tx)
             .await
         {
-            Ok(()) => self.has_result(),
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                true
-            }
+            Ok(()) => self.break_if_result(),
+            Err(err) => self.stop_with_error(err),
         }
     }
 
-    async fn before_call_tools(&mut self) -> bool {
+    async fn before_call_tools(&mut self) -> StepControl {
         match self
             .hooks
             .before_call_tools(&mut self.frame, self.event_tx)
             .await
         {
-            Ok(()) => self.has_result(),
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                true
-            }
+            Ok(()) => self.break_if_result(),
+            Err(err) => self.stop_with_error(err),
         }
     }
 
-    async fn after_call_tools(&mut self) -> bool {
+    async fn after_call_tools(&mut self) -> StepControl {
         match self
             .hooks
             .after_call_tools(&mut self.frame, self.event_tx)
             .await
         {
-            Ok(()) => self.has_result(),
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                true
-            }
+            Ok(()) => self.break_if_result(),
+            Err(err) => self.stop_with_error(err),
         }
     }
 
     async fn stream_model_output(
         &mut self,
         mut stream: Pin<&mut impl Stream<Item = CallModelEvent>>,
-    ) -> bool {
+    ) -> StepControl {
         let mut model_error: Option<AgentError> = None;
 
         while let Some(event) = stream.next().await {
@@ -176,63 +188,53 @@ impl<'a> StepLifecycle<'a> {
                 .await
             {
                 Ok(()) => {}
-                Err(err) => {
-                    self.set_result(StepResultDraft::Error(err));
-                    return true;
-                }
+                Err(err) => return self.stop_with_error(err),
             }
 
             if let Some(err) = model_error.take() {
-                self.set_result(StepResultDraft::Error(err));
-                return true;
+                return self.stop_with_error(err);
             }
 
             if self.has_result() {
-                return true;
+                return Self::break_step();
             }
         }
 
-        false
+        Self::continue_step()
     }
 
     pub(super) async fn start(
         &mut self,
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
-    ) {
+    ) -> StepControl {
         let messages = self.state.context.to_messages();
         let tools = tool_executor.tools().clone();
 
-        if self.begin_step() || self.before_step().await || self.before_call_model().await {
-            return;
-        }
+        self.begin_step()?;
+        self.before_step().await?;
+        self.before_call_model().await?;
 
         let stream = pin!(call_model(model, &messages, Some(&tools)));
-
-        if self.stream_model_output(stream).await || self.after_call_model().await {
-            return;
-        }
+        self.stream_model_output(stream).await?;
+        self.after_call_model().await?;
 
         if self.frame.model_output.tool_calls.is_empty() {
-            self.set_result(StepResultDraft::Done {
+            return self.stop_with_result(StepResultDraft::Done {
                 content: self.frame.model_output.content.clone(),
                 reasoning_content: self.frame.model_output.reasoning_content.clone(),
             });
-            return;
         }
 
         self.frame.tool_calls = self.frame.model_output.tool_calls.clone();
 
-        if self.before_call_tools().await {
-            return;
-        }
+        self.before_call_tools().await?;
 
         if self.frame.tool_calls.is_empty() {
-            self.set_result(StepResultDraft::Done {
+            return self.stop_with_result(StepResultDraft::Done {
                 content: self.frame.model_output.content.clone(),
                 reasoning_content: self.frame.model_output.reasoning_content.clone(),
             });
-            return;
         }
 
         let tool_results = match execute_tools_with_timeout(
@@ -243,23 +245,18 @@ impl<'a> StepLifecycle<'a> {
         .await
         {
             Ok(results) => results,
-            Err(err) => {
-                self.set_result(StepResultDraft::Error(err));
-                return;
-            }
+            Err(err) => return self.stop_with_error(err),
         };
         self.frame.tool_results = tool_results;
 
-        if self.after_call_tools().await {
-            return;
-        }
+        self.after_call_tools().await?;
 
-        self.set_result(StepResultDraft::Continue {
+        self.stop_with_result(StepResultDraft::Continue {
             content: self.frame.model_output.content.clone(),
             reasoning_content: self.frame.model_output.reasoning_content.clone(),
             tool_calls: self.frame.tool_calls.clone(),
             tool_results: self.frame.tool_results.clone(),
-        });
+        })
     }
 
     pub(super) async fn finish(&mut self) -> StepResult {

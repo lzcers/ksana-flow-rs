@@ -7,6 +7,7 @@ use super::{
     AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, AgentError, StepResult,
 };
 use crate::agents::ToolExecutor;
+use crate::agents::agent_actor::lifecycle::StepControl;
 use crate::agents::hooks::StepResultDraft;
 use crate::models::ChatCapability;
 
@@ -130,7 +131,10 @@ where
             )
             .await
             {
-                Ok(()) => {}
+                Ok(StepControl::Continue(_)) => {}
+                Ok(StepControl::Break(_)) => {
+                    lifecycle.set_result(StepResultDraft::Error(AgentError::Timeout))
+                }
                 Err(_) => lifecycle.set_result(StepResultDraft::Error(AgentError::Timeout)),
             }
         } else {
