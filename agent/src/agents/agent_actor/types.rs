@@ -18,9 +18,6 @@ pub enum AgentError {
     /// 操作超时
     #[error("Operation timed out")]
     Timeout,
-    /// 达到最大迭代次数
-    #[error("Max iterations ({0}) reached")]
-    MaxIterations(usize),
 }
 
 /// Actor 产生的事件
