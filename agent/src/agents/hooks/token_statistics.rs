@@ -1,12 +1,12 @@
 use crate::agents::{
-    agent_actor::lifecycle::{LifeCycle, LifeCycleEffect, LifeCycleError, LifeCycleFlow},
+    agent_actor::lifecycle::{LifeCycle, LifeCycleFlow},
     hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 
 pub struct TokenStatisticsHook {}
 
 impl TokenStatisticsHook {
-    pub fn new(max_iter_limit: u32) -> Self {
+    pub fn new() -> Self {
         Self {}
     }
 }

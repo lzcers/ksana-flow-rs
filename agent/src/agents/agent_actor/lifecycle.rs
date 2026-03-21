@@ -7,7 +7,9 @@ use futures::{Stream, StreamExt};
 use super::{AgentActorEvent, AgentError, StepResult};
 use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call_tools};
 use crate::agents::hooks::LifeCycleHook;
-use crate::agents::hooks::max_iter_limit::MaxIterLimitHook;
+use crate::agents::hooks::execution_policy::ExecutionPolicyHook;
+use crate::agents::hooks::metrics::MetricsHook;
+use crate::agents::hooks::token_statistics::TokenStatisticsHook;
 use crate::agents::{AgentState, ToolCall, ToolExecutor};
 use crate::models::ChatCapability;
 
@@ -88,7 +90,6 @@ pub(super) struct StepLifeCycle {
     frame: StepFrame,
 }
 
-// 供外部调用
 impl StepLifeCycle {
     pub(super) fn new(state: AgentState) -> Self {
         Self {
@@ -157,7 +158,9 @@ impl StepLifeCycle {
 
     async fn call_life_cyle_hook(&mut self, lifecycle: LifeCycle) -> LifeCycleFlow {
         let lctx = LifeCycleContext::default();
-        MaxIterLimitHook::new(10).handle(&lctx).await?;
+        ExecutionPolicyHook::new(10).handle(&lctx).await?;
+        MetricsHook::new().handle(&lctx).await?;
+        TokenStatisticsHook::new().handle(&lctx).await?;
         Self::continue_step()
     }
 
