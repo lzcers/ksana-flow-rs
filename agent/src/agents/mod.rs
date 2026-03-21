@@ -3,6 +3,7 @@ pub mod agent_actor;
 pub mod agent_state;
 pub mod call_model;
 pub mod context;
+pub mod hooks;
 #[cfg(test)]
 mod tests;
 pub mod tools;

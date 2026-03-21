@@ -1,27 +1,11 @@
-//! `agent_actor` 模块负责 Agent 的高层编排，对外暴露统一的执行入口、
-//! 控制句柄与构建 API。
-//!
-//! 实现按职责拆分在以下子模块中：
-//! - `types`: 定义 Actor 对外可见的数据结构，包括错误类型、运行事件、
-//!   控制命令、控制句柄，以及单步执行结果。
-//! - `lifecycle`: 实现单步执行的生命周期内部流程，负责阶段调度、
-//!   模型调用流处理、工具调用以及 step 结果组装。
-//! - `commit`: 实现单步最终结果的 reducer / committer，把状态迁移、
-//!   上下文持久化和提交事件统一收口。
-//! - `loop_control`: 实现 `run_step`、后台循环执行与暂停、继续、取消等
-//!   控制逻辑，对应 Actor 的对外运行控制行为。
-//! - `builder`: 实现 `AgentActorBuilder`，负责 Actor 初始化参数装配，
-//!   包括上下文、迭代次数、用户 ID 与超时策略。
-//!
-//! 当前文件作为目录模块入口，只保留共享状态定义、公共导出以及少量
-//! 跨子模块复用的辅助方法。
-
 /// 构建器相关实现位于 `builder` 子模块。
 mod builder;
 /// 单步执行生命周期位于 `lifecycle` 子模块。
-mod lifecycle;
+pub mod lifecycle;
 /// 后台循环控制逻辑位于 `loop_control` 子模块。
 mod loop_control;
+/// 状态 reducer 位于 `reducer` 子模块。
+mod reducer;
 /// 错误、事件、命令和结果类型位于 `types` 子模块。
 mod types;
 

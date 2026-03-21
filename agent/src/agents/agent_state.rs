@@ -9,7 +9,7 @@ pub use crate::agents::context::{Context, Layer, LayerKind, LayerMeta};
 // AgentState: Agent 状态
 // ============================================================================
 /// Agent 状态 - 可持久化、可追踪的执行实体
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentState {
     // === 标识信息 ===
     /// 唯一 ID

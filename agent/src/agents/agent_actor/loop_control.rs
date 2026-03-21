@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use super::lifecycle::StepLifecycle;
+use super::lifecycle::StepLifeCycle;
 use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
 use crate::agents::ToolExecutor;
 use crate::models::ChatCapability;
@@ -111,7 +111,7 @@ where
     ) -> StepResult {
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
-        let mut lifecycle = StepLifecycle::new(self.state.clone());
+        let mut lifecycle = StepLifeCycle::new(self.state.clone());
         lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
         StepResult::Done {
             content: "".to_string(),
