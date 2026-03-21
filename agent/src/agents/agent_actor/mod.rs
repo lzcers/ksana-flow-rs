@@ -36,10 +36,6 @@ where
     chat: Arc<C>,
     /// 工具执行器
     tool_executor: Arc<E>,
-    /// Step 级超时
-    step_timeout: Option<Duration>,
-    /// Tool 调用级超时
-    tool_timeout: Option<Duration>,
 }
 
 impl<C, E> AgentActor<C, E>
@@ -71,8 +67,6 @@ where
             },
             chat: Arc::new(chat),
             tool_executor: Arc::new(tool_executor),
-            step_timeout: None,
-            tool_timeout: None,
         }
     }
 
