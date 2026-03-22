@@ -1,5 +1,5 @@
 use crate::agents::{
-    agent_actor::lifecycle::{LifeCycle, LifeCycleEffect, LifeCycleError, LifeCycleFlow},
+    agent_actor::lifecycle::{LifeCycle, LifeCycleError, LifeCycleFlow, LifeCycleResult},
     hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 
@@ -48,6 +48,6 @@ impl LifeCycleHook for ExecutionPolicyHook {
             LifeCycle::AfterStep => self.add_iter_num(),
             _ => {}
         }
-        LifeCycleFlow::Continue(LifeCycleEffect::None)
+        LifeCycleFlow::Continue(LifeCycleResult::None)
     }
 }

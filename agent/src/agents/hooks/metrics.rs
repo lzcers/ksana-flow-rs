@@ -1,7 +1,7 @@
 use tokio::time::Instant;
 
 use crate::agents::{
-    agent_actor::lifecycle::{LifeCycle, LifeCycleEffect, LifeCycleError, LifeCycleFlow},
+    agent_actor::lifecycle::{LifeCycle, LifeCycleError, LifeCycleFlow, LifeCycleResult},
     hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 
@@ -68,6 +68,6 @@ impl LifeCycleHook for MetricsHook {
             _ => {}
         }
 
-        LifeCycleFlow::Continue(LifeCycleEffect::None)
+        LifeCycleFlow::Continue(LifeCycleResult::None)
     }
 }

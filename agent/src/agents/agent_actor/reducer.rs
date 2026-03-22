@@ -1,9 +1,9 @@
-use crate::agents::agent_actor::lifecycle::{LifeCycleContext, LifeCycleEffect};
+use crate::agents::agent_actor::lifecycle::{LifeCycleContext, LifeCycleResult};
 
 pub struct Reducer;
 
 impl Reducer {
-    pub async fn applay(ctx: LifeCycleContext, effect: LifeCycleEffect) -> LifeCycleContext {
+    pub async fn applay(ctx: LifeCycleContext, result: LifeCycleResult) -> LifeCycleContext {
         todo!("applay effect");
     }
 }

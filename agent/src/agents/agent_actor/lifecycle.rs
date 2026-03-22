@@ -31,10 +31,10 @@ pub enum LifeCycle {
     AfterStep,
 }
 
-pub enum LifeCycleEffect {
+pub enum LifeCycleResult {
     None,
 }
-impl Default for LifeCycleEffect {
+impl Default for LifeCycleResult {
     fn default() -> Self {
         Self::None
     }
@@ -50,8 +50,9 @@ impl LifeCycleError {
     }
 }
 
-pub type LifeCycleFlow = ControlFlow<LifeCycleError, LifeCycleEffect>;
+pub type LifeCycleFlow = ControlFlow<LifeCycleError, LifeCycleResult>;
 
+// 生命周期上下文, 给 Hook 使用
 pub struct LifeCycleContext {
     pub stage: LifeCycle,
     pub state: AgentState,
@@ -153,7 +154,7 @@ impl StepLifeCycle {
     }
 
     fn continue_step() -> LifeCycleFlow {
-        ControlFlow::Continue(LifeCycleEffect::None)
+        ControlFlow::Continue(LifeCycleResult::None)
     }
 
     async fn call_life_cyle_hook(&mut self, lifecycle: LifeCycle) -> LifeCycleFlow {
