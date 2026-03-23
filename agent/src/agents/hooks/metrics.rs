@@ -50,7 +50,7 @@ impl LifeCycleHook for MetricsHook {
     fn priority(&self) -> i32 {
         0
     }
-    fn on(&self, stage: LifeCycle) -> bool {
+    fn on(&self, stage: &LifeCycle) -> bool {
         matches!(
             stage,
             LifeCycle::BeforeCallModel
@@ -59,7 +59,7 @@ impl LifeCycleHook for MetricsHook {
                 | LifeCycle::AfterCallTools
         )
     }
-    async fn handle(mut self, ctx: &LifeCycleContext) -> LifeCycleFlow {
+    async fn handle(&mut self, ctx: &mut LifeCycleContext) -> LifeCycleFlow {
         match ctx.stage {
             LifeCycle::BeforeCallModel => self.set_step_call_model_instant(),
             LifeCycle::AfterCallModel => self.record_step_call_model_duration(),

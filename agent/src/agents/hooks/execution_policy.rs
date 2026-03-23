@@ -31,10 +31,11 @@ impl LifeCycleHook for ExecutionPolicyHook {
     fn priority(&self) -> i32 {
         0
     }
-    fn on(&self, stage: LifeCycle) -> bool {
+    fn on(&self, stage: &LifeCycle) -> bool {
         matches!(stage, LifeCycle::BeforeStep | LifeCycle::AfterStep)
     }
-    async fn handle(mut self, ctx: &LifeCycleContext) -> LifeCycleFlow {
+
+    async fn handle(&mut self, ctx: &mut LifeCycleContext) -> LifeCycleFlow {
         match ctx.stage {
             LifeCycle::BeforeStep => {
                 if self.check_max_iter_limit() {

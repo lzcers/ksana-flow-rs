@@ -1,7 +1,7 @@
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::agents::tools::ToolCall;
+use crate::agents::{CallToolResult, tools::ToolCall};
 
 /// Agent 执行错误类型
 #[derive(Debug, Clone, thiserror::Error)]
@@ -135,7 +135,7 @@ pub enum StepResult {
         content: String,
         reasoning_content: Option<String>,
         tool_calls: Vec<ToolCall>,
-        tool_results: Vec<crate::agents::call_model::CallToolResult>,
+        tool_results: Vec<CallToolResult>,
     },
     /// 执行完成（无工具调用）
     Done {

@@ -32,7 +32,7 @@ pub enum CallModelEvent {
         /// 完整的推理内容（如果有）
         reasoning_content: Option<String>,
         /// 工具调用列表（如果有）
-        tool_calls: Option<Vec<ToolCall>>,
+        tools_call: Option<Vec<ToolCall>>,
     },
     Error(String),
 }
@@ -77,7 +77,7 @@ pub fn call_model(
         yield CallModelEvent::Completed {
             content: final_content,
             reasoning_content: if final_reasoning_content.is_empty() { None } else { Some(final_reasoning_content) },
-            tool_calls: if final_tool_calls.is_empty() { None } else { Some(final_tool_calls) },
+            tools_call: if final_tool_calls.is_empty() { None } else { Some(final_tool_calls) },
         };
     }
 }

@@ -19,10 +19,16 @@ impl LifeCycleHook for TokenStatisticsHook {
     fn priority(&self) -> i32 {
         0
     }
-    fn on(&self, stage: LifeCycle) -> bool {
-        todo!("on")
+    fn on(&self, stage: &LifeCycle) -> bool {
+        matches!(
+            stage,
+            LifeCycle::BeforeCallModel
+                | LifeCycle::AfterCallModel
+                | LifeCycle::BeforeCallTools
+                | LifeCycle::AfterCallTools
+        )
     }
-    async fn handle(mut self, ctx: &LifeCycleContext) -> LifeCycleFlow {
+    async fn handle(&mut self, ctx: &mut LifeCycleContext) -> LifeCycleFlow {
         todo!()
     }
 }

@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::ops::ControlFlow;
 use std::pin::{Pin, pin};
 use std::time::Duration;
@@ -33,6 +34,7 @@ pub enum LifeCycle {
 
 pub enum LifeCycleResult {
     None,
+    Frame(StepFrame),
 }
 impl Default for LifeCycleResult {
     fn default() -> Self {
@@ -43,10 +45,14 @@ impl Default for LifeCycleResult {
 pub enum LifeCycleError {
     // (LifecyclePhase, HookName, ErrorMessage)
     HookError(LifeCycle, String, String),
+    ToolError(AgentError),
 }
 impl LifeCycleError {
     pub fn hook_error(stage: &LifeCycle, hook_name: &str, msg: String) -> Self {
         Self::HookError(stage.clone(), hook_name.to_string(), msg)
+    }
+    pub fn tool_error(err: AgentError) -> Self {
+        Self::ToolError(err)
     }
 }
 
@@ -60,6 +66,27 @@ pub struct LifeCycleContext {
     pub model_event: Option<CallModelEvent>,
 }
 
+impl LifeCycleContext {
+    pub fn set_stage(&mut self, stage: &LifeCycle) {
+        self.stage = stage.clone();
+    }
+    pub fn set_state(&mut self, state: AgentState) {
+        self.state = state;
+    }
+    pub fn set_frame(&mut self, frame: StepFrame) {
+        self.frame = frame;
+    }
+    pub fn set_model_event(&mut self, model_event: &CallModelEvent) {
+        self.model_event = Some(model_event.clone());
+    }
+    pub fn set_frame_model_output(&mut self, model_output: ModelOuput) {
+        self.frame.set_model_output(model_output);
+    }
+    pub fn set_frame_tools_result(&mut self, tools_result: Vec<CallToolResult>) {
+        self.frame.set_tools_result(tools_result);
+    }
+}
+
 impl Default for LifeCycleContext {
     fn default() -> Self {
         Self {
@@ -70,10 +97,37 @@ impl Default for LifeCycleContext {
         }
     }
 }
+#[derive(Debug, Clone)]
+pub struct ModelOuput {
+    content: String,
+    reasoning_content: Option<String>,
+    tools_call: Option<Vec<ToolCall>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct StepFrame {
-    pub model_output: Option<StepResult>,
-    pub tools_result: Option<Vec<CallToolResult>>,
-    pub tools_call: Option<Vec<ToolCall>>,
+    model_output: Option<ModelOuput>,
+    tools_result: Option<Vec<CallToolResult>>,
+}
+
+impl StepFrame {
+    pub fn get_model_output(&self) -> Option<&ModelOuput> {
+        self.model_output.as_ref()
+    }
+    pub fn get_tools_call(&self) -> Option<&Vec<ToolCall>> {
+        self.model_output
+            .as_ref()
+            .and_then(|o| o.tools_call.as_ref())
+    }
+}
+
+impl StepFrame {
+    pub fn set_model_output(&mut self, model_output: ModelOuput) {
+        self.model_output = Some(model_output);
+    }
+    pub fn set_tools_result(&mut self, tools_result: Vec<CallToolResult>) {
+        self.tools_result = Some(tools_result);
+    }
 }
 
 impl Default for StepFrame {
@@ -81,21 +135,26 @@ impl Default for StepFrame {
         Self {
             model_output: None,
             tools_result: None,
-            tools_call: None,
         }
     }
 }
 
 pub(super) struct StepLifeCycle {
-    state: AgentState,
-    frame: StepFrame,
+    hooks: Vec<Box<dyn LifeCycleHook>>,
+    ctx: LifeCycleContext,
 }
 
 impl StepLifeCycle {
     pub(super) fn new(state: AgentState) -> Self {
+        let mut ctx = LifeCycleContext::default();
+        ctx.set_state(state);
         Self {
-            state,
-            frame: Default::default(),
+            ctx,
+            hooks: vec![
+                Box::new(ExecutionPolicyHook::new(10)),
+                Box::new(MetricsHook::new()),
+                Box::new(TokenStatisticsHook::new()),
+            ],
         }
     }
 
@@ -104,7 +163,7 @@ impl StepLifeCycle {
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
     ) -> LifeCycleFlow {
-        let messages = self.state.context.to_messages();
+        let messages = self.ctx.state.context.to_messages();
         let tools = tool_executor.tools().clone();
 
         self.call_life_cyle_hook(LifeCycle::BeforeStep).await?;
@@ -112,41 +171,42 @@ impl StepLifeCycle {
         self.call_life_cyle_hook(LifeCycle::BeforeCallModel).await?;
 
         let mut stream = pin!(call_model(model, &messages, Some(&tools)));
-        while let Some(event) = stream.next().await {
-            match event {
-                CallModelEvent::TextChunk(chunk) => {}
-                CallModelEvent::ReasoningChunk(tools_call) => {}
+        while let Some(evt) = stream.next().await {
+            self.ctx.set_model_event(&evt);
+            match evt {
                 CallModelEvent::Completed {
                     content,
                     reasoning_content,
-                    tool_calls,
-                } => {}
-                CallModelEvent::Error(e) => {}
+                    tools_call,
+                } => {
+                    self.ctx.set_frame_model_output(ModelOuput {
+                        content,
+                        reasoning_content,
+                        tools_call,
+                    });
+                }
                 _ => {}
             }
             self.call_life_cyle_hook(LifeCycle::OnModelEvent).await?;
         }
-
-        if let Some(tools_call) = self.frame.tools_call.as_ref().cloned() {
+        if let Some(tools_call) = self.ctx.frame.get_tools_call().cloned() {
             self.call_life_cyle_hook(LifeCycle::BeforeCallTools).await?;
 
-            if let Ok(results) = Self::execute_tools_with_timeout(
+            match Self::execute_tools_with_timeout(
                 tool_executor,
                 &tools_call,
                 Some(Duration::from_secs(120)),
             )
             .await
             {
-                self.frame.tools_result = Some(results);
-            } else {
-                todo!();
+                Ok(results) => self.ctx.set_frame_tools_result(results),
+                Err(err) => return Self::break_step(LifeCycleError::tool_error(err)),
             }
-
             self.call_life_cyle_hook(LifeCycle::AfterCallTools).await?;
         };
 
         self.call_life_cyle_hook(LifeCycle::AfterStep).await?;
-        Self::continue_step()
+        Self::continue_step_with_result(LifeCycleResult::Frame(self.ctx.frame.clone()))
     }
 
     fn break_step(err: LifeCycleError) -> LifeCycleFlow {
@@ -156,15 +216,21 @@ impl StepLifeCycle {
     fn continue_step() -> LifeCycleFlow {
         ControlFlow::Continue(LifeCycleResult::None)
     }
+    fn continue_step_with_result(result: LifeCycleResult) -> LifeCycleFlow {
+        ControlFlow::Continue(result)
+    }
 
     async fn call_life_cyle_hook(&mut self, lifecycle: LifeCycle) -> LifeCycleFlow {
-        let lctx = LifeCycleContext::default();
-        ExecutionPolicyHook::new(10).handle(&lctx).await?;
-        MetricsHook::new().handle(&lctx).await?;
-        TokenStatisticsHook::new().handle(&lctx).await?;
+        self.ctx.set_stage(&lifecycle);
+        for hook in &mut self.hooks {
+            if hook.on(&lifecycle) {
+                hook.handle(&mut self.ctx).await?;
+            }
+        }
         Self::continue_step()
     }
 
+    // todo: 执行工具返回专门的错误，而不是 AgentError
     async fn execute_tools_with_timeout(
         tool_executor: &dyn ToolExecutor,
         tool_calls: &[crate::agents::ToolCall],
