@@ -47,16 +47,18 @@ where
         event_tx: Option<mpsc::Sender<AgentActorEvent>>,
     ) -> StepResult {
         self.state.state = JobState::Running;
-
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
+
+        // 执行生命周期函数
         let result = match lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await {
             Ok(frame) => Self::step_result_from_frame(frame),
-            Err(err) => StepResult::Error(err.into()),
+            Err(err) => return StepResult::Error(err.into()),
         };
-
+        // 应用 StepFrame 结果，更新 AgentState
         self.apply_step_result(&result);
+        // 对外发送 StepResult 事件
         self.emit_step_result_events(event_tx.as_ref(), &result)
             .await;
         result
@@ -79,8 +81,9 @@ where
                 if event_tx.is_closed() {
                     break;
                 }
-
-                self.drain_commands(&mut cmd_rx, &mut loop_state);
+                while let Ok(cmd) = cmd_rx.try_recv() {
+                    self.apply_command(&mut loop_state, cmd);
+                }
 
                 if Self::break_if_cancelled(&event_tx, loop_state).await {
                     break;
@@ -113,37 +116,6 @@ where
         AgentActorHandle { cmd_tx, event_rx }
     }
 
-    fn set_loop_state(&mut self, loop_state: &mut LoopState, next_state: LoopState) {
-        *loop_state = next_state;
-        self.state.state = match next_state {
-            LoopState::Running => JobState::Running,
-            LoopState::Paused => JobState::Paused,
-            LoopState::Cancelled => JobState::Cancelled,
-        };
-    }
-
-    fn apply_command(&mut self, loop_state: &mut LoopState, cmd: AgentActorCommand) {
-        match cmd {
-            AgentActorCommand::Pause => self.set_loop_state(loop_state, LoopState::Paused),
-            AgentActorCommand::Continue => {
-                if *loop_state == LoopState::Paused {
-                    self.set_loop_state(loop_state, LoopState::Running);
-                }
-            }
-            AgentActorCommand::Cancel => self.set_loop_state(loop_state, LoopState::Cancelled),
-        }
-    }
-
-    fn drain_commands(
-        &mut self,
-        cmd_rx: &mut mpsc::Receiver<AgentActorCommand>,
-        loop_state: &mut LoopState,
-    ) {
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            self.apply_command(loop_state, cmd);
-        }
-    }
-
     async fn wait_if_paused(
         &mut self,
         cmd_rx: &mut mpsc::Receiver<AgentActorCommand>,
@@ -159,7 +131,7 @@ where
                 self.apply_command(loop_state, cmd);
             }
             _ = event_tx.closed() => {
-                self.set_loop_state(loop_state, LoopState::Cancelled);
+                *loop_state = LoopState::Cancelled;
             }
         }
     }
@@ -176,26 +148,19 @@ where
         }
     }
 
-    fn step_result_from_frame(frame: StepFrame) -> StepResult {
-        let StepFrame {
-            model_output,
-            tools_result,
-        } = frame;
-
-        match model_output {
-            Some(model_output) => match model_output.tools_call {
-                Some(tools_call) => StepResult::Continue {
-                    content: model_output.content,
-                    reasoning_content: model_output.reasoning_content,
-                    tools_call,
-                    tools_result: tools_result.unwrap_or_default(),
-                },
-                None => StepResult::Done {
-                    content: model_output.content,
-                    reasoning_content: model_output.reasoning_content,
-                },
-            },
-            None => StepResult::Error(AgentError::ModelRspErr),
+    fn apply_command(&mut self, loop_state: &mut LoopState, cmd: AgentActorCommand) {
+        match cmd {
+            AgentActorCommand::Pause => {
+                self.state.state = JobState::Paused;
+            }
+            AgentActorCommand::Continue => {
+                if *loop_state == LoopState::Paused {
+                    self.state.state = JobState::Running;
+                }
+            }
+            AgentActorCommand::Cancel => {
+                self.state.state = JobState::Cancelled;
+            }
         }
     }
 
@@ -240,6 +205,29 @@ where
                     _ => JobState::Failed,
                 };
             }
+        }
+    }
+
+    fn step_result_from_frame(frame: StepFrame) -> StepResult {
+        let StepFrame {
+            model_output,
+            tools_result,
+        } = frame;
+
+        match model_output {
+            Some(model_output) => match model_output.tools_call {
+                Some(tools_call) => StepResult::Continue {
+                    content: model_output.content,
+                    reasoning_content: model_output.reasoning_content,
+                    tools_call,
+                    tools_result: tools_result.unwrap_or_default(),
+                },
+                None => StepResult::Done {
+                    content: model_output.content,
+                    reasoning_content: model_output.reasoning_content,
+                },
+            },
+            None => StepResult::Error(AgentError::ModelRspErr),
         }
     }
 
