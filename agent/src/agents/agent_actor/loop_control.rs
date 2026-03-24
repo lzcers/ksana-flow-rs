@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
@@ -5,6 +6,9 @@ use tokio::sync::mpsc;
 use super::lifecycle::StepLifeCycle;
 use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
 use crate::agents::ToolExecutor;
+use crate::agents::agent_actor::lifecycle::{
+    LifeCycleFlow, LifeCycleResult, ModelOuput, StepFrame,
+};
 use crate::models::ChatCapability;
 
 /// 循环执行状态
@@ -112,7 +116,23 @@ where
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
-        lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+        let step_result = lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+        if let LifeCycleFlow::Continue(LifeCycleResult::Frame(frame)) = step_result {
+            let StepFrame {
+                model_output,
+                tools_result,
+            } = frame;
+            if let Some(model_output) = model_output
+                && let Some(tool_results) = tools_result
+            {
+                return StepResult::Continue {
+                    content: model_output.content,
+                    reasoning_content: model_output.reasoning_content,
+                    tool_calls: model_output.tools_call.unwrap_or_default(),
+                    tool_results,
+                };
+            }
+        }
         StepResult::Done {
             content: "".to_string(),
             reasoning_content: Some("".to_string()),

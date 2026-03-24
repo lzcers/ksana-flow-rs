@@ -99,29 +99,23 @@ impl Default for LifeCycleContext {
 }
 #[derive(Debug, Clone)]
 pub struct ModelOuput {
-    content: String,
-    reasoning_content: Option<String>,
-    tools_call: Option<Vec<ToolCall>>,
+    pub content: String,
+    pub reasoning_content: Option<String>,
+    pub tools_call: Option<Vec<ToolCall>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StepFrame {
-    model_output: Option<ModelOuput>,
-    tools_result: Option<Vec<CallToolResult>>,
+    pub model_output: Option<ModelOuput>,
+    pub tools_result: Option<Vec<CallToolResult>>,
 }
 
 impl StepFrame {
-    pub fn get_model_output(&self) -> Option<&ModelOuput> {
-        self.model_output.as_ref()
-    }
     pub fn get_tools_call(&self) -> Option<&Vec<ToolCall>> {
         self.model_output
             .as_ref()
             .and_then(|o| o.tools_call.as_ref())
     }
-}
-
-impl StepFrame {
     pub fn set_model_output(&mut self, model_output: ModelOuput) {
         self.model_output = Some(model_output);
     }
@@ -163,7 +157,7 @@ impl StepLifeCycle {
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
     ) -> LifeCycleFlow {
-        let messages = self.ctx.state.context.to_messages();
+        let messages = self.ctx.state.get_message();
         let tools = tool_executor.tools().clone();
 
         self.call_life_cyle_hook(LifeCycle::BeforeStep).await?;

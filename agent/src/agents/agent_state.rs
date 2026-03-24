@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 // Re-export Context types from context module
 pub use crate::agents::context::{Context, Layer, LayerKind, LayerMeta};
+use crate::core::Message;
 
 // ============================================================================
 // AgentState: Agent 状态
@@ -52,6 +53,12 @@ pub struct AgentState {
     pub iteration: usize,
     /// 最大迭代
     pub max_iterations: usize,
+}
+
+impl AgentState {
+    pub fn get_message(&self) -> Vec<Message> {
+        self.context.to_messages()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
