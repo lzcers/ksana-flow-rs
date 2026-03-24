@@ -1,10 +1,10 @@
 use std::ops::ControlFlow;
-use std::pin::{Pin, pin};
+use std::pin::pin;
 use std::time::Duration;
 
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 
-use super::{AgentActorEvent, AgentError, StepResult};
+use super::AgentError;
 use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call_tools};
 use crate::agents::hooks::LifeCycleHook;
 use crate::agents::hooks::execution_policy::ExecutionPolicyHook;
@@ -212,6 +212,7 @@ impl StepLifeCycle {
         };
 
         self.call_life_cyle_hook(LifeCycle::AfterStep).await?;
+
         Self::continue_step_with_result(LifeCycleResult::Frame(self.ctx.frame.clone()))
     }
 
