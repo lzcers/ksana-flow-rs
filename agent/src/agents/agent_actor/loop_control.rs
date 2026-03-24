@@ -5,10 +5,10 @@ use tokio::sync::mpsc;
 
 use super::lifecycle::StepLifeCycle;
 use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
-use crate::agents::ToolExecutor;
 use crate::agents::agent_actor::lifecycle::{
     LifeCycleFlow, LifeCycleResult, ModelOuput, StepFrame,
 };
+use crate::agents::{AgentError, ToolExecutor};
 use crate::models::ChatCapability;
 
 /// 循环执行状态
@@ -116,26 +116,34 @@ where
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
-        let step_result = lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
-        if let LifeCycleFlow::Continue(LifeCycleResult::Frame(frame)) = step_result {
-            let StepFrame {
-                model_output,
-                tools_result,
-            } = frame;
-            if let Some(model_output) = model_output
-                && let Some(tool_results) = tools_result
-            {
-                return StepResult::Continue {
-                    content: model_output.content,
-                    reasoning_content: model_output.reasoning_content,
-                    tool_calls: model_output.tools_call.unwrap_or_default(),
-                    tool_results,
-                };
+        match lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await {
+            Ok(frame) => {
+                let StepFrame {
+                    model_output,
+                    tools_result,
+                } = frame;
+                if let Some(model_output) = model_output {
+                    // 有工具调用，需要继续迭代
+                    if let Some(tools_call) = model_output.tools_call {
+                        StepResult::Continue {
+                            content: model_output.content,
+                            reasoning_content: model_output.reasoning_content,
+                            tools_call,
+                            tools_result: tools_result.unwrap_or_default(),
+                        }
+                    } else {
+                        // 无工具调用
+                        StepResult::Done {
+                            content: model_output.content,
+                            reasoning_content: model_output.reasoning_content,
+                        }
+                    }
+                } else {
+                    // 没有模型输出
+                    StepResult::Error(AgentError::ModelRspErr)
+                }
             }
-        }
-        StepResult::Done {
-            content: "".to_string(),
-            reasoning_content: Some("".to_string()),
+            Err(err) => StepResult::Error(err.into()),
         }
     }
 

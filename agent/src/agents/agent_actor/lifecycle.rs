@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::ops::ControlFlow;
 use std::pin::{Pin, pin};
 use std::time::Duration;
@@ -36,22 +35,22 @@ pub enum LifeCycleResult {
     None,
     Frame(StepFrame),
 }
-impl Default for LifeCycleResult {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum LifeCycleError {
     // (LifecyclePhase, HookName, ErrorMessage)
+    #[error("hook error: {0:?} {1} {2}")]
     HookError(LifeCycle, String, String),
-    ToolError(AgentError),
+    #[error("tool error: {0}")]
+    ToolError(String),
+    #[error("model error")]
+    ModelError,
 }
 impl LifeCycleError {
     pub fn hook_error(stage: &LifeCycle, hook_name: &str, msg: String) -> Self {
         Self::HookError(stage.clone(), hook_name.to_string(), msg)
     }
-    pub fn tool_error(err: AgentError) -> Self {
+    pub fn tool_error(err: String) -> Self {
         Self::ToolError(err)
     }
 }
@@ -152,7 +151,20 @@ impl StepLifeCycle {
         }
     }
 
+    // 预期是返回一轮调用的 StepFrame
     pub(super) async fn start(
+        &mut self,
+        model: &(dyn ChatCapability + Sync),
+        tool_executor: &dyn ToolExecutor,
+    ) -> Result<StepFrame, LifeCycleError> {
+        match self.inner_start(model, tool_executor).await {
+            LifeCycleFlow::Continue(LifeCycleResult::Frame(frame)) => Ok(frame),
+            LifeCycleFlow::Break(err) => Err(err),
+            _ => Err(LifeCycleError::ModelError),
+        }
+    }
+
+    async fn inner_start(
         &mut self,
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
@@ -194,7 +206,7 @@ impl StepLifeCycle {
             .await
             {
                 Ok(results) => self.ctx.set_frame_tools_result(results),
-                Err(err) => return Self::break_step(LifeCycleError::tool_error(err)),
+                Err(err) => return Self::break_step(LifeCycleError::ToolError(err.to_string())),
             }
             self.call_life_cyle_hook(LifeCycle::AfterCallTools).await?;
         };
@@ -204,14 +216,14 @@ impl StepLifeCycle {
     }
 
     fn break_step(err: LifeCycleError) -> LifeCycleFlow {
-        ControlFlow::Break(err)
+        LifeCycleFlow::Break(err)
     }
 
     fn continue_step() -> LifeCycleFlow {
-        ControlFlow::Continue(LifeCycleResult::None)
+        LifeCycleFlow::Continue(LifeCycleResult::None)
     }
     fn continue_step_with_result(result: LifeCycleResult) -> LifeCycleFlow {
-        ControlFlow::Continue(result)
+        LifeCycleFlow::Continue(result)
     }
 
     async fn call_life_cyle_hook(&mut self, lifecycle: LifeCycle) -> LifeCycleFlow {

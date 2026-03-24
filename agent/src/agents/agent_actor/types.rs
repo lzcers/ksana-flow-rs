@@ -1,23 +1,22 @@
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::agents::{CallToolResult, tools::ToolCall};
+use crate::agents::{CallToolResult, agent_actor::lifecycle::LifeCycleError, tools::ToolCall};
 
 /// Agent 执行错误类型
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum AgentError {
-    /// 模型调用错误
-    #[error("Model error: {0}")]
-    Model(String),
-    /// 工具执行错误
-    #[error("Tool execution error: {0}")]
-    Tool(String),
     /// 用户取消
     #[error("Cancelled by user")]
     Cancelled,
     /// 操作超时
     #[error("Operation timed out")]
     Timeout,
+    #[error("Model response is not expected")]
+    ModelRspErr,
+
+    #[error("life cycle error: {0}")]
+    Parse(#[from] LifeCycleError),
 }
 
 /// Actor 产生的事件
@@ -134,8 +133,8 @@ pub enum StepResult {
     Continue {
         content: String,
         reasoning_content: Option<String>,
-        tool_calls: Vec<ToolCall>,
-        tool_results: Vec<CallToolResult>,
+        tools_call: Vec<ToolCall>,
+        tools_result: Vec<CallToolResult>,
     },
     /// 执行完成（无工具调用）
     Done {
