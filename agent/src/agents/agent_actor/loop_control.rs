@@ -1,13 +1,10 @@
-use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
 use super::lifecycle::StepLifeCycle;
 use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
-use crate::agents::agent_actor::lifecycle::{
-    LifeCycleFlow, LifeCycleResult, ModelOuput, StepFrame,
-};
+use crate::agents::agent_actor::lifecycle::StepFrame;
 use crate::agents::{AgentError, ToolExecutor};
 use crate::models::ChatCapability;
 
@@ -180,9 +177,6 @@ where
                 }
 
                 let result = self.run_step(Some(event_tx.clone())).await;
-                if !Self::should_continue_after_step(&event_tx, result).await {
-                    break;
-                }
             }
         });
 

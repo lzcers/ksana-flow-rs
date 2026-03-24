@@ -4,8 +4,6 @@ mod builder;
 pub mod lifecycle;
 /// 后台循环控制逻辑位于 `loop_control` 子模块。
 mod loop_control;
-/// 状态 reducer 位于 `reducer` 子模块。
-mod reducer;
 /// 错误、事件、命令和结果类型位于 `types` 子模块。
 mod types;
 
