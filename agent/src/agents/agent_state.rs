@@ -1,10 +1,27 @@
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // Re-export Context types from context module
 pub use crate::agents::context::{Context, Layer, LayerKind, LayerMeta};
-use crate::core::Message;
+use crate::core::{Message, Usage};
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenStatistics {
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    #[serde(default)]
+    pub completion_tokens: u64,
+    #[serde(default)]
+    pub total_tokens: u64,
+}
+
+impl TokenStatistics {
+    pub fn add_usage(&mut self, usage: &Usage) {
+        self.prompt_tokens += u64::from(usage.prompt_tokens);
+        self.completion_tokens += u64::from(usage.completion_tokens);
+        self.total_tokens += u64::from(usage.total_tokens);
+    }
+}
 
 // ============================================================================
 // AgentState: Agent 状态
@@ -36,11 +53,9 @@ pub struct AgentState {
     pub state: JobState,
 
     // === 资源追踪 ===
-    /// 预算
-    pub budget: Option<Decimal>,
-    /// 实际成本
+    /// 累计 token 用量
     #[serde(default)]
-    pub actual_cost: Decimal,
+    pub token_statistics: TokenStatistics,
 
     // === 执行上下文 ===
     /// 分层上下文（对话、记忆、人格等）

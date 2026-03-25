@@ -10,6 +10,16 @@ pub struct Usage {
     pub total_tokens: u32,
 }
 
+impl From<crate::providers::Usage> for Usage {
+    fn from(value: crate::providers::Usage) -> Self {
+        Self {
+            prompt_tokens: value.prompt_tokens,
+            completion_tokens: value.completion_tokens,
+            total_tokens: value.total(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageRole {

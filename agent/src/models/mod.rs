@@ -2,6 +2,7 @@ mod chat_model;
 mod gen_img_model;
 
 use crate::agents::ToolCall;
+use crate::core::Usage;
 use async_trait::async_trait;
 pub use chat_model::ChatModel;
 pub use gen_img_model::GenImgModel;
@@ -37,6 +38,8 @@ pub struct ChatChunk {
     pub finish_reason: Option<String>,
     /// 流式输出中的工具调用（用于解析增量工具调用）
     pub tool_calls: Option<Vec<ToolCall>>,
+    /// 供应商返回的 token 用量
+    pub usage: Option<Usage>,
 }
 
 /// 聊天能力 trait

@@ -9,6 +9,22 @@ use crate::agents::{AgentError, JobState, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
 
+enum LoopState {
+    Runnable,
+    Paused,
+    Finished(Finalization),
+}
+
+enum Finalization {
+    Emit(TerminalReason),
+    Silent,
+}
+
+enum TerminalReason {
+    Completed,
+    Cancelled,
+}
+
 impl<C, E> AgentActor<C, E>
 where
     C: ChatCapability + Send + Sync,
@@ -34,10 +50,12 @@ where
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
 
         // 执行生命周期函数
-        let result = match lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await {
-            Ok(frame) => Self::step_result_from_frame(frame),
+        let frame = match lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await {
+            Ok(frame) => frame,
             Err(err) => return StepResult::Error(err.into()),
         };
+        self.apply_step_usage(&frame);
+        let result = Self::step_result_from_frame(frame);
         // 应用 StepFrame 结果，更新 AgentState
         self.apply_step_result(&result);
         // 对外发送 StepResult 事件
@@ -57,28 +75,32 @@ where
         let (event_tx, event_rx) = mpsc::channel::<AgentActorEvent>(64);
 
         tokio::spawn(async move {
+            let mut loop_state = LoopState::Runnable;
+
             loop {
                 if event_tx.is_closed() {
                     break;
                 }
 
-                self.drain_commands(&mut cmd_rx);
+                loop_state = self.drain_commands(loop_state, &mut cmd_rx);
 
-                if self.break_if_cancelled(&event_tx).await {
-                    break;
-                }
+                let current_state = std::mem::replace(&mut loop_state, LoopState::Runnable);
+                match current_state {
+                    LoopState::Runnable => {
+                        let result = self.run_step(Some(event_tx.clone())).await;
+                        loop_state = self.transition_step_result(result);
+                    }
+                    LoopState::Paused => {
+                        loop_state = self.wait_while_paused(&mut cmd_rx, &event_tx).await;
+                    }
+                    LoopState::Finished(finalization) => {
+                        self.emit_terminal_event(&event_tx, &finalization).await;
+                        break;
+                    }
+                };
 
-                self.wait_if_paused(&mut cmd_rx, &event_tx).await;
-
-                if self.break_if_cancelled(&event_tx).await {
-                    break;
-                }
-
-                if self.state.state == JobState::Paused {
-                    continue;
-                }
-
-                if self.run_step_and_check_completion(&event_tx).await {
+                if let LoopState::Finished(finalization) = &loop_state {
+                    self.emit_terminal_event(&event_tx, finalization).await;
                     break;
                 }
             }
@@ -87,67 +109,82 @@ where
         AgentActorHandle { cmd_tx, event_rx }
     }
 
-    fn drain_commands(&mut self, cmd_rx: &mut mpsc::Receiver<AgentActorCommand>) {
+    fn drain_commands(
+        &mut self,
+        mut loop_state: LoopState,
+        cmd_rx: &mut mpsc::Receiver<AgentActorCommand>,
+    ) -> LoopState {
         while let Ok(cmd) = cmd_rx.try_recv() {
-            self.apply_command(cmd);
+            loop_state = self.transition_command(loop_state, cmd);
         }
+        loop_state
     }
 
-    async fn wait_if_paused(
+    async fn wait_while_paused(
         &mut self,
         cmd_rx: &mut mpsc::Receiver<AgentActorCommand>,
         event_tx: &mpsc::Sender<AgentActorEvent>,
-    ) {
-        if self.state.state != JobState::Paused {
-            return;
-        }
-
+    ) -> LoopState {
         tokio::select! {
             Some(cmd) = cmd_rx.recv() => {
-                self.apply_command(cmd);
+                self.transition_command(LoopState::Paused, cmd)
             }
             _ = event_tx.closed() => {
                 self.state.state = JobState::Cancelled;
+                LoopState::Finished(Finalization::Emit(TerminalReason::Cancelled))
             }
         }
     }
 
-    async fn break_if_cancelled(&self, event_tx: &mpsc::Sender<AgentActorEvent>) -> bool {
-        if self.state.state == JobState::Cancelled {
-            Self::send_event(Some(event_tx), AgentActorEvent::Cancelled).await;
-            true
-        } else {
-            false
-        }
-    }
-
-    async fn run_step_and_check_completion(
-        &mut self,
-        event_tx: &mpsc::Sender<AgentActorEvent>,
-    ) -> bool {
-        match self.run_step(Some(event_tx.clone())).await {
-            StepResult::Continue { .. } => false,
-            StepResult::Done { .. } => {
-                Self::send_event(Some(event_tx), AgentActorEvent::Completed).await;
-                true
-            }
-            StepResult::Error(_) => true,
-        }
-    }
-
-    fn apply_command(&mut self, cmd: AgentActorCommand) {
-        match cmd {
-            AgentActorCommand::Pause => {
+    fn transition_command(&mut self, loop_state: LoopState, cmd: AgentActorCommand) -> LoopState {
+        match (loop_state, cmd) {
+            (LoopState::Runnable, AgentActorCommand::Pause) => {
                 self.state.state = JobState::Paused;
+                LoopState::Paused
             }
-            AgentActorCommand::Continue => {
-                if self.state.state == JobState::Paused {
-                    self.state.state = JobState::Running;
-                }
-            }
-            AgentActorCommand::Cancel => {
+            (LoopState::Runnable, AgentActorCommand::Continue) => LoopState::Runnable,
+            (LoopState::Runnable, AgentActorCommand::Cancel) => {
                 self.state.state = JobState::Cancelled;
+                LoopState::Finished(Finalization::Emit(TerminalReason::Cancelled))
             }
+            (LoopState::Paused, AgentActorCommand::Pause) => LoopState::Paused,
+            (LoopState::Paused, AgentActorCommand::Continue) => {
+                self.state.state = JobState::Running;
+                LoopState::Runnable
+            }
+            (LoopState::Paused, AgentActorCommand::Cancel) => {
+                self.state.state = JobState::Cancelled;
+                LoopState::Finished(Finalization::Emit(TerminalReason::Cancelled))
+            }
+            (LoopState::Finished(finalization), _) => LoopState::Finished(finalization),
+        }
+    }
+
+    fn transition_step_result(&self, result: StepResult) -> LoopState {
+        match result {
+            StepResult::Continue { .. } => LoopState::Runnable,
+            StepResult::Done { .. } => {
+                LoopState::Finished(Finalization::Emit(TerminalReason::Completed))
+            }
+            StepResult::Error(_) => LoopState::Finished(Finalization::Silent),
+        }
+    }
+
+    async fn emit_terminal_event(
+        &self,
+        event_tx: &mpsc::Sender<AgentActorEvent>,
+        finalization: &Finalization,
+    ) {
+        match finalization {
+            Finalization::Emit(reason) => match reason {
+                TerminalReason::Completed => {
+                    Self::send_event(Some(event_tx), AgentActorEvent::Completed).await;
+                }
+                TerminalReason::Cancelled => {
+                    Self::send_event(Some(event_tx), AgentActorEvent::Cancelled).await;
+                }
+            },
+            Finalization::Silent => {}
         }
     }
 
@@ -195,10 +232,17 @@ where
         }
     }
 
+    fn apply_step_usage(&mut self, frame: &StepFrame) {
+        if let Some(usage) = frame.token_usage.as_ref() {
+            self.state.token_statistics.add_usage(usage);
+        }
+    }
+
     fn step_result_from_frame(frame: StepFrame) -> StepResult {
         let StepFrame {
             model_output,
             tools_result,
+            ..
         } = frame;
 
         match model_output {

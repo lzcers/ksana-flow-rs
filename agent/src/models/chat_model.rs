@@ -111,6 +111,7 @@ impl ChatCapability for ChatModel {
         let provider = self.get_provider(model_name)?;
         let request = Request::new(model_name, msgs)
             .with_stream(true)
+            .with_stream_usage(true)
             .with_tools(tools);
 
         let stream = provider.chat_stream(request).await?;
@@ -128,6 +129,7 @@ impl ChatCapability for ChatModel {
                         is_finished,
                         finish_reason: choice.finish_reason.clone(),
                         tool_calls: choice.delta.tool_calls.clone(),
+                        usage: response.usage.map(Into::into),
                     }
                 } else {
                     ChatChunk {
@@ -136,6 +138,7 @@ impl ChatCapability for ChatModel {
                         is_finished: true,
                         finish_reason: Some("no_choices".to_string()),
                         tool_calls: None,
+                        usage: response.usage.map(Into::into),
                     }
                 }
             })

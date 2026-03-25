@@ -67,27 +67,20 @@ agent/src/
 │   └── openrouter.rs    # OpenRouter API provider
 └── agents/
     ├── mod.rs               # Module exports
-    ├── agent_actor.rs       # Thin facade: AgentActor API + re-exports
     ├── agent_actor/
-    │   ├── builder.rs       # AgentActorBuilder + timeout hook assembly
+    │   ├── mod.rs           # AgentActor: thin facade owning state, chat, tool_executor
+    │   ├── builder.rs       # AgentActorBuilder
+    │   ├── lifecycle.rs     # StepLifeCycle + LifeCycle phases + hooks pipeline
     │   ├── loop_control.rs  # run_loop + pause/resume/cancel state machine
-    │   ├── runtime.rs       # StepRuntime + run_step orchestration
     │   └── types.rs         # Errors, events, commands, handle, StepResult
     ├── agent_state.rs       # AgentState, JobState - state management
-    ├── agent_utils.rs       # Pure functions: call_model, call_tool, call_tools
+    ├── call_model.rs        # Pure functions: call_model, call_tool, call_tools
     ├── context.rs           # Context, Layer, LayerKind - layered context
     ├── hooks/
-    │   ├── mod.rs           # Hook exports
-    │   ├── registry.rs      # HookRegistry + default hook chain
-    │   ├── runtime.rs       # AgentHook, HookPhase, StepScratchpad, payloads
-    │   ├── lifecycle.rs     # Iteration/state transitions
-    │   ├── max_iterations.rs    # Max-iteration guard
-    │   ├── metrics.rs       # ExecutionMetrics snapshots
-    │   ├── streaming_events.rs  # Content/tool/step event emission
-    │   ├── context_persistence.rs   # Assistant/tool messages -> context
-    │   ├── iteration_events.rs      # Iteration events
-    │   ├── error_events.rs          # Error events
-    │   └── timeout_policy.rs        # Step/tool timeout policy
+    │   ├── mod.rs           # LifeCycleHook trait + HookName type alias
+    │   ├── execution_policy.rs  # Max-iteration guard hook
+    │   ├── metrics.rs       # Timing metrics hook
+    │   └── token_statistics.rs  # Token statistics hook (WIP)
     └── tools/
         ├── mod.rs           # ToolDef, ToolCall, ToolExecutor trait
         ├── registry.rs      # ToolRegistry, GenericToolExecutor
@@ -127,27 +120,31 @@ agent/src/
 - **Usage**: Token usage statistics (supports both OpenAI and DeepSeek formats)
 - **ProviderError**: Error types for API operations
 
-#### Agent Actor (`agents/agent_actor.rs`)
+#### Agent Actor (`agents/agent_actor/`)
 
-`AgentActor` is now a thin facade over several focused modules:
+`AgentActor` is a thin facade that owns state, chat model, and tool executor:
 
-- `agent_actor.rs`: owns `state`, `chat`, `tool_executor`, `hooks`
-- `agent_actor/runtime.rs`: executes a single step through the hook pipeline
-- `agent_actor/loop_control.rs`: manages pause/resume/cancel loop control
-- `agent_actor/builder.rs`: assembles hooks, user config, and timeout policy
-- `agent_actor/types.rs`: shared public types
+- `mod.rs`: `AgentActor` struct with `state`, `chat`, `tool_executor` fields
+- `builder.rs`: `AgentActorBuilder` for configuration
+- `lifecycle.rs`: `StepLifeCycle` executes a single step through the hook pipeline
+- `loop_control.rs`: `run_loop()` manages pause/resume/cancel state machine
+- `types.rs`: `AgentError`, `AgentActorEvent`, `AgentActorCommand`, `AgentActorHandle`, `StepResult`
 
-The hook system is the primary extension mechanism. `HookRegistry::default()` currently composes:
+The hook system is the primary extension mechanism. `StepLifeCycle::new()` creates a default hook chain:
 
-1. `MaxIterationsHook`
-2. `LifecycleHook`
-3. `MetricsHook`
-4. `StreamingEventHook`
-5. `ContextPersistenceHook`
-6. `IterationEventHook`
-7. `ErrorEventHook`
+1. `ExecutionPolicyHook`: Max-iteration guard
+2. `MetricsHook`: Timing metrics (model call, tool call durations)
+3. `TokenStatisticsHook`: Token statistics (WIP)
 
-`AgentActorBuilder::step_timeout()` and `tool_timeout()` append `TimeoutPolicyHook`, which feeds `ExecutionPolicy` into `run_step`.
+**LifeCycle Phases:**
+
+- `BeforeStep`: Step-level control (max iteration check, budget validation, checkpoint restore)
+- `BeforeCallModel`: Pre-model call orchestration (prompt injection, context compression, tool filtering)
+- `OnModelEvent`: Stream event handling (UI output, token counting, reasoning collection)
+- `AfterCallModel`: Model response processing (result validation, retry/ fallback decision)
+- `BeforeCallTools`: Pre-tool execution governance (permission check, parameter fix, timeout config)
+- `AfterCallTools`: Tool result processing (result normalization, error mapping, caching)
+- `AfterStep`: Step finalization (context persistence, iteration increment, state transition)
 
 Basic usage:
 
@@ -156,7 +153,6 @@ Basic usage:
 let actor = AgentActorBuilder::new(chat_model, tool_executor)
     .context(context)
     .max_iterations(10)
-    .step_timeout(Duration::from_secs(60))
     .build();
 
 // Option 1: Run loop (automatic iteration)
@@ -176,10 +172,12 @@ let result = actor.run_step(Some(event_tx)).await;
 |-------|-------------|
 | `ContentChunk(String)` | LLM text chunk |
 | `ReasoningChunk(String)` | DeepSeek reasoner content chunk |
-| `StepCompleted { content, reasoning_content, tool_calls }` | LLM response complete |
+| `StepCompleted { content, reasoning_content, tool_calls }` | LLM response complete (before commit) |
+| `StepFinalized { result }` | Step result committed to state |
 | `ToolCalls(Vec<ToolCall>)` | Model requested tools |
 | `ToolResult { call_id, success, output }` | Single tool completed |
 | `Iteration { iteration, message_count }` | One cycle complete |
+| `HookEvent { hook, kind, payload }` | Custom event from hooks |
 | `MaxIterations { iteration }` | Reached max iterations |
 | `Completed` | Agent finished |
 | `Cancelled` | User cancelled |
@@ -187,19 +185,28 @@ let result = actor.run_step(Some(event_tx)).await;
 
 **StepResult Types:**
 
-- `Continue { content, reasoning_content, tool_calls, tool_results }`: Has tool calls, continue iteration
+- `Continue { content, reasoning_content, tools_call, tools_result }`: Has tool calls, continue iteration
 - `Done { content, reasoning_content }`: No tool calls, finished
 - `Error(AgentError)`: Execution error
 
-**Hook phases:**
+**LifeCycleHook Trait:**
 
-- `BeforeStep`
-- `BeforeCallModel`
-- `OnModelEvent`
-- `AfterCallModel`
-- `BeforeCallTools`
-- `AfterCallTools`
-- `AfterStep`
+```rust
+#[async_trait::async_trait]
+pub trait LifeCycleHook: Send + Sync {
+    fn name(&self) -> HookName;
+    fn priority(&self) -> i32 { 0 }
+    fn on(&self, stage: &LifeCycle) -> bool;
+    async fn handle(&mut self, ctx: &mut LifeCycleContext) -> LifeCycleFlow;
+}
+```
+
+**LifeCycleContext Fields:**
+
+- `stage`: Current `LifeCycle` phase
+- `state`: `AgentState` (read/write)
+- `frame`: `StepFrame` with `model_output` and `tools_result`
+- `model_event`: Optional `CallModelEvent` (set during `OnModelEvent`)
 
 #### State Management (`agents/agent_state.rs`)
 
@@ -273,7 +280,7 @@ let mut executor = GenericToolExecutor::new();
 executor.register(SearchTool::new());
 ```
 
-#### Execution Utilities (`agents/agent_utils.rs`)
+#### Execution Utilities (`agents/call_model.rs`)
 
 Pure functions for execution:
 
@@ -285,18 +292,25 @@ Pure functions for execution:
 **CallModelEvent Types:**
 - `TextChunk(String)`: LLM text chunk
 - `ReasoningChunk(String)`: DeepSeek reasoner content chunk
-- `Completed { content, reasoning_content, tool_calls }`: LLM response complete
+- `Completed { content, reasoning_content, tools_call }`: LLM response complete
 - `Error(String)`: Error occurred
+
+**CallToolResult Fields:**
+- `call_id`: Tool call ID
+- `tool_name`: Tool name
+- `success`: Whether execution succeeded
+- `output`: JSON string output
 
 #### Key Design Principles
 
-1. **Separation of concerns**: Actor handles control plane, utils handle execution
+1. **Separation of concerns**: Actor handles control plane, `call_model.rs` handles execution
 2. **Streaming first**: `chat_stream` is primary, `chat` wraps it
 3. **Layered context**: Context supports multiple data types with priorities
 4. **State persistence**: `AgentState` is serializable (Context integrated inside)
 5. **Control interface**: Pause/Continue/Cancel via `AgentActorHandle`
 6. **Parallel tool execution**: Multiple tools execute concurrently
-7. **Pluggable hook pipeline**: Lifecycle, metrics, events, persistence, and timeouts are hook-driven
+7. **Hook-driven lifecycle**: `StepLifeCycle` orchestrates execution through `LifeCycleHook` pipeline
+8. **LifeCycleFlow control**: Hooks return `ControlFlow` to break or continue execution
 
 ## Development Commands
 
@@ -451,11 +465,12 @@ async fn test_my_workflow() {
 
 The `agent` crate provides an Actor-based LLM Agent with streaming support and state management.
 
-**Important Architecture Changes:**
-- Context is now integrated into AgentState (accessed via `state.context`)
-- Hook system is active again and is the primary execution extension point
-- `agent_actor.rs` is a facade; step runtime, loop control, builder, and public types live in `agents/agent_actor/`
+**Key Architecture Points:**
+- Context is integrated into AgentState (accessed via `state.context`)
+- `StepLifeCycle` orchestrates step execution through `LifeCycleHook` pipeline
+- `agent_actor/` module: `mod.rs` (facade), `lifecycle.rs` (step execution), `loop_control.rs` (loop control), `builder.rs` (construction), `types.rs` (types)
 - `call_model` parameter order: `(model, messages, tools_def)` - model first
+- Default hooks: `ExecutionPolicyHook`, `MetricsHook`, `TokenStatisticsHook`
 
 #### Basic Usage with AgentActor
 
@@ -559,6 +574,9 @@ async fn main() -> anyhow::Result<()> {
             AgentActorEvent::StepCompleted { content, tool_calls, .. } => {
                 println!("\nStep completed: {}", content);
             }
+            AgentActorEvent::StepFinalized { result } => {
+                println!("Step finalized");
+            }
             AgentActorEvent::ToolCalls(calls) => {
                 println!("Tool calls: {:?}", calls.iter().map(|c| c.get_name()).collect::<Vec<_>>());
             }
@@ -567,6 +585,9 @@ async fn main() -> anyhow::Result<()> {
             }
             AgentActorEvent::Iteration { iteration, message_count } => {
                 println!("Iteration {} complete, {} messages", iteration, message_count);
+            }
+            AgentActorEvent::HookEvent { hook, kind, payload } => {
+                println!("Hook event from {}: {}", hook, kind);
             }
             AgentActorEvent::Completed => {
                 println!("Agent completed");
@@ -604,7 +625,7 @@ loop {
     let result = actor.run_step(None).await;
 
     match result {
-        StepResult::Continue { content, tool_calls, tool_results, .. } => {
+        StepResult::Continue { content, tools_call, tools_result, .. } => {
             println!("Step completed with tools, continuing...");
             // Access state: actor.state().context, actor.state().iteration
         }
@@ -647,6 +668,8 @@ let events = handle.wait().await;
 
 #### Architecture Notes
 
-- Default behavior is assembled through `HookRegistry::default()` rather than being hard-coded into `AgentActor`.
-- If you need custom execution behavior, prefer adding a hook over modifying `run_step` directly.
-- For the current module split and responsibility boundaries, see `agent/ARCHITECTURE.md`.
+- `StepLifeCycle` is the core orchestrator that runs hooks at each `LifeCycle` phase
+- Default hooks (`ExecutionPolicyHook`, `MetricsHook`, `TokenStatisticsHook`) are created in `StepLifeCycle::new()`
+- To customize execution behavior, implement `LifeCycleHook` trait and inject via `StepLifeCycle::hooks`
+- `call_model` parameter order: `(model, messages, tools_def)` - model first
+- The module split: `agent_actor/mod.rs` (facade), `lifecycle.rs` (step execution), `loop_control.rs` (loop control), `builder.rs` (construction), `types.rs` (types)

@@ -150,6 +150,21 @@ impl Request {
         self
     }
 
+    pub fn with_stream_usage(mut self, include_usage: bool) -> Self {
+        let stream_options = self
+            .extra
+            .entry("stream_options".to_string())
+            .or_insert_with(|| json!({}));
+
+        if let Some(options) = stream_options.as_object_mut() {
+            options.insert("include_usage".to_string(), json!(include_usage));
+        } else {
+            *stream_options = json!({ "include_usage": include_usage });
+        }
+
+        self
+    }
+
     pub fn with_tools(mut self, tools: Option<Vec<ToolDef>>) -> Self {
         if let Some(tools) = tools {
             let tools: Vec<Value> = tools

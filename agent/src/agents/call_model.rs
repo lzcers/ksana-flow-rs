@@ -2,7 +2,7 @@ use async_stream::stream;
 use futures::{Stream, StreamExt};
 
 use crate::agents::{ToolCall, ToolDef, ToolExecutor};
-use crate::core::Message;
+use crate::core::{Message, Usage};
 use crate::models::ChatCapability;
 
 /// 工具执行结果
@@ -33,6 +33,8 @@ pub enum CallModelEvent {
         reasoning_content: Option<String>,
         /// 工具调用列表（如果有）
         tools_call: Option<Vec<ToolCall>>,
+        /// 模型接口返回的 token 用量
+        usage: Option<Usage>,
     },
     Error(String),
 }
@@ -46,6 +48,7 @@ pub fn call_model(
     let mut final_content = String::new();
     let mut final_reasoning_content = String::new();
     let mut final_tool_calls = Vec::new();
+    let mut final_usage = None;
     stream! {
         // 流式调用模型
         let mut response_stream = match model
@@ -59,18 +62,27 @@ pub fn call_model(
             }
         };
         while let Some(chunk) = response_stream.next().await {
-                if !chunk.content.is_empty() {
-                    final_content.push_str(&chunk.content);
-                    yield CallModelEvent::TextChunk(chunk.content);
+                let content = chunk.content;
+                let reasoning_content = chunk.reasoning_content;
+                let tool_calls = chunk.tool_calls;
+                let usage = chunk.usage;
+
+                if !content.is_empty() {
+                    final_content.push_str(&content);
+                    yield CallModelEvent::TextChunk(content);
                 }
 
-                if !chunk.reasoning_content.is_empty() {
-                    final_reasoning_content.push_str(&chunk.reasoning_content);
-                    yield CallModelEvent::ReasoningChunk(chunk.reasoning_content);
+                if !reasoning_content.is_empty() {
+                    final_reasoning_content.push_str(&reasoning_content);
+                    yield CallModelEvent::ReasoningChunk(reasoning_content);
                 }
 
-                if let Some(inc_tool_calls) = chunk.tool_calls {
+                if let Some(inc_tool_calls) = tool_calls {
                     merge_tool_calls(&mut final_tool_calls, inc_tool_calls);
+                }
+
+                if let Some(usage) = usage {
+                    final_usage = Some(usage);
                 }
         }
 
@@ -78,6 +90,7 @@ pub fn call_model(
             content: final_content,
             reasoning_content: if final_reasoning_content.is_empty() { None } else { Some(final_reasoning_content) },
             tools_call: if final_tool_calls.is_empty() { None } else { Some(final_tool_calls) },
+            usage: final_usage,
         };
     }
 }

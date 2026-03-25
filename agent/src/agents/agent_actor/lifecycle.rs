@@ -9,8 +9,9 @@ use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call
 use crate::agents::hooks::LifeCycleHook;
 use crate::agents::hooks::execution_policy::ExecutionPolicyHook;
 use crate::agents::hooks::metrics::MetricsHook;
-use crate::agents::hooks::token_statistics::TokenStatisticsHook;
+use crate::agents::hooks::update_frame::UpdateFrameHook;
 use crate::agents::{AgentState, ToolCall, ToolExecutor};
+use crate::core::Usage;
 use crate::models::ChatCapability;
 
 //   - BeforeStep: 扩展 step 级控制。适合做最大迭代检查、预算/配额校验、任务取消判断、加载记忆、恢复 checkpoint、初始化 tracing/span。
@@ -84,6 +85,9 @@ impl LifeCycleContext {
     pub fn set_frame_tools_result(&mut self, tools_result: Vec<CallToolResult>) {
         self.frame.set_tools_result(tools_result);
     }
+    pub fn set_frame_token_usage(&mut self, token_usage: Usage) {
+        self.frame.set_token_usage(token_usage);
+    }
 }
 
 impl Default for LifeCycleContext {
@@ -107,6 +111,7 @@ pub struct ModelOuput {
 pub struct StepFrame {
     pub model_output: Option<ModelOuput>,
     pub tools_result: Option<Vec<CallToolResult>>,
+    pub token_usage: Option<Usage>,
 }
 
 impl StepFrame {
@@ -121,6 +126,9 @@ impl StepFrame {
     pub fn set_tools_result(&mut self, tools_result: Vec<CallToolResult>) {
         self.tools_result = Some(tools_result);
     }
+    pub fn set_token_usage(&mut self, token_usage: Usage) {
+        self.token_usage = Some(token_usage);
+    }
 }
 
 impl Default for StepFrame {
@@ -128,6 +136,7 @@ impl Default for StepFrame {
         Self {
             model_output: None,
             tools_result: None,
+            token_usage: None,
         }
     }
 }
@@ -146,7 +155,7 @@ impl StepLifeCycle {
             hooks: vec![
                 Box::new(ExecutionPolicyHook::new(10)),
                 Box::new(MetricsHook::new()),
-                Box::new(TokenStatisticsHook::new()),
+                Box::new(UpdateFrameHook::new()),
             ],
         }
     }
@@ -173,28 +182,15 @@ impl StepLifeCycle {
         let tools = tool_executor.tools().clone();
 
         self.call_life_cyle_hook(LifeCycle::BeforeStep).await?;
-
         self.call_life_cyle_hook(LifeCycle::BeforeCallModel).await?;
 
         let mut stream = pin!(call_model(model, &messages, Some(&tools)));
         while let Some(evt) = stream.next().await {
             self.ctx.set_model_event(&evt);
-            match evt {
-                CallModelEvent::Completed {
-                    content,
-                    reasoning_content,
-                    tools_call,
-                } => {
-                    self.ctx.set_frame_model_output(ModelOuput {
-                        content,
-                        reasoning_content,
-                        tools_call,
-                    });
-                }
-                _ => {}
-            }
             self.call_life_cyle_hook(LifeCycle::OnModelEvent).await?;
         }
+        self.call_life_cyle_hook(LifeCycle::AfterCallModel).await?;
+
         if let Some(tools_call) = self.ctx.frame.get_tools_call().cloned() {
             self.call_life_cyle_hook(LifeCycle::BeforeCallTools).await?;
 

@@ -1,6 +1,6 @@
 pub mod execution_policy;
 pub mod metrics;
-pub mod token_statistics;
+pub mod update_frame;
 use crate::agents::agent_actor::lifecycle::{LifeCycle, LifeCycleContext, LifeCycleFlow};
 
 pub type HookName = &'static str;

@@ -1,12 +1,36 @@
 use crate::agents::tools::playwright_cli::PlaywrightCliTool;
-use crate::agents::{AgentActor, AgentActorEvent, Context, GenericToolExecutor};
+use crate::agents::{AgentActor, AgentActorEvent, Context, GenericToolExecutor, ToolDef};
 
-use crate::core::Message;
-use crate::models::ChatModel;
+use crate::core::{Message, Usage};
+use crate::models::{ChatCapability, ChatChunk, ChatError, ChatModel};
 use crate::providers::deepseek_provider_from_env;
-use futures::StreamExt;
+use async_trait::async_trait;
+use futures::stream::{self, BoxStream};
 use serde_json::Value;
 use std::sync::Arc;
+
+struct MockChatModel {
+    chunks: Vec<ChatChunk>,
+}
+
+#[async_trait]
+impl ChatCapability for MockChatModel {
+    async fn chat(
+        &self,
+        _msgs: Vec<Message>,
+        _tools: Option<Vec<ToolDef>>,
+    ) -> Result<Message, ChatError> {
+        panic!("chat should not be called in this test");
+    }
+
+    async fn chat_stream(
+        &self,
+        _msgs: Vec<Message>,
+        _tools: Option<Vec<ToolDef>>,
+    ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
+        Ok(Box::pin(stream::iter(self.chunks.clone())))
+    }
+}
 
 /// 此测试需要设置 DEEPSEEK_API_KEY 环境变量
 ///
@@ -172,4 +196,34 @@ async fn test_agent_actor_with_deepseek_and_playwright() {
         )
     });
     assert!(finished, "Agent 应该正常结束执行");
+}
+
+#[tokio::test]
+async fn test_agent_actor_accumulates_usage_from_stream_response() {
+    let model = MockChatModel {
+        chunks: vec![ChatChunk {
+            content: "done".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+            usage: Some(Usage {
+                prompt_tokens: 13,
+                completion_tokens: 8,
+                total_tokens: 21,
+            }),
+        }],
+    };
+
+    let executor = GenericToolExecutor::new();
+    let mut context = Context::new();
+    context.add_message(Message::user("hello"));
+
+    let mut actor = AgentActor::new(model, executor, context);
+    let result = actor.run_step(None).await;
+
+    assert!(matches!(result, crate::agents::StepResult::Done { .. }));
+    assert_eq!(actor.state().token_statistics.prompt_tokens, 13);
+    assert_eq!(actor.state().token_statistics.completion_tokens, 8);
+    assert_eq!(actor.state().token_statistics.total_tokens, 21);
 }
