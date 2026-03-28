@@ -136,6 +136,8 @@ where
         }
     }
 
+    // 两种改变 Agent 执行状态的方法
+    // 1. 接受外部 Command 改变内部运行状态
     fn transition_command(&mut self, loop_state: LoopState, cmd: AgentActorCommand) -> LoopState {
         match (loop_state, cmd) {
             (LoopState::Runnable, AgentActorCommand::Pause) => {
@@ -160,6 +162,7 @@ where
         }
     }
 
+    // 2. 根据单步执行的结果改变运行状态
     fn transition_step_result(&self, result: StepResult) -> LoopState {
         match result {
             StepResult::Continue { .. } => LoopState::Runnable,
