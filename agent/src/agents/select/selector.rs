@@ -1,5 +1,5 @@
-use crate::agents::memory::ListDirRequest;
-use crate::agents::memory::{
+use crate::agents::select::ListDirRequest;
+use crate::agents::select::{
     FileContent, FileEntry, FindRequest, GrepMatch, GrepRequest, ReadFileRequest, SelectConfig,
     SelectError,
 };

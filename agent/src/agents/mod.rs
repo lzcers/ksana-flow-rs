@@ -4,8 +4,10 @@ pub mod agent_state;
 pub mod call_model;
 pub mod compress;
 pub mod context;
+pub mod filesystem;
 pub mod hooks;
 pub mod memory;
+pub mod select;
 #[cfg(test)]
 mod tests;
 pub mod tools;
@@ -21,7 +23,15 @@ pub use compress::{
     ModelCompression, RuleCompression, SummaryModel,
 };
 pub use context::{Context, Layer, LayerKind, LayerMeta};
-pub use memory::{MemoryToolConfig, register_memory_tools};
+pub use filesystem::{FsMemoryStore, FsSelector};
+pub use memory::{
+    DirectoryListing, FileSnapshot, LineRange, MemoryConfig, MemoryEntry, MemoryError, MemoryStore,
+    MemoryToolConfig, MemoryView, register_memory_tools,
+};
+pub use select::{
+    FileContent, FileEntry, FileSelector, FindRequest, GrepMatch, GrepRequest, ListDirRequest,
+    ReadFileRequest, SelectConfig, SelectError, SelectToolConfig, register_select_tools,
+};
 
 pub use tools::{
     GenericToolExecutor, Tool, ToolCall, ToolCallFunction, ToolDef, ToolExecutor,

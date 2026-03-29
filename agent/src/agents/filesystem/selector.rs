@@ -5,7 +5,7 @@ use glob::Pattern;
 use regex::RegexBuilder;
 use walkdir::WalkDir;
 
-use crate::agents::memory::{
+use crate::agents::select::{
     FileContent, FileEntry, FileSelector, FindRequest, GrepMatch, GrepRequest, ListDirRequest,
     ReadFileRequest, SelectConfig, SelectError,
 };
