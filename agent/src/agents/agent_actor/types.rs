@@ -1,7 +1,11 @@
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::agents::{CallToolResult, agent_actor::lifecycle::LifeCycleError, tools::ToolCall};
+use crate::agents::{
+    CallToolResult,
+    agent_actor::lifecycle::{LifeCycleError, StepFrame},
+    tools::ToolCall,
+};
 
 /// Agent 执行错误类型
 #[derive(Debug, Clone, thiserror::Error)]
@@ -36,7 +40,10 @@ pub enum AgentActorEvent {
         tool_calls: Option<Vec<ToolCall>>,
     },
     /// 单步结果已提交，表示最终落地到状态/上下文的结果
-    StepFinalized { result: StepResult },
+    StepFinalized {
+        result: StepResult,
+        frame: StepFrame,
+    },
     /// 模型请求工具调用
     ToolCalls(Vec<ToolCall>),
     /// 单个工具执行完成

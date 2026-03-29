@@ -3,23 +3,11 @@ use crate::agents::{
     hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 
-pub struct ExecutionPolicyHook {
-    iter_num: u32,
-    max_iter_limit: u32,
-}
+pub struct ExecutionPolicyHook;
 
 impl ExecutionPolicyHook {
-    pub fn new(max_iter_limit: u32) -> Self {
-        Self {
-            iter_num: 0,
-            max_iter_limit,
-        }
-    }
-    fn add_iter_num(&mut self) {
-        self.iter_num += 1;
-    }
-    fn check_max_iter_limit(&self) -> bool {
-        self.iter_num > self.max_iter_limit
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -32,22 +20,21 @@ impl LifeCycleHook for ExecutionPolicyHook {
         0
     }
     fn on(&self, stage: &LifeCycle) -> bool {
-        matches!(stage, LifeCycle::BeforeStep | LifeCycle::AfterStep)
+        matches!(stage, LifeCycle::BeforeStep)
     }
 
     async fn handle(&mut self, ctx: &mut LifeCycleContext) -> LifeCycleFlow {
-        match ctx.stage {
-            LifeCycle::BeforeStep => {
-                if self.check_max_iter_limit() {
-                    return LifeCycleFlow::Break(LifeCycleError::hook_error(
-                        &ctx.stage,
-                        self.name(),
-                        format!("max iter limit {} exceeded", self.max_iter_limit),
-                    ));
-                }
+        if matches!(ctx.stage, LifeCycle::BeforeStep) {
+            let iteration = ctx.state.metrics.execution.iteration;
+            let max_iter_limit = ctx.state.metrics.execution.max_iterations;
+
+            if iteration >= max_iter_limit {
+                return LifeCycleFlow::Break(LifeCycleError::hook_error(
+                    &ctx.stage,
+                    self.name(),
+                    format!("max iter limit {} exceeded", max_iter_limit),
+                ));
             }
-            LifeCycle::AfterStep => self.add_iter_num(),
-            _ => {}
         }
         LifeCycleFlow::Continue(LifeCycleResult::None)
     }

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::AgentActor;
 use crate::agents::{Context, ToolExecutor};
 use crate::models::ChatCapability;
@@ -54,7 +52,7 @@ where
     /// 构建 AgentActor
     pub fn build(self) -> AgentActor<C, E> {
         let mut actor = AgentActor::with_runtime_hooks(self.chat, self.tool_executor, self.context);
-        actor.state.max_iterations = self.max_iterations;
+        actor.state.metrics.execution.max_iterations = self.max_iterations;
         actor.state.user_id = self.user_id;
         actor
     }

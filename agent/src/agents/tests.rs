@@ -1,5 +1,8 @@
 use crate::agents::tools::playwright_cli::PlaywrightCliTool;
-use crate::agents::{AgentActor, AgentActorEvent, Context, GenericToolExecutor, ToolDef};
+use crate::agents::{
+    AgentActor, AgentActorEvent, AgentTerminalReason, Context, GenericToolExecutor, Tool, ToolCall,
+    ToolCallFunction, ToolDef, ToolExecutorError,
+};
 
 use crate::core::{Message, Usage};
 use crate::models::{ChatCapability, ChatChunk, ChatError, ChatModel};
@@ -8,6 +11,7 @@ use async_trait::async_trait;
 use futures::stream::{self, BoxStream};
 use serde_json::Value;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 struct MockChatModel {
     chunks: Vec<ChatChunk>,
@@ -29,6 +33,39 @@ impl ChatCapability for MockChatModel {
         _tools: Option<Vec<ToolDef>>,
     ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
         Ok(Box::pin(stream::iter(self.chunks.clone())))
+    }
+}
+
+struct EchoTool {
+    def: ToolDef,
+}
+
+impl EchoTool {
+    fn new() -> Self {
+        Self {
+            def: ToolDef {
+                name: "echo".to_string(),
+                description: "Echo input arguments".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "value": { "type": "string" }
+                    },
+                    "required": ["value"]
+                }),
+            },
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for EchoTool {
+    fn definition(&self) -> &ToolDef {
+        &self.def
+    }
+
+    async fn execute(&self, arguments: Value) -> Result<Value, ToolExecutorError> {
+        Ok(arguments)
     }
 }
 
@@ -145,8 +182,11 @@ async fn test_agent_actor_with_deepseek_and_playwright() {
                     println!("\n[assistant-tool-calls] {}", json_str);
                 }
             }
-            AgentActorEvent::StepFinalized { result } => {
-                println!("\n[Event] StepFinalized: {:?}", result);
+            AgentActorEvent::StepFinalized { result, frame } => {
+                println!(
+                    "\n[Event] StepFinalized: {:?}, metrics={:?}",
+                    result, frame.metrics
+                );
             }
             AgentActorEvent::Iteration { iteration, .. } => {
                 println!("\n--- Iteration {} ---", iteration);
@@ -223,7 +263,112 @@ async fn test_agent_actor_accumulates_usage_from_stream_response() {
     let result = actor.run_step(None).await;
 
     assert!(matches!(result, crate::agents::StepResult::Done { .. }));
-    assert_eq!(actor.state().token_statistics.prompt_tokens, 13);
-    assert_eq!(actor.state().token_statistics.completion_tokens, 8);
-    assert_eq!(actor.state().token_statistics.total_tokens, 21);
+    assert_eq!(actor.state().metrics.tokens.prompt_tokens, 13);
+    assert_eq!(actor.state().metrics.tokens.completion_tokens, 8);
+    assert_eq!(actor.state().metrics.tokens.total_tokens, 21);
+    assert_eq!(actor.state().metrics.execution.iteration, 1);
+    assert_eq!(
+        actor.state().metrics.execution.terminal_reason,
+        Some(AgentTerminalReason::Completed)
+    );
+    assert!(actor.state().metrics.timeline.started_at.is_some());
+    assert!(actor.state().metrics.timeline.finished_at.is_some());
+    assert!(actor.state().metrics.timeline.total_duration_ms.is_some());
+}
+
+#[tokio::test]
+async fn test_agent_actor_emits_step_frame_metrics_to_upper_layer() {
+    let model = MockChatModel {
+        chunks: vec![ChatChunk {
+            content: "use tool".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("tool_calls".to_string()),
+            tool_calls: Some(vec![ToolCall {
+                id: "call_1".to_string(),
+                call_type: Some("function".to_string()),
+                index: Some(0),
+                function: Some(ToolCallFunction {
+                    name: "echo".to_string(),
+                    arguments: r#"{"value":"ok"}"#.to_string(),
+                }),
+                name: None,
+                arguments: None,
+            }]),
+            usage: None,
+        }],
+    };
+
+    let mut executor = GenericToolExecutor::new();
+    executor.register(EchoTool::new());
+
+    let mut context = Context::new();
+    context.add_message(Message::user("hello"));
+
+    let mut actor = AgentActor::new(model, executor, context);
+    let (event_tx, mut event_rx) = mpsc::channel(8);
+    let result = actor.run_step(Some(event_tx)).await;
+
+    assert!(matches!(result, crate::agents::StepResult::Continue { .. }));
+    assert_eq!(actor.state().metrics.execution.iteration, 1);
+    assert_eq!(actor.state().metrics.tools.call_count, 1);
+    assert_eq!(actor.state().metrics.tools.success_count, 1);
+    assert_eq!(actor.state().metrics.tools.failure_count, 0);
+    assert_eq!(actor.state().metrics.execution.terminal_reason, None);
+    assert!(actor.state().metrics.timeline.started_at.is_some());
+    assert!(actor.state().metrics.timeline.finished_at.is_none());
+
+    let mut finalized_frame = None;
+    while let Some(event) = event_rx.recv().await {
+        if let AgentActorEvent::StepFinalized { frame, .. } = event {
+            finalized_frame = Some(frame);
+            break;
+        }
+    }
+
+    let frame = finalized_frame.expect("expected StepFinalized event with frame");
+    assert_eq!(frame.tools_result.as_ref().map(Vec::len), Some(1));
+    assert!(frame.metrics.call_model_duration_ms.is_some());
+    assert!(frame.metrics.call_tools_duration_ms.is_some());
+}
+
+#[tokio::test]
+async fn test_agent_actor_records_error_metrics_when_max_iterations_exceeded() {
+    let model = MockChatModel {
+        chunks: vec![ChatChunk {
+            content: "done".to_string(),
+            reasoning_content: String::new(),
+            is_finished: true,
+            finish_reason: Some("stop".to_string()),
+            tool_calls: None,
+            usage: None,
+        }],
+    };
+
+    let executor = GenericToolExecutor::new();
+    let mut context = Context::new();
+    context.add_message(Message::user("hello"));
+
+    let mut actor = AgentActor::new(model, executor, context);
+    actor.state_mut().metrics.execution.max_iterations = 0;
+
+    let result = actor.run_step(None).await;
+
+    assert!(matches!(result, crate::agents::StepResult::Error(_)));
+    assert_eq!(actor.state().metrics.execution.iteration, 0);
+    assert_eq!(
+        actor.state().metrics.execution.terminal_reason,
+        Some(AgentTerminalReason::Failed)
+    );
+    assert_eq!(actor.state().metrics.errors.count, 1);
+    assert!(
+        actor
+            .state()
+            .metrics
+            .errors
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("max iter limit 0 exceeded")
+    );
 }

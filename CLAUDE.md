@@ -173,7 +173,7 @@ let result = actor.run_step(Some(event_tx)).await;
 | `ContentChunk(String)` | LLM text chunk |
 | `ReasoningChunk(String)` | DeepSeek reasoner content chunk |
 | `StepCompleted { content, reasoning_content, tool_calls }` | LLM response complete (before commit) |
-| `StepFinalized { result }` | Step result committed to state |
+| `StepFinalized { result, frame }` | Step result committed to state, with full `StepFrame` |
 | `ToolCalls(Vec<ToolCall>)` | Model requested tools |
 | `ToolResult { call_id, success, output }` | Single tool completed |
 | `Iteration { iteration, message_count }` | One cycle complete |
@@ -205,7 +205,7 @@ pub trait LifeCycleHook: Send + Sync {
 
 - `stage`: Current `LifeCycle` phase
 - `state`: `AgentState` (read/write)
-- `frame`: `StepFrame` with `model_output` and `tools_result`
+- `frame`: `StepFrame` with `model_output`, `tools_result`, `token_usage`, and `metrics`
 - `model_event`: Optional `CallModelEvent` (set during `OnModelEvent`)
 
 #### State Management (`agents/agent_state.rs`)
@@ -574,7 +574,7 @@ async fn main() -> anyhow::Result<()> {
             AgentActorEvent::StepCompleted { content, tool_calls, .. } => {
                 println!("\nStep completed: {}", content);
             }
-            AgentActorEvent::StepFinalized { result } => {
+            AgentActorEvent::StepFinalized { result, frame } => {
                 println!("Step finalized");
             }
             AgentActorEvent::ToolCalls(calls) => {

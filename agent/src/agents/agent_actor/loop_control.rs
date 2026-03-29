@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use super::lifecycle::StepLifeCycle;
 use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
 use crate::agents::agent_actor::lifecycle::StepFrame;
-use crate::agents::{AgentError, JobState, ToolExecutor};
+use crate::agents::{AgentError, AgentTerminalReason, JobState, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
 
@@ -16,13 +16,8 @@ enum LoopState {
 }
 
 enum Finalization {
-    Emit(TerminalReason),
+    Emit(AgentTerminalReason),
     Silent,
-}
-
-enum TerminalReason {
-    Completed,
-    Cancelled,
 }
 
 impl<C, E> AgentActor<C, E>
@@ -45,6 +40,7 @@ where
         event_tx: Option<mpsc::Sender<AgentActorEvent>>,
     ) -> StepResult {
         self.state.state = JobState::Running;
+        self.state.metrics.mark_started();
         let chat = Arc::clone(&self.chat);
         let tool_executor = Arc::clone(&self.tool_executor);
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
@@ -52,14 +48,19 @@ where
         // 执行生命周期函数
         let frame = match lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await {
             Ok(frame) => frame,
-            Err(err) => return StepResult::Error(err.into()),
+            Err(err) => {
+                let err = AgentError::from(err);
+                self.apply_step_error(&err);
+                self.emit_error_events(event_tx.as_ref(), &err).await;
+                return StepResult::Error(err);
+            }
         };
-        self.apply_step_usage(&frame);
-        let result = Self::step_result_from_frame(frame);
+        self.apply_step_metrics(&frame);
+        let result = Self::step_result_from_frame(&frame);
         // 应用 StepFrame 结果，更新 AgentState
         self.apply_step_result(&result);
         // 对外发送 StepResult 事件
-        self.emit_step_result_events(event_tx.as_ref(), &result)
+        self.emit_step_result_events(event_tx.as_ref(), &frame, &result)
             .await;
         result
     }
@@ -131,7 +132,8 @@ where
             }
             _ = event_tx.closed() => {
                 self.state.state = JobState::Cancelled;
-                LoopState::Finished(Finalization::Emit(TerminalReason::Cancelled))
+                self.state.metrics.mark_finished(AgentTerminalReason::Cancelled);
+                LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
             }
         }
     }
@@ -142,21 +144,32 @@ where
         match (loop_state, cmd) {
             (LoopState::Runnable, AgentActorCommand::Pause) => {
                 self.state.state = JobState::Paused;
+                self.state.metrics.mark_active();
                 LoopState::Paused
             }
-            (LoopState::Runnable, AgentActorCommand::Continue) => LoopState::Runnable,
+            (LoopState::Runnable, AgentActorCommand::Continue) => {
+                self.state.metrics.mark_active();
+                LoopState::Runnable
+            }
             (LoopState::Runnable, AgentActorCommand::Cancel) => {
                 self.state.state = JobState::Cancelled;
-                LoopState::Finished(Finalization::Emit(TerminalReason::Cancelled))
+                self.state
+                    .metrics
+                    .mark_finished(AgentTerminalReason::Cancelled);
+                LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
             }
             (LoopState::Paused, AgentActorCommand::Pause) => LoopState::Paused,
             (LoopState::Paused, AgentActorCommand::Continue) => {
                 self.state.state = JobState::Running;
+                self.state.metrics.mark_active();
                 LoopState::Runnable
             }
             (LoopState::Paused, AgentActorCommand::Cancel) => {
                 self.state.state = JobState::Cancelled;
-                LoopState::Finished(Finalization::Emit(TerminalReason::Cancelled))
+                self.state
+                    .metrics
+                    .mark_finished(AgentTerminalReason::Cancelled);
+                LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
             }
             (LoopState::Finished(finalization), _) => LoopState::Finished(finalization),
         }
@@ -167,7 +180,7 @@ where
         match result {
             StepResult::Continue { .. } => LoopState::Runnable,
             StepResult::Done { .. } => {
-                LoopState::Finished(Finalization::Emit(TerminalReason::Completed))
+                LoopState::Finished(Finalization::Emit(AgentTerminalReason::Completed))
             }
             StepResult::Error(_) => LoopState::Finished(Finalization::Silent),
         }
@@ -180,20 +193,19 @@ where
     ) {
         match finalization {
             Finalization::Emit(reason) => match reason {
-                TerminalReason::Completed => {
+                AgentTerminalReason::Completed => {
                     Self::send_event(Some(event_tx), AgentActorEvent::Completed).await;
                 }
-                TerminalReason::Cancelled => {
+                AgentTerminalReason::Cancelled => {
                     Self::send_event(Some(event_tx), AgentActorEvent::Cancelled).await;
                 }
+                AgentTerminalReason::Failed => {}
             },
             Finalization::Silent => {}
         }
     }
 
     fn apply_step_result(&mut self, result: &StepResult) {
-        self.state.iteration += 1;
-
         match result {
             StepResult::Continue {
                 content,
@@ -201,6 +213,7 @@ where
                 tools_call,
                 tools_result,
             } => {
+                self.state.metrics.increment_iteration();
                 self.state.state = JobState::Running;
                 self.state.context.add_message(Message::Assistant {
                     content: content.clone(),
@@ -219,46 +232,71 @@ where
                 content,
                 reasoning_content,
             } => {
+                self.state.metrics.increment_iteration();
                 self.state.state = JobState::Completed;
                 self.state.context.add_message(Message::Assistant {
                     content: content.clone(),
                     reasoning_content: reasoning_content.clone(),
                     tool_calls: None,
                 });
+                self.state
+                    .metrics
+                    .mark_finished(AgentTerminalReason::Completed);
             }
-            StepResult::Error(err) => {
-                self.state.state = match err {
-                    AgentError::Cancelled => JobState::Cancelled,
-                    _ => JobState::Failed,
-                };
-            }
+            StepResult::Error(err) => self.apply_step_error(err),
         }
     }
 
-    fn apply_step_usage(&mut self, frame: &StepFrame) {
+    fn apply_step_metrics(&mut self, frame: &StepFrame) {
+        self.state.metrics.mark_active();
         if let Some(usage) = frame.token_usage.as_ref() {
-            self.state.token_statistics.add_usage(usage);
+            self.state.metrics.add_usage(usage);
+        }
+        if let Some(duration_ms) = frame.metrics.call_model_duration_ms {
+            self.state.metrics.add_model_duration(duration_ms);
+        }
+        if let Some(duration_ms) = frame.metrics.call_tools_duration_ms {
+            self.state.metrics.add_tool_duration(duration_ms);
+        }
+        if let Some(results) = frame.tools_result.as_ref() {
+            let success_count = results.iter().filter(|result| result.success).count();
+            let failure_count = results.len().saturating_sub(success_count);
+            self.state
+                .metrics
+                .add_tool_results(success_count, failure_count);
         }
     }
 
-    fn step_result_from_frame(frame: StepFrame) -> StepResult {
-        let StepFrame {
-            model_output,
-            tools_result,
-            ..
-        } = frame;
+    fn apply_step_error(&mut self, err: &AgentError) {
+        match err {
+            AgentError::Cancelled => {
+                self.state.state = JobState::Cancelled;
+                self.state
+                    .metrics
+                    .mark_finished(AgentTerminalReason::Cancelled);
+            }
+            _ => {
+                self.state.state = JobState::Failed;
+                self.state.metrics.record_error(err.to_string());
+                self.state
+                    .metrics
+                    .mark_finished(AgentTerminalReason::Failed);
+            }
+        }
+    }
 
-        match model_output {
-            Some(model_output) => match model_output.tools_call {
+    fn step_result_from_frame(frame: &StepFrame) -> StepResult {
+        match frame.model_output.as_ref() {
+            Some(model_output) => match model_output.tools_call.as_ref() {
                 Some(tools_call) => StepResult::Continue {
-                    content: model_output.content,
-                    reasoning_content: model_output.reasoning_content,
-                    tools_call,
-                    tools_result: tools_result.unwrap_or_default(),
+                    content: model_output.content.clone(),
+                    reasoning_content: model_output.reasoning_content.clone(),
+                    tools_call: tools_call.clone(),
+                    tools_result: frame.tools_result.clone().unwrap_or_default(),
                 },
                 None => StepResult::Done {
-                    content: model_output.content,
-                    reasoning_content: model_output.reasoning_content,
+                    content: model_output.content.clone(),
+                    reasoning_content: model_output.reasoning_content.clone(),
                 },
             },
             None => StepResult::Error(AgentError::ModelRspErr),
@@ -268,12 +306,14 @@ where
     async fn emit_step_result_events(
         &self,
         event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
+        frame: &StepFrame,
         result: &StepResult,
     ) {
         Self::send_event(
             event_tx,
             AgentActorEvent::StepFinalized {
                 result: result.clone(),
+                frame: frame.clone(),
             },
         )
         .await;
@@ -283,7 +323,7 @@ where
                 Self::send_event(
                     event_tx,
                     AgentActorEvent::Iteration {
-                        iteration: self.state.iteration,
+                        iteration: self.state.metrics.execution.iteration,
                         message_count: self.state.context.conversation().len(),
                     },
                 )
@@ -293,6 +333,21 @@ where
                 Self::send_event(event_tx, AgentActorEvent::Cancelled).await;
             }
             StepResult::Error(err) => {
+                Self::send_event(event_tx, AgentActorEvent::Error(err.clone())).await;
+            }
+        }
+    }
+
+    async fn emit_error_events(
+        &self,
+        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
+        err: &AgentError,
+    ) {
+        match err {
+            AgentError::Cancelled => {
+                Self::send_event(event_tx, AgentActorEvent::Cancelled).await;
+            }
+            _ => {
                 Self::send_event(event_tx, AgentActorEvent::Error(err.clone())).await;
             }
         }

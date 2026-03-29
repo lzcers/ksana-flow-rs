@@ -1,9 +1,8 @@
-use async_stream::stream;
-use futures::{Stream, StreamExt};
-
 use crate::agents::{ToolCall, ToolDef, ToolExecutor};
 use crate::core::{Message, Usage};
 use crate::models::ChatCapability;
+use async_stream::stream;
+use futures::{Stream, StreamExt};
 
 /// 工具执行结果
 #[derive(Debug, Clone)]
@@ -16,6 +15,12 @@ pub struct CallToolResult {
     pub success: bool,
     /// 输出内容（JSON 字符串）
     pub output: String,
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum CallToolError {
+    #[error("call tool timeout.")]
+    Timeout,
 }
 
 /// 调用模型事件（纯数据）

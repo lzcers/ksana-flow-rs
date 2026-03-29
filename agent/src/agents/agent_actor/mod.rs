@@ -12,7 +12,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::agents::{AgentState, Context, ToolExecutor};
+use crate::agents::{AgentState, Context, Metrics, ToolExecutor};
 use crate::models::ChatCapability;
 
 pub use builder::AgentActorBuilder;
@@ -47,6 +47,7 @@ where
 
     /// 创建带内部 runtime hooks 和扩展 hooks 的 Agent Actor
     pub(crate) fn with_runtime_hooks(chat: C, tool_executor: E, context: Context) -> Self {
+        let default_max_iterations = 10;
         Self {
             state: AgentState {
                 job_id: Uuid::new_v4(),
@@ -56,10 +57,8 @@ where
                 description: String::new(),
                 category: None,
                 state: crate::agents::JobState::Pending,
-                token_statistics: Default::default(),
                 context,
-                iteration: 0,
-                max_iterations: 10,
+                metrics: Metrics::with_max_iterations(default_max_iterations),
             },
             chat: Arc::new(chat),
             tool_executor: Arc::new(tool_executor),

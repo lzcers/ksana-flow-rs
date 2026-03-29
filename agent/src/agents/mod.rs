@@ -12,7 +12,7 @@ pub use agent_actor::{
     AgentActor, AgentActorBuilder, AgentActorCommand, AgentActorEvent, AgentActorHandle,
     AgentError, StepResult,
 };
-pub use agent_state::{AgentState, JobState};
+pub use agent_state::{AgentState, AgentTerminalReason, JobState, Metrics};
 pub use call_model::{CallModelEvent, CallToolResult, call_model, call_tool, call_tools};
 pub use context::{Context, Layer, LayerKind, LayerMeta};
 

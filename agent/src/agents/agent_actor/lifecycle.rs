@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use futures::StreamExt;
 
-use super::AgentError;
-use crate::agents::call_model::{CallModelEvent, CallToolResult, call_model, call_tools};
+use crate::agents::call_model::{
+    CallModelEvent, CallToolError, CallToolResult, call_model, call_tools,
+};
 use crate::agents::hooks::LifeCycleHook;
 use crate::agents::hooks::execution_policy::ExecutionPolicyHook;
 use crate::agents::hooks::metrics::MetricsHook;
@@ -47,6 +48,7 @@ pub enum LifeCycleError {
     #[error("model error")]
     ModelError,
 }
+
 impl LifeCycleError {
     pub fn hook_error(stage: &LifeCycle, hook_name: &str, msg: String) -> Self {
         Self::HookError(stage.clone(), hook_name.to_string(), msg)
@@ -88,6 +90,12 @@ impl LifeCycleContext {
     pub fn set_frame_token_usage(&mut self, token_usage: Usage) {
         self.frame.set_token_usage(token_usage);
     }
+    pub fn set_frame_call_model_duration_ms(&mut self, duration_ms: u32) {
+        self.frame.set_call_model_duration_ms(duration_ms);
+    }
+    pub fn set_frame_call_tools_duration_ms(&mut self, duration_ms: u32) {
+        self.frame.set_call_tools_duration_ms(duration_ms);
+    }
 }
 
 impl Default for LifeCycleContext {
@@ -100,6 +108,7 @@ impl Default for LifeCycleContext {
         }
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct ModelOuput {
     pub content: String,
@@ -108,10 +117,26 @@ pub struct ModelOuput {
 }
 
 #[derive(Debug, Clone)]
+pub struct StepMetrics {
+    pub call_model_duration_ms: Option<u32>,
+    pub call_tools_duration_ms: Option<u32>,
+}
+
+impl Default for StepMetrics {
+    fn default() -> Self {
+        Self {
+            call_model_duration_ms: None,
+            call_tools_duration_ms: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct StepFrame {
     pub model_output: Option<ModelOuput>,
     pub tools_result: Option<Vec<CallToolResult>>,
     pub token_usage: Option<Usage>,
+    pub metrics: StepMetrics,
 }
 
 impl StepFrame {
@@ -129,6 +154,12 @@ impl StepFrame {
     pub fn set_token_usage(&mut self, token_usage: Usage) {
         self.token_usage = Some(token_usage);
     }
+    pub fn set_call_model_duration_ms(&mut self, duration_ms: u32) {
+        self.metrics.call_model_duration_ms = Some(duration_ms);
+    }
+    pub fn set_call_tools_duration_ms(&mut self, duration_ms: u32) {
+        self.metrics.call_tools_duration_ms = Some(duration_ms);
+    }
 }
 
 impl Default for StepFrame {
@@ -137,6 +168,7 @@ impl Default for StepFrame {
             model_output: None,
             tools_result: None,
             token_usage: None,
+            metrics: Default::default(),
         }
     }
 }
@@ -153,7 +185,7 @@ impl StepLifeCycle {
         Self {
             ctx,
             hooks: vec![
-                Box::new(ExecutionPolicyHook::new(10)),
+                Box::new(ExecutionPolicyHook::new()),
                 Box::new(MetricsHook::new()),
                 Box::new(UpdateFrameHook::new()),
             ],
@@ -181,18 +213,20 @@ impl StepLifeCycle {
         let messages = self.ctx.state.get_message();
         let tools = tool_executor.tools().clone();
 
-        self.call_life_cyle_hook(LifeCycle::BeforeStep).await?;
-        self.call_life_cyle_hook(LifeCycle::BeforeCallModel).await?;
+        self.call_life_cycle_hook(LifeCycle::BeforeStep).await?;
+        self.call_life_cycle_hook(LifeCycle::BeforeCallModel)
+            .await?;
 
         let mut stream = pin!(call_model(model, &messages, Some(&tools)));
         while let Some(evt) = stream.next().await {
             self.ctx.set_model_event(&evt);
-            self.call_life_cyle_hook(LifeCycle::OnModelEvent).await?;
+            self.call_life_cycle_hook(LifeCycle::OnModelEvent).await?;
         }
-        self.call_life_cyle_hook(LifeCycle::AfterCallModel).await?;
+        self.call_life_cycle_hook(LifeCycle::AfterCallModel).await?;
 
         if let Some(tools_call) = self.ctx.frame.get_tools_call().cloned() {
-            self.call_life_cyle_hook(LifeCycle::BeforeCallTools).await?;
+            self.call_life_cycle_hook(LifeCycle::BeforeCallTools)
+                .await?;
 
             match Self::execute_tools_with_timeout(
                 tool_executor,
@@ -204,10 +238,10 @@ impl StepLifeCycle {
                 Ok(results) => self.ctx.set_frame_tools_result(results),
                 Err(err) => return Self::break_step(LifeCycleError::ToolError(err.to_string())),
             }
-            self.call_life_cyle_hook(LifeCycle::AfterCallTools).await?;
+            self.call_life_cycle_hook(LifeCycle::AfterCallTools).await?;
         };
 
-        self.call_life_cyle_hook(LifeCycle::AfterStep).await?;
+        self.call_life_cycle_hook(LifeCycle::AfterStep).await?;
 
         Self::continue_step_with_result(LifeCycleResult::Frame(self.ctx.frame.clone()))
     }
@@ -223,7 +257,7 @@ impl StepLifeCycle {
         LifeCycleFlow::Continue(result)
     }
 
-    async fn call_life_cyle_hook(&mut self, lifecycle: LifeCycle) -> LifeCycleFlow {
+    async fn call_life_cycle_hook(&mut self, lifecycle: LifeCycle) -> LifeCycleFlow {
         self.ctx.set_stage(&lifecycle);
         for hook in &mut self.hooks {
             if hook.on(&lifecycle) {
@@ -233,12 +267,11 @@ impl StepLifeCycle {
         Self::continue_step()
     }
 
-    // todo: 执行工具返回专门的错误，而不是 AgentError
     async fn execute_tools_with_timeout(
         tool_executor: &dyn ToolExecutor,
         tool_calls: &[crate::agents::ToolCall],
         timeout: Option<Duration>,
-    ) -> Result<Vec<CallToolResult>, AgentError> {
+    ) -> Result<Vec<CallToolResult>, CallToolError> {
         let execute = async {
             let mut stream = pin!(call_tools(tool_executor, tool_calls));
             let mut results = Vec::new();
@@ -251,7 +284,7 @@ impl StepLifeCycle {
         if let Some(dur) = timeout {
             match tokio::time::timeout(dur, execute).await {
                 Ok(results) => Ok(results),
-                Err(_) => Err(AgentError::Timeout),
+                Err(_) => Err(CallToolError::Timeout),
             }
         } else {
             Ok(execute.await)
