@@ -1,5 +1,5 @@
 [workspace]
-members = ["agent", "flow", "nodes", "server"]
+members = ["agent", "agent/src/rust", "flow", "nodes", "server"]
 resolver = "2"
 
 [workspace.dependencies]
