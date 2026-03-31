@@ -1,8 +1,11 @@
 [workspace]
-members = ["agent", "agent/src/rust", "flow", "nodes", "server"]
+members = ["agent", "flow", "nodes", "server"]
 resolver = "2"
 
 [workspace.dependencies]
+flow = { path = "flow" }
+nodes = { path = "nodes" }
+agent = { path = "agent" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tokio = { version = "1.49.0", features = ["full"] }
@@ -21,7 +24,4 @@ chrono = { version = "0.4.44", features = ["serde"] }
 dotenv = "0.15.0"
 reqwest = { version = "0.13.2", features = ["json", "gzip", "stream"] }
 futures = "0.3.32"
-flow = { path = "flow" }
-nodes = { path = "nodes" }
-agent = { path = "agent" }
 rusqlite = { version = "0.38.0", features = ["bundled"] }
