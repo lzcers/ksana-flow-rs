@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::agents::ToolCall;
+use crate::agent::ToolCall;
 
 /// 用量
 #[derive(Debug, Clone, Deserialize, Serialize)]

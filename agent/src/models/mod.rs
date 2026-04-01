@@ -1,7 +1,7 @@
 mod chat_model;
 mod gen_img_model;
 
-use crate::agents::ToolCall;
+use crate::agent::ToolCall;
 use crate::core::Usage;
 use async_trait::async_trait;
 pub use chat_model::ChatModel;
@@ -10,7 +10,7 @@ pub use gen_img_model::GenImgModel;
 use futures::stream::BoxStream;
 use thiserror::Error;
 
-use crate::{agents::ToolDef, core::Message, providers::ProviderError};
+use crate::{agent::ToolDef, core::Message, providers::ProviderError};
 
 /// 聊天错误类型
 #[derive(Debug, Error)]

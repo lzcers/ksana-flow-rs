@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::stream::{BoxStream, StreamExt};
 
 use crate::{
-    agents::ToolDef,
+    agent::ToolDef,
     core::{Message, MessageRole},
     models::{ChatCapability, ChatChunk, ChatError},
     providers::{Provider, Request, Response},

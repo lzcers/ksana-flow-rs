@@ -1,4 +1,4 @@
-use crate::agents::{ToolCall, ToolDef};
+use crate::agent::{ToolCall, ToolDef};
 use crate::core::MessageRole;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
