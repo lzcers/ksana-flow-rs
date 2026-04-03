@@ -270,6 +270,9 @@ async fn test_agent_actor_with_deepseek_and_playwright() {
                 print_field("status", "max_iterations");
                 print_field("iteration", iteration.to_string());
             }
+            AgentActorEvent::AskUser { question, input_id } => {
+                todo!();
+            }
         }
 
         events.push(event.clone());

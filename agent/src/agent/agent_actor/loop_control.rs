@@ -2,19 +2,22 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use super::lifecycle::StepLifeCycle;
+use super::lifecycle::{LifeCycleFlow, LifeCycleInterrupt, LifeCycleResult, StepLifeCycle};
 use super::{AgentActor, AgentActorCommand, AgentActorEvent, AgentActorHandle, StepResult};
 use crate::agent::agent_actor::lifecycle::StepFrame;
 use crate::agent::{AgentError, AgentTerminalReason, JobState, ToolExecutor};
 use crate::core::Message;
 use crate::models::ChatCapability;
 
-enum LoopState {
+#[derive(Clone)]
+pub enum LoopState {
     Runnable,
     Paused,
+    WaitingForUserInput(String),
     Finished(Finalization),
 }
 
+#[derive(Clone)]
 enum Finalization {
     Emit(AgentTerminalReason),
     Silent,
@@ -46,23 +49,52 @@ where
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
 
         // 执行生命周期函数
-        let frame = match lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await {
-            Ok(frame) => frame,
-            Err(err) => {
-                let err = AgentError::from(err);
+        let lifecycle_flow = lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+
+        match lifecycle_flow {
+            LifeCycleFlow::Continue(LifeCycleResult::Frame(frame)) => {
+                self.apply_step_metrics(&frame);
+                let result = Self::step_result_from_frame(&frame);
+                // 应用 StepFrame 结果，更新 AgentState
+                self.apply_step_result(&result);
+                // 对外发送 StepResult 事件
+                self.emit_step_result_events(event_tx.as_ref(), &frame, &result)
+                    .await;
+                result
+            }
+            LifeCycleFlow::Break(interrupt) => {
+                match interrupt {
+                    // 如果是 AskUser 中断，返回成功结果
+                    LifeCycleInterrupt::AskUser { question } => {
+                        // 触发用户输入请求，进入 WaitingForUserInput 状态
+                        self.ask_user(question, event_tx).await;
+                        // 返回 Continue 结果，让 loop 继续处理状态转换
+                        // 注意：这里我们没有完整的 model_output，但这不影响状态转换
+                        StepResult::Continue {
+                            content: String::new(),
+                            reasoning_content: None,
+                            tools_call: Vec::new(),
+                            tools_result: Vec::new(),
+                        }
+                    }
+                    // 其他中断（错误）返回错误
+                    _ => {
+                        // 将 LifeCycleInterrupt 转换为 AgentError
+                        let err = AgentError::Parse(interrupt);
+                        self.apply_step_error(&err);
+                        self.emit_error_events(event_tx.as_ref(), &err).await;
+                        StepResult::Error(err)
+                    }
+                }
+            }
+            _ => {
+                // 其他情况视为模型错误
+                let err = AgentError::Parse(LifeCycleInterrupt::ModelError);
                 self.apply_step_error(&err);
                 self.emit_error_events(event_tx.as_ref(), &err).await;
-                return StepResult::Error(err);
+                StepResult::Error(err)
             }
-        };
-        self.apply_step_metrics(&frame);
-        let result = Self::step_result_from_frame(&frame);
-        // 应用 StepFrame 结果，更新 AgentState
-        self.apply_step_result(&result);
-        // 对外发送 StepResult 事件
-        self.emit_step_result_events(event_tx.as_ref(), &frame, &result)
-            .await;
-        result
+        }
     }
 
     /// 启动循环执行，返回控制句柄
@@ -93,6 +125,9 @@ where
                     }
                     LoopState::Paused => {
                         loop_state = self.wait_while_paused(&mut cmd_rx, &event_tx).await;
+                    }
+                    LoopState::WaitingForUserInput(_) => {
+                        loop_state = self.wait_for_user_input(&mut cmd_rx, &event_tx).await;
                     }
                     LoopState::Finished(finalization) => {
                         self.emit_terminal_event(&event_tx, &finalization).await;
@@ -138,47 +173,115 @@ where
         }
     }
 
+    async fn wait_for_user_input(
+        &mut self,
+        cmd_rx: &mut mpsc::Receiver<AgentActorCommand>,
+        event_tx: &mpsc::Sender<AgentActorEvent>,
+    ) -> LoopState {
+        if let Some((input_id, _)) = &self.pending_user_input {
+            tokio::select! {
+                Some(cmd) = cmd_rx.recv() => {
+                    self.transition_command(LoopState::WaitingForUserInput(input_id.clone()), cmd)
+                }
+                _ = event_tx.closed() => {
+                    self.state.state = JobState::Cancelled;
+                    self.state.metrics.mark_finished(AgentTerminalReason::Cancelled);
+                    self.pending_user_input = None;
+                    LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
+                }
+            }
+        } else {
+            LoopState::Runnable
+        }
+    }
+
     // 两种改变 Agent 执行状态的方法
     // 1. 接受外部 Command 改变内部运行状态
     fn transition_command(&mut self, loop_state: LoopState, cmd: AgentActorCommand) -> LoopState {
-        match (loop_state, cmd) {
-            (LoopState::Runnable, AgentActorCommand::Pause) => {
-                self.state.state = JobState::Paused;
-                self.state.metrics.mark_active();
-                LoopState::Paused
-            }
-            (LoopState::Runnable, AgentActorCommand::Continue) => {
-                self.state.metrics.mark_active();
-                LoopState::Runnable
-            }
-            (LoopState::Runnable, AgentActorCommand::Cancel) => {
-                self.state.state = JobState::Cancelled;
-                self.state
-                    .metrics
-                    .mark_finished(AgentTerminalReason::Cancelled);
-                LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
-            }
-            (LoopState::Paused, AgentActorCommand::Pause) => LoopState::Paused,
-            (LoopState::Paused, AgentActorCommand::Continue) => {
-                self.state.state = JobState::Running;
-                self.state.metrics.mark_active();
-                LoopState::Runnable
-            }
-            (LoopState::Paused, AgentActorCommand::Cancel) => {
-                self.state.state = JobState::Cancelled;
-                self.state
-                    .metrics
-                    .mark_finished(AgentTerminalReason::Cancelled);
-                LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
-            }
-            (LoopState::Finished(finalization), _) => LoopState::Finished(finalization),
+        match loop_state {
+            LoopState::Runnable => match cmd {
+                AgentActorCommand::Pause => {
+                    self.state.state = JobState::Paused;
+                    self.state.metrics.mark_active();
+                    LoopState::Paused
+                }
+                AgentActorCommand::Continue => {
+                    self.state.metrics.mark_active();
+                    LoopState::Runnable
+                }
+                AgentActorCommand::Cancel => {
+                    self.state.state = JobState::Cancelled;
+                    self.state
+                        .metrics
+                        .mark_finished(AgentTerminalReason::Cancelled);
+                    LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
+                }
+                AgentActorCommand::UserInput { .. } => LoopState::Runnable,
+            },
+            LoopState::Paused => match cmd {
+                AgentActorCommand::Pause => LoopState::Paused,
+                AgentActorCommand::Continue => {
+                    self.state.state = JobState::Running;
+                    self.state.metrics.mark_active();
+                    LoopState::Runnable
+                }
+                AgentActorCommand::Cancel => {
+                    self.state.state = JobState::Cancelled;
+                    self.state
+                        .metrics
+                        .mark_finished(AgentTerminalReason::Cancelled);
+                    LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
+                }
+                AgentActorCommand::UserInput { .. } => LoopState::Paused,
+            },
+            LoopState::WaitingForUserInput(expected_input_id) => match cmd {
+                AgentActorCommand::UserInput { input, input_id } => {
+                    if input_id == expected_input_id {
+                        self.state
+                            .context
+                            .add_message(Message::User { content: input });
+                        self.state.state = JobState::Running;
+                        self.pending_user_input = None;
+                        LoopState::Runnable
+                    } else {
+                        LoopState::WaitingForUserInput(expected_input_id)
+                    }
+                }
+                AgentActorCommand::Cancel => {
+                    self.state.state = JobState::Cancelled;
+                    self.state
+                        .metrics
+                        .mark_finished(AgentTerminalReason::Cancelled);
+                    self.pending_user_input = None;
+                    LoopState::Finished(Finalization::Emit(AgentTerminalReason::Cancelled))
+                }
+                _ => LoopState::WaitingForUserInput(expected_input_id),
+            },
+            LoopState::Finished(finalization) => LoopState::Finished(finalization),
         }
     }
 
     // 2. 根据单步执行的结果改变运行状态
     fn transition_step_result(&self, result: StepResult) -> LoopState {
         match result {
-            StepResult::Continue { .. } => LoopState::Runnable,
+            StepResult::Continue { tools_call, .. } => {
+                // 检查是否有 AskUser 工具调用
+                if tools_call.iter().any(|tool| tool.get_name() == "ask_user") {
+                    // 如果有 AskUser 工具调用，检查是否已经设置了 pending_user_input
+                    if self.has_pending_user_input() {
+                        // 从 pending_user_input 中获取 input_id
+                        if let Some((input_id, _)) = &self.pending_user_input {
+                            LoopState::WaitingForUserInput(input_id.clone())
+                        } else {
+                            LoopState::Runnable
+                        }
+                    } else {
+                        LoopState::Runnable
+                    }
+                } else {
+                    LoopState::Runnable
+                }
+            }
             StepResult::Done { .. } => {
                 LoopState::Finished(Finalization::Emit(AgentTerminalReason::Completed))
             }

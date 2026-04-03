@@ -16,6 +16,7 @@ use crate::agent::{AgentState, Context, Metrics, ToolExecutor};
 use crate::models::ChatCapability;
 
 pub use builder::AgentActorBuilder;
+pub use loop_control::LoopState;
 pub use types::{AgentActorCommand, AgentActorEvent, AgentActorHandle, AgentError, StepResult};
 
 /// Agent Actor 负责组合模型、工具执行器和运行配置。
@@ -33,6 +34,8 @@ where
     chat: Arc<C>,
     /// 工具执行器
     tool_executor: Arc<E>,
+    /// 等待中的用户输入
+    pending_user_input: Option<(String, mpsc::Sender<AgentActorEvent>)>,
 }
 
 impl<C, E> AgentActor<C, E>
@@ -62,6 +65,7 @@ where
             },
             chat: Arc::new(chat),
             tool_executor: Arc::new(tool_executor),
+            pending_user_input: None,
         }
     }
 
@@ -90,5 +94,26 @@ where
         if let Some(tx) = event_tx {
             let _ = tx.send(event).await;
         }
+    }
+
+    /// 触发用户输入请求
+    pub async fn ask_user(&mut self, question: String, event_tx: Option<mpsc::Sender<AgentActorEvent>>) -> LoopState {
+        let input_id = Uuid::new_v4().to_string();
+        
+        if let Some(tx) = &event_tx {
+            Self::send_event(Some(tx), AgentActorEvent::AskUser {
+                question,
+                input_id: input_id.clone(),
+            }).await;
+        }
+        
+        self.state.state = crate::agent::JobState::Paused;
+        self.pending_user_input = Some((input_id.clone(), event_tx.unwrap()));
+        LoopState::WaitingForUserInput(input_id)
+    }
+
+    /// 检查是否有等待中的用户输入
+    pub fn has_pending_user_input(&self) -> bool {
+        self.pending_user_input.is_some()
     }
 }

@@ -215,8 +215,6 @@ pub enum JobState {
     Pending,
     /// 执行中
     Running,
-    /// 等待输入
-    WaitingInput,
     /// 已暂停
     Paused,
     /// 已完成

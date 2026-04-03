@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 
 use crate::agent::{
     CallToolResult,
-    agent_actor::lifecycle::{LifeCycleError, StepFrame},
+    agent_actor::lifecycle::{LifeCycleInterrupt, StepFrame},
     tools::ToolCall,
 };
 
@@ -20,7 +20,7 @@ pub enum AgentError {
     ModelRspErr,
 
     #[error("life cycle error: {0}")]
-    Parse(#[from] LifeCycleError),
+    Parse(#[from] LifeCycleInterrupt),
 }
 
 /// Actor 产生的事件
@@ -71,6 +71,13 @@ pub enum AgentActorEvent {
     Cancelled,
     /// 当前 step 提交后触发的错误终态事件
     Error(AgentError),
+    /// 请求用户输入
+    AskUser {
+        /// 问题内容
+        question: String,
+        /// 输入 ID，用于匹配响应
+        input_id: String,
+    },
 }
 
 /// 发送给 Actor 的控制命令
@@ -82,6 +89,13 @@ pub enum AgentActorCommand {
     Continue,
     /// 取消执行
     Cancel,
+    /// 提供用户输入
+    UserInput {
+        /// 输入内容
+        input: String,
+        /// 输入 ID，用于匹配请求
+        input_id: String,
+    },
 }
 
 /// Actor 的外部控制句柄
@@ -106,6 +120,11 @@ impl AgentActorHandle {
     /// 取消 Actor
     pub async fn cancel(&self) {
         let _ = self.cmd_tx.send(AgentActorCommand::Cancel).await;
+    }
+
+    /// 提供用户输入
+    pub async fn provide_input(&self, input: String, input_id: String) {
+        let _ = self.cmd_tx.send(AgentActorCommand::UserInput { input, input_id }).await;
     }
 
     /// 检查 actor 是否已完成（事件 channel 已关闭）

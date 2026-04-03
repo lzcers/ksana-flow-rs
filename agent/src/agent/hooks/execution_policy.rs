@@ -1,5 +1,5 @@
 use crate::agent::{
-    agent_actor::lifecycle::{LifeCycle, LifeCycleError, LifeCycleFlow, LifeCycleResult},
+    agent_actor::lifecycle::{LifeCycle, LifeCycleInterrupt, LifeCycleFlow, LifeCycleResult},
     hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 
@@ -29,7 +29,7 @@ impl LifeCycleHook for ExecutionPolicyHook {
             let max_iter_limit = ctx.state.metrics.execution.max_iterations;
 
             if iteration >= max_iter_limit {
-                return LifeCycleFlow::Break(LifeCycleError::hook_error(
+                return LifeCycleFlow::Break(LifeCycleInterrupt::hook_error(
                     &ctx.stage,
                     self.name(),
                     format!("max iter limit {} exceeded", max_iter_limit),

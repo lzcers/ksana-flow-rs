@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod ask_user;
 pub mod playwright_cli;
 pub mod registry;
 

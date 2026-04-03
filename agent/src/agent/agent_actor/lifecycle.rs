@@ -38,27 +38,49 @@ pub enum LifeCycleResult {
     Frame(StepFrame),
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum LifeCycleError {
-    // (LifecyclePhase, HookName, ErrorMessage)
-    #[error("hook error: {0:?} {1} {2}")]
-    HookError(LifeCycle, String, String),
-    #[error("tool error: {0}")]
-    ToolError(String),
-    #[error("model error")]
-    ModelError,
+pub enum StepExecutionResult {
+    Frame(StepFrame),
+    AskUser { question: String },
 }
 
-impl LifeCycleError {
+#[derive(Debug, Clone)]
+pub enum LifeCycleInterrupt {
+    // 错误中断
+    HookError(LifeCycle, String, String),
+    ToolError(String),
+    ModelError,
+    // 特殊操作中断
+    AskUser { question: String },
+}
+
+impl std::fmt::Display for LifeCycleInterrupt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HookError(stage, hook, msg) => {
+                write!(f, "hook error: {:?} {} {}", stage, hook, msg)
+            }
+            Self::ToolError(err) => write!(f, "tool error: {}", err),
+            Self::ModelError => write!(f, "model error"),
+            Self::AskUser { question } => write!(f, "ask user: {}", question),
+        }
+    }
+}
+
+impl std::error::Error for LifeCycleInterrupt {}
+
+impl LifeCycleInterrupt {
     pub fn hook_error(stage: &LifeCycle, hook_name: &str, msg: String) -> Self {
         Self::HookError(stage.clone(), hook_name.to_string(), msg)
     }
     pub fn tool_error(err: String) -> Self {
         Self::ToolError(err)
     }
+    pub fn ask_user(question: String) -> Self {
+        Self::AskUser { question }
+    }
 }
 
-pub type LifeCycleFlow = ControlFlow<LifeCycleError, LifeCycleResult>;
+pub type LifeCycleFlow = ControlFlow<LifeCycleInterrupt, LifeCycleResult>;
 
 // 生命周期上下文, 给 Hook 使用
 pub struct LifeCycleContext {
@@ -188,24 +210,12 @@ impl StepLifeCycle {
                 Box::new(ExecutionPolicyHook::new()),
                 Box::new(MetricsHook::new()),
                 Box::new(UpdateFrameHook::new()),
+                Box::new(crate::agent::hooks::ask_user::AskUserHook::new()),
             ],
         }
     }
 
-    // 预期是返回一轮调用的 StepFrame
     pub(super) async fn start(
-        &mut self,
-        model: &(dyn ChatCapability + Sync),
-        tool_executor: &dyn ToolExecutor,
-    ) -> Result<StepFrame, LifeCycleError> {
-        match self.inner_start(model, tool_executor).await {
-            LifeCycleFlow::Continue(LifeCycleResult::Frame(frame)) => Ok(frame),
-            LifeCycleFlow::Break(err) => Err(err),
-            _ => Err(LifeCycleError::ModelError),
-        }
-    }
-
-    async fn inner_start(
         &mut self,
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
@@ -222,9 +232,13 @@ impl StepLifeCycle {
             self.ctx.set_model_event(&evt);
             self.call_life_cycle_hook(LifeCycle::OnModelEvent).await?;
         }
+
+        // 调用 AfterCallModel 钩子，这里会有 AskUserHook 检测 ask_user 工具
         self.call_life_cycle_hook(LifeCycle::AfterCallModel).await?;
 
+        // 继续执行正常流程
         if let Some(tools_call) = self.ctx.frame.get_tools_call().cloned() {
+            // 执行工具
             self.call_life_cycle_hook(LifeCycle::BeforeCallTools)
                 .await?;
 
@@ -236,7 +250,9 @@ impl StepLifeCycle {
             .await
             {
                 Ok(results) => self.ctx.set_frame_tools_result(results),
-                Err(err) => return Self::break_step(LifeCycleError::ToolError(err.to_string())),
+                Err(err) => {
+                    return Self::break_step(LifeCycleInterrupt::tool_error(err.to_string()));
+                }
             }
             self.call_life_cycle_hook(LifeCycle::AfterCallTools).await?;
         };
@@ -246,7 +262,7 @@ impl StepLifeCycle {
         Self::continue_step_with_result(LifeCycleResult::Frame(self.ctx.frame.clone()))
     }
 
-    fn break_step(err: LifeCycleError) -> LifeCycleFlow {
+    fn break_step(err: LifeCycleInterrupt) -> LifeCycleFlow {
         LifeCycleFlow::Break(err)
     }
 
@@ -261,7 +277,11 @@ impl StepLifeCycle {
         self.ctx.set_stage(&lifecycle);
         for hook in &mut self.hooks {
             if hook.on(&lifecycle) {
-                hook.handle(&mut self.ctx).await?;
+                let result = hook.handle(&mut self.ctx).await;
+                // 如果是中断（包括错误或 AskUser），立即返回
+                if let LifeCycleFlow::Break(_) = result {
+                    return result;
+                }
             }
         }
         Self::continue_step()
