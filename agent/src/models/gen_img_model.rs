@@ -140,9 +140,9 @@ mod tests {
             .with_aspect_ratio("1:1".to_string())
             .with_image_size("1K".to_string());
 
-        model.add_model_provider("black-forest-labs/flux.2-klein-4b", provider);
+        model.add_model_provider("google/gemini-3.1-flash-image-preview", provider);
 
-        if let Err(e) = model.set_active_model("black-forest-labs/flux.2-klein-4b") {
+        if let Err(e) = model.set_active_model("google/gemini-3.1-flash-image-preview") {
             eprintln!("Failed to set active model: {}", e);
             return;
         }

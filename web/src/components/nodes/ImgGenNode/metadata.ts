@@ -18,7 +18,7 @@ export const imgGenNodeMetadata: NodeMetadata = {
     ],
   },
   defaultConfig: {
-    model: 'black-forest-labs/flux.2-klein-4b',
+    model: 'google/gemini-3.1-flash-image-preview',
     aspect_ratio: '1:1',
     image_size: '1K',
     input_image_file_id: '',

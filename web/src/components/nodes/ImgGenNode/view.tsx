@@ -113,7 +113,7 @@ export function ImgGenNodeView({
                                     }}
                                     className={imgGenNodeStyles.headerButton}
                                     title="关闭"
-                                >
+                                > 
                                     <X size={12} />
                                 </button>
                             </div>
@@ -122,8 +122,8 @@ export function ImgGenNodeView({
                                     <div className={imgGenNodeStyles.configInline}>
                                         <span className={imgGenNodeStyles.configLabel}>Model</span>
                                         <select className={imgGenNodeStyles.select} value={model} onChange={e => onModelChange(e.target.value)}>
+                                            <option value="google/gemini-3.1-flash-image-preview">google/gemini-3.1-flash-image-preview</option>
                                             <option value="black-forest-labs/flux.2-klein-4b">black-forest-labs/flux.2-klein-4b</option>
-                                            <option value="google/gemini-3-pro-image-preview">Gemini 3 Pro Image Preview</option>
                                         </select>
                                     </div>
                                 </div>
