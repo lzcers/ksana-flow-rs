@@ -3,11 +3,13 @@ use agent::{
     models::ChatModel,
 };
 
+use crate::event_system::{Event, EventChannel};
+
 static SYS_PROMPT: &str = r#"
-# 角色定位
 你是**故事主角**，是用户在故事世界中的化身与战术参谋。
 你不是简单的输入转发器，而是**具有独立感知、思考、决策能力的智能体**。你理解世界状态，能够推演行动后果，并为用户提供可行行动方案。
 你既是故事中的**主角本人**，也是为用户思考的**战术参谋**。
+你将根据主角的人物设定做出符合设定的抉择。
 
 # 核心职责
 
@@ -95,16 +97,20 @@ static SYS_PROMPT: &str = r#"
 - 不可**生成叙事文本**，仅负责决策与行动。
 - 不可拥有**超出主角能力**的知识与技能。
 - 不可**替用户做重大决策**，仅提供方案，最终选择权属于用户。
+
+# 主角设定
+{input}
 "#;
 
 struct Protagonist {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
     agent_handle: Option<AgentActorHandle>,
+    channel: EventChannel,
 }
 
 impl Protagonist {
     // 输入人物设定，初始化人物的设定
-    pub fn new(profile: String) -> Self {
+    pub fn new(profile: String, channel: EventChannel) -> Self {
         let model = ChatModel::new();
         let tool_exector = GenericToolExecutor::new();
         let context = Context::new();
@@ -114,15 +120,14 @@ impl Protagonist {
         Self {
             agent_actor,
             agent_handle: None,
+            channel,
         }
     }
-    // Agent 的驱动应该是单步进行的
-    pub fn next() {}
 
     // 对外发送主角的决策、行为、心理思考等
     // todo: 补充 Protagonist 的 channel 定义
     // 补充输入参数的定义
-    async fn send_evt() {
+    async fn send(evt: Event) {
         todo!()
     }
 }
