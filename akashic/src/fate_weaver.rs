@@ -111,7 +111,6 @@ static SYS_PROMPT: &str = r#"
 
 struct FateWeaver {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
-    agent_handle: Option<AgentActorHandle>,
     channel: EventChannel,
 }
 
@@ -126,7 +125,6 @@ impl FateWeaver {
         let agent_actor = AgentActor::new(model, tool_exector, context);
         Self {
             agent_actor,
-            agent_handle: None,
             channel,
         }
     }

@@ -64,25 +64,25 @@ static SYS_PORMPT: &str = r#"
 
 struct UpperNarrator {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
-    agent_handle: Option<AgentActorHandle>,
     channel: EventChannel,
 }
 
 impl UpperNarrator {
-    // 输入人物设定，初始化人物的设定
     pub fn new(channel: EventChannel) -> Self {
         let model = ChatModel::new();
         let tool_exector = GenericToolExecutor::new();
         let context = Context::new();
-        // todo:
-        // 根据输入创建人物设定层，系统提提示词层要求 Agent 必须采取符合人物定的行为和决策
         let agent_actor = AgentActor::new(model, tool_exector, context);
         Self {
             agent_actor,
-            agent_handle: None,
             channel,
         }
     }
+    // 监听命运编织者发送来的事件流，添加至 Context 中，单步执行 run_step 进行故事编写
+    // 完成后发送事件给命运编织者，让其继续推演故事
+    pub async fn start(&mut self) {}
+
+    // 只需要向 fate_waaver 发送叙事完成的事件即可
     async fn send(evt: Event) {
         todo!()
     }

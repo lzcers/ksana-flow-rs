@@ -104,7 +104,6 @@ static SYS_PROMPT: &str = r#"
 
 struct Protagonist {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
-    agent_handle: Option<AgentActorHandle>,
     channel: EventChannel,
 }
 
@@ -114,19 +113,14 @@ impl Protagonist {
         let model = ChatModel::new();
         let tool_exector = GenericToolExecutor::new();
         let context = Context::new();
-        // todo:
-        // 根据输入创建人物设定层，系统提提示词层要求 Agent 必须采取符合人物定的行为和决策
         let agent_actor = AgentActor::new(model, tool_exector, context);
         Self {
             agent_actor,
-            agent_handle: None,
             channel,
         }
     }
 
     // 对外发送主角的决策、行为、心理思考等
-    // todo: 补充 Protagonist 的 channel 定义
-    // 补充输入参数的定义
     async fn send(evt: Event) {
         todo!()
     }
