@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::core::Message;
 
 /// 通用上下文 - 分层、类型化、可演化的数据容器
-///
+/// 
 /// Context 是 Agent 状态的核心部分，包含：
 /// - 系统指令（System）
 /// - 人格定义（Soul）

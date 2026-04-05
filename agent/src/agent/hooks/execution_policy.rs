@@ -1,5 +1,5 @@
 use crate::agent::{
-    agent_actor::lifecycle::{LifeCycle, LifeCycleInterrupt, LifeCycleFlow, LifeCycleResult},
+    agent_actor::lifecycle::{LifeCycle, LifeCycleFlow, LifeCycleInterrupt, LifeCycleResult},
     hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 

@@ -124,7 +124,10 @@ impl AgentActorHandle {
 
     /// 提供用户输入
     pub async fn provide_input(&self, input: String, input_id: String) {
-        let _ = self.cmd_tx.send(AgentActorCommand::UserInput { input, input_id }).await;
+        let _ = self
+            .cmd_tx
+            .send(AgentActorCommand::UserInput { input, input_id })
+            .await;
     }
 
     /// 检查 actor 是否已完成（事件 channel 已关闭）

@@ -3,13 +3,17 @@ use std::pin::pin;
 use std::time::Duration;
 
 use futures::StreamExt;
+use tokio::sync::mpsc;
 
+use super::AgentActorEvent;
 use crate::agent::call_model::{
     CallModelEvent, CallToolError, CallToolResult, call_model, call_tools,
 };
 use crate::agent::hooks::LifeCycleHook;
+use crate::agent::hooks::ask_user::AskUserHook;
 use crate::agent::hooks::execution_policy::ExecutionPolicyHook;
 use crate::agent::hooks::metrics::MetricsHook;
+use crate::agent::hooks::send_model_evt::SendModelEvtHook;
 use crate::agent::hooks::update_frame::UpdateFrameHook;
 use crate::agent::{AgentState, ToolCall, ToolExecutor};
 use crate::core::Usage;
@@ -88,6 +92,7 @@ pub struct LifeCycleContext {
     pub state: AgentState,
     pub frame: StepFrame,
     pub model_event: Option<CallModelEvent>,
+    pub agent_tx: Option<mpsc::Sender<AgentActorEvent>>,
 }
 
 impl LifeCycleContext {
@@ -99,6 +104,9 @@ impl LifeCycleContext {
     }
     pub fn set_frame(&mut self, frame: StepFrame) {
         self.frame = frame;
+    }
+    pub fn set_agent_tx(&mut self, agent_tx: Option<mpsc::Sender<AgentActorEvent>>) {
+        self.agent_tx = agent_tx;
     }
     pub fn set_model_event(&mut self, model_event: &CallModelEvent) {
         self.model_event = Some(model_event.clone());
@@ -127,6 +135,7 @@ impl Default for LifeCycleContext {
             state: Default::default(),
             frame: Default::default(),
             model_event: None,
+            agent_tx: None,
         }
     }
 }
@@ -210,7 +219,8 @@ impl StepLifeCycle {
                 Box::new(ExecutionPolicyHook::new()),
                 Box::new(MetricsHook::new()),
                 Box::new(UpdateFrameHook::new()),
-                Box::new(crate::agent::hooks::ask_user::AskUserHook::new()),
+                Box::new(AskUserHook::new()),
+                Box::new(SendModelEvtHook::new()),
             ],
         }
     }
@@ -219,7 +229,9 @@ impl StepLifeCycle {
         &mut self,
         model: &(dyn ChatCapability + Sync),
         tool_executor: &dyn ToolExecutor,
+        event_tx: Option<&mpsc::Sender<AgentActorEvent>>,
     ) -> LifeCycleFlow {
+        self.ctx.set_agent_tx(event_tx.cloned());
         let messages = self.ctx.state.get_message();
         let tools = tool_executor.tools().clone();
 

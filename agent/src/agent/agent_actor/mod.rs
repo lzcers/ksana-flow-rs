@@ -97,16 +97,24 @@ where
     }
 
     /// 触发用户输入请求
-    pub async fn ask_user(&mut self, question: String, event_tx: Option<mpsc::Sender<AgentActorEvent>>) -> LoopState {
+    pub async fn ask_user(
+        &mut self,
+        question: String,
+        event_tx: Option<mpsc::Sender<AgentActorEvent>>,
+    ) -> LoopState {
         let input_id = Uuid::new_v4().to_string();
-        
+
         if let Some(tx) = &event_tx {
-            Self::send_event(Some(tx), AgentActorEvent::AskUser {
-                question,
-                input_id: input_id.clone(),
-            }).await;
+            Self::send_event(
+                Some(tx),
+                AgentActorEvent::AskUser {
+                    question,
+                    input_id: input_id.clone(),
+                },
+            )
+            .await;
         }
-        
+
         self.state.state = crate::agent::JobState::Paused;
         self.pending_user_input = Some((input_id.clone(), event_tx.unwrap()));
         LoopState::WaitingForUserInput(input_id)

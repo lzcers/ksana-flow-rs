@@ -1,9 +1,15 @@
 use agent::{
-    agent::{AgentActor, AgentActorHandle, Context, GenericToolExecutor},
+    agent::{AgentActor, Context, GenericToolExecutor, LayerKind},
+    core::Message,
     models::ChatModel,
 };
+use serde_json::json;
+use tokio::sync::broadcast;
 
-use crate::event_system::{Event, EventChannel};
+use crate::{
+    event_system::{Event, EventChannel, FateRoundEnvelope, ProtagonistAction},
+    shared::{build_chat_model, build_layer, extract_step_content, parse_json_response},
+};
 
 static SYS_PROMPT: &str = r#"
 你是"命运编织者"，非线性叙事故事引擎的世界模拟器与流程编排者。你是整个故事世界的"造物主"和"裁判"，你维护世界的运转规则，推演事件的因果链条，监控故事的走向与收敛。你不讲故事，你让故事发生，你根据世界设定开始编织命运。
@@ -107,40 +113,254 @@ static SYS_PROMPT: &str = r#"
 {input}
 "#;
 
-// 命运编织者负责推演整个故事，处理主角的选择和行动，以及响应叙事者完成叙事的事件，从而进行下一步推进。
+struct PendingRound {
+    round: u32,
+    envelope: FateRoundEnvelope,
+    narrative: Option<String>,
+    action: Option<ProtagonistAction>,
+}
 
-struct FateWeaver {
+pub struct FateWeaver {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
     channel: EventChannel,
+    receiver: broadcast::Receiver<Event>,
+    max_rounds: u32,
+    current_round: u32,
+    protagonist_profile: String,
+    pending_round: Option<PendingRound>,
 }
 
 impl FateWeaver {
-    // 接收人物设定，世界设定开始编织故事
-    pub fn new(prota_profile: String, worlod_profile: String, channel: EventChannel) -> Self {
-        let model = ChatModel::new();
-        let tool_exector = GenericToolExecutor::new();
-        let context = Context::new();
-        // todo:
-        // 根据输入创建人物设定层，系统提提示词层要求 Agent 必须采取符合人物定的行为和决策
-        let agent_actor = AgentActor::new(model, tool_exector, context);
-        Self {
+    pub fn new(
+        prota_profile: String,
+        world_profile: String,
+        channel: EventChannel,
+        max_rounds: u32,
+    ) -> Result<Self, String> {
+        let model = build_chat_model()?;
+        let tool_executor = GenericToolExecutor::new();
+        let system_prompt = SYS_PROMPT.replace("{input}", &world_profile);
+        let context = Context::new()
+            .layer(build_layer(
+                "fate-weaver-system",
+                LayerKind::System,
+                json!(system_prompt),
+                100,
+            ))
+            .layer(build_layer(
+                "fate-weaver-soul",
+                LayerKind::Soul,
+                json!({
+                    "name": "命运编织者",
+                    "role": "世界模拟器与三 Agent 编排中枢",
+                    "guidelines": [
+                        "世界状态是唯一事实来源",
+                        "每轮必须同时为主角生成世界快照、为叙事者生成事实清单",
+                        "故事需要自然收敛，避免无限展开"
+                    ]
+                }),
+                90,
+            ))
+            .layer(build_layer(
+                "story-setup",
+                LayerKind::Memory,
+                json!({
+                    "world_profile": world_profile,
+                    "protagonist_profile": prota_profile,
+                    "max_rounds": max_rounds
+                }),
+                80,
+            ));
+        let receiver = channel.subscribe();
+        let agent_actor = AgentActor::new(model, tool_executor, context);
+        Ok(Self {
             agent_actor,
             channel,
-        }
+            receiver,
+            max_rounds,
+            current_round: 0,
+            protagonist_profile: prota_profile,
+            pending_round: None,
+        })
     }
 
-    // 每一轮从消息通道中获取消息并处理，同时向主角或者叙事者发送事件，主要接收上层叙事者和主角的消息
-    // 如果接收到上层叙事者完成叙事的事件, 继续推演，如果需要主角决策，发送需要主角处理的事件
-    // 如果不涉及主角只涉及故事情节推演，发送事件给上层叙事者，等待叙事完成继续推演
-    pub async fn start() {
+    pub async fn start(mut self) {
         loop {
-            todo!()
+            match self.receiver.recv().await {
+                // 故事开始
+                Ok(Event::StartStory) => {
+                    if let Err(err) = self.advance_story(None, None).await {
+                        self.send_error(err).await;
+                    }
+                }
+                Ok(Event::NarrativeRendered { round, narrative }) => {
+                    if let Some(pending) = self.pending_round.as_mut()
+                        && pending.round == round
+                    {
+                        pending.narrative = Some(narrative);
+                        if let Err(err) = self.try_continue_story().await {
+                            self.send_error(err).await;
+                        }
+                    }
+                }
+                Ok(Event::ProtagonistResponded { round, response }) => {
+                    if let Some(option_id) = response.recommended_option_id.clone() {
+                        self.send(Event::DecisionAutoSelected {
+                            round,
+                            option_id,
+                            reason: "当前运行模式未接入真实用户输入，自动采用主角给出的推荐选项。"
+                                .to_string(),
+                        })
+                        .await;
+                    }
+
+                    if let Some(pending) = self.pending_round.as_mut()
+                        && pending.round == round
+                    {
+                        pending.action = Some(response.recommended_action);
+                        if let Err(err) = self.try_continue_story().await {
+                            self.send_error(err).await;
+                        }
+                    }
+                }
+                Ok(Event::Shutdown | Event::StoryCompleted { .. }) => break,
+                Ok(
+                    Event::AgentError { .. }
+                    | Event::DecisionAutoSelected { .. }
+                    | Event::NarrativeChunk { .. }
+                    | Event::RoundPrepared { .. },
+                ) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
         }
     }
 
-    // 1. 向上层叙事者发送事件进展，驱动叙事者进行故事讲述
-    // 2. 向主角发送事件，驱动主角进行决策
-    async fn send(evt: Event) {
-        todo!()
+    async fn advance_story(
+        &mut self,
+        last_action: Option<ProtagonistAction>,
+        last_narrative: Option<String>,
+    ) -> Result<(), String> {
+        self.current_round += 1;
+        let round = self.current_round;
+        let progress = round as f32 / self.max_rounds.max(1) as f32;
+
+        let action_payload = last_action
+            .as_ref()
+            .map(|action| serde_json::to_string_pretty(action).unwrap_or_default())
+            .unwrap_or_else(|| "无，本轮是故事开场。".to_string());
+        let narrative_payload =
+            last_narrative.unwrap_or_else(|| "无，本轮是故事开场。".to_string());
+
+        let prompt = format!(
+            r#"推进故事第 {round} 轮。你必须只输出一个 JSON 对象，结构如下：
+{{
+  "facts": {{
+    "round": {round},
+    "phase": "SETUP|RISING|CLIMAX|FALLING|RESOLUTION",
+    "progress": {progress:.2},
+    "events": [
+      {{
+        "type": "SKELETON|CONDITIONAL|PLAYER_ACTION",
+        "description": "客观事实",
+        "participants": ["角色"],
+        "impact": "影响",
+        "cause": "原因"
+      }}
+    ],
+    "world_state_delta": "世界状态变化摘要",
+    "character_state_delta": "主角状态变化摘要",
+    "pacing_instruction": "BUILDUP|TENSION|RELEASE|REFLECTION|CLIMAX",
+    "narrative_constraints": {{
+      "tone": "情绪基调",
+      "focus": "叙事焦点",
+      "length_hint": "短|中|长"
+    }}
+  }},
+  "world_snapshot": {{
+    "current_location": "当前位置",
+    "surroundings": "环境描述",
+    "present_npcs": ["NPC 与态度"],
+    "available_resources": "可用资源",
+    "active_threats": "当前威胁",
+    "recent_events": "近期事件",
+    "emotional_context": "情绪氛围"
+  }},
+  "should_end": true,
+  "ending_hint": "若故事应结束，说明结局方向，否则为 null"
+}}
+
+主角设定：
+{protagonist_profile}
+
+上一轮主角行动：
+{action_payload}
+
+上一轮最终叙事：
+{narrative_payload}
+
+故事最多推进 {max_rounds} 轮；当轮次达到上限时，让故事自然收束。"#,
+            protagonist_profile = self.protagonist_profile,
+            max_rounds = self.max_rounds
+        );
+
+        self.agent_actor
+            .context_mut()
+            .add_message(Message::user(prompt));
+
+        let output = extract_step_content(self.agent_actor.run_step(None).await)?;
+        let envelope: FateRoundEnvelope = parse_json_response(&output)?;
+
+        self.pending_round = Some(PendingRound {
+            round,
+            envelope: envelope.clone(),
+            narrative: None,
+            action: None,
+        });
+
+        self.send(Event::RoundPrepared { round, envelope }).await;
+
+        Ok(())
+    }
+
+    async fn try_continue_story(&mut self) -> Result<(), String> {
+        let Some(pending) = self.pending_round.take() else {
+            return Ok(());
+        };
+
+        let Some(narrative) = pending.narrative.clone() else {
+            self.pending_round = Some(pending);
+            return Ok(());
+        };
+
+        let Some(action) = pending.action.clone() else {
+            self.pending_round = Some(pending);
+            return Ok(());
+        };
+
+        if pending.envelope.should_end || pending.round >= self.max_rounds {
+            self.send(Event::StoryCompleted {
+                round: pending.round,
+                ending_hint: pending.envelope.ending_hint,
+                narrative,
+            })
+            .await;
+            self.send(Event::Shutdown).await;
+            return Ok(());
+        }
+
+        self.advance_story(Some(action), Some(narrative)).await
+    }
+
+    async fn send_error(&self, message: String) {
+        self.send(Event::AgentError {
+            agent: "fate_weaver".to_string(),
+            message,
+        })
+        .await;
+    }
+
+    async fn send(&self, evt: Event) {
+        self.channel.send(evt);
     }
 }

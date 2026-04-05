@@ -1,9 +1,15 @@
 use agent::{
-    agent::{AgentActor, AgentActorHandle, Context, GenericToolExecutor},
+    agent::{AgentActor, AgentActorEvent, Context, GenericToolExecutor, LayerKind},
+    core::Message,
     models::ChatModel,
 };
+use serde_json::json;
+use tokio::sync::{broadcast, mpsc};
 
-use crate::event_system::{Event, EventChannel};
+use crate::{
+    event_system::{Event, EventChannel, FateRoundEnvelope},
+    shared::{build_chat_model, build_layer, extract_step_content},
+};
 
 static SYS_PORMPT: &str = r#"
 你是上层叙事者，故事的文学讲述者。你是连接模拟世界与用户感知的桥梁——命运编织者产出的是干瘪的事实记录，而你的工作是将这些事实转化为丰满的、引人入胜的叙事文本。你不创造事实，只描述事实；不改变世界，只呈现世界。你是一位技艺精湛的小说家，懂得如何选择最佳的叙事角度、节奏和风格来讲述每一个故事瞬间。
@@ -62,28 +68,136 @@ static SYS_PORMPT: &str = r#"
 5. 尊重角色：你不能让角色说出不符合其性格的话，或做出不符合其设定的事。角色的“声音”由其人物设定决定，不由你的偏好决定。
 "#;
 
-struct UpperNarrator {
+pub struct UpperNarrator {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
     channel: EventChannel,
+    receiver: broadcast::Receiver<Event>,
 }
 
 impl UpperNarrator {
-    pub fn new(channel: EventChannel) -> Self {
-        let model = ChatModel::new();
-        let tool_exector = GenericToolExecutor::new();
-        let context = Context::new();
-        let agent_actor = AgentActor::new(model, tool_exector, context);
-        Self {
+    pub fn new(channel: EventChannel) -> Result<Self, String> {
+        let model = build_chat_model()?;
+        let tool_executor = GenericToolExecutor::new();
+        let context = Context::new()
+            .layer(build_layer(
+                "upper-narrator-system",
+                LayerKind::System,
+                json!(SYS_PORMPT),
+                100,
+            ))
+            .layer(build_layer(
+                "upper-narrator-soul",
+                LayerKind::Soul,
+                json!({
+                    "name": "上层叙事者",
+                    "role": "将事实清单转写为文学叙事文本",
+                    "guidelines": [
+                        "绝不改写事实结果",
+                        "要体现节奏、风格与情绪基调",
+                        "输出应直接面向读者"
+                    ]
+                }),
+                90,
+            ));
+        let receiver = channel.subscribe();
+        let agent_actor = AgentActor::new(model, tool_executor, context);
+        Ok(Self {
             agent_actor,
             channel,
+            receiver,
+        })
+    }
+
+    pub async fn start(mut self) {
+        loop {
+            match self.receiver.recv().await {
+                Ok(Event::RoundPrepared { round, envelope }) => {
+                    if let Err(err) = self.render_round(round, envelope).await {
+                        self.send(Event::AgentError {
+                            agent: "upper_narrator".to_string(),
+                            message: err,
+                        })
+                        .await;
+                    }
+                }
+                Ok(Event::Shutdown | Event::StoryCompleted { .. }) => break,
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
         }
     }
-    // 监听命运编织者发送来的事件流，添加至 Context 中，单步执行 run_step 进行故事编写
-    // 完成后发送事件给命运编织者，让其继续推演故事
-    pub async fn start(&mut self) {}
 
-    // 只需要向 fate_waaver 发送叙事完成的事件即可
-    async fn send(evt: Event) {
-        todo!()
+    async fn render_round(
+        &mut self,
+        round: u32,
+        envelope: FateRoundEnvelope,
+    ) -> Result<(), String> {
+        let facts = serde_json::to_string_pretty(&envelope.facts)
+            .map_err(|err| format!("叙事者序列化事实清单失败: {err}"))?;
+
+        let prompt = format!(
+            r#"你正在书写第 {round} 轮故事。
+你必须只输出叙事正文本身，不要 JSON，不要标题，不要解释，不要附加说明。
+
+叙事要求：
+- 忠于 facts 中的客观事实，不新增关键结果
+- 根据 pacing_instruction、tone、focus、length_hint 调整节奏与文风
+- 直接从正文第一句开始写，适合被逐字流式展示
+- 如果 should_end=true，要让文字具备结局收束感
+
+事实清单：
+{facts}
+
+是否需要收束结局：{should_end}
+结局提示：{ending_hint}"#,
+            should_end = envelope.should_end,
+            ending_hint = envelope
+                .ending_hint
+                .clone()
+                .unwrap_or_else(|| "无".to_string())
+        );
+
+        self.agent_actor
+            .context_mut()
+            .add_message(Message::user(prompt));
+
+        let channel = self.channel.clone();
+        let narrative = {
+            let (event_tx, mut event_rx) = mpsc::channel(128);
+            let step = self.agent_actor.run_step(Some(event_tx));
+            tokio::pin!(step);
+
+            let result = loop {
+                tokio::select! {
+                    result = &mut step => break result,
+                    maybe_event = event_rx.recv() => {
+                        match maybe_event {
+                            Some(AgentActorEvent::ContentChunk(content)) => {
+                                channel.send(Event::NarrativeChunk { round, content });
+                            }
+                            Some(_) => {}
+                            None => {}
+                        }
+                    }
+                }
+            };
+
+            while let Some(event) = event_rx.recv().await {
+                if let AgentActorEvent::ContentChunk(content) = event {
+                    channel.send(Event::NarrativeChunk { round, content });
+                }
+            }
+
+            extract_step_content(result)?
+        };
+
+        channel.send(Event::NarrativeRendered { round, narrative });
+
+        Ok(())
+    }
+
+    async fn send(&self, evt: Event) {
+        self.channel.send(evt);
     }
 }

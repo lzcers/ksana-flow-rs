@@ -1,9 +1,15 @@
 use agent::{
-    agent::{AgentActor, AgentActorHandle, Context, GenericToolExecutor},
+    agent::{AgentActor, Context, GenericToolExecutor, LayerKind},
+    core::Message,
     models::ChatModel,
 };
+use serde_json::json;
+use tokio::sync::broadcast;
 
-use crate::event_system::{Event, EventChannel};
+use crate::{
+    event_system::{Event, EventChannel, FateRoundEnvelope, ProtagonistResponse},
+    shared::{build_chat_model, build_layer, extract_step_content, parse_json_response},
+};
 
 static SYS_PROMPT: &str = r#"
 你是**故事主角**，是用户在故事世界中的化身与战术参谋。
@@ -102,26 +108,137 @@ static SYS_PROMPT: &str = r#"
 {input}
 "#;
 
-struct Protagonist {
+pub struct Protagonist {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
     channel: EventChannel,
+    receiver: broadcast::Receiver<Event>,
 }
 
 impl Protagonist {
-    // 输入人物设定，初始化人物的设定
-    pub fn new(profile: String, channel: EventChannel) -> Self {
-        let model = ChatModel::new();
-        let tool_exector = GenericToolExecutor::new();
-        let context = Context::new();
-        let agent_actor = AgentActor::new(model, tool_exector, context);
-        Self {
+    pub fn new(profile: String, channel: EventChannel) -> Result<Self, String> {
+        let model = build_chat_model()?;
+        let tool_executor = GenericToolExecutor::new();
+        let system_prompt = SYS_PROMPT.replace("{input}", &profile);
+        let context = Context::new()
+            .layer(build_layer(
+                "protagonist-system",
+                LayerKind::System,
+                json!(system_prompt),
+                100,
+            ))
+            .layer(build_layer(
+                "protagonist-soul",
+                LayerKind::Soul,
+                json!({
+                    "name": "故事主角",
+                    "role": "受限视角下的战术决策者",
+                    "guidelines": [
+                        "只能使用主角合理可知的信息",
+                        "优先产出可执行行动，必要时再请求决策",
+                        "如需决策请求，仍然给出推荐方案与推荐行动"
+                    ]
+                }),
+                90,
+            ))
+            .layer(build_layer(
+                "protagonist-profile",
+                LayerKind::Memory,
+                json!({ "profile": profile }),
+                80,
+            ));
+        let receiver = channel.subscribe();
+        let agent_actor = AgentActor::new(model, tool_executor, context);
+        Ok(Self {
             agent_actor,
             channel,
+            receiver,
+        })
+    }
+
+    pub async fn start(mut self) {
+        loop {
+            match self.receiver.recv().await {
+                Ok(Event::RoundPrepared { round, envelope }) => {
+                    if let Err(err) = self.respond_to_round(round, envelope).await {
+                        self.send(Event::AgentError {
+                            agent: "protagonist".to_string(),
+                            message: err,
+                        })
+                        .await;
+                    }
+                }
+                Ok(Event::Shutdown | Event::StoryCompleted { .. }) => break,
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
         }
     }
 
-    // 对外发送主角的决策、行为、心理思考等
-    async fn send(evt: Event) {
-        todo!()
+    async fn respond_to_round(
+        &mut self,
+        round: u32,
+        envelope: FateRoundEnvelope,
+    ) -> Result<(), String> {
+        let snapshot = serde_json::to_string_pretty(&envelope.world_snapshot)
+            .map_err(|err| format!("主角序列化世界快照失败: {err}"))?;
+        let facts = serde_json::to_string_pretty(&envelope.facts)
+            .map_err(|err| format!("主角序列化事实清单失败: {err}"))?;
+
+        let prompt = format!(
+            r#"你正在响应第 {round} 轮故事推进。
+你必须只输出一个 JSON 对象，结构如下：
+{{
+  "mode": "ACTION|DECISION_REQUEST",
+  "decision_request": {{
+    "situation": "当前情境",
+    "inner_thought": "内心独白",
+    "options": [
+      {{
+        "id": "A",
+        "action": "行动描述",
+        "consequence_hint": "后果提示",
+        "risk_level": "SAFE|LOW|MEDIUM|HIGH|DEADLY",
+        "character_fit": "高|中|低",
+        "protagonist_tendency": "倾向原因"
+      }}
+    ],
+    "time_pressure": "NONE|LOW|MEDIUM|HIGH|CRITICAL"
+  }},
+  "recommended_option_id": "若 mode=DECISION_REQUEST，给出推荐选项，否则为 null",
+  "recommended_action": {{
+    "action_type": "MOVE|DIALOGUE|INVESTIGATE|COMBAT|REST|CRAFT|TRADE|OTHER",
+    "target": "行动目标",
+    "method": "行动方式",
+    "inner_monologue": "内心活动",
+    "expected_outcome": "预期结果"
+  }}
+}}
+
+如果你可以直接行动，mode 设为 ACTION，decision_request 设为 null。
+如果你认为必须请求决策，mode 设为 DECISION_REQUEST，但仍然提供 recommended_option_id 和 recommended_action，方便编排器在无人输入时继续推进。
+
+当前世界快照：
+{snapshot}
+
+命运编织者给出的事实清单：
+{facts}"#
+        );
+
+        self.agent_actor
+            .context_mut()
+            .add_message(Message::user(prompt));
+
+        let output = extract_step_content(self.agent_actor.run_step(None).await)?;
+        let response: ProtagonistResponse = parse_json_response(&output)?;
+
+        self.send(Event::ProtagonistResponded { round, response })
+            .await;
+
+        Ok(())
+    }
+
+    async fn send(&self, evt: Event) {
+        self.channel.send(evt);
     }
 }

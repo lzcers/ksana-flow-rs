@@ -49,7 +49,9 @@ where
         let mut lifecycle = StepLifeCycle::new(self.state.clone());
 
         // 执行生命周期函数
-        let lifecycle_flow = lifecycle.start(chat.as_ref(), tool_executor.as_ref()).await;
+        let lifecycle_flow = lifecycle
+            .start(chat.as_ref(), tool_executor.as_ref(), event_tx.as_ref())
+            .await;
 
         match lifecycle_flow {
             LifeCycleFlow::Continue(LifeCycleResult::Frame(frame)) => {
