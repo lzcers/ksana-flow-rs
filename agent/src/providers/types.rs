@@ -184,6 +184,12 @@ impl Request {
         }
         self
     }
+    pub fn with_response_format_json(mut self) -> Self {
+        self.extra.insert("response_format".to_string(), json!({
+            "type": "json_object",
+        }));
+        self
+    }
 }
 
 // ============================================================================
@@ -206,7 +212,8 @@ pub struct ChoiceImg {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChoiceMessage {
     pub role: MessageRole,
-    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     /// DeepSeek 推理模式的推理内容（如 deepseek-reasoner）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
@@ -281,4 +288,46 @@ pub struct StreamResponse {
     pub choices: Vec<StreamChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Response;
+
+    #[test]
+    fn test_response_allows_null_content_for_images() {
+        let body = r#"{
+            "id": "resp_123",
+            "object": "chat.completion",
+            "created": 1743916800,
+            "model": "black-forest-labs/flux.2-klein-4b",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": null,
+                        "images": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "https://example.com/image.png"
+                                }
+                            }
+                        ]
+                    },
+                    "finish_reason": "stop"
+                }
+            ]
+        }"#;
+
+        let response: Response = serde_json::from_str(body).unwrap();
+        let choice = response.choices.into_iter().next().unwrap();
+
+        assert_eq!(choice.message.content, None);
+        assert_eq!(
+            choice.message.images.unwrap()[0].image_url.url,
+            "https://example.com/image.png"
+        );
+    }
 }

@@ -90,7 +90,7 @@ impl Node for ImgGenNode {
             Some(file_id) if !file_id.is_empty() => {
                 match utils::load_uploaded_image_data_url(file_id, &space_id) {
                     Ok(v) => v,
-                    Err(e) => return Ok(Value::String(e).into()),
+                    Err(e) => return Err(e),
                 }
             }
             _ => None,
@@ -126,13 +126,13 @@ impl Node for ImgGenNode {
             None => {
                 let err_msg = "No image returned from GenImgModel";
                 warn!("{}", err_msg);
-                panic!("{}", err_msg);
+                return Err(err_msg.to_string());
             }
         };
 
         let (mime_type, bytes) = match utils::parse_data_url_to_bytes(&image_url) {
             Ok(v) => v,
-            Err(e) => return Ok(Value::String(e).into()),
+            Err(e) => return Err(e),
         };
 
         let media_id = Uuid::new_v4().to_string();
@@ -144,7 +144,7 @@ impl Node for ImgGenNode {
             self.gen_img_model.active_model().unwrap_or_default(),
             &space_id,
         ) {
-            return Ok(Value::String(e).into());
+            return Err(e);
         }
 
         let out = json!({

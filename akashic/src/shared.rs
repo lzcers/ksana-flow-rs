@@ -3,7 +3,7 @@ use std::{env, sync::Arc};
 use agent::{
     agent::{AgentError, Layer, LayerKind, LayerMeta, StepResult},
     models::ChatModel,
-    providers::{deepseek_provider_from_env, openrouter_provider_from_env},
+    providers::{deepseek_provider_from_env, deepseek_provider_from_env_with_json, openrouter_provider_from_env},
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -25,8 +25,9 @@ pub fn build_chat_model() -> Result<ChatModel, String> {
 
     let model_name = env::var("AKASHIC_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
     let mut model = ChatModel::new();
+    model.set_output_json(true);
 
-    if let Ok(provider) = deepseek_provider_from_env() {
+    if let Ok(provider) = deepseek_provider_from_env_with_json() {
         model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], Arc::new(provider));
     }
 
@@ -35,7 +36,6 @@ pub fn build_chat_model() -> Result<ChatModel, String> {
     {
         model.add_model_provider(&model_name, Arc::new(provider));
     }
-
     model
         .set_active_model(&model_name)
         .map_err(|err| format!("初始化 Akashic 模型失败: {err}"))?;

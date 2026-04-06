@@ -1,127 +1,57 @@
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct WorldFact {
-    #[serde(rename = "type")]
-    pub event_type: String,
-    pub description: String,
-    pub participants: Vec<String>,
-    pub impact: String,
-    pub cause: String,
-}
+use crate::{
+    fate_weaver::FateWeaverEvent, protagonist::ProtagonistEvent,
+    upper_narrator::UpperNarratorEvent,
+};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct NarrativeConstraints {
-    pub tone: String,
-    pub focus: String,
-    pub length_hint: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RoundFacts {
-    pub round: u32,
-    pub phase: String,
-    pub progress: f32,
-    pub events: Vec<WorldFact>,
-    pub world_state_delta: String,
-    pub character_state_delta: String,
-    pub pacing_instruction: String,
-    pub narrative_constraints: NarrativeConstraints,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct WorldSnapshot {
-    pub current_location: String,
-    pub surroundings: String,
-    pub present_npcs: Vec<String>,
-    pub available_resources: String,
-    pub active_threats: String,
-    pub recent_events: String,
-    pub emotional_context: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct FateRoundEnvelope {
-    pub facts: RoundFacts,
-    pub world_snapshot: WorldSnapshot,
-    #[serde(default)]
-    pub should_end: bool,
-    #[serde(default)]
-    pub ending_hint: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DecisionOption {
-    pub id: String,
-    pub action: String,
-    pub consequence_hint: String,
-    pub risk_level: String,
-    pub character_fit: String,
-    pub protagonist_tendency: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DecisionRequest {
-    pub situation: String,
-    pub inner_thought: String,
-    pub options: Vec<DecisionOption>,
-    pub time_pressure: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProtagonistAction {
-    pub action_type: String,
-    pub target: String,
-    pub method: String,
-    pub inner_monologue: String,
-    pub expected_outcome: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ProtagonistResponse {
-    pub mode: String,
-    #[serde(default)]
-    pub decision_request: Option<DecisionRequest>,
-    pub recommended_action: ProtagonistAction,
-    #[serde(default)]
-    pub recommended_option_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum Event {
-    StartStory,
-    RoundPrepared {
-        round: u32,
-        envelope: FateRoundEnvelope,
-    },
-    NarrativeChunk {
-        round: u32,
-        content: String,
-    },
-    NarrativeRendered {
-        round: u32,
-        narrative: String,
-    },
-    ProtagonistResponded {
-        round: u32,
-        response: ProtagonistResponse,
-    },
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+pub enum SystemEvent {
     DecisionAutoSelected {
         round: u32,
         option_id: String,
         reason: String,
     },
-    StoryCompleted {
-        round: u32,
-        ending_hint: Option<String>,
-        narrative: String,
-    },
     AgentError {
         agent: String,
         message: String,
     },
-    Shutdown,
+    ShutdownRequested,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "scope", content = "event", rename_all = "snake_case")]
+pub enum Event {
+    FateWeaver(FateWeaverEvent),
+    Protagonist(ProtagonistEvent),
+    UpperNarrator(UpperNarratorEvent),
+    System(SystemEvent),
+}
+
+impl From<FateWeaverEvent> for Event {
+    fn from(event: FateWeaverEvent) -> Self {
+        Self::FateWeaver(event)
+    }
+}
+
+impl From<ProtagonistEvent> for Event {
+    fn from(event: ProtagonistEvent) -> Self {
+        Self::Protagonist(event)
+    }
+}
+
+impl From<UpperNarratorEvent> for Event {
+    fn from(event: UpperNarratorEvent) -> Self {
+        Self::UpperNarrator(event)
+    }
+}
+
+impl From<SystemEvent> for Event {
+    fn from(event: SystemEvent) -> Self {
+        Self::System(event)
+    }
 }
 
 #[derive(Clone)]
@@ -139,7 +69,7 @@ impl EventChannel {
         self.channel.subscribe()
     }
 
-    pub fn send(&self, event: Event) {
-        let _ = self.channel.send(event);
+    pub fn send(&self, event: impl Into<Event>) {
+        let _ = self.channel.send(event.into());
     }
 }

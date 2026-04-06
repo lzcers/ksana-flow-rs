@@ -372,7 +372,10 @@ export const createWorkflow: StateCreator<StoreState, [], [], Workflow> = (set, 
 
         runNode: async (nodeIds: string[]) => {
             const { currentSpaceId, nodes, edges, currentWorkflowId, success, error } = get();
-            if (!currentSpaceId) return;
+            if (!currentSpaceId) {
+                console.error("No active workspace");
+                return;
+            }
             const blueprint = toBlueprint(nodes, edges);
             try {
                 const res = await api.runNode(currentSpaceId, blueprint as never, nodeIds, currentWorkflowId || -1);

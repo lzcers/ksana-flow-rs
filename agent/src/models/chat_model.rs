@@ -13,6 +13,7 @@ use crate::{
 pub struct ChatModel {
     model_providers: HashMap<String, Arc<dyn Provider>>,
     active_model: Option<String>,
+    output_json: bool,
 }
 
 impl Default for ChatModel {
@@ -26,6 +27,7 @@ impl ChatModel {
         Self {
             model_providers: HashMap::new(),
             active_model: None,
+            output_json: false,
         }
     }
 
@@ -49,10 +51,13 @@ impl ChatModel {
         Ok(())
     }
 
-    fn get_provider(&self, model_name: &str) -> Result<&Arc<dyn Provider>, ChatError> {
+    pub fn get_provider(&self, model_name: &str) -> Result<&Arc<dyn Provider>, ChatError> {
         self.model_providers
             .get(model_name)
             .ok_or_else(|| ChatError::ModelNotFound(model_name.to_owned()))
+    }
+    pub fn set_output_json(&mut self, output_json: bool) {
+        self.output_json = output_json;
     }
 }
 
@@ -81,19 +86,19 @@ impl ChatCapability for ChatModel {
 
         match choice.message.role {
             MessageRole::Assistant => Ok(Message::Assistant {
-                content: choice.message.content,
+                content: choice.message.content.unwrap_or_default(),
                 reasoning_content: choice.message.reasoning_content,
                 tool_calls: choice.message.tool_calls,
             }),
             MessageRole::User => Ok(Message::User {
-                content: choice.message.content,
+                content: choice.message.content.unwrap_or_default(),
             }),
             MessageRole::System => Ok(Message::System {
-                content: choice.message.content,
+                content: choice.message.content.unwrap_or_default(),
             }),
             MessageRole::Tool => Ok(Message::Tool {
                 tool_call_id: choice.message.tool_call_id.unwrap_or_default(),
-                content: choice.message.content,
+                content: choice.message.content.unwrap_or_default(),
             }),
         }
     }
@@ -109,10 +114,14 @@ impl ChatCapability for ChatModel {
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let request = Request::new(model_name, msgs)
+        let mut request = Request::new(model_name, msgs)
             .with_stream(true)
             .with_stream_usage(true)
             .with_tools(tools);
+
+        if self.output_json {
+            request = request.with_response_format_json();
+        }
 
         let stream = provider.chat_stream(request).await?;
 

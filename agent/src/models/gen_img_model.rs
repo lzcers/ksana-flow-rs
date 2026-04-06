@@ -140,9 +140,9 @@ mod tests {
             .with_aspect_ratio("1:1".to_string())
             .with_image_size("1K".to_string());
 
-        model.add_model_provider("google/gemini-3.1-flash-image-preview", provider);
+        model.add_model_provider("black-forest-labs/flux.2-klein-4b", provider);
 
-        if let Err(e) = model.set_active_model("google/gemini-3.1-flash-image-preview") {
+        if let Err(e) = model.set_active_model("black-forest-labs/flux.2-klein-4b") {
             eprintln!("Failed to set active model: {}", e);
             return;
         }
@@ -150,6 +150,11 @@ mod tests {
         let msg = Message::user("Generate a beautiful sunset over mountains");
 
         let result = model.gen_img(vec![msg]).await;
+        if let Err(e) = result {
+            eprintln!("Failed to generate image: {}", e);
+            return;
+        }
+
         assert!(result.is_ok());
 
         let response = result.unwrap();

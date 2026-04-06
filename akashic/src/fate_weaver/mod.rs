@@ -1,4 +1,5 @@
 pub mod types;
+#[allow(unused_imports)]
 pub use types::*;
 use agent::{
     agent::{AgentActor, Context, GenericToolExecutor, LayerKind},
@@ -9,8 +10,10 @@ use serde_json::json;
 use tokio::sync::broadcast;
 
 use crate::{
-    event_system::{Event, EventChannel, FateRoundEnvelope, ProtagonistAction},
+    event_system::{Event, EventChannel, SystemEvent},
+    protagonist::{ActionCommand, ProtagonistEvent},
     shared::{build_chat_model, build_layer, extract_step_content, parse_json_response},
+    upper_narrator::{EndingCue, UpperNarratorEvent},
 };
 
 static SYS_PROMPT: &str = r#"
@@ -119,7 +122,7 @@ struct PendingRound {
     round: u32,
     envelope: FateRoundEnvelope,
     narrative: Option<String>,
-    action: Option<ProtagonistAction>,
+    action: Option<ActionCommand>,
 }
 
 pub struct FateWeaver {
@@ -189,25 +192,30 @@ impl FateWeaver {
     pub async fn start(mut self) {
         loop {
             match self.receiver.recv().await {
-                // 故事开始
-                Ok(Event::StartStory) => {
+                Ok(Event::FateWeaver(FateWeaverEvent::StartRequested)) => {
                     if let Err(err) = self.advance_story(None, None).await {
                         self.send_error(err).await;
                     }
                 }
-                Ok(Event::NarrativeRendered { round, narrative }) => {
+                Ok(Event::UpperNarrator(UpperNarratorEvent::NarrativeCompleted {
+                    round,
+                    narrative,
+                })) => {
                     if let Some(pending) = self.pending_round.as_mut()
                         && pending.round == round
                     {
-                        pending.narrative = Some(narrative);
+                        pending.narrative = Some(narrative.text);
                         if let Err(err) = self.try_continue_story().await {
                             self.send_error(err).await;
                         }
                     }
                 }
-                Ok(Event::ProtagonistResponded { round, response }) => {
-                    if let Some(option_id) = response.recommended_option_id.clone() {
-                        self.send(Event::DecisionAutoSelected {
+                Ok(Event::Protagonist(ProtagonistEvent::DecisionRequested {
+                    round,
+                    request,
+                })) => {
+                    if let Some(option_id) = request.recommended_option_id {
+                        self.send(SystemEvent::DecisionAutoSelected {
                             round,
                             option_id,
                             reason: "当前运行模式未接入真实用户输入，自动采用主角给出的推荐选项。"
@@ -215,22 +223,57 @@ impl FateWeaver {
                         })
                         .await;
                     }
-
+                }
+                Ok(Event::Protagonist(ProtagonistEvent::ActionCommitted {
+                    round,
+                    action,
+                })) => {
                     if let Some(pending) = self.pending_round.as_mut()
                         && pending.round == round
                     {
-                        pending.action = Some(response.recommended_action);
+                        pending.action = Some(action);
                         if let Err(err) = self.try_continue_story().await {
                             self.send_error(err).await;
                         }
                     }
                 }
-                Ok(Event::Shutdown | Event::StoryCompleted { .. }) => break,
+                Ok(Event::FateWeaver(FateWeaverEvent::StopRequested { .. }))
+                | Ok(Event::System(SystemEvent::ShutdownRequested))
+                | Ok(Event::FateWeaver(FateWeaverEvent::StoryEnded { .. })) => break,
                 Ok(
-                    Event::AgentError { .. }
-                    | Event::DecisionAutoSelected { .. }
-                    | Event::NarrativeChunk { .. }
-                    | Event::RoundPrepared { .. },
+                    Event::System(SystemEvent::AgentError { .. })
+                    | Event::System(SystemEvent::DecisionAutoSelected { .. })
+                    | Event::FateWeaver(FateWeaverEvent::PhaseAdvanced { .. })
+                    | Event::FateWeaver(FateWeaverEvent::EventsTriggered { .. })
+                    | Event::FateWeaver(FateWeaverEvent::ConsequencesDerived { .. })
+                    | Event::FateWeaver(FateWeaverEvent::WorldStateChanged { .. })
+                    | Event::FateWeaver(FateWeaverEvent::SnapshotPrepared { .. })
+                    | Event::FateWeaver(FateWeaverEvent::NarrativeRequested { .. })
+                    | Event::FateWeaver(FateWeaverEvent::ProtagonistDecisionRequested { .. })
+                    | Event::FateWeaver(FateWeaverEvent::EndingSequenceStarted { .. })
+                    | Event::FateWeaver(FateWeaverEvent::FinalDecisionRequested { .. })
+                    | Event::FateWeaver(FateWeaverEvent::NarrativeRevisionDelivered { .. })
+                    | Event::FateWeaver(FateWeaverEvent::ConsistencyIssuesFound { .. })
+                    | Event::Protagonist(ProtagonistEvent::WorldPerceived { .. })
+                    | Event::Protagonist(ProtagonistEvent::DecisionFrameReceived { .. })
+                    | Event::Protagonist(ProtagonistEvent::FinalDecisionFrameReceived { .. })
+                    | Event::Protagonist(ProtagonistEvent::OptionsPrepared { .. })
+                    | Event::Protagonist(ProtagonistEvent::GrowthUpdated { .. })
+                    | Event::Protagonist(ProtagonistEvent::KnowledgeLimitReached { .. })
+                    | Event::Protagonist(ProtagonistEvent::ProtocolError { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::NarrationTaskReceived { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::RevisionRequested { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::EndingCueReceived { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::StyleSelected { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::SceneOutlined { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::NarrativeChunkProduced { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::FidelityIssueDetected { .. })
+                    | Event::UpperNarrator(UpperNarratorEvent::ProtocolError { .. })
+                    | Event::FateWeaver(FateWeaverEvent::NarrativeRendered { .. })
+                    | Event::FateWeaver(FateWeaverEvent::PlotSkeletonPrepared { .. })
+                    | Event::FateWeaver(FateWeaverEvent::ConditionalEventsPrepared { .. })
+                    | Event::FateWeaver(FateWeaverEvent::ProtocolError { .. })
+                    | Event::FateWeaver(FateWeaverEvent::ProtagonistActionCommitted { .. }),
                 ) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -240,7 +283,7 @@ impl FateWeaver {
 
     async fn advance_story(
         &mut self,
-        last_action: Option<ProtagonistAction>,
+        last_action: Option<ActionCommand>,
         last_narrative: Option<String>,
     ) -> Result<(), String> {
         self.current_round += 1;
@@ -320,7 +363,138 @@ impl FateWeaver {
             action: None,
         });
 
-        self.send(Event::RoundPrepared { round, envelope }).await;
+        let phase = envelope.phase();
+        let pacing = envelope.pacing();
+        let triggered_events = envelope
+            .facts
+            .events
+            .iter()
+            .map(WorldFact::as_triggered_event)
+            .collect::<Vec<_>>();
+        let consequence_facts = envelope.consequence_facts();
+        let snapshot = envelope.world_snapshot.as_protagonist_snapshot();
+        let perception = envelope.world_snapshot.as_protagonist_perception();
+
+        self.send(FateWeaverEvent::PhaseAdvanced {
+            round,
+            phase: phase.clone(),
+            progress_percent: envelope.progress_percent(),
+        })
+        .await;
+        self.send(FateWeaverEvent::EventsTriggered {
+            round,
+            events: triggered_events.clone(),
+        })
+        .await;
+        self.send(FateWeaverEvent::ConsequencesDerived {
+            round,
+            facts: consequence_facts.clone(),
+        })
+        .await;
+        self.send(FateWeaverEvent::WorldStateChanged {
+            round,
+            deltas: vec![WorldStateDelta {
+                domain: "world".to_string(),
+                summary: envelope.facts.world_state_delta.clone(),
+            }],
+        })
+        .await;
+
+        self.send(FateWeaverEvent::SnapshotPrepared {
+            round,
+            snapshot: snapshot.clone(),
+        })
+        .await;
+        self.send(ProtagonistEvent::WorldPerceived {
+            round,
+            perception,
+        })
+        .await;
+
+        if envelope.should_end {
+            let frame = envelope.final_decision_frame();
+            self.send(FateWeaverEvent::FinalDecisionRequested {
+                round,
+                frame: FinalDecisionFrame {
+                    dilemma: frame.dilemma.clone(),
+                    stakes: frame.stakes.clone(),
+                    options: frame.options.clone(),
+                },
+            })
+            .await;
+            self.send(ProtagonistEvent::FinalDecisionFrameReceived { round, frame })
+                .await;
+            self.send(FateWeaverEvent::EndingSequenceStarted {
+                round,
+                catalyst: EndingCatalyst {
+                    reason: envelope
+                        .ending_hint
+                        .clone()
+                        .unwrap_or_else(|| "故事进入自然收束阶段。".to_string()),
+                    unresolved_threads: envelope
+                        .facts
+                        .events
+                        .iter()
+                        .map(|event| event.description.clone())
+                        .take(3)
+                        .collect(),
+                },
+            })
+            .await;
+            self.send(UpperNarratorEvent::EndingCueReceived {
+                round,
+                cue: EndingCue {
+                    ending_kind: envelope
+                        .ending_hint
+                        .clone()
+                        .unwrap_or_else(|| "open_ended".to_string()),
+                    unresolved_threads: envelope
+                        .facts
+                        .events
+                        .iter()
+                        .map(|event| event.description.clone())
+                        .take(3)
+                        .collect(),
+                    emotional_aftertaste: envelope.facts.narrative_constraints.tone.clone(),
+                },
+            })
+            .await;
+        } else {
+            let frame = envelope.decision_frame();
+            self.send(FateWeaverEvent::ProtagonistDecisionRequested {
+                round,
+                frame: ProtagonistDecisionFrame {
+                    situation: frame.objective.clone(),
+                    objective: frame.objective.clone(),
+                    urgency: frame.urgency.clone(),
+                    stakes: frame.stakes.clone(),
+                },
+            })
+            .await;
+            self.send(ProtagonistEvent::DecisionFrameReceived { round, frame })
+                .await;
+        }
+
+        self.send(FateWeaverEvent::NarrativeRequested {
+            round,
+            brief: NarrationBrief {
+                phase,
+                pacing,
+                triggered_events: triggered_events.clone(),
+                consequence_facts: consequence_facts.clone(),
+                constraints: NarrativeConstraints {
+                    tone: envelope.facts.narrative_constraints.tone.clone(),
+                    focus: envelope.facts.narrative_constraints.focus.clone(),
+                    length_hint: envelope.facts.narrative_constraints.length_hint.clone(),
+                },
+            },
+        })
+        .await;
+        self.send(UpperNarratorEvent::NarrationTaskReceived {
+            round,
+            task: envelope.narration_task(),
+        })
+        .await;
 
         Ok(())
     }
@@ -341,13 +515,25 @@ impl FateWeaver {
         };
 
         if pending.envelope.should_end || pending.round >= self.max_rounds {
-            self.send(Event::StoryCompleted {
+            self.send(FateWeaverEvent::NarrativeRendered {
                 round: pending.round,
-                ending_hint: pending.envelope.ending_hint,
                 narrative,
             })
             .await;
-            self.send(Event::Shutdown).await;
+            self.send(FateWeaverEvent::StoryEnded {
+                round: pending.round,
+                ending: EmergentEnding {
+                    kind: pending.envelope.infer_ending_kind(),
+                    summary: pending
+                        .envelope
+                        .ending_hint
+                        .clone()
+                        .unwrap_or_else(|| "故事自然收束。".to_string()),
+                    cost: pending.envelope.facts.character_state_delta.clone(),
+                },
+            })
+            .await;
+            self.send(SystemEvent::ShutdownRequested).await;
             return Ok(());
         }
 
@@ -355,14 +541,14 @@ impl FateWeaver {
     }
 
     async fn send_error(&self, message: String) {
-        self.send(Event::AgentError {
+        self.send(SystemEvent::AgentError {
             agent: "fate_weaver".to_string(),
             message,
         })
         .await;
     }
 
-    async fn send(&self, evt: Event) {
+    async fn send(&self, evt: impl Into<Event>) {
         self.channel.send(evt);
     }
 }

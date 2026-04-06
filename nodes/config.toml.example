@@ -1,0 +1,9 @@
+[source]
+tushare_token = "your_tushare_token"
+db_uri = "data/trade.db"
+data_db_uri = "ksana.db"
+
+[email]
+email = "your_email@example.com"
+email_token = "your_smtp_auth_token"
+smtp_server = "smtp.example.com"

@@ -1,3 +1,7 @@
+pub mod types;
+#[allow(unused_imports)]
+pub use types::*;
+
 use agent::{
     agent::{AgentActor, AgentActorEvent, Context, GenericToolExecutor, LayerKind},
     core::Message,
@@ -7,7 +11,8 @@ use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::{
-    event_system::{Event, EventChannel, FateRoundEnvelope},
+    event_system::{Event, EventChannel, SystemEvent},
+    fate_weaver::FateWeaverEvent,
     shared::{build_chat_model, build_layer, extract_step_content},
 };
 
@@ -72,6 +77,7 @@ pub struct UpperNarrator {
     agent_actor: AgentActor<ChatModel, GenericToolExecutor>,
     channel: EventChannel,
     receiver: broadcast::Receiver<Event>,
+    pending_ending_cue: Option<(u32, EndingCue)>,
 }
 
 impl UpperNarrator {
@@ -105,22 +111,34 @@ impl UpperNarrator {
             agent_actor,
             channel,
             receiver,
+            pending_ending_cue: None,
         })
     }
 
     pub async fn start(mut self) {
         loop {
             match self.receiver.recv().await {
-                Ok(Event::RoundPrepared { round, envelope }) => {
-                    if let Err(err) = self.render_round(round, envelope).await {
-                        self.send(Event::AgentError {
-                            agent: "upper_narrator".to_string(),
-                            message: err,
-                        })
-                        .await;
+                Ok(Event::UpperNarrator(UpperNarratorEvent::EndingCueReceived {
+                    round,
+                    cue,
+                })) => {
+                    self.pending_ending_cue = Some((round, cue));
+                }
+                Ok(Event::UpperNarrator(UpperNarratorEvent::NarrationTaskReceived {
+                    round,
+                    task,
+                })) => {
+                    let ending_cue = self
+                        .pending_ending_cue
+                        .take()
+                        .filter(|(cue_round, _)| *cue_round == round)
+                        .map(|(_, cue)| cue);
+                    if let Err(err) = self.render_round(round, task, ending_cue).await {
+                        self.send_error(err).await;
                     }
                 }
-                Ok(Event::Shutdown | Event::StoryCompleted { .. }) => break,
+                Ok(Event::System(SystemEvent::ShutdownRequested))
+                | Ok(Event::FateWeaver(FateWeaverEvent::StoryEnded { .. })) => break,
                 Ok(_) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -131,10 +149,28 @@ impl UpperNarrator {
     async fn render_round(
         &mut self,
         round: u32,
-        envelope: FateRoundEnvelope,
+        task: NarrationTask,
+        ending_cue: Option<EndingCue>,
     ) -> Result<(), String> {
-        let facts = serde_json::to_string_pretty(&envelope.facts)
+        let style = NarrativeStyle::for_task(&task);
+        let perspective = NarrativePerspective::reader_default();
+        let scene_beats = task.scene_beats();
+        let facts = serde_json::to_string_pretty(&task)
             .map_err(|err| format!("叙事者序列化事实清单失败: {err}"))?;
+        let ending_payload = serde_json::to_string_pretty(&ending_cue)
+            .map_err(|err| format!("叙事者序列化结局提示失败: {err}"))?;
+
+        self.send(UpperNarratorEvent::StyleSelected {
+            round,
+            style: style.clone(),
+            perspective: perspective.clone(),
+        })
+        .await;
+        self.send(UpperNarratorEvent::SceneOutlined {
+            round,
+            beats: scene_beats.clone(),
+        })
+        .await;
 
         let prompt = format!(
             r#"你正在书写第 {round} 轮故事。
@@ -145,17 +181,21 @@ impl UpperNarrator {
 - 根据 pacing_instruction、tone、focus、length_hint 调整节奏与文风
 - 直接从正文第一句开始写，适合被逐字流式展示
 - 如果 should_end=true，要让文字具备结局收束感
+- 当前建议风格：{style_name}
+- 当前叙事视角：{perspective_name}
 
 事实清单：
 {facts}
 
-是否需要收束结局：{should_end}
-结局提示：{ending_hint}"#,
-            should_end = envelope.should_end,
-            ending_hint = envelope
-                .ending_hint
-                .clone()
-                .unwrap_or_else(|| "无".to_string())
+场景节拍：
+{scene_beats_payload}
+
+结局提示：
+{ending_payload}"#,
+            style_name = style.label(),
+            perspective_name = perspective.label(),
+            scene_beats_payload = serde_json::to_string_pretty(&scene_beats)
+                .map_err(|err| format!("叙事者序列化场景节拍失败: {err}"))?
         );
 
         self.agent_actor
@@ -174,7 +214,10 @@ impl UpperNarrator {
                     maybe_event = event_rx.recv() => {
                         match maybe_event {
                             Some(AgentActorEvent::ContentChunk(content)) => {
-                                channel.send(Event::NarrativeChunk { round, content });
+                                channel.send(UpperNarratorEvent::NarrativeChunkProduced {
+                                    round,
+                                    content,
+                                });
                             }
                             Some(_) => {}
                             None => {}
@@ -185,19 +228,37 @@ impl UpperNarrator {
 
             while let Some(event) = event_rx.recv().await {
                 if let AgentActorEvent::ContentChunk(content) = event {
-                    channel.send(Event::NarrativeChunk { round, content });
+                    channel.send(UpperNarratorEvent::NarrativeChunkProduced {
+                        round,
+                        content,
+                    });
                 }
             }
 
             extract_step_content(result)?
         };
 
-        channel.send(Event::NarrativeRendered { round, narrative });
+        channel.send(UpperNarratorEvent::NarrativeCompleted {
+            round,
+            narrative: RenderedNarrative {
+                text: narrative,
+                style,
+                perspective,
+            },
+        });
 
         Ok(())
     }
 
-    async fn send(&self, evt: Event) {
+    async fn send_error(&self, message: String) {
+        self.send(SystemEvent::AgentError {
+            agent: "upper_narrator".to_string(),
+            message,
+        })
+        .await;
+    }
+
+    async fn send(&self, evt: impl Into<Event>) {
         self.channel.send(evt);
     }
 }
