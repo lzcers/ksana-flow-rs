@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod payload {
     use super::parse::{EndingCue, NarrationTask, RevisionFeedback};
     use serde::{Deserialize, Serialize};

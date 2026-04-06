@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod payload {
     use super::parse::{DecisionOption, ProtagonistAction};
     use serde::{Deserialize, Serialize};
