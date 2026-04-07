@@ -11,74 +11,94 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+    /// 命运编织者对外广播的流程事件。
     pub enum FateWeaverEvent {
+        /// 请求启动整段故事流程。
         StartRequested,
+        /// 记录主角已经提交给世界编排器的行动摘要。
         ProtagonistActionCommitted {
             round: u32,
             action: ProtagonistActionDigest,
         },
+        /// 记录某一轮最终叙事文本已经产出。
         NarrativeRendered {
             round: u32,
             narrative: String,
         },
+        /// 记录针对既有叙事文本的修订结果。
         NarrativeRevisionDelivered {
             round: u32,
             narrative: String,
         },
+        /// 请求停止命运编织者的推进循环。
         StopRequested {
             reason: FateWeaverStopReason,
         },
+        /// 广播故事骨架事件模板已准备完成。
         PlotSkeletonPrepared {
             beats: Vec<PlotBeatTemplate>,
         },
+        /// 广播条件事件候选池已准备完成。
         ConditionalEventsPrepared {
             events: Vec<ConditionalEventTemplate>,
         },
+        /// 广播故事阶段与整体进度已推进。
         PhaseAdvanced {
             round: u32,
             phase: FateWeaverPhase,
             progress_percent: u8,
         },
+        /// 广播本轮被触发的世界事件。
         EventsTriggered {
             round: u32,
             events: Vec<TriggeredWorldEvent>,
         },
+        /// 广播本轮推演出的直接后果与事实变化。
         ConsequencesDerived {
             round: u32,
             facts: Vec<ConsequenceFact>,
         },
+        /// 广播本轮世界状态的增量变化。
         WorldStateChanged {
             round: u32,
             deltas: Vec<WorldStateDelta>,
         },
+        /// 广播已整理好的主角视角世界快照。
         SnapshotPrepared {
             round: u32,
             snapshot: ProtagonistWorldSnapshot,
         },
+        /// 请求上层叙事者开始渲染本轮叙事。
         NarrativeRequested {
             round: u32,
             brief: NarrationBrief,
         },
+        /// 请求主角基于当前局势做出常规决策。
         ProtagonistDecisionRequested {
             round: u32,
             frame: ProtagonistDecisionFrame,
         },
+        /// 广播一致性审核发现的问题。
         ConsistencyIssuesFound {
             round: u32,
             issues: Vec<ConsistencyIssue>,
         },
+        /// 广播故事已进入终局收束阶段。
         EndingSequenceStarted {
             round: u32,
             catalyst: EndingCatalyst,
         },
+        /// 请求主角进行终局抉择。
         FinalDecisionRequested {
             round: u32,
             frame: FinalDecisionFrame,
         },
+        /// 广播故事已结束以及涌现出的结局。
         StoryEnded {
             round: u32,
             ending: EmergentEnding,
         },
+        /// 广播命运编织者协议层或流程层错误。
         ProtocolError {
             round: Option<u32>,
             message: String,

@@ -4,40 +4,50 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+    /// 上层叙事者对外广播的叙事处理事件。
     pub enum UpperNarratorEvent {
+        /// 广播上层叙事者已收到本轮事实清单与叙事任务。
         NarrationTaskReceived {
             round: u32,
             task: NarrationTask,
         },
+        /// 请求上层叙事者根据反馈修订既有叙事。
         RevisionRequested {
             round: u32,
             feedback: RevisionFeedback,
         },
+        /// 广播本轮附带的结局提示信息。
         EndingCueReceived {
             round: u32,
             cue: EndingCue,
         },
+        /// 广播当前轮最终选定的叙事风格与视角。
         StyleSelected {
             round: u32,
             style: NarrativeStyle,
             perspective: NarrativePerspective,
         },
+        /// 广播从事实清单拆解出的场景节拍。
         SceneOutlined {
             round: u32,
             beats: Vec<SceneBeat>,
         },
+        /// 广播流式叙事生成过程中的文本分片。
         NarrativeChunkProduced {
             round: u32,
             content: String,
         },
+        /// 广播一整轮叙事文本已渲染完成。
         NarrativeCompleted {
             round: u32,
             narrative: RenderedNarrative,
         },
+        /// 广播叙事忠实度审查发现的问题。
         FidelityIssueDetected {
             round: u32,
             issue: FidelityIssue,
         },
+        /// 广播上层叙事者协议层或渲染流程错误。
         ProtocolError {
             round: Option<u32>,
             message: String,

@@ -4,40 +4,50 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+    /// 主角 Agent 对外广播的感知、决策与行动事件。
     pub enum ProtagonistEvent {
+        /// 广播主角已经接收到当前轮的世界感知。
         WorldPerceived {
             round: u32,
             perception: ProtagonistPerception,
         },
+        /// 广播命运编织者下发的常规决策框架。
         DecisionFrameReceived {
             round: u32,
             frame: DecisionFrame,
         },
+        /// 广播命运编织者下发的终局决策框架。
         FinalDecisionFrameReceived {
             round: u32,
             frame: FinalDecisionFrame,
         },
+        /// 广播主角为用户准备好的候选行动选项。
         OptionsPrepared {
             round: u32,
             options: Vec<ActionOption>,
             recommended_option_id: Option<String>,
         },
+        /// 请求用户或外部编排器在多个选项中进行选择。
         DecisionRequested {
             round: u32,
             request: UserDecisionRequest,
         },
+        /// 广播主角最终承诺执行的行动指令。
         ActionCommitted {
             round: u32,
             action: ActionCommand,
         },
+        /// 广播主角在当前轮中的成长变化。
         GrowthUpdated {
             round: u32,
             growth: CharacterGrowthDelta,
         },
+        /// 广播主角认知边界触发后的信息缺口。
         KnowledgeLimitReached {
             round: u32,
             gap: KnowledgeGap,
         },
+        /// 广播主角协议层或决策流程错误。
         ProtocolError {
             round: Option<u32>,
             message: String,

@@ -6,6 +6,29 @@ use crate::{
     upper_narrator::UpperNarratorEvent,
 };
 
+// Agent 之间通信的消息通道
+#[derive(Clone)]
+pub struct EventChannel {
+    channel: broadcast::Sender<Event>,
+}
+
+impl EventChannel {
+    pub fn new() -> Self {
+        let (tx, _) = broadcast::channel::<Event>(64);
+        Self { channel: tx }
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<Event> {
+        self.channel.subscribe()
+    }
+
+    pub fn send(&self, event: impl Into<Event>) {
+        let _ = self.channel.send(event.into());
+    }
+}
+
+
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum SystemEvent {
@@ -51,25 +74,5 @@ impl From<UpperNarratorEvent> for Event {
 impl From<SystemEvent> for Event {
     fn from(event: SystemEvent) -> Self {
         Self::System(event)
-    }
-}
-
-#[derive(Clone)]
-pub struct EventChannel {
-    channel: broadcast::Sender<Event>,
-}
-
-impl EventChannel {
-    pub fn new() -> Self {
-        let (tx, _) = broadcast::channel::<Event>(64);
-        Self { channel: tx }
-    }
-
-    pub fn subscribe(&self) -> broadcast::Receiver<Event> {
-        self.channel.subscribe()
-    }
-
-    pub fn send(&self, event: impl Into<Event>) {
-        let _ = self.channel.send(event.into());
     }
 }
