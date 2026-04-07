@@ -13,9 +13,10 @@ use prompt::SYS_PROMPT;
 
 use crate::{
     event_system::{Event, EventChannel, SystemEvent},
-    protagonist::{ActionCommand, ProtagonistEvent},
-    shared::{build_chat_model, build_layer, extract_step_content, parse_json_response},
-    upper_narrator::{EndingCue, UpperNarratorEvent},
+    fate_weaver::prompt::advance_story_prompt, 
+    protagonist::{ActionCommand, ProtagonistEvent}, 
+    shared::{build_chat_model, build_layer, extract_step_content, parse_json_response}, 
+    upper_narrator::{EndingCue, UpperNarratorEvent}
 };
 
 struct PendingRound {
@@ -31,7 +32,6 @@ pub struct FateWeaver {
     receiver: broadcast::Receiver<Event>,
     max_rounds: u32,
     current_round: u32,
-    protagonist_profile: String,
     pending_round: Option<PendingRound>,
 }
 
@@ -41,10 +41,10 @@ impl FateWeaver {
         world_profile: String,
         channel: EventChannel,
         max_rounds: u32,
-    ) -> Result<Self, String> {
-        let model = build_chat_model()?;
+    ) -> Self {
+        let model = build_chat_model();
         let tool_executor = GenericToolExecutor::new();
-        let system_prompt = SYS_PROMPT.replace("{input}", &world_profile);
+        let system_prompt = SYS_PROMPT.replace("{world_profile}", &world_profile).replace("{protagonist_profile}", &prota_profile);
         let context = Context::new()
             .layer(build_layer(
                 "fate-weaver-system",
@@ -78,106 +78,131 @@ impl FateWeaver {
             ));
         let receiver = channel.subscribe();
         let agent_actor = AgentActor::new(model, tool_executor, context);
-        Ok(Self {
+      Self {
             agent_actor,
             channel,
             receiver,
             max_rounds,
             current_round: 0,
-            protagonist_profile: prota_profile,
             pending_round: None,
-        })
+        }
     }
 
     pub async fn start(mut self) {
         loop {
             match self.receiver.recv().await {
-                Ok(Event::FateWeaver(FateWeaverEvent::StartRequested)) => {
-                    if let Err(err) = self.advance_story(None, None).await {
-                        self.send_error(err).await;
+                Ok(event) => {
+                    if !self.handle_event(event).await {
+                        break;
                     }
                 }
-                Ok(Event::UpperNarrator(UpperNarratorEvent::NarrativeCompleted {
-                    round,
-                    narrative,
-                })) => {
-                    if let Some(pending) = self.pending_round.as_mut()
-                        && pending.round == round
-                    {
-                        pending.narrative = Some(narrative.text);
-                        if let Err(err) = self.try_continue_story().await {
-                            self.send_error(err).await;
-                        }
-                    }
-                }
-                Ok(Event::Protagonist(ProtagonistEvent::DecisionRequested {
-                    round,
-                    request,
-                })) => {
-                    if let Some(option_id) = request.recommended_option_id {
-                        self.send(SystemEvent::DecisionAutoSelected {
-                            round,
-                            option_id,
-                            reason: "当前运行模式未接入真实用户输入，自动采用主角给出的推荐选项。"
-                                .to_string(),
-                        })
-                        .await;
-                    }
-                }
-                Ok(Event::Protagonist(ProtagonistEvent::ActionCommitted {
-                    round,
-                    action,
-                })) => {
-                    if let Some(pending) = self.pending_round.as_mut()
-                        && pending.round == round
-                    {
-                        pending.action = Some(action);
-                        if let Err(err) = self.try_continue_story().await {
-                            self.send_error(err).await;
-                        }
-                    }
-                }
-                Ok(Event::FateWeaver(FateWeaverEvent::StopRequested { .. }))
-                | Ok(Event::System(SystemEvent::ShutdownRequested))
-                | Ok(Event::FateWeaver(FateWeaverEvent::StoryEnded { .. })) => break,
-                Ok(
-                    Event::System(SystemEvent::AgentError { .. })
-                    | Event::System(SystemEvent::DecisionAutoSelected { .. })
-                    | Event::FateWeaver(FateWeaverEvent::PhaseAdvanced { .. })
-                    | Event::FateWeaver(FateWeaverEvent::EventsTriggered { .. })
-                    | Event::FateWeaver(FateWeaverEvent::ConsequencesDerived { .. })
-                    | Event::FateWeaver(FateWeaverEvent::WorldStateChanged { .. })
-                    | Event::FateWeaver(FateWeaverEvent::SnapshotPrepared { .. })
-                    | Event::FateWeaver(FateWeaverEvent::NarrativeRequested { .. })
-                    | Event::FateWeaver(FateWeaverEvent::ProtagonistDecisionRequested { .. })
-                    | Event::FateWeaver(FateWeaverEvent::EndingSequenceStarted { .. })
-                    | Event::FateWeaver(FateWeaverEvent::FinalDecisionRequested { .. })
-                    | Event::FateWeaver(FateWeaverEvent::NarrativeRevisionDelivered { .. })
-                    | Event::FateWeaver(FateWeaverEvent::ConsistencyIssuesFound { .. })
-                    | Event::Protagonist(ProtagonistEvent::WorldPerceived { .. })
-                    | Event::Protagonist(ProtagonistEvent::DecisionFrameReceived { .. })
-                    | Event::Protagonist(ProtagonistEvent::FinalDecisionFrameReceived { .. })
-                    | Event::Protagonist(ProtagonistEvent::OptionsPrepared { .. })
-                    | Event::Protagonist(ProtagonistEvent::GrowthUpdated { .. })
-                    | Event::Protagonist(ProtagonistEvent::KnowledgeLimitReached { .. })
-                    | Event::Protagonist(ProtagonistEvent::ProtocolError { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::NarrationTaskReceived { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::RevisionRequested { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::EndingCueReceived { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::StyleSelected { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::SceneOutlined { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::NarrativeChunkProduced { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::FidelityIssueDetected { .. })
-                    | Event::UpperNarrator(UpperNarratorEvent::ProtocolError { .. })
-                    | Event::FateWeaver(FateWeaverEvent::NarrativeRendered { .. })
-                    | Event::FateWeaver(FateWeaverEvent::PlotSkeletonPrepared { .. })
-                    | Event::FateWeaver(FateWeaverEvent::ConditionalEventsPrepared { .. })
-                    | Event::FateWeaver(FateWeaverEvent::ProtocolError { .. })
-                    | Event::FateWeaver(FateWeaverEvent::ProtagonistActionCommitted { .. }),
-                ) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
             }
+        }
+    }
+
+    async fn handle_event(&mut self, event: Event) -> bool {
+        match event {
+            Event::FateWeaver(event) => self.handle_fate_weaver(event).await,
+            Event::Protagonist(event) => self.handle_protagonist(event).await,
+            Event::UpperNarrator(event) => self.handle_upper_narrator(event).await,
+            Event::System(event) => self.handle_system(event).await,
+        }
+    }
+
+    async fn handle_fate_weaver(&mut self, event: FateWeaverEvent) -> bool {
+        match event {
+            FateWeaverEvent::StartRequested => {
+                if let Err(err) = self.advance_story(None, None).await {
+                    self.send_error(err).await;
+                }
+                true
+            }
+            FateWeaverEvent::StopRequested { .. } | FateWeaverEvent::StoryEnded { .. } => false,
+            FateWeaverEvent::PhaseAdvanced { .. }
+            | FateWeaverEvent::EventsTriggered { .. }
+            | FateWeaverEvent::ConsequencesDerived { .. }
+            | FateWeaverEvent::WorldStateChanged { .. }
+            | FateWeaverEvent::SnapshotPrepared { .. }
+            | FateWeaverEvent::NarrativeRequested { .. }
+            | FateWeaverEvent::ProtagonistDecisionRequested { .. }
+            | FateWeaverEvent::EndingSequenceStarted { .. }
+            | FateWeaverEvent::FinalDecisionRequested { .. }
+            | FateWeaverEvent::NarrativeRevisionDelivered { .. }
+            | FateWeaverEvent::ConsistencyIssuesFound { .. }
+            | FateWeaverEvent::NarrativeRendered { .. }
+            | FateWeaverEvent::PlotSkeletonPrepared { .. }
+            | FateWeaverEvent::ConditionalEventsPrepared { .. }
+            | FateWeaverEvent::ProtocolError { .. }
+            | FateWeaverEvent::ProtagonistActionCommitted { .. } => true,
+        }
+    }
+
+    async fn handle_protagonist(&mut self, event: ProtagonistEvent) -> bool {
+        match event {
+            ProtagonistEvent::DecisionRequested { round, request } => {
+                if let Some(option_id) = request.recommended_option_id {
+                    self.send(SystemEvent::DecisionAutoSelected {
+                        round,
+                        option_id,
+                        reason: "当前运行模式未接入真实用户输入，自动采用主角给出的推荐选项。"
+                            .to_string(),
+                    })
+                    .await;
+                }
+            }
+            ProtagonistEvent::ActionCommitted { round, action } => {
+                if let Some(pending) = self.pending_round.as_mut()
+                    && pending.round == round
+                {
+                    pending.action = Some(action);
+                    if let Err(err) = self.try_continue_story().await {
+                        self.send_error(err).await;
+                    }
+                }
+            }
+            ProtagonistEvent::WorldPerceived { .. }
+            | ProtagonistEvent::DecisionFrameReceived { .. }
+            | ProtagonistEvent::FinalDecisionFrameReceived { .. }
+            | ProtagonistEvent::OptionsPrepared { .. }
+            | ProtagonistEvent::GrowthUpdated { .. }
+            | ProtagonistEvent::KnowledgeLimitReached { .. }
+            | ProtagonistEvent::ProtocolError { .. } => {}
+        }
+
+        true
+    }
+
+    async fn handle_upper_narrator(&mut self, event: UpperNarratorEvent) -> bool {
+        match event {
+            UpperNarratorEvent::NarrativeCompleted { round, narrative } => {
+                if let Some(pending) = self.pending_round.as_mut()
+                    && pending.round == round
+                {
+                    pending.narrative = Some(narrative.text);
+                    if let Err(err) = self.try_continue_story().await {
+                        self.send_error(err).await;
+                    }
+                }
+            }
+            UpperNarratorEvent::NarrationTaskReceived { .. }
+            | UpperNarratorEvent::RevisionRequested { .. }
+            | UpperNarratorEvent::EndingCueReceived { .. }
+            | UpperNarratorEvent::StyleSelected { .. }
+            | UpperNarratorEvent::SceneOutlined { .. }
+            | UpperNarratorEvent::NarrativeChunkProduced { .. }
+            | UpperNarratorEvent::FidelityIssueDetected { .. }
+            | UpperNarratorEvent::ProtocolError { .. } => {}
+        }
+
+        true
+    }
+
+    async fn handle_system(&mut self, event: SystemEvent) -> bool {
+        match event {
+            SystemEvent::ShutdownRequested => false,
+            SystemEvent::AgentError { .. } | SystemEvent::DecisionAutoSelected { .. } => true,
         }
     }
 
@@ -197,57 +222,7 @@ impl FateWeaver {
         let narrative_payload =
             last_narrative.unwrap_or_else(|| "无，本轮是故事开场。".to_string());
 
-        let prompt = format!(
-            r#"推进故事第 {round} 轮。你必须只输出一个 JSON 对象，结构如下：
-{{
-  "facts": {{
-    "round": {round},
-    "phase": "SETUP|RISING|CLIMAX|FALLING|RESOLUTION",
-    "progress": {progress:.2},
-    "events": [
-      {{
-        "type": "SKELETON|CONDITIONAL|PLAYER_ACTION",
-        "description": "客观事实",
-        "participants": ["角色"],
-        "impact": "影响",
-        "cause": "原因"
-      }}
-    ],
-    "world_state_delta": "世界状态变化摘要",
-    "character_state_delta": "主角状态变化摘要",
-    "pacing_instruction": "BUILDUP|TENSION|RELEASE|REFLECTION|CLIMAX",
-    "narrative_constraints": {{
-      "tone": "情绪基调",
-      "focus": "叙事焦点",
-      "length_hint": "短|中|长"
-    }}
-  }},
-  "world_snapshot": {{
-    "current_location": "当前位置",
-    "surroundings": "环境描述",
-    "present_npcs": ["NPC 与态度"],
-    "available_resources": "可用资源",
-    "active_threats": "当前威胁",
-    "recent_events": "近期事件",
-    "emotional_context": "情绪氛围"
-  }},
-  "should_end": true,
-  "ending_hint": "若故事应结束，说明结局方向，否则为 null"
-}}
-
-主角设定：
-{protagonist_profile}
-
-上一轮主角行动：
-{action_payload}
-
-上一轮最终叙事：
-{narrative_payload}
-
-故事最多推进 {max_rounds} 轮；当轮次达到上限时，让故事自然收束。"#,
-            protagonist_profile = self.protagonist_profile,
-            max_rounds = self.max_rounds
-        );
+        let prompt = advance_story_prompt(round, progress, &action_payload, &narrative_payload, self.max_rounds);
 
         self.agent_actor
             .context_mut()

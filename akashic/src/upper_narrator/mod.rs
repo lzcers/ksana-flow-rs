@@ -26,8 +26,8 @@ pub struct UpperNarrator {
 }
 
 impl UpperNarrator {
-    pub fn new(channel: EventChannel) -> Result<Self, String> {
-        let model = build_chat_model()?;
+    pub fn new(channel: EventChannel) -> Self { 
+        let model = build_chat_model();
         let tool_executor = GenericToolExecutor::new();
         let context = Context::new()
             .layer(build_layer(
@@ -52,42 +52,92 @@ impl UpperNarrator {
             ));
         let receiver = channel.subscribe();
         let agent_actor = AgentActor::new(model, tool_executor, context);
-        Ok(Self {
+        Self {
             agent_actor,
             channel,
             receiver,
             pending_ending_cue: None,
-        })
+        }
     }
 
     pub async fn start(mut self) {
         loop {
             match self.receiver.recv().await {
-                Ok(Event::UpperNarrator(UpperNarratorEvent::EndingCueReceived {
-                    round,
-                    cue,
-                })) => {
-                    self.pending_ending_cue = Some((round, cue));
-                }
-                Ok(Event::UpperNarrator(UpperNarratorEvent::NarrationTaskReceived {
-                    round,
-                    task,
-                })) => {
-                    let ending_cue = self
-                        .pending_ending_cue
-                        .take()
-                        .filter(|(cue_round, _)| *cue_round == round)
-                        .map(|(_, cue)| cue);
-                    if let Err(err) = self.render_round(round, task, ending_cue).await {
-                        self.send_error(err).await;
+                Ok(event) => {
+                    if !self.handle_event(event).await {
+                        break;
                     }
                 }
-                Ok(Event::System(SystemEvent::ShutdownRequested))
-                | Ok(Event::FateWeaver(FateWeaverEvent::StoryEnded { .. })) => break,
-                Ok(_) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
             }
+        }
+    }
+
+    async fn handle_event(&mut self, event: Event) -> bool {
+        match event {
+            Event::UpperNarrator(event) => self.handle_upper_narrator(event).await,
+            Event::FateWeaver(event) => self.handle_fate_weaver(event).await,
+            Event::System(event) => self.handle_system(event).await,
+            Event::Protagonist(_) => true,
+        }
+    }
+
+    async fn handle_upper_narrator(&mut self, event: UpperNarratorEvent) -> bool {
+        match event {
+            UpperNarratorEvent::EndingCueReceived { round, cue } => {
+                self.pending_ending_cue = Some((round, cue));
+            }
+            UpperNarratorEvent::NarrationTaskReceived { round, task } => {
+                let ending_cue = self
+                    .pending_ending_cue
+                    .take()
+                    .filter(|(cue_round, _)| *cue_round == round)
+                    .map(|(_, cue)| cue);
+                if let Err(err) = self.render_round(round, task, ending_cue).await {
+                    self.send_error(err).await;
+                }
+            }
+            UpperNarratorEvent::StyleSelected { .. }
+            | UpperNarratorEvent::SceneOutlined { .. }
+            | UpperNarratorEvent::NarrativeChunkProduced { .. }
+            | UpperNarratorEvent::NarrativeCompleted { .. }
+            | UpperNarratorEvent::RevisionRequested { .. }
+            | UpperNarratorEvent::FidelityIssueDetected { .. }
+            | UpperNarratorEvent::ProtocolError { .. } => {}
+        }
+
+        true
+    }
+
+    async fn handle_fate_weaver(&mut self, event: FateWeaverEvent) -> bool {
+        match event {
+            FateWeaverEvent::StoryEnded { .. } => false,
+            FateWeaverEvent::StartRequested
+            | FateWeaverEvent::StopRequested { .. }
+            | FateWeaverEvent::PhaseAdvanced { .. }
+            | FateWeaverEvent::EventsTriggered { .. }
+            | FateWeaverEvent::ConsequencesDerived { .. }
+            | FateWeaverEvent::WorldStateChanged { .. }
+            | FateWeaverEvent::SnapshotPrepared { .. }
+            | FateWeaverEvent::NarrativeRequested { .. }
+            | FateWeaverEvent::ProtagonistDecisionRequested { .. }
+            | FateWeaverEvent::EndingSequenceStarted { .. }
+            | FateWeaverEvent::FinalDecisionRequested { .. }
+            | FateWeaverEvent::NarrativeRevisionDelivered { .. }
+            | FateWeaverEvent::ConsistencyIssuesFound { .. }
+            | FateWeaverEvent::NarrativeRendered { .. }
+            | FateWeaverEvent::PlotSkeletonPrepared { .. }
+            | FateWeaverEvent::ConditionalEventsPrepared { .. }
+            | FateWeaverEvent::ProtocolError { .. }
+            | FateWeaverEvent::ProtagonistActionCommitted { .. } => true,
+        }
+    }
+
+    async fn handle_system(&mut self, event: SystemEvent) -> bool {
+        match event {
+            SystemEvent::ShutdownRequested => false,
+            SystemEvent::AgentError { .. } | SystemEvent::DecisionAutoSelected { .. } => true,
         }
     }
 

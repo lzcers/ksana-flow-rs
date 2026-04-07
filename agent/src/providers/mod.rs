@@ -5,7 +5,7 @@ mod types;
 mod utils;
 
 // 重导出公共接口
-pub use deepseek::{DeepSeekProvider, deepseek_provider, deepseek_provider_from_env, deepseek_provider_from_env_with_json};
+pub use deepseek::{DeepSeekProvider, deepseek_provider, deepseek_provider_from_env};
 pub use openai_compatible::OpenAICompatibleProvider;
 pub use openrouter::{
     OpenRouterProvider, openrouter_provider, openrouter_provider_from_env,

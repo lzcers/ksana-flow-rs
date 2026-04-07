@@ -4,6 +4,14 @@ use crate::{
     },
     upper_narrator::{FactFragment, NarrationTask},
 };
+#[allow(unused_imports)]
+pub use payload::{
+    ConditionalEventTemplate, ConsequenceFact, ConsistencyIssue, EmergentEnding, EndingCatalyst,
+    FateWeaverEndingKind, FateWeaverEvent, FateWeaverEventKind, FateWeaverPacing,
+    FateWeaverPhase, FateWeaverStopReason, FinalDecisionFrame, NarrationBrief,
+    NarrativeConstraints, PlotBeatTemplate, ProtagonistActionDigest,
+    ProtagonistDecisionFrame, ProtagonistWorldSnapshot, TriggeredWorldEvent, WorldStateDelta,
+};
 
 pub mod payload {
     use crate::upper_narrator::{PacingInstruction, StoryPhase};
@@ -314,14 +322,6 @@ pub mod payload {
     }
 }
 
-#[allow(unused_imports)]
-pub use payload::{
-    ConditionalEventTemplate, ConsequenceFact, ConsistencyIssue, EmergentEnding, EndingCatalyst,
-    FateWeaverEndingKind, FateWeaverEvent, FateWeaverEventKind, FateWeaverPacing,
-    FateWeaverPhase, FateWeaverStopReason, FinalDecisionFrame, NarrationBrief,
-    NarrativeConstraints, PlotBeatTemplate, ProtagonistActionDigest,
-    ProtagonistDecisionFrame, ProtagonistWorldSnapshot, TriggeredWorldEvent, WorldStateDelta,
-};
 
 pub mod parse {
     use super::{

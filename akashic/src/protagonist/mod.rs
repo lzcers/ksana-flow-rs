@@ -35,8 +35,8 @@ struct PendingTurn {
 }
 
 impl Protagonist {
-    pub fn new(profile: String, channel: EventChannel) -> Result<Self, String> {
-        let model = build_chat_model()?;
+    pub fn new(profile: String, channel: EventChannel) -> Self {
+        let model = build_chat_model();
         let tool_executor = GenericToolExecutor::new();
         let system_prompt = SYS_PROMPT.replace("{input}", &profile);
         let context = Context::new()
@@ -68,74 +68,120 @@ impl Protagonist {
             ));
         let receiver = channel.subscribe();
         let agent_actor = AgentActor::new(model, tool_executor, context);
-        Ok(Self {
+        Self {
             agent_actor,
             channel,
             receiver,
             pending_turn: None,
-        })
+        }
     }
 
     pub async fn start(mut self) {
         loop {
             match self.receiver.recv().await {
-                Ok(Event::Protagonist(ProtagonistEvent::WorldPerceived {
-                    round,
-                    perception,
-                })) => {
-                    let pending = self.pending_turn.get_or_insert(PendingTurn {
-                        round,
-                        perception: None,
-                        decision_frame: None,
-                        final_decision_frame: None,
-                    });
-                    if pending.round == round {
-                        pending.perception = Some(perception);
-                    }
-                    if let Err(err) = self.try_respond(round).await {
-                        self.send_error(err).await;
+                Ok(event) => {
+                    if !self.handle_event(event).await {
+                        break;
                     }
                 }
-                Ok(Event::Protagonist(ProtagonistEvent::DecisionFrameReceived {
-                    round,
-                    frame,
-                })) => {
-                    let pending = self.pending_turn.get_or_insert(PendingTurn {
-                        round,
-                        perception: None,
-                        decision_frame: None,
-                        final_decision_frame: None,
-                    });
-                    if pending.round == round {
-                        pending.decision_frame = Some(frame);
-                    }
-                    if let Err(err) = self.try_respond(round).await {
-                        self.send_error(err).await;
-                    }
-                }
-                Ok(Event::Protagonist(ProtagonistEvent::FinalDecisionFrameReceived {
-                    round,
-                    frame,
-                })) => {
-                    let pending = self.pending_turn.get_or_insert(PendingTurn {
-                        round,
-                        perception: None,
-                        decision_frame: None,
-                        final_decision_frame: None,
-                    });
-                    if pending.round == round {
-                        pending.final_decision_frame = Some(frame);
-                    }
-                    if let Err(err) = self.try_respond(round).await {
-                        self.send_error(err).await;
-                    }
-                }
-                Ok(Event::System(SystemEvent::ShutdownRequested))
-                | Ok(Event::FateWeaver(FateWeaverEvent::StoryEnded { .. })) => break,
-                Ok(_) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
             }
+        }
+    }
+
+    async fn handle_event(&mut self, event: Event) -> bool {
+        match event {
+            Event::Protagonist(event) => self.handle_protagonist(event).await,
+            Event::FateWeaver(event) => self.handle_fate_weaver(event).await,
+            Event::System(event) => self.handle_system(event).await,
+            Event::UpperNarrator(_) => true,
+        }
+    }
+
+    async fn handle_protagonist(&mut self, event: ProtagonistEvent) -> bool {
+        match event {
+            ProtagonistEvent::WorldPerceived { round, perception } => {
+                let pending = self.pending_turn.get_or_insert(PendingTurn {
+                    round,
+                    perception: None,
+                    decision_frame: None,
+                    final_decision_frame: None,
+                });
+                if pending.round == round {
+                    pending.perception = Some(perception);
+                }
+                if let Err(err) = self.try_respond(round).await {
+                    self.send_error(err).await;
+                }
+            }
+            ProtagonistEvent::DecisionFrameReceived { round, frame } => {
+                let pending = self.pending_turn.get_or_insert(PendingTurn {
+                    round,
+                    perception: None,
+                    decision_frame: None,
+                    final_decision_frame: None,
+                });
+                if pending.round == round {
+                    pending.decision_frame = Some(frame);
+                }
+                if let Err(err) = self.try_respond(round).await {
+                    self.send_error(err).await;
+                }
+            }
+            ProtagonistEvent::FinalDecisionFrameReceived { round, frame } => {
+                let pending = self.pending_turn.get_or_insert(PendingTurn {
+                    round,
+                    perception: None,
+                    decision_frame: None,
+                    final_decision_frame: None,
+                });
+                if pending.round == round {
+                    pending.final_decision_frame = Some(frame);
+                }
+                if let Err(err) = self.try_respond(round).await {
+                    self.send_error(err).await;
+                }
+            }
+            ProtagonistEvent::OptionsPrepared { .. }
+            | ProtagonistEvent::DecisionRequested { .. }
+            | ProtagonistEvent::ActionCommitted { .. }
+            | ProtagonistEvent::GrowthUpdated { .. }
+            | ProtagonistEvent::KnowledgeLimitReached { .. }
+            | ProtagonistEvent::ProtocolError { .. } => {}
+        }
+
+        true
+    }
+
+    async fn handle_fate_weaver(&mut self, event: FateWeaverEvent) -> bool {
+        match event {
+            FateWeaverEvent::StoryEnded { .. } => false,
+            FateWeaverEvent::StartRequested
+            | FateWeaverEvent::StopRequested { .. }
+            | FateWeaverEvent::PhaseAdvanced { .. }
+            | FateWeaverEvent::EventsTriggered { .. }
+            | FateWeaverEvent::ConsequencesDerived { .. }
+            | FateWeaverEvent::WorldStateChanged { .. }
+            | FateWeaverEvent::SnapshotPrepared { .. }
+            | FateWeaverEvent::NarrativeRequested { .. }
+            | FateWeaverEvent::ProtagonistDecisionRequested { .. }
+            | FateWeaverEvent::EndingSequenceStarted { .. }
+            | FateWeaverEvent::FinalDecisionRequested { .. }
+            | FateWeaverEvent::NarrativeRevisionDelivered { .. }
+            | FateWeaverEvent::ConsistencyIssuesFound { .. }
+            | FateWeaverEvent::NarrativeRendered { .. }
+            | FateWeaverEvent::PlotSkeletonPrepared { .. }
+            | FateWeaverEvent::ConditionalEventsPrepared { .. }
+            | FateWeaverEvent::ProtocolError { .. }
+            | FateWeaverEvent::ProtagonistActionCommitted { .. } => true,
+        }
+    }
+
+    async fn handle_system(&mut self, event: SystemEvent) -> bool {
+        match event {
+            SystemEvent::ShutdownRequested => false,
+            SystemEvent::AgentError { .. } | SystemEvent::DecisionAutoSelected { .. } => true,
         }
     }
 

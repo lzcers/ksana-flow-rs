@@ -1,6 +1,5 @@
 use super::{OpenAICompatibleProvider, ProviderError};
-use std::{collections::HashMap, env};
-use serde_json::to_string;
+use std::{env};
 
 /// 创建 DeepSeek provider
 ///
@@ -23,9 +22,5 @@ pub fn deepseek_provider_from_env() -> Result<OpenAICompatibleProvider, Provider
     Ok(deepseek_provider(api_key))
 }
 
-pub fn deepseek_provider_from_env_with_json() -> Result<OpenAICompatibleProvider, ProviderError> {
-    let api_key = env::var("DEEPSEEK_API_KEY").map_err(|_| ProviderError::MissingApiKey)?;
-    Ok(deepseek_provider(api_key))
-}
 
 pub type DeepSeekProvider = OpenAICompatibleProvider;
