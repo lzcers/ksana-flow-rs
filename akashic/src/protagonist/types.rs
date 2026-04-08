@@ -37,21 +37,6 @@ pub mod payload {
             round: u32,
             action: ActionCommand,
         },
-        /// 广播主角在当前轮中的成长变化。
-        GrowthUpdated {
-            round: u32,
-            growth: CharacterGrowthDelta,
-        },
-        /// 广播主角认知边界触发后的信息缺口。
-        KnowledgeLimitReached {
-            round: u32,
-            gap: KnowledgeGap,
-        },
-        /// 广播主角协议层或决策流程错误。
-        ProtocolError {
-            round: Option<u32>,
-            message: String,
-        },
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -169,21 +154,6 @@ pub mod payload {
         pub expected_outcome: String,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct CharacterGrowthDelta {
-        pub belief_shift: String,
-        pub motive_shift: String,
-        pub emotional_state: String,
-        pub hesitation: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct KnowledgeGap {
-        pub subject: String,
-        pub boundary: String,
-        pub suggested_probe: String,
-    }
-
     impl ActionRisk {
         pub fn from_raw(value: &str) -> Self {
             match value {
@@ -261,9 +231,9 @@ pub mod payload {
 
 #[allow(unused_imports)]
 pub use payload::{
-    ActionCommand, ActionOption, ActionRisk, CharacterFit, CharacterGrowthDelta, DecisionConfidence,
-    DecisionFrame, DecisionImportance, FinalDecisionFrame, KnowledgeGap, ProtagonistActionType,
-    ProtagonistEvent, ProtagonistPerception, TimePressure, UserDecisionRequest,
+    ActionCommand, ActionOption, ActionRisk, CharacterFit, DecisionConfidence, DecisionFrame,
+    DecisionImportance, FinalDecisionFrame, ProtagonistActionType, ProtagonistEvent,
+    ProtagonistPerception, TimePressure, UserDecisionRequest,
 };
 
 pub mod parse {

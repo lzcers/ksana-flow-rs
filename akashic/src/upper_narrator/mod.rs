@@ -101,10 +101,7 @@ impl UpperNarrator {
             UpperNarratorEvent::StyleSelected { .. }
             | UpperNarratorEvent::SceneOutlined { .. }
             | UpperNarratorEvent::NarrativeChunkProduced { .. }
-            | UpperNarratorEvent::NarrativeCompleted { .. }
-            | UpperNarratorEvent::RevisionRequested { .. }
-            | UpperNarratorEvent::FidelityIssueDetected { .. }
-            | UpperNarratorEvent::ProtocolError { .. } => {}
+            | UpperNarratorEvent::NarrativeCompleted { .. } => {}
         }
 
         true
@@ -114,7 +111,6 @@ impl UpperNarrator {
         match event {
             FateWeaverEvent::StoryEnded { .. } => false,
             FateWeaverEvent::StartRequested
-            | FateWeaverEvent::StopRequested { .. }
             | FateWeaverEvent::PhaseAdvanced { .. }
             | FateWeaverEvent::EventsTriggered { .. }
             | FateWeaverEvent::ConsequencesDerived { .. }
@@ -124,13 +120,7 @@ impl UpperNarrator {
             | FateWeaverEvent::ProtagonistDecisionRequested { .. }
             | FateWeaverEvent::EndingSequenceStarted { .. }
             | FateWeaverEvent::FinalDecisionRequested { .. }
-            | FateWeaverEvent::NarrativeRevisionDelivered { .. }
-            | FateWeaverEvent::ConsistencyIssuesFound { .. }
-            | FateWeaverEvent::NarrativeRendered { .. }
-            | FateWeaverEvent::PlotSkeletonPrepared { .. }
-            | FateWeaverEvent::ConditionalEventsPrepared { .. }
-            | FateWeaverEvent::ProtocolError { .. }
-            | FateWeaverEvent::ProtagonistActionCommitted { .. } => true,
+            | FateWeaverEvent::NarrativeRendered { .. } => true,
         }
     }
 

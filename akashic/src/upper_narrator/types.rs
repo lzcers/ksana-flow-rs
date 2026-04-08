@@ -1,5 +1,5 @@
 pub mod payload {
-    use super::parse::{EndingCue, NarrationTask, RevisionFeedback};
+    use super::parse::{EndingCue, NarrationTask};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -10,11 +10,6 @@ pub mod payload {
         NarrationTaskReceived {
             round: u32,
             task: NarrationTask,
-        },
-        /// 请求上层叙事者根据反馈修订既有叙事。
-        RevisionRequested {
-            round: u32,
-            feedback: RevisionFeedback,
         },
         /// 广播本轮附带的结局提示信息。
         EndingCueReceived {
@@ -41,16 +36,6 @@ pub mod payload {
         NarrativeCompleted {
             round: u32,
             narrative: RenderedNarrative,
-        },
-        /// 广播叙事忠实度审查发现的问题。
-        FidelityIssueDetected {
-            round: u32,
-            issue: FidelityIssue,
-        },
-        /// 广播上层叙事者协议层或渲染流程错误。
-        ProtocolError {
-            round: Option<u32>,
-            message: String,
         },
     }
 
@@ -98,13 +83,6 @@ pub mod payload {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct FidelityIssue {
-        pub scope: String,
-        pub detail: String,
-        pub fix_hint: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub struct RenderedNarrative {
         pub text: String,
         pub style: NarrativeStyle,
@@ -146,12 +124,12 @@ pub mod payload {
 
 #[allow(unused_imports)]
 pub use payload::{
-    FidelityIssue, NarrativePerspective, NarrativeStyle, PacingInstruction, RenderedNarrative,
-    SceneBeat, StoryPhase, UpperNarratorEvent,
+    NarrativePerspective, NarrativeStyle, PacingInstruction, RenderedNarrative, SceneBeat,
+    StoryPhase, UpperNarratorEvent,
 };
 
 pub mod parse {
-    use super::{FidelityIssue, PacingInstruction, SceneBeat, StoryPhase};
+    use super::{PacingInstruction, SceneBeat, StoryPhase};
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -172,12 +150,6 @@ pub mod parse {
         pub length_hint: String,
         pub facts: Vec<FactFragment>,
         pub should_end: bool,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct RevisionFeedback {
-        pub issues: Vec<FidelityIssue>,
-        pub preserve: Vec<String>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -202,4 +174,4 @@ pub mod parse {
 }
 
 #[allow(unused_imports)]
-pub use parse::{EndingCue, FactFragment, NarrationTask, RevisionFeedback};
+pub use parse::{EndingCue, FactFragment, NarrationTask};

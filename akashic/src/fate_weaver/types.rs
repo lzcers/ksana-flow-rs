@@ -6,11 +6,10 @@ use crate::{
 };
 #[allow(unused_imports)]
 pub use payload::{
-    ConditionalEventTemplate, ConsequenceFact, ConsistencyIssue, EmergentEnding, EndingCatalyst,
-    FateWeaverEndingKind, FateWeaverEvent, FateWeaverEventKind, FateWeaverPacing,
-    FateWeaverPhase, FateWeaverStopReason, FinalDecisionFrame, NarrationBrief,
-    NarrativeConstraints, PlotBeatTemplate, ProtagonistActionDigest,
-    ProtagonistDecisionFrame, ProtagonistWorldSnapshot, TriggeredWorldEvent, WorldStateDelta,
+    ConsequenceFact, EmergentEnding, EndingCatalyst, FateWeaverEndingKind, FateWeaverEvent,
+    FateWeaverEventKind, FateWeaverPacing, FateWeaverPhase, FinalDecisionFrame, NarrationBrief,
+    NarrativeConstraints, ProtagonistDecisionFrame, ProtagonistWorldSnapshot,
+    TriggeredWorldEvent, WorldStateDelta,
 };
 
 pub mod payload {
@@ -23,32 +22,10 @@ pub mod payload {
     pub enum FateWeaverEvent {
         /// 请求启动整段故事流程。
         StartRequested,
-        /// 记录主角已经提交给世界编排器的行动摘要。
-        ProtagonistActionCommitted {
-            round: u32,
-            action: ProtagonistActionDigest,
-        },
         /// 记录某一轮最终叙事文本已经产出。
         NarrativeRendered {
             round: u32,
             narrative: String,
-        },
-        /// 记录针对既有叙事文本的修订结果。
-        NarrativeRevisionDelivered {
-            round: u32,
-            narrative: String,
-        },
-        /// 请求停止命运编织者的推进循环。
-        StopRequested {
-            reason: FateWeaverStopReason,
-        },
-        /// 广播故事骨架事件模板已准备完成。
-        PlotSkeletonPrepared {
-            beats: Vec<PlotBeatTemplate>,
-        },
-        /// 广播条件事件候选池已准备完成。
-        ConditionalEventsPrepared {
-            events: Vec<ConditionalEventTemplate>,
         },
         /// 广播故事阶段与整体进度已推进。
         PhaseAdvanced {
@@ -86,11 +63,6 @@ pub mod payload {
             round: u32,
             frame: ProtagonistDecisionFrame,
         },
-        /// 广播一致性审核发现的问题。
-        ConsistencyIssuesFound {
-            round: u32,
-            issues: Vec<ConsistencyIssue>,
-        },
         /// 广播故事已进入终局收束阶段。
         EndingSequenceStarted {
             round: u32,
@@ -105,11 +77,6 @@ pub mod payload {
         StoryEnded {
             round: u32,
             ending: EmergentEnding,
-        },
-        /// 广播命运编织者协议层或流程层错误。
-        ProtocolError {
-            round: Option<u32>,
-            message: String,
         },
     }
 
@@ -144,35 +111,12 @@ pub mod payload {
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     #[serde(rename_all = "snake_case")]
-    pub enum FateWeaverStopReason {
-        UserRequested,
-        RoundLimitReached,
-        ExternalAbort,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    #[serde(rename_all = "snake_case")]
     pub enum FateWeaverEndingKind {
         Tragedy,
         Triumph,
         Bittersweet,
         Transformation,
         OpenEnded,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct PlotBeatTemplate {
-        pub beat_id: String,
-        pub label: String,
-        pub trigger_progress: u8,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct ConditionalEventTemplate {
-        pub event_id: String,
-        pub label: String,
-        pub trigger_condition: String,
-        pub cooldown_hint: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -194,14 +138,6 @@ pub mod payload {
     pub struct WorldStateDelta {
         pub domain: String,
         pub summary: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct ProtagonistActionDigest {
-        pub action: String,
-        pub target: String,
-        pub approach: String,
-        pub intent: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -237,13 +173,6 @@ pub mod payload {
         pub objective: String,
         pub urgency: String,
         pub stakes: String,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-    pub struct ConsistencyIssue {
-        pub scope: String,
-        pub detail: String,
-        pub expected_fix: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -522,3 +451,11 @@ pub mod parse {
 
 #[allow(unused_imports)]
 pub use parse::{FateRoundEnvelope, RoundFacts, WorldFact, WorldSnapshot};
+
+
+
+pub enum FateWeaverMessage {
+    /// 请求启动整段故事流程。
+    StartRequested,
+    
+}

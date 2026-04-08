@@ -119,7 +119,7 @@ impl FateWeaver {
                 }
                 true
             }
-            FateWeaverEvent::StopRequested { .. } | FateWeaverEvent::StoryEnded { .. } => false,
+            FateWeaverEvent::StoryEnded { .. } => false,
             FateWeaverEvent::PhaseAdvanced { .. }
             | FateWeaverEvent::EventsTriggered { .. }
             | FateWeaverEvent::ConsequencesDerived { .. }
@@ -129,13 +129,7 @@ impl FateWeaver {
             | FateWeaverEvent::ProtagonistDecisionRequested { .. }
             | FateWeaverEvent::EndingSequenceStarted { .. }
             | FateWeaverEvent::FinalDecisionRequested { .. }
-            | FateWeaverEvent::NarrativeRevisionDelivered { .. }
-            | FateWeaverEvent::ConsistencyIssuesFound { .. }
-            | FateWeaverEvent::NarrativeRendered { .. }
-            | FateWeaverEvent::PlotSkeletonPrepared { .. }
-            | FateWeaverEvent::ConditionalEventsPrepared { .. }
-            | FateWeaverEvent::ProtocolError { .. }
-            | FateWeaverEvent::ProtagonistActionCommitted { .. } => true,
+            | FateWeaverEvent::NarrativeRendered { .. } => true,
         }
     }
 
@@ -165,10 +159,7 @@ impl FateWeaver {
             ProtagonistEvent::WorldPerceived { .. }
             | ProtagonistEvent::DecisionFrameReceived { .. }
             | ProtagonistEvent::FinalDecisionFrameReceived { .. }
-            | ProtagonistEvent::OptionsPrepared { .. }
-            | ProtagonistEvent::GrowthUpdated { .. }
-            | ProtagonistEvent::KnowledgeLimitReached { .. }
-            | ProtagonistEvent::ProtocolError { .. } => {}
+            | ProtagonistEvent::OptionsPrepared { .. } => {}
         }
 
         true
@@ -187,13 +178,10 @@ impl FateWeaver {
                 }
             }
             UpperNarratorEvent::NarrationTaskReceived { .. }
-            | UpperNarratorEvent::RevisionRequested { .. }
             | UpperNarratorEvent::EndingCueReceived { .. }
             | UpperNarratorEvent::StyleSelected { .. }
             | UpperNarratorEvent::SceneOutlined { .. }
-            | UpperNarratorEvent::NarrativeChunkProduced { .. }
-            | UpperNarratorEvent::FidelityIssueDetected { .. }
-            | UpperNarratorEvent::ProtocolError { .. } => {}
+            | UpperNarratorEvent::NarrativeChunkProduced { .. } => {}
         }
 
         true
@@ -238,7 +226,7 @@ impl FateWeaver {
             action: None,
         });
 
-        let phase = envelope.phase();
+        let phase= envelope.phase();
         let pacing = envelope.pacing();
         let triggered_events = envelope
             .facts

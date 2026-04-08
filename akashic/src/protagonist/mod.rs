@@ -145,10 +145,7 @@ impl Protagonist {
             }
             ProtagonistEvent::OptionsPrepared { .. }
             | ProtagonistEvent::DecisionRequested { .. }
-            | ProtagonistEvent::ActionCommitted { .. }
-            | ProtagonistEvent::GrowthUpdated { .. }
-            | ProtagonistEvent::KnowledgeLimitReached { .. }
-            | ProtagonistEvent::ProtocolError { .. } => {}
+            | ProtagonistEvent::ActionCommitted { .. } => {}
         }
 
         true
@@ -158,7 +155,6 @@ impl Protagonist {
         match event {
             FateWeaverEvent::StoryEnded { .. } => false,
             FateWeaverEvent::StartRequested
-            | FateWeaverEvent::StopRequested { .. }
             | FateWeaverEvent::PhaseAdvanced { .. }
             | FateWeaverEvent::EventsTriggered { .. }
             | FateWeaverEvent::ConsequencesDerived { .. }
@@ -168,13 +164,7 @@ impl Protagonist {
             | FateWeaverEvent::ProtagonistDecisionRequested { .. }
             | FateWeaverEvent::EndingSequenceStarted { .. }
             | FateWeaverEvent::FinalDecisionRequested { .. }
-            | FateWeaverEvent::NarrativeRevisionDelivered { .. }
-            | FateWeaverEvent::ConsistencyIssuesFound { .. }
-            | FateWeaverEvent::NarrativeRendered { .. }
-            | FateWeaverEvent::PlotSkeletonPrepared { .. }
-            | FateWeaverEvent::ConditionalEventsPrepared { .. }
-            | FateWeaverEvent::ProtocolError { .. }
-            | FateWeaverEvent::ProtagonistActionCommitted { .. } => true,
+            | FateWeaverEvent::NarrativeRendered { .. } => true,
         }
     }
 
