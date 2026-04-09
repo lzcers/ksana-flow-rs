@@ -3,9 +3,10 @@ use crate::core::{Message, Usage};
 use crate::models::ChatCapability;
 use async_stream::stream;
 use futures::{Stream, StreamExt};
+use serde::{Deserialize, Serialize};
 
 /// 工具执行结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CallToolResult {
     /// 工具调用 ID
     pub call_id: String,

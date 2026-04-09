@@ -25,7 +25,7 @@ pub fn build_chat_model() -> ChatModel {
 
     let model_name = env::var("AKASHIC_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
     let mut model = ChatModel::new();
-    // model.set_output_json(true);
+    model.set_output_json(true);
 
     if let Ok(provider) = deepseek_provider_from_env() {
         model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], Arc::new(provider));

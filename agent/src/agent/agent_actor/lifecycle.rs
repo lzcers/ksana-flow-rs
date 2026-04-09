@@ -3,6 +3,7 @@ use std::pin::pin;
 use std::time::Duration;
 
 use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use super::AgentActorEvent;
@@ -26,7 +27,7 @@ use crate::models::ChatCapability;
 //   - BeforeCallTools: 扩展工具执行前治理。适合做权限审批、参数修正、工具路由、并发/超时/重试策略、缓存命中、危险工具拦截。
 //   - AfterCallTools: 扩展工具结果后处理。适合做结果标准化、错误映射、脱敏、结果持久化、缓存写回、把工具输出整理成下一轮上下文。
 //   - AfterStep: 扩展 step 提交与收尾。适合做上下文落库、iteration 自增、状态迁移、发送迭代事件、生成审计记录、判断终态。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum LifeCycle {
     BeforeStep,
     BeforeCallModel,
@@ -47,7 +48,7 @@ pub enum StepExecutionResult {
     AskUser { question: String },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum LifeCycleInterrupt {
     // 错误中断
     HookError(LifeCycle, String, String),
@@ -140,14 +141,14 @@ impl Default for LifeCycleContext {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ModelOuput {
     pub content: String,
     pub reasoning_content: Option<String>,
     pub tools_call: Option<Vec<ToolCall>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StepMetrics {
     pub call_model_duration_ms: Option<u32>,
     pub call_tools_duration_ms: Option<u32>,
@@ -162,7 +163,7 @@ impl Default for StepMetrics {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StepFrame {
     pub model_output: Option<ModelOuput>,
     pub tools_result: Option<Vec<CallToolResult>>,

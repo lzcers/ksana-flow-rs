@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -8,7 +9,7 @@ use crate::agent::{
 };
 
 /// Agent 执行错误类型
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error, Deserialize, Serialize)]
 pub enum AgentError {
     /// 用户取消
     #[error("Cancelled by user")]
@@ -24,7 +25,7 @@ pub enum AgentError {
 }
 
 /// Actor 产生的事件
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum AgentActorEvent {
     /// 流式输出片段
     ContentChunk(String),
@@ -156,7 +157,7 @@ impl AgentActorHandle {
 }
 
 /// 单步执行结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum StepResult {
     /// 需要继续执行（有工具调用）
     Continue {
