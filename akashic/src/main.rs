@@ -19,8 +19,6 @@ async fn main() {
         10,
     );
     let protagonist = Protagonist::new(DEFAULT_PROTAGONIST_PROFILE.to_string());
-
-
     let fate_task = tokio::spawn(fate_weaver.start());
     // let protagonist_task = tokio::spawn(protagonist.start());
     // let narrator_task = tokio::spawn(upper_narrator.start());
@@ -30,3 +28,4 @@ async fn main() {
     // let _ = protagonist_task.await;
     // let _ =narrator_task.await;
    }
+ 

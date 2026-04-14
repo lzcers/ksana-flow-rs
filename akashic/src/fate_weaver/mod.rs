@@ -71,24 +71,27 @@ impl FateWeaver {
 
     // Agent 启动后就纯靠消息驱动了
     pub async fn start(mut self) {
-        while let Ok(msg) = self.channel.subscribe_msg().recv().await {
-            match msg {
-                AgentMessage::FateWeaver(fate_weaver_msg) => self.handle_fate_weaver_message(&fate_weaver_msg).await,
-                AgentMessage::Protagonist(protagonist_msg) => self.handle_protagonist_message(&protagonist_msg).await,
+        let mut sub_msg= self.channel.subscribe_msg();
+        loop {
+            println!("FateWeaver start");
+            if let Ok(msg) = sub_msg.recv().await {
+                match msg {
+                    AgentMessage::FateWeaver(fate_weaver_msg) => self.handle_fate_weaver_message(&fate_weaver_msg).await,
+                    AgentMessage::Protagonist(protagonist_msg) => self.handle_protagonist_message(&protagonist_msg).await,
+                }
             }
         }
     }
 
-
     async fn handle_fate_weaver_message(&mut self, fate_weaver_msg: &FateWeaverMessage) {
         match fate_weaver_msg {
             FateWeaverMessage::Start => {
-                println!("Start");
                 self.current_round += 1;
                 self.next().await;
             }
         }
     }
+
     async fn handle_protagonist_message(&mut self, protagonist_msg: &ProtagonistMessage) {
         match protagonist_msg {
             ProtagonistMessage::Action => {
@@ -111,8 +114,7 @@ impl FateWeaver {
         tokio::spawn(async move {
             // 根据上下文进行下一轮推演
             while let Some(event) = rx.recv().await {
-                println!("{:?}", event);
-                // let _ = evt_sender.send(AkashicEvent::AgentActor(event));
+                let _ = evt_sender.send(AkashicEvent::AgentActor(event));
             }
         });
         self.agent_actor.run_step(Some(tx)).await;

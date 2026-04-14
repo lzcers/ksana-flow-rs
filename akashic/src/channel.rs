@@ -106,7 +106,9 @@ impl MessageChannel {
     }
 
     pub fn send(&self, event: impl Into<AgentMessage>) {
-        let _ = self.channel.send(event.into());
+        if let Err(res) = self.channel.send(event.into()) {
+            eprintln!("Error sending message: {:?}", res);
+        }
     }
 }
 
