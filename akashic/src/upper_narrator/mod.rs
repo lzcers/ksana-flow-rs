@@ -7,7 +7,9 @@ use agent::{
 };
 use serde_json::json;
 use prompt::SYS_PORMPT;
+use tokio::sync::mpsc;
 use crate::{
+    channel::UpperNarratorMessage,
     shared::{build_chat_model, build_layer},
 };
 
@@ -47,8 +49,12 @@ impl UpperNarrator {
         }
     }
 
-    pub async fn start(mut self) {
-   
+    pub async fn start(self, mut inbox: mpsc::Receiver<UpperNarratorMessage>) {
+        while let Some(message) = inbox.recv().await {
+            match message {
+                UpperNarratorMessage::DraftScene => {}
+            }
+        }
     }
 
 

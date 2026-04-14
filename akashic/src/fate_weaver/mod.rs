@@ -8,7 +8,7 @@ use serde_json::json;
 use prompt::SYS_PROMPT;
 use tokio::sync::mpsc;
 
-use crate::{ channel::{AgentChannel, AgentMessage, AkashicEvent, FateWeaverMessage, ProtagonistMessage}, fate_weaver::types::FateNode, shared::{build_chat_model, build_layer}};
+use crate::{ channel::{AgentChannel, AkashicEvent, FateWeaverMessage}, fate_weaver::types::FateNode, shared::{build_chat_model, build_layer}};
 
 
 pub struct FateWeaver {
@@ -70,37 +70,20 @@ impl FateWeaver {
     }
 
     // Agent 启动后就纯靠消息驱动了
-    pub async fn start(mut self) {
-        let mut sub_msg= self.channel.subscribe_msg();
-        loop {
-            println!("FateWeaver start");
-            if let Ok(msg) = sub_msg.recv().await {
-                match msg {
-                    AgentMessage::FateWeaver(fate_weaver_msg) => self.handle_fate_weaver_message(&fate_weaver_msg).await,
-                    AgentMessage::Protagonist(protagonist_msg) => self.handle_protagonist_message(&protagonist_msg).await,
+    pub async fn start(mut self, mut inbox: mpsc::Receiver<FateWeaverMessage>) {
+        while let Some(msg) = inbox.recv().await {
+            match msg {
+                FateWeaverMessage::Start => {
+                    self.current_round += 1;
+                    self.next().await;
                 }
             }
         }
     }
 
-    async fn handle_fate_weaver_message(&mut self, fate_weaver_msg: &FateWeaverMessage) {
-        match fate_weaver_msg {
-            FateWeaverMessage::Start => {
-                self.current_round += 1;
-                self.next().await;
-            }
-        }
-    }
-
-    async fn handle_protagonist_message(&mut self, protagonist_msg: &ProtagonistMessage) {
-        match protagonist_msg {
-            ProtagonistMessage::Action => {
-            }
-        }
-    }
 
 
-    fn handle_fate_node(&mut self, fate_node: &FateNode) {
+    fn handle_fate_node(&mut self, _fate_node: &FateNode) {
         // todo:  解析并处理 choices
         // 如果 choices 为空，那么直接将 compact_context 发送给叙事者，然后写入当前上下文
         // 如果 choices 不为空，那么将 choices 发送给主角，等待主角响应

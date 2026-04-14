@@ -2,7 +2,7 @@ use std::{io, time::Duration};
 
 use agent::agent::AgentActorEvent;
 use akashic::{
-    channel::{AgentChannel, AgentMessage, AkashicEvent, FateWeaverMessage}, fate_weaver::FateWeaver, profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE}
+    channel::{AgentChannel, AkashicEvent, FateWeaverMessage}, fate_weaver::FateWeaver, profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE}
 };
 use anyhow::Result;
 use crossterm::{
@@ -113,7 +113,7 @@ async fn main() -> Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
-    let mut channel = AgentChannel::new();
+    let (channel, inboxes) = AgentChannel::new();
     let fate_weaver = FateWeaver::new(
         DEFAULT_PROTAGONIST_PROFILE.to_string(),
         DEFAULT_WORLD_PROFILE.to_string(),
@@ -121,16 +121,16 @@ async fn main() -> Result<()> {
         10,
     );
     let mut app = App::new();
-    let mut agent_closed = false;
+    let mut events = channel.subscribe_event();
 
     tokio::spawn(async move {
-        fate_weaver.start().await;
+        fate_weaver.start(inboxes.fate_weaver).await;
     });
     
-    channel.send_msg(AgentMessage::FateWeaver(FateWeaverMessage::Start));
+    let _ = channel.send_fate_weaver(FateWeaverMessage::Start).await;
 
     loop {
-        while let Ok(event) = channel.subscribe_event().try_recv() {
+        while let Ok(event) = events.try_recv() {
             match event {
                 AkashicEvent::AgentActor(event) => app.on_agent_event(event),
                 _ => {}

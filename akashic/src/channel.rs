@@ -1,6 +1,6 @@
 use agent::agent::AgentActorEvent;
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
@@ -74,13 +74,6 @@ pub struct MessageMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum AgentMessage {
-    FateWeaver(FateWeaverMessage),
-    Protagonist(ProtagonistMessage),
-}
-
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FateWeaverMessage {
     Start,
 }
@@ -89,59 +82,75 @@ pub enum ProtagonistMessage {
     Action
 }
 
-// Agent 之间通信的消息通道
-#[derive(Clone)]
-struct MessageChannel {
-    channel: broadcast::Sender<AgentMessage>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UpperNarratorMessage {
+    DraftScene,
 }
 
-impl MessageChannel {
-    pub fn new() -> Self {
-        let (tx, _) = broadcast::channel::<AgentMessage>(64);
-        Self { channel: tx }
-    }
-
-    pub fn subscribe(&self) -> broadcast::Receiver<AgentMessage> {
-        self.channel.subscribe()
-    }
-
-    pub fn send(&self, event: impl Into<AgentMessage>) {
-        if let Err(res) = self.channel.send(event.into()) {
-            eprintln!("Error sending message: {:?}", res);
-        }
-    }
+pub struct AgentInboxes {
+    pub fate_weaver: mpsc::Receiver<FateWeaverMessage>,
+    pub protagonist: mpsc::Receiver<ProtagonistMessage>,
+    pub upper_narrator: mpsc::Receiver<UpperNarratorMessage>,
 }
 
 
 #[derive(Clone)]
 pub struct AgentChannel {
     event: EventChannel,
-    msg: MessageChannel,
+    fate_weaver_tx: mpsc::Sender<FateWeaverMessage>,
+    protagonist_tx: mpsc::Sender<ProtagonistMessage>,
+    upper_narrator_tx: mpsc::Sender<UpperNarratorMessage>,
 }
 
 impl AgentChannel {
-    pub fn new() -> Self {
-        Self {
-            event: EventChannel::new(),
-            msg: MessageChannel::new(),
-        }
+    pub fn new() -> (Self, AgentInboxes) {
+        let (fate_weaver_tx, fate_weaver_rx) = mpsc::channel(64);
+        let (protagonist_tx, protagonist_rx) = mpsc::channel(64);
+        let (upper_narrator_tx, upper_narrator_rx) = mpsc::channel(64);
+        (
+            Self {
+                event: EventChannel::new(),
+                fate_weaver_tx,
+                protagonist_tx,
+                upper_narrator_tx,
+            },
+            AgentInboxes {
+                fate_weaver: fate_weaver_rx,
+                protagonist: protagonist_rx,
+                upper_narrator: upper_narrator_rx,
+            },
+        )
     }
 
     pub fn subscribe_event(&self) -> broadcast::Receiver<AkashicEvent> {
         self.event.subscribe()
     }
 
-    pub fn subscribe_msg(&self) -> broadcast::Receiver<AgentMessage> {
-        self.msg.subscribe()
-    }
-
     pub fn send_event(&self, event: impl Into<AkashicEvent>) {
         self.event.send(event);
     }
 
-    pub fn send_msg(&self, msg: impl Into<AgentMessage>) {
-        self.msg.send(msg);
+    pub async fn send_fate_weaver(
+        &self,
+        msg: FateWeaverMessage,
+    ) -> Result<(), mpsc::error::SendError<FateWeaverMessage>> {
+        self.fate_weaver_tx.send(msg).await
     }
+
+    pub async fn send_protagonist(
+        &self,
+        msg: ProtagonistMessage,
+    ) -> Result<(), mpsc::error::SendError<ProtagonistMessage>> {
+        self.protagonist_tx.send(msg).await
+    }
+
+    pub async fn send_upper_narrator(
+        &self,
+        msg: UpperNarratorMessage,
+    ) -> Result<(), mpsc::error::SendError<UpperNarratorMessage>> {
+        self.upper_narrator_tx.send(msg).await
+    }
+
     pub fn get_evt_sender(&self) -> broadcast::Sender<AkashicEvent> {
         self.event.channel.clone()
     }

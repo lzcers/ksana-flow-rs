@@ -18,7 +18,7 @@ pub enum LoopState {
 }
 
 #[derive(Clone)]
-enum Finalization {
+pub enum Finalization {
     Emit(AgentTerminalReason),
     Silent,
 }

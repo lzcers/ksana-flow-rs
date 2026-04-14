@@ -8,8 +8,10 @@ use agent::{
     models::ChatModel,
 };
 use serde_json::json;
+use tokio::sync::mpsc;
 
 use crate::{
+    channel::ProtagonistMessage,
     shared::{build_chat_model, build_layer},
 };
 use prompt::SYS_PROMPT;
@@ -58,8 +60,12 @@ impl Protagonist {
         }
     }
 
-  pub async fn start(mut self) {
-   
+  pub async fn start(self, mut inbox: mpsc::Receiver<ProtagonistMessage>) {
+        while let Some(message) = inbox.recv().await {
+            match message {
+                ProtagonistMessage::Action => {}
+            }
+        }
     }
 
 }
