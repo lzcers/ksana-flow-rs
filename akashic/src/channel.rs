@@ -4,6 +4,9 @@ use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
+use crate::protagonist::{ProtagonistActionRequest, ProtagonistDecision};
+use crate::upper_narrator::types::{UpperNarration, UpperNarratorRequest};
+
 
 
 // 事件用于描述世界发生了什么，包括世界变化、NPC 行为、主角相关事件等。
@@ -23,10 +26,17 @@ pub enum AkashicEvent {
     ProtagonistChoice,      // 主角做出了一个选择
     ProtagonistAction,      // 主角的非选择行为（如移动、使用物品）
     EncounterTriggered,     // 触发了一个新的遭遇（向主角呈现选项前）
+    ProtagonistDecisionMade {
+        round: u32,
+        choice_id: String,
+        action: String,
+        rationale: String,
+    },
     
     // 叙事元事件
     SceneTransition,        // 场景切换
     MilestoneReached,       // 剧情里程碑（如“初遇反派”）
+    NarrationGenerated(UpperNarration),
 
     // AgentEvent
     AgentActor(AgentActorEvent),
@@ -76,15 +86,17 @@ pub struct MessageMeta {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FateWeaverMessage {
     Start,
+    ProtagonistDecision(ProtagonistDecision),
+    NarrationGenerated(UpperNarration),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ProtagonistMessage {
-    Action
+    ActionRequest(ProtagonistActionRequest),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UpperNarratorMessage {
-    DraftScene,
+    DraftScene(UpperNarratorRequest),
 }
 
 pub struct AgentInboxes {

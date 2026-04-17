@@ -6,19 +6,19 @@ use akashic::{
     upper_narrator::UpperNarrator,
 };
 
-
+use bevy_ecs::{component::Component, schedule::Schedule, system::Query, world::World};
 
 #[tokio::main]
 async fn main() {
     let (channel, inboxes) = AgentChannel::new();
-    let upper_narrator = UpperNarrator::new();
-    let fate_weaver =  FateWeaver::new(
+    let upper_narrator = UpperNarrator::new(channel.clone());
+    let fate_weaver = FateWeaver::new(
         DEFAULT_PROTAGONIST_PROFILE.to_string(),
         DEFAULT_WORLD_PROFILE.to_string(),
         channel.clone(),
         10,
     );
-    let protagonist = Protagonist::new(DEFAULT_PROTAGONIST_PROFILE.to_string());
+    let protagonist = Protagonist::new(DEFAULT_PROTAGONIST_PROFILE.to_string(), channel.clone());
 
     let fate_task = tokio::spawn(fate_weaver.start(inboxes.fate_weaver));
     let protagonist_task = tokio::spawn(protagonist.start(inboxes.protagonist));
@@ -29,4 +29,3 @@ async fn main() {
     let _ = protagonist_task.await;
     let _ = narrator_task.await;
 }
- 

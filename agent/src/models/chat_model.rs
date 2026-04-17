@@ -10,6 +10,7 @@ use crate::{
     providers::{Provider, Request, Response},
 };
 
+#[derive(Clone)]
 pub struct ChatModel {
     model_providers: HashMap<String, Arc<dyn Provider>>,
     active_model: Option<String>,

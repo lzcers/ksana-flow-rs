@@ -12,3 +12,5 @@ chrono = { workspace = true }
 tokio = { workspace = true }
 dotenv = { workspace = true }
 rand = "0.8.5"
+bevy_ecs = "0.18.1"
+bevy_tasks = "0.18.1"
