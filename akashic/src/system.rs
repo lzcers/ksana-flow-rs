@@ -16,9 +16,12 @@ use bevy_tasks::AsyncComputeTaskPool;
 #[derive(Component)]
 struct ChatStreamTask;
 
-fn task_system() {}
+// 轮询 task 任务，驱动 taskManager 中的 stream
+fn task_system(mut task_manager: ResMut<ModelTaskManager>) {}
 
+// 解析当前轮次的剧情节点，根据节点类型，生成对应的事件
 fn parse_fate_node() {}
+
 // 命运编织系统
 fn fate_Weaving_system(
     mut commands: Commands,
@@ -43,7 +46,7 @@ fn fate_Weaving_system(
         // 那么等待任务完成，拿到完成后的结果，
         // 如果有 choice，发送 choice 消息给主角系统，请求用户输入
         // 监听主角发送的答复，进行下一轮推演
-        // 如果没有 choice，发送消息给叙事者系统，请求生成事实清单
+        // 如果没有 choice，发送消息给叙事者系统，直接进行下一轮推演
     }
 }
 
