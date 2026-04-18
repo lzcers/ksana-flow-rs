@@ -72,10 +72,12 @@ name = "akashic"
 version = "0.1.0"
 dependencies = [
  "agent",
+ "async-stream",
  "bevy_ecs",
  "bevy_tasks",
  "chrono",
  "dotenv",
+ "futures",
  "rand 0.8.5",
  "serde",
  "serde_json",
