@@ -21,6 +21,10 @@ impl Protagonist {
             )),
         }
     }
+
+    pub fn get_context(&self) -> &Context {
+        &self.context
+    }
 }
 
 #[derive(Component)]

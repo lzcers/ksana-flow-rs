@@ -20,6 +20,10 @@ impl UpperNarrator {
             )),
         }
     }
+
+    pub fn get_context(&self) -> &Context {
+        &self.context
+    }
 }
 
 #[derive(Component)]
