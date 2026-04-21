@@ -15,6 +15,7 @@ use crate::{
     systems::task_sys::task_system,
     systems::turn_transition_sys::turn_transition_system,
     systems::upper_narrator_sys::upper_narrator_system,
+    utils::build_chat_model,
 };
 use bevy_ecs::{
     schedule::{IntoScheduleConfigs, Schedule},
@@ -23,7 +24,7 @@ use bevy_ecs::{
 
 fn main() {
     let mut world = World::new();
-    world.insert_resource(TaskManager::default());
+    world.insert_resource(TaskManager::new(build_chat_model()));
     world.insert_resource(TurnState::default());
 
     let _fate_weaver = world.spawn((
