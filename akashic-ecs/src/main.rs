@@ -13,9 +13,13 @@ use crate::{
     systems::fate_weaver_sys::fate_weaver_system,
     systems::protagonist_sys::protagonist_system,
     systems::task_sys::task_system,
+    systems::turn_transition_sys::turn_transition_system,
     systems::upper_narrator_sys::upper_narrator_system,
 };
-use bevy_ecs::{schedule::Schedule, world::World};
+use bevy_ecs::{
+    schedule::{IntoScheduleConfigs, Schedule},
+    world::World,
+};
 
 fn main() {
     let mut world = World::new();
@@ -29,12 +33,16 @@ fn main() {
     let _protagonist = world.spawn((Protagonist::new(DEFAULT_PROTAGONIST_PROFILE),));
     let _upper_narrator = world.spawn((UpperNarrator::new(),));
     let mut schedule = Schedule::default();
-    schedule.add_systems((
-        task_system,
-        fate_weaver_system,
-        protagonist_system,
-        upper_narrator_system,
-    ));
+    schedule.add_systems(
+        (
+            fate_weaver_system,
+            protagonist_system,
+            upper_narrator_system,
+            task_system,
+            turn_transition_system,
+        )
+            .chain(),
+    );
 
     println!("Hello, world!");
 }

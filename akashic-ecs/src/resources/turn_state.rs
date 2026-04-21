@@ -1,4 +1,4 @@
-use bevy_ecs::{entity::Entity, resource::Resource};
+use bevy_ecs::resource::Resource;
 
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnPhase {
@@ -18,5 +18,4 @@ impl Default for TurnPhase {
 #[derive(Resource, Debug, Default)]
 pub struct TurnState {
     pub phase: TurnPhase,
-    pub active_fate_weaver: Option<Entity>,
 }
