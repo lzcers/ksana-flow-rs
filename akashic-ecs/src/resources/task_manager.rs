@@ -32,50 +32,28 @@ pub enum TaskStatus {
 pub struct TaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, TaskHandle>,
+    snapshots: HashMap<Entity, TaskSnapshot>,
 }
 
 type TaskStream = Pin<Box<dyn Stream<Item = CallModelEvent> + Send>>;
 type TaskResult = Result<String, String>;
 
 pub struct TaskHandle {
-    kind: TaskKind,
     stream: Mutex<TaskStream>,
-    chunks: Vec<String>,
-    result: Option<TaskResult>,
-    status: TaskStatus,
-    finished: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct TaskSnapshot {
-    pub owner: Entity,
     pub kind: TaskKind,
     pub status: TaskStatus,
     pub chunks: Vec<String>,
     pub result: Option<TaskResult>,
-    pub finished: bool,
 }
 
 impl TaskHandle {
-    fn new(kind: TaskKind, stream: TaskStream) -> Self {
+    fn new(stream: TaskStream) -> Self {
         Self {
-            kind,
             stream: Mutex::new(stream),
-            chunks: Vec::new(),
-            result: None,
-            status: TaskStatus::Pending,
-            finished: false,
-        }
-    }
-
-    fn snapshot(&self, owner: Entity) -> TaskSnapshot {
-        TaskSnapshot {
-            owner,
-            kind: self.kind,
-            status: self.status,
-            chunks: self.chunks.clone(),
-            result: self.result.clone(),
-            finished: self.finished,
         }
     }
 }
@@ -85,6 +63,7 @@ impl TaskManager {
         Self {
             model,
             tasks: HashMap::new(),
+            snapshots: HashMap::new(),
         }
     }
 
@@ -99,7 +78,16 @@ impl TaskManager {
             }
         });
 
-        self.tasks.insert(entity, TaskHandle::new(kind, stream));
+        self.snapshots.insert(
+            entity,
+            TaskSnapshot {
+                kind,
+                status: TaskStatus::Pending,
+                chunks: Vec::new(),
+                result: None,
+            },
+        );
+        self.tasks.insert(entity, TaskHandle::new(stream));
     }
 
     pub fn poll_all_tasks(&mut self) {
@@ -110,17 +98,22 @@ impl TaskManager {
     }
 
     pub fn poll_task(&mut self, entity: Entity) -> TaskStatus {
-        let Some(task) = self.tasks.get_mut(&entity) else {
+        let (tasks, snapshots) = (&mut self.tasks, &mut self.snapshots);
+        let Some(snapshot) = snapshots.get_mut(&entity) else {
             return TaskStatus::Error;
         };
 
-        if task.finished {
-            task.status = match task.result {
-                Some(Ok(_)) => TaskStatus::Done,
-                Some(Err(_)) | None => TaskStatus::Error,
-            };
-            return task.status;
+        if matches!(snapshot.status, TaskStatus::Done | TaskStatus::Error) {
+            return snapshot.status;
         }
+
+        let Some(task) = tasks.get_mut(&entity) else {
+            snapshot.status = TaskStatus::Error;
+            snapshot
+                .result
+                .get_or_insert_with(|| Err("task handle missing".to_string()));
+            return TaskStatus::Error;
+        };
 
         let waker = noop_waker_ref();
         let mut cx = PollContext::from_waker(waker);
@@ -129,31 +122,29 @@ impl TaskManager {
         loop {
             match stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(CallModelEvent::TextChunk(content))) => {
-                    task.status = TaskStatus::Running;
-                    task.chunks.push(content);
+                    snapshot.status = TaskStatus::Running;
+                    snapshot.chunks.push(content);
                 }
                 Poll::Ready(Some(CallModelEvent::Completed { content, .. })) => {
-                    task.result = Some(Ok(content));
-                    task.status = TaskStatus::Done;
-                    task.finished = true;
+                    snapshot.result = Some(Ok(content));
+                    snapshot.status = TaskStatus::Done;
                     return TaskStatus::Done;
                 }
                 Poll::Ready(Some(CallModelEvent::Error(error))) => {
-                    task.result = Some(Err(error));
-                    task.status = TaskStatus::Error;
-                    task.finished = true;
+                    snapshot.result = Some(Err(error));
+                    snapshot.status = TaskStatus::Error;
                     return TaskStatus::Error;
                 }
                 Poll::Ready(Some(CallModelEvent::ReasoningChunk(_))) => {}
                 Poll::Ready(None) => {
-                    task.result
+                    snapshot
+                        .result
                         .get_or_insert_with(|| Err("task ended without completion".to_string()));
-                    task.status = TaskStatus::Error;
-                    task.finished = true;
+                    snapshot.status = TaskStatus::Error;
                     return TaskStatus::Error;
                 }
                 Poll::Pending => {
-                    task.status = TaskStatus::Running;
+                    snapshot.status = TaskStatus::Running;
                     return TaskStatus::Running;
                 }
             }
@@ -161,14 +152,15 @@ impl TaskManager {
     }
 
     pub fn task_status(&self, entity: Entity) -> Option<TaskStatus> {
-        self.tasks.get(&entity).map(|task| task.status)
+        self.snapshots.get(&entity).map(|task| task.status)
     }
 
     pub fn task_snapshot(&self, entity: Entity) -> Option<TaskSnapshot> {
-        self.tasks.get(&entity).map(|task| task.snapshot(entity))
+        self.snapshots.get(&entity).cloned()
     }
 
     pub fn clear_task(&mut self, entity: Entity) {
         self.tasks.remove(&entity);
+        self.snapshots.remove(&entity);
     }
 }
