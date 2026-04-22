@@ -3,6 +3,7 @@ mod profile;
 mod prompts;
 mod resources;
 mod systems;
+mod turn_messages;
 mod utils;
 use crate::{
     components::fate_weaver::{FateLine, FateWeaver},
@@ -10,20 +11,24 @@ use crate::{
     components::upper_narrator::UpperNarrator,
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{task_manager::TaskManager, turn_state::TurnState},
+    systems::fate_apply_sys::fate_result_apply_system,
     systems::fate_weaver_sys::fate_weaver_system,
     systems::protagonist_sys::protagonist_system,
     systems::task_sys::task_system,
-    systems::turn_transition_sys::turn_transition_system,
+    systems::turn_transition_sys::turn_orchestrator_system,
     systems::upper_narrator_sys::upper_narrator_system,
+    turn_messages::register_turn_messages,
     utils::build_chat_model,
 };
 use bevy_ecs::{
+    message::message_update_system,
     schedule::{IntoScheduleConfigs, Schedule},
     world::World,
 };
 
 fn main() {
     let mut world = World::new();
+    register_turn_messages(&mut world);
     world.insert_resource(TaskManager::new(build_chat_model()));
     world.insert_resource(TurnState::default());
 
@@ -36,11 +41,13 @@ fn main() {
     let mut schedule = Schedule::default();
     schedule.add_systems(
         (
+            message_update_system,
             fate_weaver_system,
             protagonist_system,
             upper_narrator_system,
             task_system,
-            turn_transition_system,
+            fate_result_apply_system,
+            turn_orchestrator_system,
         )
             .chain(),
     );

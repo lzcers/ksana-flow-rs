@@ -24,6 +24,10 @@ impl UpperNarrator {
     pub fn get_context(&self) -> &Context {
         &self.context
     }
+
+    pub fn get_context_mut(&mut self) -> &mut Context {
+        &mut self.context
+    }
 }
 
 #[derive(Component)]

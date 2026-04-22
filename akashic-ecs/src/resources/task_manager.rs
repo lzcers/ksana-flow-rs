@@ -32,22 +32,21 @@ pub enum TaskStatus {
 pub struct TaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, TaskHandle>,
-    snapshots: HashMap<Entity, TaskSnapshot>,
+    results: HashMap<Entity, TaskResult>,
 }
 
 type TaskStream = Pin<Box<dyn Stream<Item = CallModelEvent> + Send>>;
-type TaskResult = Result<String, String>;
 
 pub struct TaskHandle {
     stream: Mutex<TaskStream>,
 }
 
 #[derive(Clone, Debug)]
-pub struct TaskSnapshot {
+pub struct TaskResult {
     pub kind: TaskKind,
     pub status: TaskStatus,
     pub chunks: Vec<String>,
-    pub result: Option<TaskResult>,
+    pub result: Option<Result<String, String>>,
 }
 
 impl TaskHandle {
@@ -63,7 +62,7 @@ impl TaskManager {
         Self {
             model,
             tasks: HashMap::new(),
-            snapshots: HashMap::new(),
+            results: HashMap::new(),
         }
     }
 
@@ -78,9 +77,9 @@ impl TaskManager {
             }
         });
 
-        self.snapshots.insert(
+        self.results.insert(
             entity,
-            TaskSnapshot {
+            TaskResult {
                 kind,
                 status: TaskStatus::Pending,
                 chunks: Vec::new(),
@@ -98,18 +97,18 @@ impl TaskManager {
     }
 
     pub fn poll_task(&mut self, entity: Entity) -> TaskStatus {
-        let (tasks, snapshots) = (&mut self.tasks, &mut self.snapshots);
-        let Some(snapshot) = snapshots.get_mut(&entity) else {
+        let (tasks, results) = (&mut self.tasks, &mut self.results);
+        let Some(result) = results.get_mut(&entity) else {
             return TaskStatus::Error;
         };
 
-        if matches!(snapshot.status, TaskStatus::Done | TaskStatus::Error) {
-            return snapshot.status;
+        if matches!(result.status, TaskStatus::Done | TaskStatus::Error) {
+            return result.status;
         }
 
         let Some(task) = tasks.get_mut(&entity) else {
-            snapshot.status = TaskStatus::Error;
-            snapshot
+            result.status = TaskStatus::Error;
+            result
                 .result
                 .get_or_insert_with(|| Err("task handle missing".to_string()));
             return TaskStatus::Error;
@@ -122,29 +121,29 @@ impl TaskManager {
         loop {
             match stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(CallModelEvent::TextChunk(content))) => {
-                    snapshot.status = TaskStatus::Running;
-                    snapshot.chunks.push(content);
+                    result.status = TaskStatus::Running;
+                    result.chunks.push(content);
                 }
                 Poll::Ready(Some(CallModelEvent::Completed { content, .. })) => {
-                    snapshot.result = Some(Ok(content));
-                    snapshot.status = TaskStatus::Done;
+                    result.result = Some(Ok(content));
+                    result.status = TaskStatus::Done;
                     return TaskStatus::Done;
                 }
                 Poll::Ready(Some(CallModelEvent::Error(error))) => {
-                    snapshot.result = Some(Err(error));
-                    snapshot.status = TaskStatus::Error;
+                    result.result = Some(Err(error));
+                    result.status = TaskStatus::Error;
                     return TaskStatus::Error;
                 }
                 Poll::Ready(Some(CallModelEvent::ReasoningChunk(_))) => {}
                 Poll::Ready(None) => {
-                    snapshot
+                    result
                         .result
                         .get_or_insert_with(|| Err("task ended without completion".to_string()));
-                    snapshot.status = TaskStatus::Error;
+                    result.status = TaskStatus::Error;
                     return TaskStatus::Error;
                 }
                 Poll::Pending => {
-                    snapshot.status = TaskStatus::Running;
+                    result.status = TaskStatus::Running;
                     return TaskStatus::Running;
                 }
             }
@@ -152,15 +151,15 @@ impl TaskManager {
     }
 
     pub fn task_status(&self, entity: Entity) -> Option<TaskStatus> {
-        self.snapshots.get(&entity).map(|task| task.status)
+        self.results.get(&entity).map(|task| task.status)
     }
 
-    pub fn task_snapshot(&self, entity: Entity) -> Option<TaskSnapshot> {
-        self.snapshots.get(&entity).cloned()
+    pub fn task_result(&self, entity: Entity) -> Option<TaskResult> {
+        self.results.get(&entity).cloned()
     }
 
     pub fn clear_task(&mut self, entity: Entity) {
         self.tasks.remove(&entity);
-        self.snapshots.remove(&entity);
+        self.results.remove(&entity);
     }
 }

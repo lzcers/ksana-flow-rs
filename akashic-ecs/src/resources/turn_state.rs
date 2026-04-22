@@ -4,9 +4,10 @@ use bevy_ecs::resource::Resource;
 pub enum TurnPhase {
     Idle,
     AwaitingFateResult,
-    AwaitingProtagonist,
-    AwaitingNarration,
+    AwaitingProtagonistResult,
     RoundCompleted,
+    AwaitingNarrationResult,
+    Failed,
 }
 
 impl Default for TurnPhase {
@@ -15,7 +16,37 @@ impl Default for TurnPhase {
     }
 }
 
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Debug)]
 pub struct TurnState {
     pub phase: TurnPhase,
+    pub turn_index: u64,
+    pub active_turn_id: u64,
+}
+
+impl TurnState {
+    pub fn start_turn(&mut self, turn_id: u64) {
+        self.active_turn_id = turn_id;
+        self.phase = TurnPhase::AwaitingFateResult;
+    }
+
+    pub fn reset(&mut self, next_turn_id: Option<u64>) {
+        self.phase = TurnPhase::Idle;
+        self.active_turn_id = next_turn_id.unwrap_or_else(|| self.turn_index + 1);
+    }
+
+    pub fn finish_turn(&mut self) {
+        self.turn_index += 1;
+        self.active_turn_id = self.turn_index + 1;
+        self.phase = TurnPhase::Idle;
+    }
+}
+
+impl Default for TurnState {
+    fn default() -> Self {
+        Self {
+            phase: TurnPhase::Idle,
+            turn_index: 0,
+            active_turn_id: 1,
+        }
+    }
 }
