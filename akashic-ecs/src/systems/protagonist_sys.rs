@@ -10,7 +10,7 @@ use crate::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
     },
-    turn_messages::{TurnCommand, TurnOutcome},
+    turn_messages::{TurnCommand, TurnEvent},
 };
 
 pub fn protagonist_system(
@@ -18,7 +18,7 @@ pub fn protagonist_system(
     mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
     turn_state: Res<TurnState>,
-    mut outcome_writer: MessageWriter<TurnOutcome>,
+    mut event_writer: MessageWriter<TurnEvent>,
 ) {
     let Ok((entity, protagonist)) = query.single() else {
         return;
@@ -61,7 +61,7 @@ pub fn protagonist_system(
                 .unwrap_or_else(|| snapshot.chunks.join(""));
 
             // TODO: 在这里把主角行动结果回写到共享上下文。
-            outcome_writer.write(TurnOutcome::ProtagonistApplied {
+            event_writer.write(TurnEvent::ProtagonistDecided {
                 turn_id: turn_state.active_turn_id,
                 summary,
             });
@@ -73,7 +73,7 @@ pub fn protagonist_system(
                 .and_then(Result::err)
                 .unwrap_or_else(|| "protagonist task failed".to_string());
 
-            outcome_writer.write(TurnOutcome::TaskFailed {
+            event_writer.write(TurnEvent::TaskFailed {
                 turn_id: turn_state.active_turn_id,
                 stage: TurnPhase::AwaitingProtagonistResult,
                 entity,

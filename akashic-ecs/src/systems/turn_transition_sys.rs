@@ -5,13 +5,13 @@ use bevy_ecs::{
 
 use crate::{
     resources::turn_state::{TurnPhase, TurnState},
-    turn_messages::{TurnCommand, TurnControl, TurnOutcome},
+    turn_messages::{TurnCommand, TurnControl, TurnEvent},
 };
 
 // 统一管理故事轮次推进，只处理 phase 与消息，不直接解析模型结果。
 pub fn turn_orchestrator_system(
     mut control_reader: MessageReader<TurnControl>,
-    mut outcome_reader: MessageReader<TurnOutcome>,
+    mut event_reader: MessageReader<TurnEvent>,
     mut command_writer: MessageWriter<TurnCommand>,
     mut turn_state: ResMut<TurnState>,
 ) {
@@ -31,9 +31,9 @@ pub fn turn_orchestrator_system(
         }
     }
 
-    for outcome in outcome_reader.read() {
-        match outcome {
-            TurnOutcome::FateApplied {
+    for event in event_reader.read() {
+        match event {
+            TurnEvent::FateWeavingCompleted {
                 turn_id,
                 requires_protagonist,
                 has_choices,
@@ -48,7 +48,7 @@ pub fn turn_orchestrator_system(
                     turn_state.phase = TurnPhase::AwaitingNarrationResult;
                 }
             }
-            TurnOutcome::ProtagonistApplied {
+            TurnEvent::ProtagonistDecided {
                 turn_id,
                 summary: _summary,
             } if *turn_id == turn_state.active_turn_id => {
@@ -56,14 +56,14 @@ pub fn turn_orchestrator_system(
                 command_writer.write(TurnCommand::RequestNarration { turn_id: *turn_id });
                 turn_state.phase = TurnPhase::AwaitingNarrationResult;
             }
-            TurnOutcome::NarrationApplied {
+            TurnEvent::NarrationCompleted {
                 turn_id,
                 summary: _summary,
             } if *turn_id == turn_state.active_turn_id => {
                 turn_state.finish_turn();
                 should_start_turn = true;
             }
-            TurnOutcome::TaskFailed {
+            TurnEvent::TaskFailed {
                 turn_id,
                 stage: _stage,
                 entity: _entity,

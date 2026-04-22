@@ -15,7 +15,7 @@ use crate::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
     },
-    turn_messages::TurnOutcome,
+    turn_messages::TurnEvent,
     utils::{build_layer, parse_json_response},
 };
 use agent::agent::{Context, LayerKind};
@@ -27,7 +27,7 @@ pub fn fate_result_apply_system(
     mut upper_narrator_query: Query<&mut UpperNarrator>,
     turn_state: Res<TurnState>,
     mut task_manager: ResMut<TaskManager>,
-    mut outcome_writer: MessageWriter<TurnOutcome>,
+    mut event_writer: MessageWriter<TurnEvent>,
 ) {
     if turn_state.phase != TurnPhase::AwaitingFateResult {
         return;
@@ -56,7 +56,7 @@ pub fn fate_result_apply_system(
             let frame = match parse_json_response::<FateFrame>(&raw_output) {
                 Ok(frame) => frame,
                 Err(message) => {
-                    outcome_writer.write(TurnOutcome::TaskFailed {
+                    event_writer.write(TurnEvent::TaskFailed {
                         turn_id: turn_state.active_turn_id,
                         stage: TurnPhase::AwaitingFateResult,
                         entity,
@@ -82,7 +82,7 @@ pub fn fate_result_apply_system(
                 sync_fate_context(upper_narrator.get_context_mut(), &frame);
             }
 
-            outcome_writer.write(TurnOutcome::FateApplied {
+            event_writer.write(TurnEvent::FateWeavingCompleted {
                 turn_id: turn_state.active_turn_id,
                 requires_protagonist,
                 has_choices,
@@ -96,7 +96,7 @@ pub fn fate_result_apply_system(
                 .and_then(Result::err)
                 .unwrap_or_else(|| "fate task failed".to_string());
 
-            outcome_writer.write(TurnOutcome::TaskFailed {
+            event_writer.write(TurnEvent::TaskFailed {
                 turn_id: turn_state.active_turn_id,
                 stage: TurnPhase::AwaitingFateResult,
                 entity,

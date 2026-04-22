@@ -10,7 +10,7 @@ use crate::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
     },
-    turn_messages::{TurnCommand, TurnOutcome},
+    turn_messages::{TurnCommand, TurnEvent},
 };
 
 pub fn upper_narrator_system(
@@ -18,7 +18,7 @@ pub fn upper_narrator_system(
     mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
     turn_state: Res<TurnState>,
-    mut outcome_writer: MessageWriter<TurnOutcome>,
+    mut event_writer: MessageWriter<TurnEvent>,
 ) {
     let Ok((entity, upper_narrator)) = query.single() else {
         return;
@@ -57,7 +57,7 @@ pub fn upper_narrator_system(
                 .unwrap_or_else(|| snapshot.chunks.join(""));
 
             // TODO: 在这里把叙事文本落到事件流或展示缓冲区。
-            outcome_writer.write(TurnOutcome::NarrationApplied {
+            event_writer.write(TurnEvent::NarrationCompleted {
                 turn_id: turn_state.active_turn_id,
                 summary,
             });
@@ -69,7 +69,7 @@ pub fn upper_narrator_system(
                 .and_then(Result::err)
                 .unwrap_or_else(|| "narration task failed".to_string());
 
-            outcome_writer.write(TurnOutcome::TaskFailed {
+            event_writer.write(TurnEvent::TaskFailed {
                 turn_id: turn_state.active_turn_id,
                 stage: TurnPhase::AwaitingNarrationResult,
                 entity,

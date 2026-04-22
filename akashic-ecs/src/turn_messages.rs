@@ -20,18 +20,18 @@ pub enum TurnCommand {
 }
 
 #[derive(Message, Debug, Clone)]
-pub enum TurnOutcome {
-    FateApplied {
+pub enum TurnEvent {
+    FateWeavingCompleted {
         turn_id: u64,
         requires_protagonist: bool,
         has_choices: bool,
         summary: String,
     },
-    ProtagonistApplied {
+    ProtagonistDecided {
         turn_id: u64,
         summary: String,
     },
-    NarrationApplied {
+    NarrationCompleted {
         turn_id: u64,
         summary: String,
     },
@@ -46,5 +46,5 @@ pub enum TurnOutcome {
 pub fn register_turn_messages(world: &mut World) {
     MessageRegistry::register_message::<TurnControl>(world);
     MessageRegistry::register_message::<TurnCommand>(world);
-    MessageRegistry::register_message::<TurnOutcome>(world);
+    MessageRegistry::register_message::<TurnEvent>(world);
 }
