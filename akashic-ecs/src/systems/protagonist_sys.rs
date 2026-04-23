@@ -50,21 +50,21 @@ pub fn protagonist_result_apply_system(
         return;
     };
 
-    let Some(snapshot) = task_manager.task_result(entity) else {
+    let Some(task_result) = task_manager.task_result(entity) else {
         return;
     };
 
-    if snapshot.kind != TaskKind::ProtagonistAction {
+    if task_result.kind != TaskKind::ProtagonistAction {
         return;
     }
 
-    match snapshot.status {
+    match task_result.status {
         TaskStatus::Pending | TaskStatus::Running => {}
         TaskStatus::Done => {
-            let summary = snapshot
+            let summary = task_result
                 .result
                 .and_then(Result::ok)
-                .unwrap_or_else(|| snapshot.chunks.join(""));
+                .unwrap_or_else(|| task_result.chunks.join(""));
 
             // TODO: 在这里把主角行动结果回写到共享上下文。
             event_writer.write(TurnEvent::ProtagonistDecided {
@@ -74,7 +74,7 @@ pub fn protagonist_result_apply_system(
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {
-            let message = snapshot
+            let message = task_result
                 .result
                 .and_then(Result::err)
                 .unwrap_or_else(|| "protagonist task failed".to_string());

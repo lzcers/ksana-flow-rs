@@ -56,21 +56,21 @@ pub fn fate_result_apply_system(
         return;
     };
 
-    let Some(snapshot) = task_manager.task_result(entity) else {
+    let Some(task_result) = task_manager.task_result(entity) else {
         return;
     };
 
-    if snapshot.kind != TaskKind::FateWeaving {
+    if task_result.kind != TaskKind::FateWeaving {
         return;
     }
 
-    match snapshot.status {
+    match task_result.status {
         TaskStatus::Pending | TaskStatus::Running => {}
         TaskStatus::Done => {
-            let raw_output = snapshot
+            let raw_output = task_result
                 .result
                 .and_then(Result::ok)
-                .unwrap_or_else(|| snapshot.chunks.join(""));
+                .unwrap_or_else(|| task_result.chunks.join(""));
 
             let frame = match parse_json_response::<FateFrame>(&raw_output) {
                 Ok(frame) => frame,
@@ -110,7 +110,7 @@ pub fn fate_result_apply_system(
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {
-            let message = snapshot
+            let message = task_result
                 .result
                 .and_then(Result::err)
                 .unwrap_or_else(|| "fate task failed".to_string());

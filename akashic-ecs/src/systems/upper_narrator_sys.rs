@@ -46,21 +46,21 @@ pub fn upper_narrator_result_apply_system(
         return;
     };
 
-    let Some(snapshot) = task_manager.task_result(entity) else {
+    let Some(task_result) = task_manager.task_result(entity) else {
         return;
     };
 
-    if snapshot.kind != TaskKind::Narration {
+    if task_result.kind != TaskKind::Narration {
         return;
     }
 
-    match snapshot.status {
+    match task_result.status {
         TaskStatus::Pending | TaskStatus::Running => {}
         TaskStatus::Done => {
-            let summary = snapshot
+            let summary = task_result
                 .result
                 .and_then(Result::ok)
-                .unwrap_or_else(|| snapshot.chunks.join(""));
+                .unwrap_or_else(|| task_result.chunks.join(""));
 
             // TODO: 在这里把叙事文本落到事件流或展示缓冲区。
             event_writer.write(TurnEvent::NarrationCompleted {
@@ -70,7 +70,7 @@ pub fn upper_narrator_result_apply_system(
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {
-            let message = snapshot
+            let message = task_result
                 .result
                 .and_then(Result::err)
                 .unwrap_or_else(|| "narration task failed".to_string());
