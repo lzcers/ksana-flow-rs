@@ -2,7 +2,11 @@ use std::{io, time::Duration};
 
 use agent::agent::AgentActorEvent;
 use akashic::{
-    channel::{AgentChannel, AkashicEvent, FateWeaverMessage}, fate_weaver::FateWeaver, profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE}, protagonist::Protagonist, upper_narrator::UpperNarrator
+    channel::{AgentChannel, AkashicEvent, FateWeaverMessage},
+    fate_weaver::FateWeaver,
+    profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
+    protagonist::Protagonist,
+    upper_narrator::UpperNarrator,
 };
 use anyhow::Result;
 use crossterm::{
@@ -309,7 +313,7 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         upper_narrator.start(inboxes.upper_narrator).await;
     });
-    
+
     let _ = channel.send_fate_weaver(FateWeaverMessage::Start).await;
 
     loop {
@@ -326,7 +330,7 @@ async fn main() -> Result<()> {
                     rationale,
                 } => app.on_protagonist_decision(round, &choice_id, &action, &rationale),
                 _ => {}
-            } 
+            }
         }
 
         terminal.draw(|frame| render(frame, &app))?;
@@ -368,7 +372,11 @@ fn render(frame: &mut ratatui::Frame, app: &App) {
         .split(columns[1]);
 
     let story = Paragraph::new(app.story.as_str())
-        .block(Block::default().title(app.story_title()).borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(app.story_title())
+                .borders(Borders::ALL),
+        )
         .scroll((app.story_scroll, 0))
         .wrap(Wrap { trim: false });
     let fate = Paragraph::new(app.fate_chunks.as_str())
@@ -380,7 +388,11 @@ fn render(frame: &mut ratatui::Frame, app: &App) {
         .scroll((app.fate_scroll, 0))
         .wrap(Wrap { trim: false });
     let actions = Paragraph::new(app.actions.as_str())
-        .block(Block::default().title(app.actions_title()).borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(app.actions_title())
+                .borders(Borders::ALL),
+        )
         .scroll((app.actions_scroll, 0))
         .wrap(Wrap { trim: false });
 

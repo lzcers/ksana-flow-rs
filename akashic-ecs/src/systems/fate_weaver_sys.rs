@@ -56,13 +56,12 @@ pub fn fate_result_apply_system(
         return;
     };
 
-    let Some(task_result) = task_manager.task_result(entity) else {
+    let Some(task_result) = task_manager
+        .task_result(entity)
+        .filter(|task_result| task_result.kind == TaskKind::FateWeaving)
+    else {
         return;
     };
-
-    if task_result.kind != TaskKind::FateWeaving {
-        return;
-    }
 
     match task_result.status {
         TaskStatus::Pending | TaskStatus::Running => {}
@@ -88,7 +87,7 @@ pub fn fate_result_apply_system(
 
             let has_choices = !frame.choices.is_empty();
             let requires_protagonist = has_choices;
-            let summary = format!("{} / {}", frame.section, frame.event);
+            let summary = frame.brief_summary();
 
             fate_line.push_frame(frame.clone());
             sync_fate_context(fate_weaver.get_context_mut(), &frame);
@@ -127,32 +126,7 @@ pub fn fate_result_apply_system(
 }
 
 fn sync_fate_context(context: &mut Context, frame: &FateFrame) {
-    let choices_summary = if frame.choices.is_empty() {
-        "当前无主角可选动作，命运可继续推进。".to_string()
-    } else {
-        let choices = frame
-            .choices
-            .iter()
-            .map(|choice| choice.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" / ");
-        format!("当前可选动作：{}", choices)
-    };
-
-    let info_summary = if frame.info_gained.is_empty() {
-        "暂无新增情报。".to_string()
-    } else {
-        format!("新增情报：{}", frame.info_gained.join("；"))
-    };
-
-    let memory_entries = json!([
-        { "content": format!("章节进度：{} / {}", frame.chapter, frame.section) },
-        { "content": format!("时间地点：{} @ {}", frame.time, frame.location) },
-        { "content": format!("事件推进：{}", frame.event) },
-        { "content": format!("当前局势：{}", frame.situation) },
-        { "content": info_summary },
-        { "content": choices_summary }
-    ]);
+    let memory_entries = json!([{ "content": frame.summary() }]);
 
     if let Some(layer) = context.get_mut("shared-fate-state") {
         layer.kind = LayerKind::Memory;
