@@ -273,6 +273,23 @@ impl FateFrame {
     }
 }
 
+pub fn write_shared_fate_context(context: &mut Context, summary: &str) {
+    let memory_entries = json!([{ "content": summary }]);
+
+    if let Some(layer) = context.get_mut("shared-fate-state") {
+        layer.kind = LayerKind::Memory;
+        layer.data = memory_entries;
+        layer.meta.priority = 90;
+    } else {
+        context.layers.push(build_layer(
+            "shared-fate-state",
+            LayerKind::Memory,
+            memory_entries,
+            90,
+        ));
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FateCharacterState {
     pub name: String,

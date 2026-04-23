@@ -6,7 +6,10 @@ use bevy_ecs::{
 };
 
 use crate::{
-    components::upper_narrator::UpperNarrator,
+    components::{
+        fate_weaver::write_shared_fate_context,
+        upper_narrator::UpperNarrator,
+    },
     resources::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
@@ -15,19 +18,26 @@ use crate::{
 };
 
 pub fn upper_narrator_system(
-    query: Query<(Entity, &UpperNarrator)>,
+    mut query: Query<(Entity, &mut UpperNarrator)>,
     mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
 ) {
-    let Ok((entity, upper_narrator)) = query.single() else {
+    let Ok((entity, mut upper_narrator)) = query.single_mut() else {
         return;
     };
 
     for command in command_reader.read() {
-        if let TurnCommand::RequestNarration { .. } = command {
-            if task_manager.task_status(entity).is_none() {
-                task_manager.spawn_task(entity, TaskKind::Narration, upper_narrator.get_context());
+        match command {
+            TurnCommand::SyncFateContext { turn_id: _, summary } => {
+                write_shared_fate_context(upper_narrator.get_context_mut(), summary);
             }
+            TurnCommand::RequestNarration { .. } => {
+                if task_manager.task_status(entity).is_none() {
+                    task_manager
+                        .spawn_task(entity, TaskKind::Narration, upper_narrator.get_context());
+                }
+            }
+            _ => {}
         }
     }
 }

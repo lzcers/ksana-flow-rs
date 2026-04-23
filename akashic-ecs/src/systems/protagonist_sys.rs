@@ -6,7 +6,7 @@ use bevy_ecs::{
 };
 
 use crate::{
-    components::protagonist::Protagonist,
+    components::{fate_weaver::write_shared_fate_context, protagonist::Protagonist},
     resources::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
@@ -15,23 +15,32 @@ use crate::{
 };
 
 pub fn protagonist_system(
-    query: Query<(Entity, &Protagonist)>,
+    mut query: Query<(Entity, &mut Protagonist)>,
     mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
 ) {
-    let Ok((entity, protagonist)) = query.single() else {
+    let Ok((entity, mut protagonist)) = query.single_mut() else {
         return;
     };
 
     for command in command_reader.read() {
-        if let TurnCommand::RequestProtagonist { .. } = command {
-            if task_manager.task_status(entity).is_none() {
-                task_manager.spawn_task(
-                    entity,
-                    TaskKind::ProtagonistAction,
-                    protagonist.get_context(),
-                );
+        match command {
+            TurnCommand::SyncFateContext {
+                turn_id: _,
+                summary,
+            } => {
+                write_shared_fate_context(protagonist.get_context_mut(), summary);
             }
+            TurnCommand::RequestProtagonist { .. } => {
+                if task_manager.task_status(entity).is_none() {
+                    task_manager.spawn_task(
+                        entity,
+                        TaskKind::ProtagonistAction,
+                        protagonist.get_context(),
+                    );
+                }
+            }
+            _ => {}
         }
     }
 }

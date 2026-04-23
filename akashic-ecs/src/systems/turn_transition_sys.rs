@@ -38,7 +38,12 @@ pub fn turn_orchestrator_system(
                 requires_protagonist,
                 has_choices,
                 summary: _summary,
+                fate_summary,
             } if *turn_id == turn_state.active_turn_id => {
+                command_writer.write(TurnCommand::SyncFateContext {
+                    turn_id: *turn_id,
+                    summary: fate_summary.clone(),
+                });
                 if *requires_protagonist || *has_choices {
                     turn_state.phase = TurnPhase::AwaitingProtagonistResult;
                     command_writer.write(TurnCommand::RequestProtagonist { turn_id: *turn_id });

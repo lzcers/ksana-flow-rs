@@ -15,6 +15,7 @@ pub enum TurnControl {
 #[derive(Message, Debug, Clone)]
 pub enum TurnCommand {
     RequestFate { turn_id: u64 },
+    SyncFateContext { turn_id: u64, summary: String },
     RequestProtagonist { turn_id: u64 },
     RequestNarration { turn_id: u64 },
 }
@@ -26,6 +27,7 @@ pub enum TurnEvent {
         requires_protagonist: bool,
         has_choices: bool,
         summary: String,
+        fate_summary: String,
     },
     ProtagonistDecided {
         turn_id: u64,
