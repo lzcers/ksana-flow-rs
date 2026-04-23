@@ -1,6 +1,7 @@
 use bevy_ecs::{
     entity::Entity,
     message::{MessageReader, MessageWriter},
+    query::With,
     system::{Query, Res, ResMut},
 };
 
@@ -17,19 +18,13 @@ pub fn protagonist_system(
     query: Query<(Entity, &Protagonist)>,
     mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
-    turn_state: Res<TurnState>,
-    mut event_writer: MessageWriter<TurnEvent>,
 ) {
     let Ok((entity, protagonist)) = query.single() else {
         return;
     };
 
     for command in command_reader.read() {
-        if let TurnCommand::RequestProtagonist { turn_id } = command {
-            if *turn_id != turn_state.active_turn_id {
-                continue;
-            }
-
+        if let TurnCommand::RequestProtagonist { .. } = command {
             if task_manager.task_status(entity).is_none() {
                 task_manager.spawn_task(
                     entity,
@@ -39,10 +34,21 @@ pub fn protagonist_system(
             }
         }
     }
+}
 
+pub fn protagonist_result_apply_system(
+    query: Query<Entity, With<Protagonist>>,
+    turn_state: Res<TurnState>,
+    mut task_manager: ResMut<TaskManager>,
+    mut event_writer: MessageWriter<TurnEvent>,
+) {
     if turn_state.phase != TurnPhase::AwaitingProtagonistResult {
         return;
     }
+
+    let Ok(entity) = query.single() else {
+        return;
+    };
 
     let Some(snapshot) = task_manager.task_result(entity) else {
         return;

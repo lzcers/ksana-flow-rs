@@ -1,6 +1,7 @@
 use bevy_ecs::{
     entity::Entity,
     message::{MessageReader, MessageWriter},
+    query::With,
     system::{Query, Res, ResMut},
 };
 
@@ -17,28 +18,33 @@ pub fn upper_narrator_system(
     query: Query<(Entity, &UpperNarrator)>,
     mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
-    turn_state: Res<TurnState>,
-    mut event_writer: MessageWriter<TurnEvent>,
 ) {
     let Ok((entity, upper_narrator)) = query.single() else {
         return;
     };
 
     for command in command_reader.read() {
-        if let TurnCommand::RequestNarration { turn_id } = command {
-            if *turn_id != turn_state.active_turn_id {
-                continue;
-            }
-
+        if let TurnCommand::RequestNarration { .. } = command {
             if task_manager.task_status(entity).is_none() {
                 task_manager.spawn_task(entity, TaskKind::Narration, upper_narrator.get_context());
             }
         }
     }
+}
 
+pub fn upper_narrator_result_apply_system(
+    query: Query<Entity, With<UpperNarrator>>,
+    turn_state: Res<TurnState>,
+    mut task_manager: ResMut<TaskManager>,
+    mut event_writer: MessageWriter<TurnEvent>,
+) {
     if turn_state.phase != TurnPhase::AwaitingNarrationResult {
         return;
     }
+
+    let Ok(entity) = query.single() else {
+        return;
+    };
 
     let Some(snapshot) = task_manager.task_result(entity) else {
         return;

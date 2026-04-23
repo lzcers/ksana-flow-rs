@@ -1,4 +1,3 @@
-pub mod fate_apply_sys;
 pub mod fate_weaver_sys;
 pub mod protagonist_sys;
 pub mod task_sys;
