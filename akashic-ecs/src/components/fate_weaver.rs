@@ -15,8 +15,6 @@ pub struct FateWeaver {
     world_profile: String,
     protagonist_profile: String,
     protagonist_name: String,
-    latest: Option<FateFrame>,
-    history: Vec<FateFrame>,
 }
 
 impl FateWeaver {
@@ -25,14 +23,7 @@ impl FateWeaver {
             world_profile: world_profile.to_string(),
             protagonist_profile: prota_profile.to_string(),
             protagonist_name: extract_protagonist_name(prota_profile),
-            latest: None,
-            history: Vec::new(),
         }
-    }
-
-    pub fn push_frame(&mut self, frame: FateFrame) {
-        self.latest = Some(frame.clone());
-        self.history.push(frame);
     }
 
     pub fn protagonist_name(&self) -> &str {

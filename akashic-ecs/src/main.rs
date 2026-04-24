@@ -21,7 +21,7 @@ use crate::{
     systems::fate_weaver_sys::{fate_result_apply_system, fate_weaver_system},
     systems::protagonist_sys::{protagonist_result_apply_system, protagonist_system},
     systems::task_sys::task_system,
-    systems::turn_transition_sys::turn_orchestrator_system,
+    systems::turn_orchestrator_sys::turn_orchestrator_system,
     systems::upper_narrator_sys::{upper_narrator_result_apply_system, upper_narrator_system},
     turn_messages::{TurnEvent, register_turn_messages},
     utils::build_chat_model,

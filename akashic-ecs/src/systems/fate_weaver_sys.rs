@@ -49,13 +49,13 @@ pub fn fate_weaver_system(
 
 // Fate 结果解释与上下文回写放在独立 apply system，不放进回合状态机。
 pub fn fate_result_apply_system(
-    mut fate_weaver_query: Query<(Entity, &mut FateWeaver)>,
+    fate_weaver_query: Query<(Entity, &FateWeaver)>,
     turn_state: Res<TurnState>,
     mut world_state: ResMut<WorldState>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    let Ok((entity, mut fate_weaver)) = fate_weaver_query.single_mut() else {
+    let Ok((entity, fate_weaver)) = fate_weaver_query.single() else {
         return;
     };
 
@@ -96,7 +96,6 @@ pub fn fate_result_apply_system(
             let fate_summary = frame.summary();
             let action = spec.action_text(&turn_state);
 
-            fate_weaver.push_frame(frame.clone());
             world_state.apply_fate_frame(
                 &frame,
                 fate_weaver.protagonist_name(),
