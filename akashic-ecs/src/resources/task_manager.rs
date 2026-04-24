@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    pin::Pin,
+    pin::{Pin, pin},
     sync::Mutex,
     task::{Context as PollContext, Poll},
 };
@@ -15,7 +15,8 @@ use futures::{Stream, StreamExt, task::noop_waker_ref};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskKind {
-    FateWeaving,
+    FateScenePlanning,
+    FateConsequence,
     ProtagonistAction,
     Narration,
 }
@@ -69,9 +70,9 @@ impl TaskManager {
     // 创建一个任务
     pub fn spawn_task(&mut self, entity: Entity, kind: TaskKind, ctx: &Context) {
         let msgs = ctx.to_messages();
-        let model = self.model.clone();
+        let model = self.model_for_kind(kind);
         let stream = Box::pin(stream! {
-            let mut inner_stream = std::pin::pin!(call_model(&model, &msgs, None));
+            let mut inner_stream = pin!(call_model(&model, &msgs, None));
             while let Some(event) = inner_stream.next().await {
                 yield event;
             }
@@ -87,6 +88,15 @@ impl TaskManager {
             },
         );
         self.tasks.insert(entity, TaskHandle::new(stream));
+    }
+
+    fn model_for_kind(&self, kind: TaskKind) -> ChatModel {
+        let mut model = self.model.clone();
+        model.set_output_json(matches!(
+            kind,
+            TaskKind::FateScenePlanning | TaskKind::FateConsequence
+        ));
+        model
     }
 
     pub fn poll_all_tasks(&mut self) {

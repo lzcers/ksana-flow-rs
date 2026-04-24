@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{prompts::fate_weaver_prompt, utils::build_layer};
+use crate::{
+    prompts::fate_weaver_prompt,
+    resources::world_state::WorldState,
+    utils::build_layer,
+};
 use agent::agent::{Context, LayerKind};
 use bevy_ecs::component::Component;
 use serde::{Deserialize, Serialize};
@@ -8,39 +12,71 @@ use serde_json::json;
 // 标识 Entity
 #[derive(Component)]
 pub struct FateWeaver {
-    context: Context,
+    world_profile: String,
+    protagonist_profile: String,
+    protagonist_name: String,
     latest: Option<FateFrame>,
     history: Vec<FateFrame>,
 }
 
 impl FateWeaver {
     pub fn new(world_profile: &str, prota_profile: &str) -> Self {
-        let system_prompt = fate_weaver_prompt::SYS_PROMPT
-            .replace("{world_profile}", world_profile)
-            .replace("{protagonist_profile}", prota_profile);
-        let context = Context::new().layer(build_layer(
-            "fate-weaver-system",
-            LayerKind::System,
-            json!(system_prompt),
-            100,
-        ));
         Self {
-            context,
+            world_profile: world_profile.to_string(),
+            protagonist_profile: prota_profile.to_string(),
+            protagonist_name: extract_protagonist_name(prota_profile),
             latest: None,
             history: Vec::new(),
         }
-    }
-    pub fn get_context(&self) -> &Context {
-        &self.context
-    }
-
-    pub fn get_context_mut(&mut self) -> &mut Context {
-        &mut self.context
     }
 
     pub fn push_frame(&mut self, frame: FateFrame) {
         self.latest = Some(frame.clone());
         self.history.push(frame);
+    }
+
+    pub fn protagonist_name(&self) -> &str {
+        &self.protagonist_name
+    }
+
+    pub fn build_scene_context(&self, world_state: &WorldState) -> Context {
+        let prompt = fate_weaver_prompt::SCENE_TASK_PROMPT
+            .replace("{world_profile}", &self.world_profile)
+            .replace("{protagonist_profile}", &self.protagonist_profile)
+            .replace("{world_history}", &world_state.history_text())
+            .replace("{current_location}", &world_state.current_location_text())
+            .replace("{current_scene}", &world_state.current_scene_text())
+            .replace("{npcs_state}", &world_state.npcs_state_text())
+            .replace("{protagonist_state}", &world_state.protagonist_state_text())
+            .replace("{item_locations}", &world_state.item_locations_text())
+            .replace("{output_schema}", fate_weaver_prompt::OUTPUT_SCHEMA);
+
+        self.build_task_context(prompt)
+    }
+
+    pub fn build_consequence_context(&self, world_state: &WorldState, action: &str) -> Context {
+        let prompt = fate_weaver_prompt::CONSEQUENCE_TASK_PROMPT
+            .replace("{world_profile}", &self.world_profile)
+            .replace("{protagonist_profile}", &self.protagonist_profile)
+            .replace("{current_location}", &world_state.current_location_text())
+            .replace("{current_scene}", &world_state.current_scene_text())
+            .replace("{npcs_state}", &world_state.npcs_state_text())
+            .replace("{protagonist_state}", &world_state.protagonist_state_text())
+            .replace("{item_locations}", &world_state.item_locations_text())
+            .replace("{world_history}", &world_state.history_text())
+            .replace("{action}", action.trim())
+            .replace("{output_schema}", fate_weaver_prompt::OUTPUT_SCHEMA);
+
+        self.build_task_context(prompt)
+    }
+
+    fn build_task_context(&self, prompt: String) -> Context {
+        Context::new().layer(build_layer(
+            "fate-weaver-task",
+            LayerKind::System,
+            json!(prompt),
+            100,
+        ))
     }
 }
 
@@ -51,6 +87,8 @@ pub struct FateFrame {
     pub time: String,
     pub location: String,
     pub environment: String,
+    #[serde(default)]
+    pub item_locations: Vec<String>,
     #[serde(default)]
     pub characters: Vec<FateCharacterState>,
     pub event: String,
@@ -103,6 +141,18 @@ impl FateFrame {
         Self::push_field(&mut lines, "事件", &self.event);
         Self::push_field(&mut lines, "起因", &self.cause);
         Self::push_field(&mut lines, "局势", &self.situation);
+
+        let item_lines = self
+            .item_locations
+            .iter()
+            .map(|item| item.trim())
+            .filter(|item| !item.is_empty())
+            .map(|item| format!("- {}", item))
+            .collect::<Vec<_>>();
+        if !item_lines.is_empty() {
+            lines.push("物品：".to_string());
+            lines.extend(item_lines);
+        }
 
         let character_lines = self
             .characters
@@ -270,35 +320,12 @@ impl FateFrame {
     }
 }
 
-pub fn write_shared_fate_context(context: &mut Context, summary: &str) {
-    let memory_entries = json!([{ "content": summary }]);
-
-    if let Some(layer) = context.get_mut("shared-fate-state") {
-        layer.kind = LayerKind::Memory;
-        layer.data = memory_entries;
-        layer.meta.priority = 90;
-    } else {
-        context.layers.push(build_layer(
-            "shared-fate-state",
-            LayerKind::Memory,
-            memory_entries,
-            90,
-        ));
-    }
-}
-
-pub fn format_fate_resolution_context(fate_summary: &str, choice_summary: &str) -> String {
-    let fate_summary = fate_summary.trim();
-    let choice_summary = choice_summary.trim();
-
-    match (fate_summary.is_empty(), choice_summary.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => fate_summary.to_string(),
-        (true, false) => format!("主角选择：{choice_summary}"),
-        (false, false) => {
-            format!("{fate_summary}\n\n主角选择：{choice_summary}")
-        }
-    }
+fn extract_protagonist_name(profile: &str) -> String {
+    profile
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("姓名："))
+        .map(|name| name.trim().split('/').next().unwrap_or("").trim().to_string())
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
