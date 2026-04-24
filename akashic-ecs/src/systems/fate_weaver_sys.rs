@@ -1,50 +1,56 @@
 use bevy_ecs::{
     entity::Entity,
-    message::{MessageReader, MessageWriter},
+    message::MessageWriter,
     system::{Query, Res, ResMut},
 };
 
 use crate::{
-    components::fate_weaver::{FateFrame, FateLine, FateWeaver, write_shared_fate_context},
+    components::fate_weaver::{FateFrame, FateWeaver, write_shared_fate_context},
     resources::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
     },
-    turn_messages::{TurnCommand, TurnEvent},
+    turn_messages::TurnEvent,
     utils::parse_json_response,
 };
 
-// FateWeaver 只消费调度消息并发起任务。
+// FateWeaver 根据当前 phase 决定是否启动 Fate 任务。
 pub fn fate_weaver_system(
+    turn_state: Res<TurnState>,
     query: Query<(Entity, &FateWeaver)>,
-    mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
 ) {
+    if !matches!(
+        turn_state.phase,
+        TurnPhase::FateWeaving | TurnPhase::FateConsequence
+    ) {
+        return;
+    }
+
     let Ok((entity, fate_weaver)) = query.single() else {
         return;
     };
 
-    for command in command_reader.read() {
-        if let TurnCommand::RequestFate { .. } = command {
-            if task_manager.task_status(entity).is_none() {
-                task_manager.spawn_task(entity, TaskKind::FateWeaving, fate_weaver.get_context());
-            }
-        }
+    if task_manager.task_status(entity).is_none() {
+        task_manager.spawn_task(entity, TaskKind::FateWeaving, fate_weaver.get_context());
     }
 }
 
 // Fate 结果解释与上下文回写放在独立 apply system，不放进回合状态机。
 pub fn fate_result_apply_system(
-    mut fate_weaver_query: Query<(Entity, &mut FateWeaver, &mut FateLine)>,
+    mut fate_weaver_query: Query<(Entity, &mut FateWeaver)>,
     turn_state: Res<TurnState>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    if turn_state.phase != TurnPhase::AwaitingFateResult {
+    if !matches!(
+        turn_state.phase,
+        TurnPhase::FateWeaving | TurnPhase::FateConsequence
+    ) {
         return;
     }
 
-    let Ok((entity, mut fate_weaver, mut fate_line)) = fate_weaver_query.single_mut() else {
+    let Ok((entity, mut fate_weaver)) = fate_weaver_query.single_mut() else {
         return;
     };
 
@@ -68,7 +74,7 @@ pub fn fate_result_apply_system(
                 Err(message) => {
                     event_writer.write(TurnEvent::TaskFailed {
                         turn_id: turn_state.active_turn_id,
-                        stage: TurnPhase::AwaitingFateResult,
+                        stage: turn_state.phase,
                         entity,
                         message,
                     });
@@ -77,21 +83,26 @@ pub fn fate_result_apply_system(
                 }
             };
 
-            let has_choices = !frame.choices.is_empty();
-            let requires_protagonist = has_choices;
-            let summary = frame.brief_summary();
             let fate_summary = frame.summary();
 
-            fate_line.push_frame(frame.clone());
+            fate_weaver.push_frame(frame.clone());
             write_shared_fate_context(fate_weaver.get_context_mut(), &fate_summary);
 
-            event_writer.write(TurnEvent::FateWeavingCompleted {
-                turn_id: turn_state.active_turn_id,
-                requires_protagonist,
-                has_choices,
-                summary,
-                fate_summary,
-            });
+            match turn_state.phase {
+                TurnPhase::FateWeaving => {
+                    event_writer.write(TurnEvent::SceneFateGenerated {
+                        turn_id: turn_state.active_turn_id,
+                        scene_facts: fate_summary,
+                    });
+                }
+                TurnPhase::FateConsequence => {
+                    event_writer.write(TurnEvent::ConsequenceFateGenerated {
+                        turn_id: turn_state.active_turn_id,
+                        consequence_facts: fate_summary,
+                    });
+                }
+                _ => {}
+            }
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {
@@ -102,7 +113,7 @@ pub fn fate_result_apply_system(
 
             event_writer.write(TurnEvent::TaskFailed {
                 turn_id: turn_state.active_turn_id,
-                stage: TurnPhase::AwaitingFateResult,
+                stage: turn_state.phase,
                 entity,
                 message,
             });

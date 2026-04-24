@@ -6,7 +6,7 @@ mod systems;
 mod turn_messages;
 mod utils;
 use crate::{
-    components::fate_weaver::{FateLine, FateWeaver},
+    components::fate_weaver::FateWeaver,
     components::protagonist::Protagonist,
     components::upper_narrator::UpperNarrator,
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
@@ -31,10 +31,10 @@ fn main() {
     world.insert_resource(TaskManager::new(build_chat_model()));
     world.insert_resource(TurnState::default());
 
-    let _fate_weaver = world.spawn((
-        FateWeaver::new(DEFAULT_WORLD_PROFILE, DEFAULT_PROTAGONIST_PROFILE),
-        FateLine::default(),
-    ));
+    let _fate_weaver = world.spawn((FateWeaver::new(
+        DEFAULT_WORLD_PROFILE,
+        DEFAULT_PROTAGONIST_PROFILE,
+    ),));
     let _protagonist = world.spawn((Protagonist::new(DEFAULT_PROTAGONIST_PROFILE),));
     let _upper_narrator = world.spawn((UpperNarrator::new(),));
     let mut schedule = Schedule::default();
@@ -52,6 +52,4 @@ fn main() {
         )
             .chain(),
     );
-
-    println!("Hello, world!");
 }

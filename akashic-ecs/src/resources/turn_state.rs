@@ -3,10 +3,11 @@ use bevy_ecs::resource::Resource;
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnPhase {
     Idle,
-    AwaitingFateResult,
-    AwaitingProtagonistResult,
-    RoundCompleted,
-    AwaitingNarrationResult,
+    FateWeaving,
+    NarratorScene,
+    AwaitingProtagonist,
+    FateConsequence,
+    NarratorStory,
     Failed,
 }
 
@@ -21,24 +22,7 @@ pub struct TurnState {
     pub phase: TurnPhase,
     pub turn_index: u64,
     pub active_turn_id: u64,
-}
-
-impl TurnState {
-    pub fn start_turn(&mut self, turn_id: u64) {
-        self.active_turn_id = turn_id;
-        self.phase = TurnPhase::AwaitingFateResult;
-    }
-
-    pub fn reset(&mut self, next_turn_id: Option<u64>) {
-        self.phase = TurnPhase::Idle;
-        self.active_turn_id = next_turn_id.unwrap_or_else(|| self.turn_index + 1);
-    }
-
-    pub fn finish_turn(&mut self) {
-        self.turn_index += 1;
-        self.active_turn_id = self.turn_index + 1;
-        self.phase = TurnPhase::Idle;
-    }
+    pub latest_fate_summary: String,
 }
 
 impl Default for TurnState {
@@ -47,6 +31,28 @@ impl Default for TurnState {
             phase: TurnPhase::Idle,
             turn_index: 0,
             active_turn_id: 1,
+            latest_fate_summary: String::new(),
         }
+    }
+}
+
+impl TurnState {
+    pub fn start_turn(&mut self, turn_id: u64) {
+        self.active_turn_id = turn_id;
+        self.phase = TurnPhase::FateWeaving;
+        self.latest_fate_summary.clear();
+    }
+
+    pub fn reset(&mut self, next_turn_id: Option<u64>) {
+        self.phase = TurnPhase::Idle;
+        self.active_turn_id = next_turn_id.unwrap_or_else(|| self.turn_index + 1);
+        self.latest_fate_summary.clear();
+    }
+
+    pub fn finish_turn(&mut self) {
+        self.turn_index += 1;
+        self.active_turn_id = self.turn_index + 1;
+        self.phase = TurnPhase::Idle;
+        self.latest_fate_summary.clear();
     }
 }

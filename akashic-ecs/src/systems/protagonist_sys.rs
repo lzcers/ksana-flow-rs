@@ -1,6 +1,6 @@
 use bevy_ecs::{
     entity::Entity,
-    message::{MessageReader, MessageWriter},
+    message::MessageWriter,
     query::With,
     system::{Query, Res, ResMut},
 };
@@ -11,37 +11,28 @@ use crate::{
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
     },
-    turn_messages::{TurnCommand, TurnEvent},
+    turn_messages::TurnEvent,
 };
 
 pub fn protagonist_system(
+    turn_state: Res<TurnState>,
     mut query: Query<(Entity, &mut Protagonist)>,
-    mut command_reader: MessageReader<TurnCommand>,
     mut task_manager: ResMut<TaskManager>,
 ) {
+    if turn_state.phase != TurnPhase::AwaitingProtagonist {
+        return;
+    }
+
     let Ok((entity, mut protagonist)) = query.single_mut() else {
         return;
     };
 
-    for command in command_reader.read() {
-        match command {
-            TurnCommand::SyncFateContext {
-                turn_id: _,
-                summary,
-            } => {
-                write_shared_fate_context(protagonist.get_context_mut(), summary);
-            }
-            TurnCommand::RequestProtagonist { .. } => {
-                if task_manager.task_status(entity).is_none() {
-                    task_manager.spawn_task(
-                        entity,
-                        TaskKind::ProtagonistAction,
-                        protagonist.get_context(),
-                    );
-                }
-            }
-            _ => {}
+    if task_manager.task_status(entity).is_none() {
+        let shared_facts = &turn_state.latest_fate_summary;
+        if !shared_facts.trim().is_empty() {
+            write_shared_fate_context(protagonist.get_context_mut(), shared_facts);
         }
+        task_manager.spawn_task(entity, TaskKind::ProtagonistAction, protagonist.get_context());
     }
 }
 
@@ -51,10 +42,6 @@ pub fn protagonist_result_apply_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    if turn_state.phase != TurnPhase::AwaitingProtagonistResult {
-        return;
-    }
-
     let Ok(entity) = query.single() else {
         return;
     };
@@ -67,19 +54,34 @@ pub fn protagonist_result_apply_system(
         return;
     }
 
+    if turn_state.phase != TurnPhase::AwaitingProtagonist {
+        task_manager.clear_task(entity);
+        return;
+    }
+
     match task_result.status {
         TaskStatus::Pending | TaskStatus::Running => {}
         TaskStatus::Done => {
-            let summary = task_result
+            let action_text = task_result
                 .result
                 .and_then(Result::ok)
-                .unwrap_or_else(|| task_result.chunks.join(""));
+                .unwrap_or_else(|| task_result.chunks.join(""))
+                .trim()
+                .to_string();
 
-            // TODO: 在这里把主角行动结果回写到共享上下文。
-            event_writer.write(TurnEvent::ProtagonistDecided {
-                turn_id: turn_state.active_turn_id,
-                summary,
-            });
+            if action_text.is_empty() {
+                event_writer.write(TurnEvent::TaskFailed {
+                    turn_id: turn_state.active_turn_id,
+                    stage: turn_state.phase,
+                    entity,
+                    message: "protagonist action is empty".to_string(),
+                });
+            } else {
+                event_writer.write(TurnEvent::ProtagonistActionGenerated {
+                    turn_id: turn_state.active_turn_id,
+                    action_text,
+                });
+            }
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {
@@ -90,7 +92,7 @@ pub fn protagonist_result_apply_system(
 
             event_writer.write(TurnEvent::TaskFailed {
                 turn_id: turn_state.active_turn_id,
-                stage: TurnPhase::AwaitingProtagonistResult,
+                stage: turn_state.phase,
                 entity,
                 message,
             });

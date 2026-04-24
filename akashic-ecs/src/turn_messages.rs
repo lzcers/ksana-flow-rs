@@ -10,32 +10,30 @@ use crate::resources::turn_state::TurnPhase;
 pub enum TurnControl {
     StartTurn { turn_id: u64 },
     ResetTurn { next_turn_id: Option<u64> },
-}
-
-#[derive(Message, Debug, Clone)]
-pub enum TurnCommand {
-    RequestFate { turn_id: u64 },
-    SyncFateContext { turn_id: u64, summary: String },
-    RequestProtagonist { turn_id: u64 },
-    RequestNarration { turn_id: u64 },
+    SubmitProtagonistAction { turn_id: u64, action_text: String },
 }
 
 #[derive(Message, Debug, Clone)]
 pub enum TurnEvent {
-    FateWeavingCompleted {
+    SceneFateGenerated {
         turn_id: u64,
-        requires_protagonist: bool,
-        has_choices: bool,
-        summary: String,
-        fate_summary: String,
+        scene_facts: String,
     },
-    ProtagonistDecided {
+    SceneNarrationGenerated {
         turn_id: u64,
-        summary: String,
+        scene_text: String,
     },
-    NarrationCompleted {
+    ProtagonistActionGenerated {
         turn_id: u64,
-        summary: String,
+        action_text: String,
+    },
+    ConsequenceFateGenerated {
+        turn_id: u64,
+        consequence_facts: String,
+    },
+    StoryNarrationGenerated {
+        turn_id: u64,
+        story_text: String,
     },
     TaskFailed {
         turn_id: u64,
@@ -47,6 +45,5 @@ pub enum TurnEvent {
 
 pub fn register_turn_messages(world: &mut World) {
     MessageRegistry::register_message::<TurnControl>(world);
-    MessageRegistry::register_message::<TurnCommand>(world);
     MessageRegistry::register_message::<TurnEvent>(world);
 }

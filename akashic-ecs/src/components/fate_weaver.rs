@@ -9,6 +9,8 @@ use serde_json::json;
 #[derive(Component)]
 pub struct FateWeaver {
     context: Context,
+    latest: Option<FateFrame>,
+    history: Vec<FateFrame>,
 }
 
 impl FateWeaver {
@@ -22,7 +24,11 @@ impl FateWeaver {
             json!(system_prompt),
             100,
         ));
-        Self { context }
+        Self {
+            context,
+            latest: None,
+            history: Vec::new(),
+        }
     }
     pub fn get_context(&self) -> &Context {
         &self.context
@@ -31,16 +37,7 @@ impl FateWeaver {
     pub fn get_context_mut(&mut self) -> &mut Context {
         &mut self.context
     }
-}
 
-// 记录推演的上下文
-#[derive(Component, Debug, Clone, Default, Serialize, Deserialize)]
-pub struct FateLine {
-    pub latest: Option<FateFrame>,
-    pub history: Vec<FateFrame>,
-}
-
-impl FateLine {
     pub fn push_frame(&mut self, frame: FateFrame) {
         self.latest = Some(frame.clone());
         self.history.push(frame);
@@ -287,6 +284,20 @@ pub fn write_shared_fate_context(context: &mut Context, summary: &str) {
             memory_entries,
             90,
         ));
+    }
+}
+
+pub fn format_fate_resolution_context(fate_summary: &str, choice_summary: &str) -> String {
+    let fate_summary = fate_summary.trim();
+    let choice_summary = choice_summary.trim();
+
+    match (fate_summary.is_empty(), choice_summary.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => fate_summary.to_string(),
+        (true, false) => format!("主角选择：{choice_summary}"),
+        (false, false) => {
+            format!("{fate_summary}\n\n主角选择：{choice_summary}")
+        }
     }
 }
 
