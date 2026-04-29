@@ -34,8 +34,7 @@ impl UpperNarrator {
             .replace("{current_location}", &world_state.current_location_text())
             .replace("{current_scene}", &world_state.current_scene_text())
             .replace("{npcs_state}", &world_state.npcs_state_text())
-            .replace("{protagonist_state}", &world_state.protagonist_state_text())
-            .replace("{item_locations}", &world_state.item_locations_text());
+            .replace("{protagonist_state}", &world_state.protagonist_state_text());
 
         Context::new().layer(build_layer(
             "upper-narrator-task",

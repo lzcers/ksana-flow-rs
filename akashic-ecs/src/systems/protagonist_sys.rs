@@ -10,6 +10,7 @@ use agent::agent::Context;
 use crate::{
     components::protagonist::Protagonist,
     resources::{
+        manual_control::ManualControlState,
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
         world_state::WorldState,
@@ -20,6 +21,7 @@ use crate::{
 
 pub fn protagonist_system(
     turn_state: Res<TurnState>,
+    manual_control: Res<ManualControlState>,
     world_state: Res<WorldState>,
     query: Query<(Entity, &Protagonist)>,
     mut task_manager: ResMut<TaskManager>,
@@ -29,6 +31,10 @@ pub fn protagonist_system(
     };
 
     if task_manager.task_status(entity).is_some() {
+        return;
+    }
+
+    if manual_control.pending_protagonist_override_turn == Some(turn_state.active_turn_id) {
         return;
     }
 
@@ -42,6 +48,7 @@ pub fn protagonist_system(
 
 pub fn protagonist_result_apply_system(
     query: Query<Entity, With<Protagonist>>,
+    manual_control: Res<ManualControlState>,
     turn_state: Res<TurnState>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
@@ -55,6 +62,11 @@ pub fn protagonist_result_apply_system(
     };
 
     if task_result.kind != TaskKind::ProtagonistAction {
+        return;
+    }
+
+    if manual_control.pending_protagonist_override_turn == Some(turn_state.active_turn_id) {
+        task_manager.clear_task(entity);
         return;
     }
 

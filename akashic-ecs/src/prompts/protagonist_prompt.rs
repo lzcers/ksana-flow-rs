@@ -18,8 +18,6 @@ NPC状态：
 {npcs_state}
 主角状态：
 {protagonist_state}
-物品位置：
-{item_locations}
 
 要求：
 - 仅使用主角合理可知的信息，不可全知。

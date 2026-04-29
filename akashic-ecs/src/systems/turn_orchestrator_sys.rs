@@ -1,7 +1,10 @@
 use bevy_ecs::{message::MessageReader, system::ResMut};
 
 use crate::{
-    resources::turn_state::{TurnPhase, TurnState},
+    resources::{
+        manual_control::ManualControlState,
+        turn_state::{TurnPhase, TurnState},
+    },
     turn_messages::{TurnControl, TurnEvent},
 };
 
@@ -9,12 +12,13 @@ use crate::{
 pub fn turn_orchestrator_system(
     mut control_reader: MessageReader<TurnControl>,
     mut event_reader: MessageReader<TurnEvent>,
+    mut manual_control: ResMut<ManualControlState>,
     mut turn_state: ResMut<TurnState>,
 ) {
     let mut should_start_turn = turn_state.phase == TurnPhase::Idle;
 
     for control in control_reader.read() {
-        if handle_control(control, &mut turn_state) {
+        if handle_control(control, &mut turn_state, &mut manual_control) {
             should_start_turn = true;
         }
     }
@@ -28,7 +32,11 @@ pub fn turn_orchestrator_system(
     maybe_start_turn(&mut turn_state, should_start_turn);
 }
 
-fn handle_control(control: &TurnControl, turn_state: &mut TurnState) -> bool {
+fn handle_control(
+    control: &TurnControl,
+    turn_state: &mut TurnState,
+    manual_control: &mut ManualControlState,
+) -> bool {
     match control {
         TurnControl::StartTurn { turn_id } if turn_state.phase == TurnPhase::Idle => {
             turn_state.active_turn_id = *turn_id;
@@ -36,6 +44,7 @@ fn handle_control(control: &TurnControl, turn_state: &mut TurnState) -> bool {
         }
         TurnControl::StartTurn { .. } => false,
         TurnControl::ResetTurn { next_turn_id } => {
+            manual_control.pending_protagonist_override_turn = None;
             turn_state.reset(*next_turn_id);
             true
         }
@@ -45,6 +54,7 @@ fn handle_control(control: &TurnControl, turn_state: &mut TurnState) -> bool {
         } if *turn_id == turn_state.active_turn_id
             && turn_state.phase == TurnPhase::AwaitingProtagonist =>
         {
+            manual_control.pending_protagonist_override_turn = None;
             apply_protagonist_action(turn_state, action_text);
             false
         }

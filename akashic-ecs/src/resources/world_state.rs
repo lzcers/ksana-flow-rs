@@ -62,9 +62,9 @@ impl WorldState {
         }
 
         let current_scene = [
-            frame.section.trim(),
-            frame.event.trim(),
-            frame.situation.trim(),
+            frame.scene_title.trim(),
+            frame.description.trim(),
+            frame.current_event.trim(),
         ]
         .into_iter()
         .filter(|part| !part.is_empty())
@@ -72,17 +72,6 @@ impl WorldState {
         .join(" | ");
         if !current_scene.is_empty() {
             self.current_scene = current_scene;
-        }
-
-        let item_locations = frame
-            .item_locations
-            .iter()
-            .map(|item| item.trim())
-            .filter(|item| !item.is_empty())
-            .map(|item| item.to_string())
-            .collect::<Vec<_>>();
-        if !item_locations.is_empty() {
-            self.item_locations = item_locations;
         }
 
         let protagonist_name = protagonist_name.trim();
@@ -106,8 +95,8 @@ impl WorldState {
 
         if !protagonist_state.is_empty() {
             self.protagonist_state = protagonist_state;
-        } else if !frame.situation.trim().is_empty() {
-            self.protagonist_state = frame.situation.trim().to_string();
+        } else if !frame.current_event.trim().is_empty() {
+            self.protagonist_state = frame.current_event.trim().to_string();
         }
 
         let phase_label = match phase {
@@ -155,9 +144,8 @@ impl WorldState {
 
 fn format_character_state(character: &FateCharacterState) -> String {
     let name = character.name.trim();
-    let observable = character.observable.trim();
     let deltas = character
-        .deltas
+        .status_delta
         .iter()
         .map(|(key, value)| (key.trim(), value.trim()))
         .filter(|(key, value)| !key.is_empty() && !value.is_empty())
@@ -165,9 +153,6 @@ fn format_character_state(character: &FateCharacterState) -> String {
         .collect::<Vec<_>>();
 
     let mut parts = Vec::new();
-    if !observable.is_empty() {
-        parts.push(observable.to_string());
-    }
     if !deltas.is_empty() {
         parts.push(format!("变化：{}", deltas.join("；")));
     }

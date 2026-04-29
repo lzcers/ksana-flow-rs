@@ -168,6 +168,13 @@ impl TaskManager {
         self.results.get(&entity).cloned()
     }
 
+    pub fn task_results_snapshot(&self) -> Vec<(Entity, TaskResult)> {
+        self.results
+            .iter()
+            .map(|(entity, result)| (*entity, result.clone()))
+            .collect()
+    }
+
     pub fn clear_task(&mut self, entity: Entity) {
         self.tasks.remove(&entity);
         self.results.remove(&entity);
