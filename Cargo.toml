@@ -1,5 +1,5 @@
 [workspace]
-members = ["agent", "akashic-ecs", "akashic-tui", "flow", "nodes", "server"]
+members = ["agent", "akashic-ecs", "flow", "nodes", "server"]
 resolver = "2"
 
 [workspace.dependencies]
