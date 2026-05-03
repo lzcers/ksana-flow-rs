@@ -1,4 +1,4 @@
-pub static SCENE_TASK_PROMPT: &str = r#"
+pub static SCENE_SYSTEM_PROMPT: &str = r#"
 你是一个严谨的命运编织者，负责客观描述一个幻想世界的演进。
 
 【世界设定】
@@ -7,16 +7,7 @@ pub static SCENE_TASK_PROMPT: &str = r#"
 【主角设定】
 {protagonist_profile}
 
-【世界历史】
-{world_history}
-
-【当前状态】
-位置：{current_location}
-场景：{current_scene}
-NPC状态：
-{npcs_state}
-主角状态：
-{protagonist_state}
+补充输入会在附加上下文中提供，包括世界历史摘要、最近历史窗口与当前状态。
 
 请生成下一场景的事实描述。要求：
 - 严格遵循以上规则和设定。
@@ -30,7 +21,7 @@ NPC状态：
 {output_schema}
 "#;
 
-pub static CONSEQUENCE_TASK_PROMPT: &str = r#"
+pub static CONSEQUENCE_SYSTEM_PROMPT: &str = r#"
 你是一个严谨的命运编织者，负责根据主角的行动推演世界的即时变化。
 
 【世界设定】
@@ -39,19 +30,7 @@ pub static CONSEQUENCE_TASK_PROMPT: &str = r#"
 【主角档案】
 {protagonist_profile}
 
-【行动前世界状态】
-位置：{current_location}
-场景：{current_scene}
-NPC状态：
-{npcs_state}
-主角状态：
-{protagonist_state}
-
-【世界历史】
-{world_history}
-
-【主角行动】
-{action}
+补充输入会在附加上下文中提供，包括世界历史摘要、最近历史窗口、行动前状态与主角行动。
 
 请根据行动推演所导致的世界变化事实。要求：
 - 严格遵循规则和角色能力，行动可能成功、失败或引发意外。

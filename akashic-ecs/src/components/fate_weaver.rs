@@ -1,10 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    prompts::fate_weaver_prompt,
-    resources::world_state::WorldState,
-    utils::build_layer,
-};
+use crate::{prompts::fate_weaver_prompt, resources::world_state::WorldState, utils::build_layer};
 use agent::agent::{Context, LayerKind};
 use bevy_ecs::component::Component;
 use serde::{Deserialize, Serialize};
@@ -18,6 +14,9 @@ pub struct FateWeaver {
 }
 
 impl FateWeaver {
+    const RECENT_HISTORY_WINDOW: usize = 3;
+    const HISTORY_SUMMARY_ENTRIES: usize = 6;
+
     pub fn new(world_profile: &str, prota_profile: &str) -> Self {
         Self {
             world_profile: world_profile.to_string(),
@@ -31,41 +30,94 @@ impl FateWeaver {
     }
 
     pub fn build_scene_context(&self, world_state: &WorldState) -> Context {
-        let prompt = fate_weaver_prompt::SCENE_TASK_PROMPT
+        let prompt = fate_weaver_prompt::SCENE_SYSTEM_PROMPT
             .replace("{world_profile}", &self.world_profile)
             .replace("{protagonist_profile}", &self.protagonist_profile)
-            .replace("{world_history}", &world_state.history_text())
-            .replace("{current_location}", &world_state.current_location_text())
-            .replace("{current_scene}", &world_state.current_scene_text())
-            .replace("{npcs_state}", &world_state.npcs_state_text())
-            .replace("{protagonist_state}", &world_state.protagonist_state_text())
             .replace("{output_schema}", fate_weaver_prompt::OUTPUT_SCHEMA);
 
-        self.build_task_context(prompt)
+        self.build_task_context(prompt, self.build_scene_memory_items(world_state))
     }
 
     pub fn build_consequence_context(&self, world_state: &WorldState, action: &str) -> Context {
-        let prompt = fate_weaver_prompt::CONSEQUENCE_TASK_PROMPT
+        let prompt = fate_weaver_prompt::CONSEQUENCE_SYSTEM_PROMPT
             .replace("{world_profile}", &self.world_profile)
             .replace("{protagonist_profile}", &self.protagonist_profile)
-            .replace("{current_location}", &world_state.current_location_text())
-            .replace("{current_scene}", &world_state.current_scene_text())
-            .replace("{npcs_state}", &world_state.npcs_state_text())
-            .replace("{protagonist_state}", &world_state.protagonist_state_text())
-            .replace("{world_history}", &world_state.history_text())
-            .replace("{action}", action.trim())
             .replace("{output_schema}", fate_weaver_prompt::OUTPUT_SCHEMA);
 
-        self.build_task_context(prompt)
+        self.build_task_context(
+            prompt,
+            self.build_consequence_memory_items(world_state, action),
+        )
     }
 
-    fn build_task_context(&self, prompt: String) -> Context {
-        Context::new().layer(build_layer(
+    fn build_task_context(&self, prompt: String, memory_items: Vec<String>) -> Context {
+        let mut context = Context::new().layer(build_layer(
             "fate-weaver-task",
             LayerKind::System,
             json!(prompt),
             100,
-        ))
+        ));
+
+        if !memory_items.is_empty() {
+            let memory_entries = memory_items
+                .into_iter()
+                .map(|content| json!({ "content": content }))
+                .collect::<Vec<_>>();
+            context = context.layer(build_layer(
+                "fate-weaver-runtime",
+                LayerKind::Memory,
+                json!(memory_entries),
+                50,
+            ));
+        }
+
+        context
+    }
+
+    fn build_scene_memory_items(&self, world_state: &WorldState) -> Vec<String> {
+        vec![
+            self.build_history_summary_item(world_state),
+            self.build_recent_history_item(world_state),
+            self.build_world_state_item(world_state),
+        ]
+    }
+
+    fn build_consequence_memory_items(
+        &self,
+        world_state: &WorldState,
+        action: &str,
+    ) -> Vec<String> {
+        let mut items = self.build_scene_memory_items(world_state);
+        let action = action.trim();
+        if !action.is_empty() {
+            items.push(format!("主角行动\n{action}"));
+        }
+        items
+    }
+
+    fn build_history_summary_item(&self, world_state: &WorldState) -> String {
+        format!(
+            "世界历史摘要\n{}",
+            world_state
+                .history_summary_text(Self::RECENT_HISTORY_WINDOW, Self::HISTORY_SUMMARY_ENTRIES,)
+        )
+    }
+
+    fn build_recent_history_item(&self, world_state: &WorldState) -> String {
+        format!(
+            "最近世界历史窗口\n{}",
+            world_state.recent_history_window_text(Self::RECENT_HISTORY_WINDOW)
+        )
+    }
+
+    fn build_world_state_item(&self, world_state: &WorldState) -> String {
+        format!(
+            "当前状态\n位置：{}\n场景：{}\nNPC状态：\n{}\n主角状态：\n{}",
+            world_state.current_location_text(),
+            world_state.current_scene_text(),
+            world_state.npcs_state_text(),
+            world_state.protagonist_state_text(),
+        )
     }
 }
 
@@ -245,7 +297,14 @@ fn extract_protagonist_name(profile: &str) -> String {
     profile
         .lines()
         .find_map(|line| line.trim().strip_prefix("姓名："))
-        .map(|name| name.trim().split('/').next().unwrap_or("").trim().to_string())
+        .map(|name| {
+            name.trim()
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        })
         .unwrap_or_default()
 }
 

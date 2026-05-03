@@ -12,12 +12,45 @@ pub struct WorldState {
     pub current_scene: String,
     pub npcs_state: Vec<String>,
     pub protagonist_state: String,
-    pub item_locations: Vec<String>,
 }
 
 impl WorldState {
     pub fn history_text(&self) -> String {
         Self::format_list(&self.history, "暂无历史事件记录")
+    }
+
+    pub fn history_summary_text(&self, recent_window: usize, max_entries: usize) -> String {
+        let split_index = self.history.len().saturating_sub(recent_window);
+        let start_index = split_index.saturating_sub(max_entries);
+        let lines = self.history[start_index..split_index]
+            .iter()
+            .map(|entry| Self::summarize_history_entry(entry))
+            .filter(|entry| !entry.is_empty())
+            .map(|entry| format!("- {entry}"))
+            .collect::<Vec<_>>();
+
+        if lines.is_empty() {
+            "暂无更早历史摘要".to_string()
+        } else {
+            lines.join("\n")
+        }
+    }
+
+    pub fn recent_history_window_text(&self, limit: usize) -> String {
+        let start_index = self.history.len().saturating_sub(limit);
+        let entries = self.history[start_index..]
+            .iter()
+            .map(|entry| entry.trim())
+            .filter(|entry| !entry.is_empty())
+            .enumerate()
+            .map(|(index, entry)| format!("[最近事件 {}]\n{}", index + 1, entry))
+            .collect::<Vec<_>>();
+
+        if entries.is_empty() {
+            "暂无最近历史窗口".to_string()
+        } else {
+            entries.join("\n\n")
+        }
     }
 
     pub fn npcs_state_text(&self) -> String {
@@ -26,10 +59,6 @@ impl WorldState {
 
     pub fn protagonist_state_text(&self) -> String {
         Self::format_scalar(&self.protagonist_state, "暂无主角状态")
-    }
-
-    pub fn item_locations_text(&self) -> String {
-        Self::format_list(&self.item_locations, "暂无物品位置信息")
     }
 
     pub fn current_location_text(&self) -> String {
@@ -113,7 +142,8 @@ impl WorldState {
 
         let summary = frame.summary();
         if !summary.trim().is_empty() {
-            self.history.push(format!("{phase_label}\n{action_prefix}{summary}"));
+            self.history
+                .push(format!("{phase_label}\n{action_prefix}{summary}"));
         }
     }
 
@@ -140,6 +170,27 @@ impl WorldState {
             value.to_string()
         }
     }
+
+    fn summarize_history_entry(entry: &str) -> String {
+        let compact = entry
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        if compact.is_empty() {
+            return String::new();
+        }
+
+        let mut chars = compact.chars();
+        let summary: String = chars.by_ref().take(120).collect();
+        if chars.next().is_some() {
+            format!("{summary}...")
+        } else {
+            summary
+        }
+    }
 }
 
 fn format_character_state(character: &FateCharacterState) -> String {
@@ -162,5 +213,46 @@ fn format_character_state(character: &FateCharacterState) -> String {
         (false, true) => name.to_string(),
         (true, false) => parts.join("；"),
         (false, false) => format!("{name}：{}", parts.join("；")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorldState;
+
+    #[test]
+    fn history_summary_excludes_recent_window() {
+        let state = WorldState {
+            history: vec![
+                "第一幕\n旧事件".to_string(),
+                "第二幕\n中间事件".to_string(),
+                "第三幕\n最近事件".to_string(),
+            ],
+            ..WorldState::default()
+        };
+
+        let summary = state.history_summary_text(1, 8);
+
+        assert!(summary.contains("第一幕 | 旧事件"));
+        assert!(summary.contains("第二幕 | 中间事件"));
+        assert!(!summary.contains("第三幕 | 最近事件"));
+    }
+
+    #[test]
+    fn recent_history_window_keeps_latest_entries() {
+        let state = WorldState {
+            history: vec![
+                "第一幕\n旧事件".to_string(),
+                "第二幕\n中间事件".to_string(),
+                "第三幕\n最近事件".to_string(),
+            ],
+            ..WorldState::default()
+        };
+
+        let window = state.recent_history_window_text(2);
+
+        assert!(!window.contains("第一幕"));
+        assert!(window.contains("[最近事件 1]\n第二幕\n中间事件"));
+        assert!(window.contains("[最近事件 2]\n第三幕\n最近事件"));
     }
 }

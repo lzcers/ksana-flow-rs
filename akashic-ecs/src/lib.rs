@@ -63,7 +63,6 @@ pub struct RuntimeStateView {
     pub current_scene: String,
     pub protagonist_state: String,
     pub npcs_state: String,
-    pub item_locations: String,
     pub latest_history: String,
 }
 
@@ -119,7 +118,10 @@ impl AkashicRuntime {
         turn_state.start_turn(next_turn_id);
     }
 
-    pub fn submit_protagonist_action(&mut self, action_text: impl Into<String>) -> Result<(), String> {
+    pub fn submit_protagonist_action(
+        &mut self,
+        action_text: impl Into<String>,
+    ) -> Result<(), String> {
         let action_text = action_text.into();
         if action_text.trim().is_empty() {
             return Err("动作不能为空".to_string());
@@ -175,7 +177,6 @@ impl AkashicRuntime {
             current_scene: world_state.current_scene_text(),
             protagonist_state: world_state.protagonist_state_text(),
             npcs_state: world_state.npcs_state_text(),
-            item_locations: world_state.item_locations_text(),
             latest_history: world_state.latest_history_entry_text(),
         }
     }
