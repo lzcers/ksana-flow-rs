@@ -69,26 +69,37 @@ impl FateWeaver {
     }
 }
 
+/// Fate 阶段产出的规范化场景快照，用于后续叙事、主角决策与上下文回写。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FateFrame {
+    /// 当前命运片段的场景标题，兼容旧字段 `section`。
     #[serde(default, alias = "section")]
     pub scene_title: String,
+    /// 场景发生的时间或时间阶段。
     #[serde(default)]
     pub time: String,
+    /// 场景发生的地点。
     #[serde(default)]
     pub location: String,
+    /// 对环境氛围或场景状态的整体描述，兼容旧字段 `environment`。
     #[serde(default, alias = "environment")]
     pub description: String,
+    /// 本场景中涉及的人物状态变化列表。
     #[serde(default)]
     pub characters: Vec<FateCharacterState>,
+    /// 当前正在推进的核心事件，兼容旧字段 `event`。
     #[serde(default, alias = "event")]
     pub current_event: String,
+    /// 本次命运推进中新获得的情报或认知。
     #[serde(default)]
     pub new_info: Vec<String>,
+    /// 本段推进已完成的关键里程碑。
     #[serde(default)]
     pub milestones_completed: Vec<String>,
+    /// 场景节奏与推进态势的结构化描述。
     #[serde(default)]
     pub pacing: FatePacing,
+    /// 提供给主角或外部系统的可选行动分支。
     #[serde(default)]
     pub choices: Vec<FateChoice>,
 }

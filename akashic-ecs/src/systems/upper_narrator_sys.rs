@@ -5,8 +5,6 @@ use bevy_ecs::{
     system::{Query, Res, ResMut},
 };
 
-use agent::agent::Context;
-
 use crate::{
     components::upper_narrator::UpperNarrator,
     resources::{
@@ -32,12 +30,12 @@ pub fn upper_narrator_system(
         return;
     }
 
-    let Some(spec) = narrator_phase_spec(turn_state.phase) else {
+    let Some(kind) = narrator_task_kind(turn_state.phase) else {
         return;
     };
 
-    let context = spec.build_context(upper_narrator, &world_state);
-    task_manager.spawn_task(entity, spec.kind, &context);
+    let context = upper_narrator.build_task_context(&world_state, turn_state.phase);
+    task_manager.spawn_task(entity, kind, &context);
 }
 
 pub fn upper_narrator_result_apply_system(
@@ -59,17 +57,27 @@ pub fn upper_narrator_result_apply_system(
     }
 
     // 叙事阶段已经切走时，旧 narration task 不应继续占住 entity。
-    let Some(spec) = narrator_phase_spec(turn_state.phase) else {
+    let Some(expected_kind) = narrator_task_kind(turn_state.phase) else {
         task_manager.clear_task(entity);
         return;
     };
+
+    if task_result.kind != expected_kind {
+        task_manager.clear_task(entity);
+        return;
+    }
 
     match task_result.status {
         TaskStatus::Pending | TaskStatus::Running => {}
         TaskStatus::Done => {
             let narration = task_success_output(&task_result);
 
-            spec.write_success_event(&mut event_writer, turn_state.active_turn_id, narration);
+            write_narration_success_event(
+                turn_state.phase,
+                &mut event_writer,
+                turn_state.active_turn_id,
+                narration,
+            );
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {
@@ -81,48 +89,33 @@ pub fn upper_narrator_result_apply_system(
     }
 }
 
-#[derive(Clone, Copy)]
-struct NarratorPhaseSpec {
+fn write_narration_success_event(
     phase: TurnPhase,
-    kind: TaskKind,
-}
-
-impl NarratorPhaseSpec {
-    fn build_context(self, upper_narrator: &UpperNarrator, world_state: &WorldState) -> Context {
-        upper_narrator.build_task_context(world_state, self.phase)
-    }
-
-    fn write_success_event(
-        self,
-        event_writer: &mut MessageWriter<TurnEvent>,
-        turn_id: u64,
-        narration: String,
-    ) {
-        match self.phase {
-            TurnPhase::NarratorScene => {
-                event_writer.write(TurnEvent::SceneNarrationGenerated {
-                    turn_id,
-                    scene_text: narration,
-                });
-            }
-            TurnPhase::NarratorStory => {
-                event_writer.write(TurnEvent::StoryNarrationGenerated {
-                    turn_id,
-                    story_text: narration,
-                });
-            }
-            _ => {}
-        }
-    }
-}
-
-// 把叙事阶段映射为统一规格，spawn/apply 共用，避免 Scene/Story 两处分支长期漂移。
-fn narrator_phase_spec(phase: TurnPhase) -> Option<NarratorPhaseSpec> {
+    event_writer: &mut MessageWriter<TurnEvent>,
+    turn_id: u64,
+    narration: String,
+) {
     match phase {
-        TurnPhase::NarratorScene | TurnPhase::NarratorStory => Some(NarratorPhaseSpec {
-            phase,
-            kind: TaskKind::Narration,
-        }),
+        TurnPhase::NarratorScene => {
+            event_writer.write(TurnEvent::SceneNarrationGenerated {
+                turn_id,
+                scene_text: narration,
+            });
+        }
+        TurnPhase::NarratorStory => {
+            event_writer.write(TurnEvent::StoryNarrationGenerated {
+                turn_id,
+                story_text: narration,
+            });
+        }
+        _ => {}
+    }
+}
+
+// 只保留 phase -> TaskKind 的轻量映射，避免 spawn/apply 两边各写一份判定。
+fn narrator_task_kind(phase: TurnPhase) -> Option<TaskKind> {
+    match phase {
+        TurnPhase::NarratorScene | TurnPhase::NarratorStory => Some(TaskKind::Narration),
         _ => None,
     }
 }

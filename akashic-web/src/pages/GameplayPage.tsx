@@ -1,152 +1,210 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Clock3,
+  Eye,
+  Flame,
+  Save,
+  ScanFace,
+  Share2,
+  Sparkles,
+  UserRound,
+} from 'lucide-react';
 import { useGameStore } from '../store/gameStore';
 import Typewriter from '../components/Typewriter';
-import { Settings, Save, History, Users, Flame, Eye, Globe } from 'lucide-react';
+import {
+  PrimaryButton,
+  ScreenShell,
+  SecondaryButton,
+  StatusPill,
+  StoryFrame,
+} from '../components/AkashicUI';
+
+const locationByEra: Record<string, string> = {
+  蒸汽朋克: '铸铁之城 · 下环区',
+  星际拓荒: '边境星港 · 第七码头',
+  东方玄幻: '雾隐城 · 长街',
+  末日废土: '余烬聚落 · 风口哨站',
+};
 
 const GameplayPage: React.FC = () => {
-  const { storyNodes, currentNodeId, makeChoice, obsessionPoints, intuitionPoints, worldNews, useIntuition, useObsession } = useGameStore();
+  const {
+    storyNodes,
+    currentNodeId,
+    makeChoice,
+    obsessionPoints,
+    intuitionPoints,
+    worldNews,
+    useIntuition,
+    useObsession,
+    character,
+    world,
+  } = useGameStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  const currentNode = storyNodes.find(n => n.id === currentNodeId);
+  const currentNode = storyNodes.find((node) => node.id === currentNodeId);
+  const daysLeft = useMemo(() => Math.max(30 - Math.max(storyNodes.length - 1, 0) * 6, 0), [storyNodes.length]);
+  const currentLocation = locationByEra[world.era] ?? '灰雾城区 · 未知坐标';
+
+  useEffect(() => {
+    if (!feedback) return undefined;
+
+    const timer = window.setTimeout(() => setFeedback(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
 
   if (!currentNode) return null;
 
-  const handlePreview = (choiceId: string, e: React.MouseEvent) => {
+  const handlePreview = (choiceId: string, choiceText: string, e: React.MouseEvent) => {
     e.stopPropagation();
+
     if (previews[choiceId]) return;
-    if (useIntuition()) {
-      // Mocking a blurry preview text snippet based on choice text
-      const previewText = `未来的模糊片段：你隐约看到，由于这个选择，将会面临意想不到的转折...`;
-      setPreviews(prev => ({ ...prev, [choiceId]: previewText }));
-    } else {
-      alert("直觉值不足");
+
+    if (!useIntuition()) {
+      setFeedback('直觉不足，无法窥探未来片段。');
+      return;
     }
+
+    setPreviews((prev) => ({
+      ...prev,
+      [choiceId]: `未来的模糊片段在你眼前闪现：若选择“${choiceText}”，某个被遗忘的人会比你更早抵达真相。`,
+    }));
+    setFeedback('你窥见了一角尚未到来的命运。');
   };
 
   const handleChoiceClick = (choiceId: string) => {
     if (activeObsession) {
-      if (useObsession()) {
-         makeChoice(choiceId, true);
-      } else {
-         alert("执念点数不足");
-         return;
+      if (!useObsession()) {
+        setFeedback('执念已经耗尽，无法继续强行扭动命运。');
+        return;
       }
+      makeChoice(choiceId, true);
     } else {
       makeChoice(choiceId, false);
     }
+
     setIsTyping(true);
     setActiveObsession(false);
     setPreviews({});
+    setFeedback(null);
   };
 
   return (
-    <div className="w-full h-full flex flex-col relative overflow-hidden bg-black">
-      {/* World News Toast */}
-      {worldNews && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className="glass-panel px-6 py-3 rounded-full flex items-center gap-3 border border-amber-500/30 bg-black/60 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-            <Globe className="w-5 h-5 text-amber-400 animate-pulse" />
-            <span className="text-amber-100 text-sm font-medium tracking-wide">{worldNews}</span>
-          </div>
-        </div>
-      )}
+    <ScreenShell className="items-stretch">
+      <StoryFrame className="relative max-w-4xl overflow-hidden px-3 py-3 sm:px-4 sm:py-4 md:px-5 md:py-5">
+        <div
+          className="pointer-events-none absolute inset-x-5 top-20 h-56 rounded-[1.8rem] bg-cover bg-center opacity-35 md:inset-x-6"
+          style={{ backgroundImage: `url("${currentNode.image}")` }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#08111d]/35 to-[#08111d]" />
 
-      {/* Background Image / Dynamic Scene */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center opacity-60 transition-all duration-1000"
-        style={{ backgroundImage: `url("${currentNode.image}")` }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
-
-      {/* Top Quick Actions Bar */}
-      <div className="relative z-10 flex justify-between items-center p-4">
-        <div className="flex flex-col gap-2">
-          <div className="glass-panel px-4 py-2 rounded-full flex gap-4">
-            <button className="text-zinc-300 hover:text-white" title="存档"><Save className="w-5 h-5" /></button>
-            <button className="text-zinc-300 hover:text-white" title="历史记录"><History className="w-5 h-5" /></button>
-            <button className="text-zinc-300 hover:text-white" title="人物关系"><Users className="w-5 h-5" /></button>
+        <div className="relative z-10 space-y-5">
+          <div className="flex flex-wrap gap-3">
+            <StatusPill icon={Flame}>执念 {obsessionPoints}/5</StatusPill>
+            <StatusPill icon={Eye}>直觉 {intuitionPoints}</StatusPill>
+            <StatusPill icon={Clock3}>{daysLeft}日</StatusPill>
           </div>
-          
-          {/* Resource Indicators */}
-          <div className="flex gap-2 px-2">
-            <div className="flex items-center gap-1.5 text-red-400 bg-black/40 px-3 py-1 rounded-full border border-red-900/50" title="执念点数">
-              <Flame className="w-4 h-4" />
-              <span className="text-sm font-bold">{obsessionPoints}</span>
+
+          <section className="akashic-panel flex min-h-[13.5rem] items-center justify-center px-4 py-6 text-center sm:min-h-[15rem] sm:px-5 sm:py-7 md:min-h-[16rem] md:px-6 md:py-8">
+            <div className="space-y-3">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-[#6f6655] bg-[#23282f]/90 text-[#c8bca9] sm:h-18 sm:w-18 md:h-20 md:w-20">
+                <ScanFace className="h-8 w-8 md:h-10 md:w-10" />
+              </div>
+              <div className="inline-flex items-center justify-center gap-2 text-[#d8ccb8]">
+                <UserRound className="h-4 w-4" />
+                <span className="text-xl font-semibold sm:text-2xl">{character.name || '无名旅人'}</span>
+              </div>
+              <p className="text-sm text-[#9ca7be]">{currentLocation}</p>
+              <p className="mx-auto max-w-xl text-sm leading-6 text-[#c3cde0]/85">
+                {character.appearance || '一张尚未被叙事完全揭露的面孔。'}
+              </p>
             </div>
-            <div className="flex items-center gap-1.5 text-cyan-400 bg-black/40 px-3 py-1 rounded-full border border-cyan-900/50" title="直觉值">
-              <Eye className="w-4 h-4" />
-              <span className="text-sm font-bold">{intuitionPoints}</span>
+          </section>
+
+          {worldNews ? (
+            <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 text-amber-100">
+              <Sparkles className="h-4 w-4 text-amber-200" />
+              <span>{worldNews}</span>
             </div>
-          </div>
-        </div>
-        <button className="glass-panel p-2 rounded-full text-zinc-300 hover:text-white self-start">
-          <Settings className="w-5 h-5" />
-        </button>
-      </div>
+          ) : null}
 
-      {/* Story Text Area */}
-      <div className="relative z-10 flex-1 flex flex-col justify-end p-4 md:p-8 pb-40">
-        <div className="glass-panel p-6 md:p-8 rounded-2xl w-full max-w-4xl mx-auto shadow-2xl transition-all duration-500">
-          <div className="text-lg md:text-xl leading-relaxed text-zinc-100 min-h-[150px]">
-            <Typewriter 
-              text={currentNode.text} 
-              speed={40} 
-              onComplete={() => setIsTyping(false)} 
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Choices Area (Bottom for Thumb Operation) */}
-      <div className="absolute bottom-0 left-0 w-full p-4 md:p-8 bg-gradient-to-t from-black via-black/90 to-transparent z-20">
-        <div className="max-w-4xl mx-auto flex flex-col gap-3">
-          
-          {!isTyping && (
-            <div className="flex justify-end mb-2">
-              <button 
-                onClick={() => setActiveObsession(!activeObsession)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${activeObsession ? 'bg-red-900/40 border-red-500 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'bg-black/50 border-zinc-700 text-zinc-400 hover:text-zinc-200'}`}
-              >
-                <Flame className={`w-4 h-4 ${activeObsession ? 'animate-pulse' : ''}`} />
-                <span className="text-sm">倾注执念</span>
-              </button>
-            </div>
-          )}
-
-          {!isTyping && currentNode.choices.map((choice) => (
-            <div key={choice.id} className="relative group">
-              <button
-                onClick={() => handleChoiceClick(choice.id)}
-                className={`w-full glass-panel py-4 px-6 rounded-xl text-left transition-all active:scale-[0.98] ${activeObsession ? 'border-red-900/50 hover:border-red-500/80 hover:bg-red-950/20' : 'border-zinc-700/50 hover:bg-white/10 hover:border-white/20'}`}
-              >
-                <div className="flex justify-between items-center">
-                  <span className={`text-lg ${activeObsession ? 'text-red-100' : 'text-zinc-200'}`}>{choice.text}</span>
-                  
-                  {!previews[choice.id] && (
-                    <div 
-                      onClick={(e) => handlePreview(choice.id, e)}
-                      className="p-2 rounded-full bg-cyan-900/30 text-cyan-400 hover:bg-cyan-800/50 transition-colors border border-cyan-800/50 cursor-pointer"
-                      title="消耗 1 直觉值窥探命运"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </div>
-                  )}
+          <section className="akashic-panel px-4 py-4 sm:px-5 sm:py-5 md:px-7 md:py-6">
+            <div className="rounded-[1.15rem] bg-[#040912]/90 pl-4 sm:rounded-[1.35rem] sm:pl-5 md:rounded-[1.5rem] md:pl-6">
+              <div className="border-l-[3px] border-[#d4b688] py-4 pr-4 sm:py-5 sm:pr-5 md:py-6 md:pr-6">
+                <div className="min-h-[6rem] whitespace-pre-wrap text-[1.05rem] font-semibold leading-[1.8] text-[#f6eddc] sm:min-h-[6.75rem] sm:text-[1.3rem] md:min-h-[7.5rem] md:text-[2rem]">
+                  <Typewriter text={currentNode.text} speed={28} onComplete={() => setIsTyping(false)} />
                 </div>
-                
-                {previews[choice.id] && (
-                  <div className="mt-3 p-3 rounded-lg bg-black/40 border border-cyan-900/50 text-cyan-200 text-sm italic relative overflow-hidden">
-                    <div className="absolute inset-0 backdrop-blur-[2px] z-0"></div>
-                    <span className="relative z-10">{previews[choice.id]}</span>
-                  </div>
-                )}
-              </button>
+              </div>
             </div>
-          ))}
+            <p className="mt-3 text-xs tracking-wide text-[#7f8aa2]">
+              {isTyping ? '轻触文字区域可跳过打字效果。' : '命运已经停顿，请做出你的选择。'}
+            </p>
+          </section>
+
+          <div className="space-y-3">
+            {currentNode.choices.map((choice) => (
+              <div key={choice.id} className="space-y-2">
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleChoiceClick(choice.id)}
+                    disabled={isTyping}
+                    className={`akashic-choice min-h-[5rem] flex-1 disabled:cursor-not-allowed disabled:opacity-50 ${
+                      activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
+                    }`}
+                  >
+                    <div className="text-left">
+                      <div className="text-lg font-semibold leading-7 sm:text-xl sm:leading-8">{choice.text}</div>
+                      <div className="mt-1 text-xs leading-5 text-[#9ca7be] sm:text-sm sm:leading-6">
+                        {activeObsession ? '执念将放大这次抉择的代价与回响' : '或许能遇到关键人物，或触发另一条线索'}
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => handlePreview(choice.id, choice.text, e)}
+                    disabled={isTyping}
+                    className="akashic-icon-btn shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="消耗 1 点直觉，窥探命运碎片"
+                  >
+                    <Eye className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {previews[choice.id] ? (
+                  <div className="rounded-[1rem] border border-cyan-400/20 bg-cyan-950/10 px-4 py-3 text-sm leading-6 text-cyan-100/90 sm:rounded-[1.2rem] sm:px-5">
+                    {previews[choice.id]}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-3 pt-1">
+            <SecondaryButton
+              onClick={() => setActiveObsession((prev) => !prev)}
+              className={activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}
+              disabled={isTyping}
+            >
+              <Flame className={`h-4 w-4 ${activeObsession ? 'animate-pulse' : ''}`} />
+              倾注执念
+            </SecondaryButton>
+            <SecondaryButton type="button">
+              <Save className="h-4 w-4" />
+              存档
+            </SecondaryButton>
+            <PrimaryButton type="button">
+              <Share2 className="h-4 w-4" />
+              存档/分享
+            </PrimaryButton>
+          </div>
+
+          {feedback ? <p className="text-sm text-[#d9cbb1]">{feedback}</p> : null}
         </div>
-      </div>
-    </div>
+      </StoryFrame>
+    </ScreenShell>
   );
 };
 

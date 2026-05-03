@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type GameState = 'lobby' | 'creation' | 'playing' | 'ending';
+export type GameState = 'lobby' | 'creation' | 'playing' | 'ending' | 'corridor';
 
 export interface Character {
   name: string;

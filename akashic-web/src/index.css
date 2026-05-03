@@ -43,6 +43,10 @@
     @apply bg-background text-foreground overflow-hidden font-sans;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+    background-image:
+      radial-gradient(circle at top left, rgba(76, 102, 138, 0.28), transparent 30%),
+      radial-gradient(circle at top right, rgba(46, 80, 120, 0.24), transparent 24%),
+      linear-gradient(135deg, #13233a 0%, #0c1424 30%, #08111d 58%, #09101a 100%);
   }
 }
 
@@ -56,4 +60,154 @@
   .text-shadow {
     text-shadow: 0 2px 4px rgba(0,0,0,0.5);
   }
+
+  .akashic-surface {
+    @apply relative overflow-hidden rounded-[1.5rem] border backdrop-blur-xl sm:rounded-[1.75rem] md:rounded-[2rem];
+    border-color: rgba(116, 103, 80, 0.42);
+    background:
+      linear-gradient(180deg, rgba(14, 24, 41, 0.95) 0%, rgba(8, 14, 26, 0.96) 100%);
+    box-shadow:
+      0 24px 70px rgba(2, 10, 20, 0.58),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+
+  .akashic-panel {
+    @apply relative overflow-hidden rounded-[1.2rem] border backdrop-blur-md sm:rounded-[1.45rem] md:rounded-[1.7rem];
+    border-color: rgba(116, 103, 80, 0.45);
+    background:
+      linear-gradient(180deg, rgba(4, 10, 24, 0.95) 0%, rgba(10, 17, 31, 0.92) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 14px 36px rgba(2, 8, 18, 0.45);
+  }
+
+  .akashic-pill {
+    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold tracking-wide md:px-4 md:py-2 md:text-sm;
+    border-color: rgba(116, 103, 80, 0.7);
+    color: #f3e8d4;
+    background-color: rgba(10, 18, 34, 0.92);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .akashic-field {
+    @apply h-11 w-full rounded-full border px-4 text-sm text-[#f5ecdc] outline-none transition-colors md:h-12 md:text-base;
+    border-color: rgba(116, 103, 80, 0.65);
+    background-color: rgba(29, 40, 59, 0.88);
+  }
+
+  .akashic-field::placeholder {
+    color: rgba(174, 183, 198, 0.72);
+  }
+
+  .akashic-field:focus {
+    border-color: rgba(210, 185, 144, 0.92);
+    box-shadow: 0 0 0 1px rgba(210, 185, 144, 0.35);
+  }
+
+  .akashic-select {
+    @apply akashic-field appearance-none pr-10;
+  }
+
+  .akashic-choice {
+    @apply w-full rounded-[1.2rem] border px-4 py-3 text-left transition-all duration-200 sm:rounded-[1.4rem] sm:px-5 sm:py-4 md:rounded-[1.6rem] md:px-6;
+    border-color: rgba(116, 103, 80, 0.6);
+    background:
+      linear-gradient(180deg, rgba(22, 31, 49, 0.92) 0%, rgba(21, 30, 49, 0.82) 100%);
+  }
+
+  .akashic-choice:hover {
+    transform: translateY(-1px);
+    border-color: rgba(215, 188, 146, 0.78);
+    background:
+      linear-gradient(180deg, rgba(26, 38, 61, 0.96) 0%, rgba(22, 31, 49, 0.9) 100%);
+  }
+
+  .akashic-icon-btn {
+    @apply flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full border transition-all duration-200 sm:h-[4.25rem] sm:w-[4.25rem] md:h-[4.75rem] md:w-[4.75rem];
+    border-color: rgba(116, 103, 80, 0.6);
+    background-color: rgba(42, 46, 57, 0.92);
+    color: #f0e7d6;
+  }
+
+  .akashic-icon-btn:hover {
+    border-color: rgba(215, 188, 146, 0.8);
+    background-color: rgba(62, 67, 80, 0.96);
+  }
+
+  .akashic-primary-btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-12 md:px-5 md:py-3;
+    border-color: rgba(210, 185, 144, 0.8);
+    color: #111723;
+    background: linear-gradient(180deg, #f0dfc2 0%, #d1b78d 100%);
+    box-shadow: 0 10px 24px rgba(17, 25, 39, 0.25);
+  }
+
+  .akashic-primary-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(17, 25, 39, 0.32);
+  }
+
+  .akashic-secondary-btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold text-[#f5ecdc] transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 md:min-h-12 md:px-5 md:py-3;
+    border-color: rgba(116, 103, 80, 0.72);
+    background-color: rgba(48, 49, 59, 0.92);
+  }
+
+  .akashic-secondary-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(215, 188, 146, 0.82);
+    background-color: rgba(66, 69, 81, 0.95);
+  }
+
+  .akashic-range {
+    @apply h-1.5 w-full cursor-pointer appearance-none rounded-full sm:h-[0.45rem] md:h-2;
+    background: linear-gradient(90deg, #1273ff 0%, #1c84ff 55%, rgba(255, 255, 255, 0.92) 55%, rgba(255, 255, 255, 0.92) 100%);
+  }
+
+  .akashic-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(210, 185, 144, 0.35) transparent;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+
+  .akashic-scroll::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .akashic-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .akashic-scroll::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(210, 185, 144, 0.3);
+  }
+}
+
+input.akashic-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  border: 0;
+  background: #1273ff;
+  box-shadow: 0 0 0 3px rgba(18, 115, 255, 0.18);
+}
+
+input.akashic-range::-moz-range-thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 9999px;
+  border: 0;
+  background: #1273ff;
+  box-shadow: 0 0 0 3px rgba(18, 115, 255, 0.18);
+}
+
+input.akashic-range::-moz-range-track {
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.92);
 }
