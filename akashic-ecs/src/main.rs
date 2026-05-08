@@ -24,7 +24,9 @@ use bevy_ecs::{
     prelude::*,
     schedule::Schedule,
 };
-use std::{collections::HashMap, env};
+use std::{collections::HashMap, env, fs::OpenOptions, io::Write};
+
+const OUTPUT_FILE_PATH: &str = "akashic_output.txt";
 
 #[tokio::main]
 async fn main() {
@@ -80,7 +82,6 @@ async fn main() {
     println!("== Akashic ECS ==");
 
     let mut frame = 0;
-    let mut last_phase = None;
     loop {
         let (turn_index, phase) = {
             let turn_state = world.resource::<TurnState>();
@@ -91,13 +92,12 @@ async fn main() {
             eprintln!("在 {} 轮发生错误，失败", turn_index);
             return;
         }
-        if last_phase != Some(TurnPhase::Idle) {
+        if phase == TurnPhase::Idle {
             println!("");
             print_frame_status(&world, frame);
             println!("");
             print_result(&mut world);
             println!("------------------------------------------------------------------------");
-            last_phase = Some(phase);
         }
         schedule.run(&mut world);
         // print_task_chunks(&world, &mut HashMap::new());
@@ -145,6 +145,25 @@ fn print_result(world: &mut World) {
     println!("protagonist action:");
     println!("{selected_action}");
     println!("");
+
+    output_file(&narrator_latest_msg, &selected_action);
+}
+
+fn output_file(narrator_latest_msg: &str, protagonist_action: &str) {
+    let output = format!(
+        "narrator latest msg:\n{}\n\nprotagonist action:\n{}\n",
+        narrator_latest_msg, protagonist_action
+    );
+
+    let write_result = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(OUTPUT_FILE_PATH)
+        .and_then(|mut file| file.write_all(output.as_bytes()));
+
+    if let Err(err) = write_result {
+        eprintln!("写入输出文件失败: {err}");
+    }
 }
 
 fn print_task_chunks(world: &World, task_chunk_offsets: &mut HashMap<Entity, usize>) {

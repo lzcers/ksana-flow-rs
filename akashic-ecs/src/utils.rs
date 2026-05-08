@@ -1,3 +1,4 @@
+use llm_json::{JsonRepairError, loads, repair_json};
 use std::{env, sync::Arc};
 
 use agent::{
@@ -62,18 +63,15 @@ where
 
     if let Ok(parsed) = serde_json::from_str::<T>(cleaned) {
         return Ok(parsed);
-    }
-
-    if let Some(start) = cleaned.find('{')
-        && let Some(end) = cleaned.rfind('}')
-    {
-        let slice = &cleaned[start..=end];
-        if let Ok(parsed) = serde_json::from_str::<T>(slice) {
+    } else {
+        let repaired = repair_json(cleaned, &Default::default())
+            .expect(&format!("无法解析 JSON 响应: {}", cleaned));
+        if let Ok(parsed) = serde_json::from_str::<T>(&repaired) {
             return Ok(parsed);
+        } else {
+            return Err(format!("无法解析 JSON 响应: {}", cleaned));
         }
     }
-
-    Err(format!("无法解析 JSON 响应: {}", cleaned))
 }
 
 pub fn task_success_output(task_result: &TaskResult) -> String {
