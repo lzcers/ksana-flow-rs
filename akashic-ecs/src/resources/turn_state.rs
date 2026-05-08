@@ -47,7 +47,7 @@ impl TurnState {
 
     pub fn finish_turn(&mut self) {
         self.turn_index += 1;
-        self.active_turn_id = self.turn_index + 1;
+        self.active_turn_id = self.turn_index;
         self.phase = TurnPhase::Idle;
     }
 }

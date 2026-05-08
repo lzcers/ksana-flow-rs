@@ -31,7 +31,7 @@ pub fn upper_narrator_system(
     let Ok((entity, mut upper_narrator)) = query.single_mut() else {
         return;
     };
-    let protagonist_action = protagonist_action.take();
+    let protagonist_action = protagonist_action.get();
     upper_narrator.add_user_message(&world_snapshot.to_story_prompt(Some(&protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::Narration, &upper_narrator.context());
     event_writer.write(TurnEvent::StoryWriting);

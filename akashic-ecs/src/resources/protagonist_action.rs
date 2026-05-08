@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct ProtagonistAction(pub String);
 
 impl ProtagonistAction {
-    pub fn take(&mut self) -> String {
-        std::mem::replace(&mut self.0, "continue".to_string())
+    pub fn get(&self) -> &str {
+        &self.0
     }
     pub fn set(&mut self, action: String) {
         self.0 = action;

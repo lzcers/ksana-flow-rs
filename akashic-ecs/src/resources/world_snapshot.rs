@@ -163,7 +163,7 @@ impl WorldSnapshot {
         writeln!(out).unwrap();
 
         // ── 地点 ──
-        write!(out, "地点：{}。", ws.location.current).unwrap();
+        write!(out, "地点：{}", ws.location.current).unwrap();
         if !ws.location.exits.is_empty() {
             write!(out, "出口有").unwrap();
             let exits_desc: Vec<String> = ws.location.exits.iter().map(|e| e.clone()).collect();
@@ -173,7 +173,7 @@ impl WorldSnapshot {
         writeln!(out, "环境：{}", ws.location.status).unwrap();
 
         // ── 主角 ──
-        writeln!(out, "主角：{}。", ws.protagonist.name).unwrap();
+        writeln!(out, "主角：{}", ws.protagonist.name).unwrap();
         writeln!(out, "状态：{}", ws.protagonist.condition).unwrap();
         if !ws.protagonist.known_secrets.is_empty() {
             writeln!(out, "已知秘密：{}", ws.protagonist.known_secrets.join("；")).unwrap();

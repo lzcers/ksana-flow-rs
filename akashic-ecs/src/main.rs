@@ -24,9 +24,9 @@ use bevy_ecs::{
     prelude::*,
     schedule::Schedule,
 };
-use std::env;
+use std::{collections::HashMap, env};
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
 
@@ -91,7 +91,6 @@ async fn main() {
             eprintln!("demo 在第 {frame} 帧进入失败态。");
             return;
         }
-
         if last_phase != Some(phase) {
             println!("");
             print_frame_status(&world, frame);
@@ -143,4 +142,33 @@ fn print_result(world: &mut World) {
     println!("{}", narrator_latest_msg);
     println!("protagonist action:");
     println!("{selected_action}");
+}
+
+fn print_task_chunks(world: &World, task_chunk_offsets: &mut HashMap<Entity, usize>) {
+    let mut task_results = world.resource::<TaskManager>().task_results_snapshot();
+    if task_results.is_empty() {
+        task_chunk_offsets.clear();
+        return;
+    }
+
+    task_results.sort_by_key(|(entity, _)| entity.index());
+
+    let active_entities = task_results
+        .iter()
+        .map(|(entity, _)| *entity)
+        .collect::<Vec<_>>();
+    task_chunk_offsets.retain(|entity, _| active_entities.contains(entity));
+
+    for (entity, task_result) in task_results {
+        let printed_count = task_chunk_offsets.get(&entity).copied().unwrap_or(0);
+        if printed_count >= task_result.chunks.len() {
+            continue;
+        }
+
+        for chunk in &task_result.chunks[printed_count..] {
+            println!("[task {:?} {:?} chunk] {}", entity, task_result.kind, chunk);
+        }
+
+        task_chunk_offsets.insert(entity, task_result.chunks.len());
+    }
 }

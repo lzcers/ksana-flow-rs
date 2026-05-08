@@ -36,7 +36,7 @@ pub fn fate_weaver_system(
     // let protagonist_action
     // 创建命运推演任务
     let round = turn_state.turn_index;
-    let protagonist_action = protagonist_action.take();
+    let protagonist_action = protagonist_action.get();
     fate_weaver.append_user_message(
         &json!({"round": round, "protagonist_action": protagonist_action}).to_string(),
     );
