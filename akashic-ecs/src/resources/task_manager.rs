@@ -93,7 +93,10 @@ impl TaskManager {
 
     fn model_for_kind(&self, kind: TaskKind) -> ChatModel {
         let mut model = self.model.clone();
-        model.set_output_json(matches!(kind, TaskKind::FatePlanning));
+        model.set_output_json(matches!(
+            kind,
+            TaskKind::FatePlanning | TaskKind::ProtagonistAction
+        ));
         model
     }
 
