@@ -16,9 +16,14 @@ use akashic_ecs::{
         turn_orchestrator_sys::turn_orchestrator_system,
         upper_narrator_sys::{upper_narrator_apply_system, upper_narrator_system},
     },
+    turn_messages::TurnEvent,
     utils::build_chat_model,
 };
-use bevy_ecs::{prelude::*, schedule::Schedule};
+use bevy_ecs::{
+    message::{Messages, message_update_system},
+    prelude::*,
+    schedule::Schedule,
+};
 use std::{env, time::Duration};
 use tokio::time::sleep;
 
@@ -35,8 +40,10 @@ async fn main() {
     let mut world = World::new();
 
     // 资源初始化
-    world.insert_resource(TurnState::default());
-    world.insert_resource(ProtagonistAction::default());
+    world.init_resource::<WorldSnapshot>();
+    world.init_resource::<TurnState>();
+    world.init_resource::<ProtagonistAction>();
+    world.init_resource::<Messages<TurnEvent>>();
     world.insert_resource(TaskManager::new(build_chat_model()));
 
     // 实体初始化
@@ -55,9 +62,11 @@ async fn main() {
 
     // 调度器初始化
     let mut schedule = Schedule::default();
+
     schedule.add_systems(
         (
             task_system,
+            message_update_system,
             turn_orchestrator_system,
             fate_weaver_system,
             fate_weaver_apply_system,
@@ -85,9 +94,8 @@ async fn main() {
             eprintln!("demo 在第 {frame} 帧进入失败态。");
             return;
         }
-        if turn_index >= 1 {
+        if turn_index >= 0 {
             print_result(&world);
-            return;
         }
 
         sleep(Duration::from_millis(200)).await;
@@ -117,7 +125,6 @@ fn print_frame_status(world: &World, frame: usize) {
 fn print_result(world: &World) {
     let selected_action = world.resource::<ProtagonistAction>().0.clone();
     let world_snapshot = world.resource::<WorldSnapshot>().clone();
-
     println!();
     println!("主角最终选择：{selected_action}");
     println!();

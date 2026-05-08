@@ -32,7 +32,7 @@ impl Default for TurnState {
         Self {
             phase: TurnPhase::Idle,
             turn_index: 0,
-            active_turn_id: 1,
+            active_turn_id: 0,
             latest_broadcast_summary: String::new(),
             latest_protagonist_action: String::new(),
         }

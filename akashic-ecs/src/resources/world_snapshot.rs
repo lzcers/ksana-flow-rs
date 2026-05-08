@@ -2,7 +2,7 @@ use bevy_ecs::resource::Resource;
 use serde::{Deserialize, Serialize};
 
 /// 世界 Agent 单轮完整输出
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct WorldSnapshot {
     pub encounter: Encounter,
@@ -13,7 +13,7 @@ pub struct WorldSnapshot {
 // ─── Encounter ────────────────────────────────────────
 
 /// 呈现给主角和故事演绎 Agent 的当前情境
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct Encounter {
     pub scene_title: String,
@@ -29,7 +29,7 @@ pub struct Encounter {
     pub inner_conflict: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct EncounterLocation {
     pub name: String,
@@ -41,7 +41,7 @@ pub struct EncounterLocation {
 // ─── Narration Metadata ───────────────────────────────
 
 /// 传递给故事演绎 Agent 的写作约束
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct NarrationMetadata {
     /// 必须出现在最终叙事中的关键信息（伏笔、情绪真相、逻辑事实）
@@ -58,7 +58,7 @@ pub struct NarrationMetadata {
 // ─── World State ──────────────────────────────────────
 
 /// 完整世界快照，供下一轮世界 Agent 读取
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub struct WorldState {
     pub round: u32,
@@ -73,7 +73,7 @@ pub struct WorldState {
     pub pacing_note: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct WorldTime {
     /// 故事内绝对时间，如 "第三日 凌晨两点一刻"
@@ -82,7 +82,7 @@ pub struct WorldTime {
     pub relative: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct WorldLocation {
     pub current: String,
@@ -91,7 +91,7 @@ pub struct WorldLocation {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ProtagonistState {
     pub name: String,

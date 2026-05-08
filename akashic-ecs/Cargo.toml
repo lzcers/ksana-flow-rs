@@ -14,5 +14,5 @@ futures = { workspace = true }
 dotenv = { workspace = true }
 async-stream = "0.3"
 rand = "0.8.5"
-bevy_ecs = "0.18.1"
+bevy_ecs = { version = "0.18.1", features = ["debug"] }
 bevy_tasks = "0.18.1"
