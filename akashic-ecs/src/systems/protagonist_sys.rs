@@ -31,8 +31,8 @@ pub fn protagonist_system(
     let Ok((entity, mut protagonist)) = query.single_mut() else {
         return;
     };
-    protagonist.add_user_message(&&world_snapshot.to_protagonist_prompt());
-    task_manager.spawn_task(entity, TaskKind::Narration, &protagonist.context());
+    protagonist.add_user_message(&world_snapshot.to_protagonist_prompt());
+    task_manager.spawn_task(entity, TaskKind::ProtagonistAction, &protagonist.context());
     event_writer.write(TurnEvent::AwaitingProtagonist);
 }
 

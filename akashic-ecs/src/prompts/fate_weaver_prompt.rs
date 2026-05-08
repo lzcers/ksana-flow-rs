@@ -22,10 +22,16 @@ pub static FATE_BASE_SYSTEM_PROMPT: &str = r#"
 ## 输入说明
 
 每一轮，你会收到一条用户消息，格式固定为：
-{"protagonist_action": "主角上一轮的具体行动描述"}
+{
+  "round": 1,
+  "protagonist_action": "主角上一轮的具体行动描述"
+}
 
 如果是故事第一轮，消息为：
-{"protagonist_action": "start"}
+{
+  "round": 0,
+  "protagonist_action": "start"
+}
 
 你将根据这条行动，从你上一轮输出中的 `world_state` 出发，完成推演。
 

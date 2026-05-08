@@ -1,5 +1,4 @@
 use bevy_ecs::{message::MessageReader, system::ResMut};
-use uuid::fmt::Urn;
 
 use crate::{
     resources::turn_state::{TurnPhase, TurnState},
@@ -40,6 +39,5 @@ fn handle_event(event: &TurnEvent, turn_state: &mut TurnState) {
         TurnEvent::TaskFailed { .. } => {
             turn_state.phase = TurnPhase::Failed;
         }
-        _ => {}
     }
 }

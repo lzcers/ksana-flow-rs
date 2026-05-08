@@ -256,8 +256,8 @@ impl WorldSnapshot {
         writeln!(out, "环境细节：{}", enc.description).unwrap();
 
         // ── 主角行动 ──
-        if !protagonist_action.is_some() {
-            writeln!(out, "主角刚刚的行动：{}", protagonist_action.unwrap()).unwrap();
+        if let Some(protagonist_action) = protagonist_action {
+            writeln!(out, "主角刚刚的行动：{}", protagonist_action).unwrap();
         }
 
         // ── 当前事件 ──

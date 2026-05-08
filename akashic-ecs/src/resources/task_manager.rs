@@ -135,7 +135,11 @@ impl TaskManager {
                     result.status = TaskStatus::Running;
                     result.chunks.push(content);
                 }
-                Poll::Ready(Some(CallModelEvent::Completed { content, usage, .. })) => {
+                Poll::Ready(Some(CallModelEvent::Completed {
+                    content,
+                    usage: _,
+                    ..
+                })) => {
                     result.result = Some(Ok(content));
                     result.status = TaskStatus::Done;
                     return TaskStatus::Done;
