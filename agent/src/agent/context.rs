@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::core::Message;
 
 /// 通用上下文 - 分层、类型化、可演化的数据容器
-/// 
+///
 /// Context 是 Agent 状态的核心部分，包含：
 /// - 系统指令（System）
 /// - 人格定义（Soul）
@@ -191,6 +191,20 @@ impl Context {
             .unwrap_or_default()
     }
 
+    /// 以纯文本形式输出当前上下文中的消息
+    pub fn print(&self) -> String {
+        self.to_messages()
+            .iter()
+            .map(format_message_as_text)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// 以纯文本形式输出最新一条消息
+    pub fn print_latest_msg(&self) -> Option<String> {
+        self.to_messages().last().map(format_message_as_text)
+    }
+
     /// 添加消息到对话历史
     pub fn add_message(&mut self, message: Message) {
         // 查找或创建对话层
@@ -305,6 +319,15 @@ fn layer_to_user_content(layer: &Layer) -> Option<String> {
     }
 }
 
+fn format_message_as_text(message: &Message) -> String {
+    match message {
+        Message::System { content } => format!("system: {}", content),
+        Message::User { content } => format!("user: {}", content),
+        Message::Assistant { content, .. } => format!("assistant: {}", content),
+        Message::Tool { content, .. } => format!("tool: {}", content),
+    }
+}
+
 impl Layer {
     /// 创建新层
     pub fn new(name: impl Into<String>, kind: LayerKind, data: Value) -> Self {
@@ -399,8 +422,12 @@ mod tests {
     fn test_memory_layers_become_user_messages() {
         let ctx = Context::new()
             .layer(
-                Layer::new("system", LayerKind::System, Value::String("Be helpful.".into()))
-                    .with_priority(100),
+                Layer::new(
+                    "system",
+                    LayerKind::System,
+                    Value::String("Be helpful.".into()),
+                )
+                .with_priority(100),
             )
             .layer(
                 Layer::new(
@@ -436,5 +463,42 @@ mod tests {
 
         let conv = ctx.conversation();
         assert_eq!(conv.len(), 2);
+    }
+
+    #[test]
+    fn test_context_print() {
+        let ctx = Context::new()
+            .layer(Layer::new(
+                "system",
+                LayerKind::System,
+                Value::String("Be helpful.".into()),
+            ))
+            .layer(Layer::new(
+                "conversation",
+                LayerKind::Conversation,
+                serde_json::json!([
+                    {"role": "user", "content": "Hello"},
+                    {"role": "assistant", "content": "Hi!"}
+                ]),
+            ));
+
+        assert_eq!(
+            ctx.print(),
+            "system: Be helpful.\nuser: Hello\nassistant: Hi!"
+        );
+    }
+
+    #[test]
+    fn test_context_print_latest_msg() {
+        let ctx = Context::new().layer(Layer::new(
+            "conversation",
+            LayerKind::Conversation,
+            serde_json::json!([
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi!"}
+            ]),
+        ));
+
+        assert_eq!(ctx.print_latest_msg().as_deref(), Some("assistant: Hi!"));
     }
 }

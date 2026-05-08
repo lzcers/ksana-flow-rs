@@ -14,7 +14,7 @@ use crate::{
         world_snapshot::WorldSnapshot,
     },
     turn_messages::TurnEvent,
-    utils::{parse_json_response, task_success_output},
+    utils::{parse_json_response, task_error_message, task_success_output, write_task_failed},
 };
 
 // FateWeaver 根据当前 phase 决定是做场景编排还是动作后果推演。
@@ -76,6 +76,11 @@ pub fn fate_weaver_apply_system(
             event_writer.write(TurnEvent::FateGenerated);
             task_manager.clear_task(entity);
         }
-        TaskStatus::Pending | TaskStatus::Running | TaskStatus::Error => {}
+        TaskStatus::Error => {
+            let message = task_error_message(&task_result, "FateWeaver 任务失败");
+            write_task_failed(&mut event_writer, &turn_state, entity, message);
+            task_manager.clear_task(entity);
+        }
+        TaskStatus::Running | TaskStatus::Pending => {}
     }
 }

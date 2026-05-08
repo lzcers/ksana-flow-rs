@@ -62,7 +62,7 @@ pub fn protagonist_apply_system(
                 .unwrap_or_else(|err| panic!("解析 Protagonist 输出失败: {err}"));
             // 默认选第一个选项
             // 提交选项到 ProtagonistAction 资源
-            protagonist_action.set(action_list.first_action().unwrap_or_default().to_string());
+            protagonist_action.set(action_list.first_action().unwrap_or("continue").to_string());
             event_writer.write(TurnEvent::ProtagonistCompleted);
             task_manager.clear_task(entity);
         }

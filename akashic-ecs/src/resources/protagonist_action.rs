@@ -16,7 +16,7 @@ impl ProtagonistAction {
 
 impl Default for ProtagonistAction {
     fn default() -> Self {
-        Self("continue".to_string())
+        Self("start".to_string())
     }
 }
 

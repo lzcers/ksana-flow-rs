@@ -136,9 +136,7 @@ impl TaskManager {
                     result.chunks.push(content);
                 }
                 Poll::Ready(Some(CallModelEvent::Completed {
-                    content,
-                    usage: _,
-                    ..
+                    content, usage: _, ..
                 })) => {
                     result.result = Some(Ok(content));
                     result.status = TaskStatus::Done;
@@ -169,15 +167,15 @@ impl TaskManager {
         self.results.get(&entity).cloned()
     }
 
+    pub fn clear_task(&mut self, entity: Entity) {
+        self.tasks.remove(&entity);
+        self.results.remove(&entity);
+    }
+
     pub fn task_results_snapshot(&self) -> Vec<(Entity, TaskResult)> {
         self.results
             .iter()
             .map(|(entity, result)| (*entity, result.clone()))
             .collect()
-    }
-
-    pub fn clear_task(&mut self, entity: Entity) {
-        self.tasks.remove(&entity);
-        self.results.remove(&entity);
     }
 }

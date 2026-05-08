@@ -24,8 +24,7 @@ use bevy_ecs::{
     prelude::*,
     schedule::Schedule,
 };
-use std::{env, time::Duration};
-use tokio::time::sleep;
+use std::env;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -81,24 +80,28 @@ async fn main() {
     println!("== Akashic ECS ==");
 
     let mut frame = 0;
+    let mut last_phase = None;
     loop {
-        schedule.run(&mut world);
-        print_frame_status(&world, frame);
-
-        let (phase, turn_index) = {
+        let phase = {
             let turn_state = world.resource::<TurnState>();
-            (turn_state.phase, turn_state.turn_index)
+            turn_state.phase
         };
 
         if phase == TurnPhase::Failed {
             eprintln!("demo 在第 {frame} 帧进入失败态。");
             return;
         }
-        if turn_index >= 0 {
-            print_result(&world);
-        }
 
-        sleep(Duration::from_millis(200)).await;
+        if last_phase != Some(phase) {
+            println!("");
+            print_frame_status(&world, frame);
+            println!("");
+            print_result(&mut world);
+            println!("------------------------------------------------------------------------");
+            last_phase = Some(phase);
+        }
+        schedule.run(&mut world);
+
         frame += 1;
     }
 }
@@ -122,11 +125,22 @@ fn print_frame_status(world: &World, frame: usize) {
     );
 }
 
-fn print_result(world: &World) {
+fn print_result(world: &mut World) {
     let selected_action = world.resource::<ProtagonistAction>().0.clone();
     let world_snapshot = world.resource::<WorldSnapshot>().clone();
-    println!();
-    println!("主角最终选择：{selected_action}");
-    println!();
+    let narrator_latest_msg = {
+        let mut query = world.query::<&UpperNarrator>();
+        query
+            .iter(world)
+            .next()
+            .and_then(|narrator| narrator.context().print_latest_msg())
+            .unwrap_or_default()
+    };
+
+    println!("world snapshot:");
     println!("{}", world_snapshot.to_ledger());
+    println!("narrator latest msg:");
+    println!("{}", narrator_latest_msg);
+    println!("protagonist action:");
+    println!("{selected_action}");
 }
