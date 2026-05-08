@@ -25,11 +25,19 @@ pub struct AppError {
 }
 
 impl AppError {
-    pub fn not_implemented(endpoint: &'static str) -> Self {
+    pub fn bad_request(message: impl Into<String>) -> Self {
         Self {
-            status: StatusCode::NOT_IMPLEMENTED,
-            code: "NOT_IMPLEMENTED",
-            message: format!("接口 `{endpoint}` 已定义，但尚未实现业务逻辑"),
+            status: StatusCode::BAD_REQUEST,
+            code: "BAD_REQUEST",
+            message: message.into(),
+        }
+    }
+
+    pub fn not_found(resource: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "NOT_FOUND",
+            message: resource.into(),
         }
     }
 }

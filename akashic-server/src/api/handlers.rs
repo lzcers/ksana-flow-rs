@@ -28,107 +28,109 @@ pub async fn healthz(State(state): State<AppState>) -> Json<ApiResponse<HealthzD
 }
 
 pub async fn create_game_session(
-    State(_state): State<AppState>,
-    Json(_request): Json<CreateGameSessionRequest>,
+    State(state): State<AppState>,
+    Json(request): Json<CreateGameSessionRequest>,
 ) -> ApiResult<CreateGameSessionData> {
-    Err(AppError::not_implemented("POST /api/game-sessions"))
+    Ok(Json(ApiResponse::ok(state.create_game_session(request)?)))
 }
 
 pub async fn get_game_session(
-    State(_state): State<AppState>,
-    Path(_path): Path<SessionPath>,
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
 ) -> ApiResult<GameSessionSnapshot> {
-    Err(AppError::not_implemented(
-        "GET /api/game-sessions/:sessionId",
-    ))
+    Ok(Json(ApiResponse::ok(state.get_game_session(&path.session_id)?)))
 }
 
 pub async fn submit_choice(
-    State(_state): State<AppState>,
-    Path(_path): Path<SessionPath>,
-    Json(_request): Json<SubmitChoiceRequest>,
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
+    Json(request): Json<SubmitChoiceRequest>,
 ) -> ApiResult<SubmitChoiceData> {
-    Err(AppError::not_implemented(
-        "POST /api/game-sessions/:sessionId/choices",
-    ))
+    Ok(Json(ApiResponse::ok(
+        state.submit_choice(&path.session_id, request)?,
+    )))
 }
 
 pub async fn get_game_session_ending(
-    State(_state): State<AppState>,
-    Path(_path): Path<SessionPath>,
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
 ) -> ApiResult<GameSessionEndingData> {
-    Err(AppError::not_implemented(
-        "GET /api/game-sessions/:sessionId/ending",
-    ))
+    Ok(Json(ApiResponse::ok(
+        state.get_game_session_ending(&path.session_id)?,
+    )))
 }
 
 pub async fn create_intuition_preview(
-    State(_state): State<AppState>,
-    Path(_path): Path<SessionPath>,
-    Json(_request): Json<IntuitionPreviewRequest>,
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
+    Json(request): Json<IntuitionPreviewRequest>,
 ) -> ApiResult<IntuitionPreviewData> {
-    Err(AppError::not_implemented(
-        "POST /api/game-sessions/:sessionId/intuition-preview",
-    ))
+    Ok(Json(ApiResponse::ok(
+        state.create_intuition_preview(&path.session_id, &request.choice_id)?,
+    )))
 }
 
 pub async fn get_game_session_history(
-    State(_state): State<AppState>,
-    Path(_path): Path<SessionPath>,
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
 ) -> ApiResult<HistoryListData> {
-    Err(AppError::not_implemented(
-        "GET /api/game-sessions/:sessionId/history",
-    ))
+    Ok(Json(ApiResponse::ok(
+        state.get_game_session_history(&path.session_id)?,
+    )))
 }
 
 pub async fn stream_game_session(
-    State(_state): State<AppState>,
-    Path(_path): Path<SessionPath>,
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
 ) -> ApiResult<StreamHandshakeData> {
-    Err(AppError::not_implemented(
-        "GET /api/game-sessions/:sessionId/stream",
-    ))
+    Ok(Json(ApiResponse::ok(
+        state.stream_game_session(&path.session_id)?,
+    )))
 }
 
 pub async fn create_save(
-    State(_state): State<AppState>,
-    Json(_request): Json<CreateSaveRequest>,
+    State(state): State<AppState>,
+    Json(request): Json<CreateSaveRequest>,
 ) -> ApiResult<SaveSummary> {
-    Err(AppError::not_implemented("POST /api/saves"))
+    Ok(Json(ApiResponse::ok(state.create_save(request)?)))
 }
 
-pub async fn list_saves(State(_state): State<AppState>) -> ApiResult<SaveListData> {
-    Err(AppError::not_implemented("GET /api/saves"))
+pub async fn list_saves(State(state): State<AppState>) -> ApiResult<SaveListData> {
+    Ok(Json(ApiResponse::ok(state.list_saves())))
 }
 
 pub async fn load_save(
-    State(_state): State<AppState>,
-    Path(_path): Path<SavePath>,
+    State(state): State<AppState>,
+    Path(path): Path<SavePath>,
 ) -> ApiResult<LoadSaveData> {
-    Err(AppError::not_implemented("POST /api/saves/:saveId/load"))
+    Ok(Json(ApiResponse::ok(state.load_save(&path.save_id)?)))
 }
 
-pub async fn list_archives(State(_state): State<AppState>) -> ApiResult<ArchiveListData> {
-    Err(AppError::not_implemented("GET /api/archives"))
+pub async fn list_archives(State(state): State<AppState>) -> ApiResult<ArchiveListData> {
+    Ok(Json(ApiResponse::ok(state.list_archives())))
 }
 
 pub async fn get_archive(
-    State(_state): State<AppState>,
-    Path(_path): Path<ArchivePath>,
+    State(state): State<AppState>,
+    Path(path): Path<ArchivePath>,
 ) -> ApiResult<ArchiveDetailData> {
-    Err(AppError::not_implemented("GET /api/archives/:archiveId"))
+    Ok(Json(ApiResponse::ok(state.get_archive(&path.archive_id)?)))
 }
 
 pub async fn generate_save_share_card(
-    State(_state): State<AppState>,
-    Json(_request): Json<GenerateSaveShareCardRequest>,
+    State(state): State<AppState>,
+    Json(request): Json<GenerateSaveShareCardRequest>,
 ) -> ApiResult<ShareCardData> {
-    Err(AppError::not_implemented("POST /api/share/save-card"))
+    Ok(Json(ApiResponse::ok(
+        state.generate_save_share_card(&request.save_id, &request.style)?,
+    )))
 }
 
 pub async fn generate_ending_share_card(
-    State(_state): State<AppState>,
-    Json(_request): Json<GenerateEndingShareCardRequest>,
+    State(state): State<AppState>,
+    Json(request): Json<GenerateEndingShareCardRequest>,
 ) -> ApiResult<ShareCardData> {
-    Err(AppError::not_implemented("POST /api/share/ending-card"))
+    Ok(Json(ApiResponse::ok(
+        state.generate_ending_share_card(&request.archive_id, &request.style)?,
+    )))
 }

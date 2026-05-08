@@ -1,73 +1,60 @@
 import { create } from 'zustand';
+import type {
+  ArchiveListItem,
+  Character,
+  EndingData,
+  GameSessionSnapshot,
+  RuntimeStateView,
+  SaveListItem,
+  StoryNode,
+  World,
+} from '../lib/api';
+import {
+  createGameSession,
+  createIntuitionPreview,
+  createSave as createSaveRequest,
+  getGameSession,
+  getGameSessionEnding,
+  listArchives,
+  listSaves,
+  loadSave as loadSaveRequest,
+  submitChoice as submitChoiceRequest,
+} from '../lib/api';
 
 export type GameState = 'lobby' | 'creation' | 'playing' | 'ending' | 'corridor';
 
-export interface Character {
-  name: string;
-  gender: string;
-  age: number;
-  appearance: string;
-  traits: {
-    courage: number; // 0-100 (cautious <-> courageous)
-    rationality: number; // 0-100 (emotional <-> rational)
-    altruism: number; // 0-100 (selfish <-> altruistic)
-  };
-  background: string;
-}
-
-export interface World {
-  era: string;
-  coreConflict: string;
-  specialRules: string[];
-}
-
-export interface Choice {
-  id: string;
-  text: string;
-  isObsessionUsed?: boolean;
-}
-
-export interface StoryNode {
-  id: string;
-  text: string;
-  image?: string;
-  choices: Choice[];
-}
-
-export interface EndingData {
-  biography: string;
-  turningPoints: { cause: string; effect: string }[];
-  legacy: string;
-  cgs: string[];
-}
-
 interface GameStoreState {
   gameState: GameState;
+  sessionId: string | null;
   character: Character;
   world: World;
-  storyNodes: StoryNode[];
-  currentNodeId: string | null;
+  currentNode: StoryNode | null;
   endingData: EndingData | null;
-  
-  // Enhanced Gameplay Mechanics
+  stateView: RuntimeStateView | null;
   obsessionPoints: number;
   intuitionPoints: number;
+  daysLeft: number;
   worldNews: string | null;
-  
-  // Actions
+  turnIndex: number;
+  saves: SaveListItem[];
+  archives: ArchiveListItem[];
+  latestSaveId: string | null;
+  latestArchiveId: string | null;
+  isLoading: boolean;
+  error: string | null;
   setGameState: (state: GameState) => void;
   updateCharacter: (updates: Partial<Character>) => void;
   updateWorld: (updates: Partial<World>) => void;
-  addStoryNode: (node: StoryNode) => void;
-  makeChoice: (choiceId: string, useObsession?: boolean) => void;
-  setEndingData: (data: EndingData) => void;
+  clearError: () => void;
+  startGame: () => Promise<void>;
+  refreshSession: () => Promise<void>;
+  submitChoice: (choiceId: string, useObsession?: boolean) => Promise<void>;
+  previewChoice: (choiceId: string) => Promise<string>;
+  fetchEnding: () => Promise<void>;
+  createSave: (title?: string) => Promise<string>;
+  fetchCorridorData: () => Promise<void>;
+  loadSave: (saveId: string) => Promise<void>;
   resetGame: () => void;
-  
-  // Enhanced Actions
-  useObsession: () => boolean;
-  useIntuition: () => boolean;
-  triggerWorldNews: (news: string) => void;
-  clearWorldNews: () => void;
 }
 
 const initialCharacter: Character = {
@@ -89,124 +76,265 @@ const initialWorld: World = {
   specialRules: [],
 };
 
-export const useGameStore = create<GameStoreState>((set, get) => ({
+const initialState: Pick<
+  GameStoreState,
+  | 'gameState'
+  | 'sessionId'
+  | 'character'
+  | 'world'
+  | 'currentNode'
+  | 'endingData'
+  | 'stateView'
+  | 'obsessionPoints'
+  | 'intuitionPoints'
+  | 'daysLeft'
+  | 'worldNews'
+  | 'turnIndex'
+  | 'saves'
+  | 'archives'
+  | 'latestSaveId'
+  | 'latestArchiveId'
+  | 'isLoading'
+  | 'error'
+> = {
   gameState: 'lobby',
+  sessionId: null,
   character: initialCharacter,
   world: initialWorld,
-  storyNodes: [],
-  currentNodeId: null,
+  currentNode: null,
   endingData: null,
+  stateView: null,
   obsessionPoints: 3,
   intuitionPoints: 5,
+  daysLeft: 30,
   worldNews: null,
+  turnIndex: 0,
+  saves: [],
+  archives: [],
+  latestSaveId: null,
+  latestArchiveId: null,
+  isLoading: false,
+  error: null,
+};
 
+function applySnapshot(snapshot: GameSessionSnapshot) {
+  return {
+    sessionId: snapshot.sessionId,
+    character: snapshot.character,
+    world: snapshot.world,
+    currentNode: snapshot.currentNode,
+    stateView: snapshot.stateView,
+    obsessionPoints: snapshot.resources.obsessionPoints,
+    intuitionPoints: snapshot.resources.intuitionPoints,
+    daysLeft: snapshot.resources.daysLeft,
+    worldNews: snapshot.resources.worldNews,
+    turnIndex: snapshot.stateView.turnIndex,
+  };
+}
+
+export const useGameStore = create<GameStoreState>((set, get) => ({
+  ...initialState,
   setGameState: (state) => set({ gameState: state }),
-  updateCharacter: (updates) => set((state) => ({
-    character: { ...state.character, ...updates }
-  })),
-  updateWorld: (updates) => set((state) => ({
-    world: { ...state.world, ...updates }
-  })),
-  addStoryNode: (node) => set((state) => ({
-    storyNodes: [...state.storyNodes, node],
-    currentNodeId: node.id
-  })),
-  useObsession: () => {
-    const state = get();
-    if (state.obsessionPoints > 0) {
-      set({ obsessionPoints: state.obsessionPoints - 1 });
-      return true;
-    }
-    return false;
-  },
-  useIntuition: () => {
-    const state = get();
-    if (state.intuitionPoints > 0) {
-      set({ intuitionPoints: state.intuitionPoints - 1 });
-      return true;
-    }
-    return false;
-  },
-  triggerWorldNews: (news) => {
-    set({ worldNews: news });
-    setTimeout(() => {
-      set((state) => (state.worldNews === news ? { worldNews: null } : {}));
-    }, 5000);
-  },
-  clearWorldNews: () => set({ worldNews: null }),
-  makeChoice: (choiceId, useObsession = false) => {
-    // Mock the next node generation based on the choice
-    const state = get();
-    const currentNode = state.storyNodes.find(n => n.id === state.currentNodeId);
-    if (!currentNode) return;
+  updateCharacter: (updates) =>
+    set((state) => ({
+      character: { ...state.character, ...updates },
+    })),
+  updateWorld: (updates) =>
+    set((state) => ({
+      world: { ...state.world, ...updates },
+    })),
+  clearError: () => set({ error: null }),
+  startGame: async () => {
+    const { character, world } = get();
+    set({ isLoading: true, error: null });
 
-    const chosenChoice = currentNode.choices.find(c => c.id === choiceId);
-    const chosenText = chosenChoice?.text || '';
-    
-    // Simulate world news occasionally
-    if (Math.random() < 0.3) {
-      const newsEvents = [
-        "远方城邦燃起烽火，旧秩序摇摇欲坠。",
-        "神秘流星划破夜空，引发恐慌与狂热。",
-        "市场物价剧烈波动，暗流涌动。",
-        "古代遗迹发出共鸣，异象频生。"
-      ];
-      const randomNews = newsEvents[Math.floor(Math.random() * newsEvents.length)];
-      state.triggerWorldNews(randomNews);
-    }
-    
-    // Determine if we should end the game (e.g. after 3 nodes)
-    if (state.storyNodes.length >= 3) {
-      state.setEndingData({
-        biography: `${state.character.name}的《此生回响录》：\n在${state.world.era}的时代，面对${state.world.coreConflict}的残酷现实，你以${state.character.background}的身份，走出了一条独特的道路。最终，你做出了关键的抉择：“${chosenText}”，为这段历史画上了休止符。`,
-        turningPoints: [
-          { cause: "面对未知的星辰", effect: "选择毫不犹豫地踏上旅程" },
-          { cause: "遭遇遗迹守卫的考验", effect: "以智慧化解了危机" },
-          { cause: "面临最终的抉择", effect: `选择了：${chosenText}${useObsession ? " (动用了执念)" : ""}` }
-        ],
-        legacy: "精神遗产评估：你的选择为世界留下了一丝希望的火种。",
-        cgs: [
-          "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20dramatic%20crossroads%20in%20a%20sci-fi%20or%20fantasy%20world%2C%20epic%20lighting%2C%20concept%20art&image_size=landscape_16_9",
-          "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=An%20ancient%20ruin%20with%20glowing%20runes%2C%20mysterious%20atmosphere%2C%20digital%20painting&image_size=landscape_16_9",
-          "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20heroic%20figure%20looking%20at%20a%20beautiful%20sunrise%20over%20a%20futuristic%20city%2C%20hopeful%20ending%2C%20cinematic&image_size=landscape_16_9"
-        ]
+    try {
+      const data = await createGameSession({ character, world });
+      set({
+        ...applySnapshot({
+          sessionId: data.sessionId,
+          status: 'active',
+          character: data.character,
+          world: data.world,
+          resources: data.resources,
+          currentNode: data.currentNode,
+          stateView: data.stateView,
+          endingStatus: 'pending',
+        }),
+        endingData: null,
+        latestArchiveId: null,
+        gameState: 'playing',
       });
-      return;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '创建会话失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  refreshSession: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const snapshot = await getGameSession(sessionId);
+      set({
+        ...applySnapshot(snapshot),
+        gameState: snapshot.endingStatus === 'ready' ? 'ending' : 'playing',
+      });
+
+      if (snapshot.endingStatus === 'ready') {
+        const ending = await getGameSessionEnding(sessionId);
+        set({ endingData: ending.ending });
+      }
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '刷新会话失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  submitChoice: async (choiceId, useObsession = false) => {
+    const { sessionId } = get();
+    if (!sessionId) {
+      throw new Error('当前没有可推进的会话。');
     }
 
-    // Otherwise, create a new node
-    const newNodeId = `node-${state.storyNodes.length + 1}`;
-    
-    // Simulate NPC memory intervention occasionally
-    const hasNpcIntervention = Math.random() < 0.25;
-    const npcInterventionText = hasNpcIntervention ? 
-      "\n\n[记忆介入] 一封没有署名的信件悄然送达，信中提到了你之前的行为：“我看到了你当时的决断，这让我对你刮目相看。但前方的路，你还能走多远？”\n" : "";
-      
-    const obsessionText = useObsession ? "\n\n[执念倾注] 你将强烈的执念倾注于此抉择中，某种不可名状的力量回应了你，但也带来了一丝反噬的阴影。" : "";
+    set({ isLoading: true, error: null });
+    try {
+      await submitChoiceRequest(sessionId, { choiceId, useObsession });
+      const snapshot = await getGameSession(sessionId);
+      set(applySnapshot(snapshot));
 
-    const newNode: StoryNode = {
-      id: newNodeId,
-      text: `你选择了“${chosenText}”。\n\n随着你的决定，命运的齿轮再次转动。蝴蝶效应开始显现，周围的环境发生了微妙的变化。前方的道路更加扑朔迷离。${obsessionText}${npcInterventionText}`,
-      image: 'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=An%20ancient%20ruin%20with%20glowing%20runes%2C%20mysterious%20atmosphere%2C%20digital%20painting&image_size=landscape_16_9',
-      choices: [
-        { id: `${newNodeId}-c1`, text: '继续深入探索未知' },
-        { id: `${newNodeId}-c2`, text: '寻找盟友的帮助' },
-        { id: `${newNodeId}-c3`, text: '谨慎地观察四周' }
-      ]
-    };
-    
-    state.addStoryNode(newNode);
+      if (snapshot.endingStatus === 'ready') {
+        const ending = await getGameSessionEnding(sessionId);
+        set({
+          endingData: ending.ending,
+          gameState: 'ending',
+          latestArchiveId: `archive-${sessionId}`,
+        });
+      } else {
+        set({ gameState: 'playing' });
+      }
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '推进剧情失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
   },
-  setEndingData: (data) => set({ endingData: data, gameState: 'ending' }),
-  resetGame: () => set({
-    gameState: 'lobby',
-    character: initialCharacter,
-    world: initialWorld,
-    storyNodes: [],
-    currentNodeId: null,
-    endingData: null,
-    obsessionPoints: 3,
-    intuitionPoints: 5,
-    worldNews: null,
-  })
+  previewChoice: async (choiceId) => {
+    const { sessionId } = get();
+    if (!sessionId) {
+      throw new Error('当前没有可预览的会话。');
+    }
+
+    set({ isLoading: true, error: null });
+    try {
+      const data = await createIntuitionPreview(sessionId, choiceId);
+      set({
+        intuitionPoints: data.resources.intuitionPoints,
+        obsessionPoints: data.resources.obsessionPoints,
+        daysLeft: data.resources.daysLeft,
+        worldNews: data.resources.worldNews,
+      });
+      return data.previewText;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '生成直觉预览失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  fetchEnding: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const data = await getGameSessionEnding(sessionId);
+      set({
+        endingData: data.ending,
+        gameState: 'ending',
+        latestArchiveId: `archive-${sessionId}`,
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '加载结局失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  createSave: async (title) => {
+    const { sessionId, character, turnIndex } = get();
+    if (!sessionId) {
+      throw new Error('当前没有可保存的会话。');
+    }
+
+    set({ isLoading: true, error: null });
+    try {
+      const save = await createSaveRequest({
+        sessionId,
+        title: title?.trim() || `${character.name || '无名旅人'} · 第 ${turnIndex || 1} 幕`,
+        autoGenerateShareCard: false,
+      });
+      const saves = await listSaves();
+      set({
+        saves: saves.items,
+        latestSaveId: save.saveId,
+      });
+      return save.saveId;
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '创建存档失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  fetchCorridorData: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      const [saves, archives] = await Promise.all([listSaves(), listArchives()]);
+      set({
+        saves: saves.items,
+        archives: archives.items,
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '加载回廊数据失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  loadSave: async (saveId) => {
+    set({ isLoading: true, error: null });
+    try {
+      const loaded = await loadSaveRequest(saveId);
+      const snapshot = await getGameSession(loaded.sessionId);
+      set({
+        ...applySnapshot(snapshot),
+        latestSaveId: saveId,
+        gameState: snapshot.endingStatus === 'ready' ? 'ending' : 'playing',
+      });
+
+      if (snapshot.endingStatus === 'ready') {
+        const ending = await getGameSessionEnding(loaded.sessionId);
+        set({ endingData: ending.ending, latestArchiveId: `archive-${loaded.sessionId}` });
+      } else {
+        set({ endingData: null });
+      }
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '读档失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  resetGame: () =>
+    set({
+      ...initialState,
+      character: initialCharacter,
+      world: initialWorld,
+    }),
 }));

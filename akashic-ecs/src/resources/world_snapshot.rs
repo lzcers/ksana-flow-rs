@@ -127,6 +127,7 @@ pub struct ItemState {
     /// 状态或可用性，如 "已被激活，光芒渐弱"
     pub status: String,
     /// 被主角察觉的程度，如 "刚瞥见"、"未察觉"
+    #[serde(default, alias = "aware")]
     pub awareness: String,
     /// 此物与主线伏笔的关联
     pub plot_relevance: String,

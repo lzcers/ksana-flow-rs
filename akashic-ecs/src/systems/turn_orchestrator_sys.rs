@@ -38,7 +38,7 @@ fn handle_event(event: &TurnEvent, turn_state: &mut TurnState) {
         }
         TurnEvent::TaskFailed { stage, message, .. } => {
             if is_retryable_parse_failure(message) {
-                println!("JSON 解析失败，回滚到阶段: {:?}", stage);
+                println!("JSON 解析失败，{}，回滚到阶段: {:?}", message, stage);
                 turn_state.phase = rollback_phase(*stage);
             } else {
                 println!("任务失败，错误信息: {:?}", message);

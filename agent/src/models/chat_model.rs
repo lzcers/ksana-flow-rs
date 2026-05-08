@@ -15,6 +15,8 @@ pub struct ChatModel {
     model_providers: HashMap<String, Arc<dyn Provider>>,
     active_model: Option<String>,
     output_json: bool,
+    reasoning_effort: Option<String>,
+    thinking_enabled: Option<bool>,
 }
 
 impl Default for ChatModel {
@@ -29,6 +31,8 @@ impl ChatModel {
             model_providers: HashMap::new(),
             active_model: None,
             output_json: false,
+            reasoning_effort: None,
+            thinking_enabled: None,
         }
     }
 
@@ -60,6 +64,14 @@ impl ChatModel {
     pub fn set_output_json(&mut self, output_json: bool) {
         self.output_json = output_json;
     }
+
+    pub fn set_reasoning_effort(&mut self, reasoning_effort: impl Into<String>) {
+        self.reasoning_effort = Some(reasoning_effort.into());
+    }
+
+    pub fn set_thinking_enabled(&mut self, enabled: bool) {
+        self.thinking_enabled = Some(enabled);
+    }
 }
 
 #[async_trait]
@@ -75,7 +87,15 @@ impl ChatCapability for ChatModel {
             .ok_or_else(|| ChatError::ModelNotFound("No active model set".to_string()))?;
 
         let provider = self.get_provider(model_name)?;
-        let request = Request::new(model_name, msg).with_tools(tools);
+        let mut request = Request::new(model_name, msg).with_tools(tools);
+
+        if let Some(reasoning_effort) = &self.reasoning_effort {
+            request = request.with_reasoning_effort(reasoning_effort.clone());
+        }
+
+        if let Some(enabled) = self.thinking_enabled {
+            request = request.with_thinking(enabled);
+        }
 
         let response: Response = provider.chat(request).await?;
 
@@ -122,6 +142,14 @@ impl ChatCapability for ChatModel {
 
         if self.output_json {
             request = request.with_response_format_json();
+        }
+
+        if let Some(reasoning_effort) = &self.reasoning_effort {
+            request = request.with_reasoning_effort(reasoning_effort.clone());
+        }
+
+        if let Some(enabled) = self.thinking_enabled {
+            request = request.with_thinking(enabled);
         }
 
         let stream = provider.chat_stream(request).await?;
@@ -437,5 +465,16 @@ mod tests {
         let result = model.set_active_model("non-existent-model");
         assert!(result.is_err());
         assert!(matches!(result, Err(ChatError::ModelNotFound(_))));
+    }
+
+    #[test]
+    fn test_set_reasoning_options() {
+        let mut model = ChatModel::new();
+
+        model.set_reasoning_effort("high");
+        model.set_thinking_enabled(true);
+
+        assert_eq!(model.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(model.thinking_enabled, Some(true));
     }
 }

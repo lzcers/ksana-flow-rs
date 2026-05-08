@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Clock3,
   Eye,
@@ -19,34 +19,28 @@ import {
   StoryFrame,
 } from '../components/AkashicUI';
 
-const locationByEra: Record<string, string> = {
-  蒸汽朋克: '铸铁之城 · 下环区',
-  星际拓荒: '边境星港 · 第七码头',
-  东方玄幻: '雾隐城 · 长街',
-  末日废土: '余烬聚落 · 风口哨站',
-};
-
 const GameplayPage: React.FC = () => {
   const {
-    storyNodes,
-    currentNodeId,
-    makeChoice,
+    currentNode,
+    submitChoice,
     obsessionPoints,
     intuitionPoints,
     worldNews,
-    useIntuition,
-    useObsession,
+    previewChoice,
     character,
-    world,
+    stateView,
+    daysLeft,
+    createSave,
+    latestSaveId,
+    isLoading,
+    error,
   } = useGameStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const currentNode = storyNodes.find((node) => node.id === currentNodeId);
-  const daysLeft = useMemo(() => Math.max(30 - Math.max(storyNodes.length - 1, 0) * 6, 0), [storyNodes.length]);
-  const currentLocation = locationByEra[world.era] ?? '灰雾城区 · 未知坐标';
+  const currentLocation = stateView?.currentLocation ?? '灰雾城区 · 未知坐标';
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -57,38 +51,42 @@ const GameplayPage: React.FC = () => {
 
   if (!currentNode) return null;
 
-  const handlePreview = (choiceId: string, choiceText: string, e: React.MouseEvent) => {
+  const handlePreview = async (choiceId: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
     if (previews[choiceId]) return;
 
-    if (!useIntuition()) {
-      setFeedback('直觉不足，无法窥探未来片段。');
-      return;
+    try {
+      const previewText = await previewChoice(choiceId);
+      setPreviews((prev) => ({
+        ...prev,
+        [choiceId]: previewText,
+      }));
+      setFeedback('你窥见了一角尚未到来的命运。');
+    } catch (previewError) {
+      setFeedback(previewError instanceof Error ? previewError.message : '直觉预览失败。');
     }
-
-    setPreviews((prev) => ({
-      ...prev,
-      [choiceId]: `未来的模糊片段在你眼前闪现：若选择“${choiceText}”，某个被遗忘的人会比你更早抵达真相。`,
-    }));
-    setFeedback('你窥见了一角尚未到来的命运。');
   };
 
-  const handleChoiceClick = (choiceId: string) => {
-    if (activeObsession) {
-      if (!useObsession()) {
-        setFeedback('执念已经耗尽，无法继续强行扭动命运。');
-        return;
-      }
-      makeChoice(choiceId, true);
-    } else {
-      makeChoice(choiceId, false);
+  const handleChoiceClick = async (choiceId: string) => {
+    try {
+      await submitChoice(choiceId, activeObsession);
+      setIsTyping(true);
+      setActiveObsession(false);
+      setPreviews({});
+      setFeedback(null);
+    } catch (submitError) {
+      setFeedback(submitError instanceof Error ? submitError.message : '推进剧情失败。');
     }
+  };
 
-    setIsTyping(true);
-    setActiveObsession(false);
-    setPreviews({});
-    setFeedback(null);
+  const handleSave = async () => {
+    try {
+      await createSave();
+      setFeedback('当前旅程已被封存进回廊。');
+    } catch (saveError) {
+      setFeedback(saveError instanceof Error ? saveError.message : '存档失败。');
+    }
   };
 
   return (
@@ -148,8 +146,8 @@ const GameplayPage: React.FC = () => {
               <div key={choice.id} className="space-y-2">
                 <div className="flex gap-3">
                   <button
-                    onClick={() => handleChoiceClick(choice.id)}
-                    disabled={isTyping}
+                    onClick={() => void handleChoiceClick(choice.id)}
+                    disabled={isTyping || isLoading || choice.disabled}
                     className={`akashic-choice min-h-[5rem] flex-1 disabled:cursor-not-allowed disabled:opacity-50 ${
                       activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
                     }`}
@@ -164,8 +162,8 @@ const GameplayPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={(e) => handlePreview(choice.id, choice.text, e)}
-                    disabled={isTyping}
+                    onClick={(e) => void handlePreview(choice.id, e)}
+                    disabled={isTyping || isLoading}
                     className="akashic-icon-btn shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
                     title="消耗 1 点直觉，窥探命运碎片"
                   >
@@ -186,22 +184,26 @@ const GameplayPage: React.FC = () => {
             <SecondaryButton
               onClick={() => setActiveObsession((prev) => !prev)}
               className={activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}
-              disabled={isTyping}
+              disabled={isTyping || isLoading}
             >
               <Flame className={`h-4 w-4 ${activeObsession ? 'animate-pulse' : ''}`} />
               倾注执念
             </SecondaryButton>
-            <SecondaryButton type="button">
+            <SecondaryButton type="button" onClick={() => void handleSave()} disabled={isLoading}>
               <Save className="h-4 w-4" />
               存档
             </SecondaryButton>
-            <PrimaryButton type="button">
+            <PrimaryButton
+              type="button"
+              onClick={() => setFeedback(latestSaveId ? `最近存档：${latestSaveId}` : '请先存档，再进行分享。')}
+            >
               <Share2 className="h-4 w-4" />
               存档/分享
             </PrimaryButton>
           </div>
 
           {feedback ? <p className="text-sm text-[#d9cbb1]">{feedback}</p> : null}
+          {error && !feedback ? <p className="text-sm text-[#d9cbb1]">{error}</p> : null}
         </div>
       </StoryFrame>
     </ScreenShell>

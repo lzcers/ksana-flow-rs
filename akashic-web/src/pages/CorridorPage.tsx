@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BookMarked,
@@ -18,56 +18,44 @@ import {
   StoryFrame,
 } from '../components/AkashicUI';
 import { useGameStore } from '../store/gameStore';
-
-interface ArchiveCard {
-  id: string;
-  title: string;
-  tag: string;
-  era: string;
-  summary: string;
-  memory: string;
-  detail?: string;
-}
-
-const archiveSeeds: ArchiveCard[] = [
-  {
-    id: 'seed-1',
-    title: '灰烬港的夜巡人',
-    tag: '已归档',
-    era: '末日废土',
-    summary: '你在塌陷的灯塔下守住最后的航标，让一座濒死聚落撑过风暴夜。',
-    memory:
-      'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20post-apocalyptic%20harbor%20at%20night%2C%20lonely%20watchman%2C%20blue%20glow%2C%20cinematic%20concept%20art&image_size=landscape_16_9',
-  },
-  {
-    id: 'seed-2',
-    title: '纸鹤坠入星潮',
-    tag: '已归档',
-    era: '星际拓荒',
-    summary: '你在外环殖民地拦截失控信号，把一封迟来的家书送回原主人手中。',
-    memory:
-      'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20futuristic%20space%20colony%20with%20floating%20paper%20cranes%2C%20melancholic%20blue%20lighting%2C%20concept%20art&image_size=landscape_16_9',
-  },
-];
+import { getArchive } from '../lib/api';
 
 const CorridorPage: React.FC = () => {
-  const { setGameState, endingData, storyNodes, character, world } = useGameStore();
+  const {
+    setGameState,
+    character,
+    world,
+    sessionId,
+    currentNode,
+    turnIndex,
+    archives,
+    saves,
+    fetchCorridorData,
+    loadSave,
+    isLoading,
+    error,
+  } = useGameStore();
+  const [archiveDetails, setArchiveDetails] = useState<Record<string, string>>({});
 
-  const liveArchive = useMemo(() => {
-    if (!endingData) return null;
+  useEffect(() => {
+    void fetchCorridorData();
+  }, [fetchCorridorData]);
 
-    return {
-      id: 'latest-ending',
-      title: '最新回响',
-      tag: '本次命运',
-      era: world.era,
-      summary: endingData.legacy,
-      memory: endingData.cgs[0],
-      detail: endingData.biography,
-    };
-  }, [endingData, world.era]);
+  useEffect(() => {
+    const archiveId = archives[0]?.archiveId;
+    if (!archiveId || archiveDetails[archiveId]) return;
 
-  const archiveCards = liveArchive ? [liveArchive, ...archiveSeeds] : archiveSeeds;
+    void getArchive(archiveId)
+      .then((detail) => {
+        setArchiveDetails((prev) => ({ ...prev, [archiveId]: detail.ending.biography }));
+      })
+      .catch(() => undefined);
+  }, [archives, archiveDetails]);
+
+  const activeSave = useMemo(() => {
+    if (!sessionId) return null;
+    return saves.find((item) => item.sessionId === sessionId) ?? null;
+  }, [saves, sessionId]);
 
   return (
     <ScreenShell className="items-stretch">
@@ -84,7 +72,7 @@ const CorridorPage: React.FC = () => {
               <div className="flex flex-wrap gap-2 md:gap-3">
                 <StatusPill icon={Library}>我的回廊</StatusPill>
                 <StatusPill icon={Sparkles}>记忆归档</StatusPill>
-                <StatusPill icon={Clock3}>{archiveCards.length} 份回响</StatusPill>
+                <StatusPill icon={Clock3}>{archives.length} 份回响</StatusPill>
               </div>
               <PageTitle
                 title="我的回廊"
@@ -105,13 +93,13 @@ const CorridorPage: React.FC = () => {
               <span className="text-sm text-[#93a1bb]">按最近可见的记忆排序</span>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
-              {archiveCards.map((item) => (
+              {archives.map((item) => (
                 <article
-                  key={item.id}
+                  key={item.archiveId}
                   className="overflow-hidden rounded-[1.5rem] border border-[#6f6655]/65 bg-[#0b1323]/82"
                 >
                   <div className="aspect-[16/9] overflow-hidden">
-                    <img src={item.memory} alt={item.title} className="h-full w-full object-cover" />
+                    <img src={item.coverImage} alt={item.title} className="h-full w-full object-cover" />
                   </div>
                   <div className="space-y-3 p-5">
                     <div className="flex items-start justify-between gap-3">
@@ -124,15 +112,20 @@ const CorridorPage: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-sm leading-7 text-[#c4d0ea]">{item.summary}</p>
-    {item.detail ? (
+                    {archiveDetails[item.archiveId] ? (
                       <div className="rounded-[1rem] border border-white/10 bg-black/20 px-4 py-3 text-sm leading-7 text-[#d8e0ef]">
-                        {item.detail}
+                        {archiveDetails[item.archiveId]}
                       </div>
                     ) : null}
                   </div>
                 </article>
               ))}
             </div>
+            {!archives.length ? (
+              <div className="rounded-[1.35rem] border border-dashed border-[#6f6655]/60 bg-[#0b1323]/55 p-6 text-[#c4d0ea]">
+                还没有已归档的结局。完成一段命运后，这里会出现真正来自后端的回响馆藏。
+              </div>
+            ) : null}
           </SectionCard>
 
           <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
@@ -141,7 +134,7 @@ const CorridorPage: React.FC = () => {
                 <BookMarked className="h-5 w-5 text-[#d7c4a1]" />
                 <h2 className="text-2xl font-semibold text-[#f6eddc]">当前悬挂中的旅程</h2>
               </div>
-              {storyNodes.length > 0 ? (
+              {sessionId && currentNode ? (
                 <div className="space-y-4">
                   <div className="rounded-[1.35rem] border border-[#6f6655]/60 bg-[#0b1323]/80 p-5">
                     <p className="text-sm text-[#93a1bb]">当前主角</p>
@@ -152,11 +145,18 @@ const CorridorPage: React.FC = () => {
                   </div>
                   <div className="rounded-[1.35rem] border border-[#6f6655]/60 bg-[#0b1323]/80 p-5">
                     <p className="text-sm text-[#93a1bb]">已推进章节</p>
-                    <p className="mt-2 text-3xl font-semibold text-[#f3ead8]">{storyNodes.length}</p>
+                    <p className="mt-2 text-3xl font-semibold text-[#f3ead8]">{turnIndex}</p>
                     <p className="mt-2 text-sm leading-7 text-[#c4d0ea]">
-                      最近一段命运仍停留在回廊边缘，等待你重新返回故事继续书写。
+                      当前片段：{currentNode.text}
                     </p>
                   </div>
+                  {activeSave ? (
+                    <div className="rounded-[1.35rem] border border-[#6f6655]/60 bg-[#0b1323]/80 p-5">
+                      <p className="text-sm text-[#93a1bb]">最近存档</p>
+                      <p className="mt-2 text-xl font-semibold text-[#f3ead8]">{activeSave.title}</p>
+                      <p className="mt-2 text-sm leading-7 text-[#c4d0ea]">{activeSave.summary}</p>
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="rounded-[1.35rem] border border-dashed border-[#6f6655]/60 bg-[#0b1323]/55 p-6 text-[#c4d0ea]">
@@ -182,13 +182,45 @@ const CorridorPage: React.FC = () => {
                 </div>
               </div>
               <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                <PrimaryButton onClick={() => setGameState(storyNodes.length > 0 ? 'playing' : 'creation')} className="flex-1">
+                <PrimaryButton onClick={() => setGameState(sessionId ? 'playing' : 'creation')} className="flex-1">
                   <Stars className="h-4 w-4" />
-                  {storyNodes.length > 0 ? '继续当前旅程' : '开启第一段人生'}
+                  {sessionId ? '继续当前旅程' : '开启第一段人生'}
                 </PrimaryButton>
               </div>
             </SectionCard>
           </div>
+
+          <SectionCard>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <h2 className="text-2xl font-semibold text-[#f6eddc]">进行中存档</h2>
+              <span className="text-sm text-[#93a1bb]">来自后端 `/api/saves`</span>
+            </div>
+            <div className="space-y-3">
+              {saves.map((save) => (
+                <div
+                  key={save.saveId}
+                  className="flex flex-col gap-4 rounded-[1.35rem] border border-[#6f6655]/60 bg-[#0b1323]/80 p-5 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="space-y-2">
+                    <p className="text-sm text-[#93a1bb]">{save.era} · 第 {save.turnIndex} 幕</p>
+                    <p className="text-xl font-semibold text-[#f3ead8]">{save.title}</p>
+                    <p className="text-sm leading-7 text-[#c4d0ea]">{save.summary}</p>
+                  </div>
+                  <PrimaryButton onClick={() => void loadSave(save.saveId)} disabled={isLoading}>
+                    <Stars className="h-4 w-4" />
+                    读档继续
+                  </PrimaryButton>
+                </div>
+              ))}
+              {!saves.length ? (
+                <div className="rounded-[1.35rem] border border-dashed border-[#6f6655]/60 bg-[#0b1323]/55 p-6 text-[#c4d0ea]">
+                  还没有存档。你可以在游玩页先保存一段旅程。
+                </div>
+              ) : null}
+            </div>
+          </SectionCard>
+
+          {error ? <p className="text-sm text-[#d9cbb1]">{error}</p> : null}
         </div>
       </StoryFrame>
     </ScreenShell>

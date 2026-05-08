@@ -197,6 +197,24 @@ impl Request {
         );
         self
     }
+
+    pub fn with_reasoning_effort(mut self, reasoning_effort: impl Into<String>) -> Self {
+        self.extra.insert(
+            "reasoning_effort".to_string(),
+            json!(reasoning_effort.into()),
+        );
+        self
+    }
+
+    pub fn with_thinking(mut self, enabled: bool) -> Self {
+        self.extra.insert(
+            "thinking".to_string(),
+            json!({
+                "type": if enabled { "enabled" } else { "disabled" },
+            }),
+        );
+        self
+    }
 }
 
 // ============================================================================
@@ -299,7 +317,9 @@ pub struct StreamResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::Response;
+    use super::{Request, Response};
+    use crate::core::Message;
+    use serde_json::json;
 
     #[test]
     fn test_response_allows_null_content_for_images() {
@@ -335,6 +355,19 @@ mod tests {
         assert_eq!(
             choice.message.images.unwrap()[0].image_url.url,
             "https://example.com/image.png"
+        );
+    }
+
+    #[test]
+    fn test_request_supports_reasoning_effort_and_thinking() {
+        let request = Request::new("deepseek-v4-pro", vec![Message::user("hello")])
+            .with_reasoning_effort("high")
+            .with_thinking(true);
+
+        assert_eq!(request.extra.get("reasoning_effort"), Some(&json!("high")));
+        assert_eq!(
+            request.extra.get("thinking"),
+            Some(&json!({ "type": "enabled" }))
         );
     }
 }

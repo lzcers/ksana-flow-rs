@@ -31,7 +31,7 @@ async fn main() {
     dotenv::dotenv().ok();
 
     if env::var("DEEPSEEK_API_KEY").is_err() {
-        eprintln!("请先设置 DEEPSEEK_API_KEY，再运行 `cargo run -p akashic-ecs` 体验最小 demo。");
+        eprintln!("请先设置 DEEPSEEK_API_KEY，再运行 `cargo run -p akashic-ecs` ");
         return;
     }
 
@@ -88,10 +88,10 @@ async fn main() {
         };
 
         if phase == TurnPhase::Failed {
-            eprintln!("demo 在 {} 轮, {:?}阶段失败", turn_index, phase);
+            eprintln!("在 {} 轮发生错误，失败", turn_index);
             return;
         }
-        if last_phase != Some(phase) {
+        if last_phase != Some(TurnPhase::Idle) {
             println!("");
             print_frame_status(&world, frame);
             println!("");
@@ -100,7 +100,7 @@ async fn main() {
             last_phase = Some(phase);
         }
         schedule.run(&mut world);
-
+        // print_task_chunks(&world, &mut HashMap::new());
         frame += 1;
     }
 }

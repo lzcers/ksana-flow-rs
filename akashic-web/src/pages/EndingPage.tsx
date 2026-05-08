@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image as ImageIcon, RotateCcw, Share2, Sparkles } from 'lucide-react';
 import {
   PageTitle,
@@ -10,16 +10,38 @@ import {
   StoryFrame,
 } from '../components/AkashicUI';
 import { useGameStore } from '../store/gameStore';
+import { generateEndingShareCard } from '../lib/api';
 
 const EndingPage: React.FC = () => {
-  const { endingData, resetGame, setGameState } = useGameStore();
+  const { endingData, fetchEnding, latestArchiveId, resetGame, setGameState, error } = useGameStore();
   const [showFlashback, setShowFlashback] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!endingData) {
+      void fetchEnding();
+    }
+  }, [endingData, fetchEnding]);
 
   if (!endingData) return null;
 
   const handleRestart = () => {
     resetGame();
     setGameState('lobby');
+  };
+
+  const handleShare = async () => {
+    if (!latestArchiveId) {
+      setFeedback('当前结局尚未归档，暂时无法生成分享卡。');
+      return;
+    }
+
+    try {
+      const card = await generateEndingShareCard(latestArchiveId);
+      setFeedback(`分享卡已生成：${card.imageUrl}`);
+    } catch (shareError) {
+      setFeedback(shareError instanceof Error ? shareError.message : '生成分享卡失败。');
+    }
   };
 
   return (
@@ -90,7 +112,7 @@ const EndingPage: React.FC = () => {
           </SectionCard>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <SecondaryButton type="button">
+            <SecondaryButton type="button" onClick={() => void handleShare()}>
               <Share2 className="h-4 w-4" />
               生成分享卡
             </SecondaryButton>
@@ -99,6 +121,8 @@ const EndingPage: React.FC = () => {
               重归大厅
             </PrimaryButton>
           </div>
+          {feedback ? <p className="text-sm text-[#d9cbb1]">{feedback}</p> : null}
+          {error && !feedback ? <p className="text-sm text-[#d9cbb1]">{error}</p> : null}
         </div>
       </StoryFrame>
     </ScreenShell>

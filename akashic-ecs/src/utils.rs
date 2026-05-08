@@ -29,16 +29,21 @@ pub fn build_layer(name: impl Into<String>, kind: LayerKind, data: Value, priori
 pub fn build_chat_model() -> ChatModel {
     dotenv::dotenv().ok();
 
-    let model_name = env::var("AKASHIC_MODEL").unwrap_or_else(|_| "deepseek-chat".to_string());
+    let model_name = env::var("AKASHIC_MODEL").unwrap_or_else(|_| "deepseek-v4-flash".to_string());
     let mut model = ChatModel::new();
 
     if let Ok(provider) = deepseek_provider_from_env() {
-        model.add_models_for_provider(&["deepseek-chat", "deepseek-reasoner"], Arc::new(provider));
+        model.add_models_for_provider(
+            &["deepseek-v4-flash", "deepseek-v4-pro"],
+            Arc::new(provider),
+        );
     }
     model
         .set_active_model(&model_name)
         .expect("设置 Ak模型失败");
     model.set_output_json(true);
+    model.set_thinking_enabled(false);
+    // model.set_reasoning_effort("high");
     model
 }
 

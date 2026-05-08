@@ -22,7 +22,7 @@ const backgroundOptions = [
 const eraOptions = ['蒸汽朋克', '星际拓荒', '东方玄幻', '末日废土'];
 
 const CreationPage: React.FC = () => {
-  const { character, world, updateCharacter, updateWorld, setGameState, addStoryNode } = useGameStore();
+  const { character, world, updateCharacter, updateWorld, setGameState, startGame, isLoading } = useGameStore();
 
   const traitRows = [
     { key: 'courage', label: '勇气', value: character.traits.courage },
@@ -45,18 +45,12 @@ const CreationPage: React.FC = () => {
     });
   };
 
-  const handleStartGame = () => {
-    addStoryNode({
-      id: 'node-1',
-      text: `雨水顺着屋檐滑落。你攥紧了怀中的黄铜怀表，那是唯一仍然忠于你的线索。今夜的${world.era}比往常更沉默，而“${world.coreConflict}”像薄雾一样笼住街道。\n\n你叫${character.name}，是${character.background}。门缝里透出的昏黄灯光，像某种召唤，也像一场试探。`,
-      image:
-        'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20dim%20steampunk%20district%20in%20the%20rain%2C%20warm%20light%20leaking%20from%20a%20tavern%20door%2C%20moody%20cinematic%20concept%20art&image_size=landscape_16_9',
-      choices: [
-        { id: 'c1', text: '推门进入酒馆，打听怀表的来历' },
-        { id: 'c2', text: '绕到后巷，从侧门潜入观察' },
-      ],
-    });
-    setGameState('playing');
+  const handleStartGame = async () => {
+    try {
+      await startGame();
+    } catch {
+      // Store already keeps the error message for UI surfaces elsewhere.
+    }
   };
 
   const canStart = Boolean(character.name && character.background && world.coreConflict);
@@ -217,8 +211,8 @@ const CreationPage: React.FC = () => {
             <SecondaryButton onClick={() => setGameState('lobby')} className="w-full sm:w-auto">
               返回大厅
             </SecondaryButton>
-            <PrimaryButton onClick={handleStartGame} disabled={!canStart} className="w-full sm:w-auto">
-              步入幻世
+            <PrimaryButton onClick={handleStartGame} disabled={!canStart || isLoading} className="w-full sm:w-auto">
+              {isLoading ? '命运编织中...' : '步入幻世'}
             </PrimaryButton>
           </div>
         </div>
