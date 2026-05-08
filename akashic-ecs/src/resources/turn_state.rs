@@ -2,12 +2,12 @@ use bevy_ecs::resource::Resource;
 
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnPhase {
-    Idle,
-    FateWeaving,
-    NarratorScene,
-    AwaitingProtagonist,
-    FateConsequence,
-    NarratorStory,
+    Idle,                // 初始状态
+    FateWeaving,         // 命运编织状态
+    NarratorWriting,     // 故事编写状态
+    NarratorStory,       // 故事编排状态
+    ProtagonistAction,   // 主角行动阶段
+    AwaitingProtagonist, // 等待主角状态
     Failed,
 }
 

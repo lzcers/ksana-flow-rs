@@ -369,6 +369,8 @@ async fn test_agent_actor_accumulates_usage_from_stream_response() {
                 prompt_tokens: 13,
                 completion_tokens: 8,
                 total_tokens: 21,
+                prompt_cache_hit_tokens: None,
+                prompt_cache_miss_tokens: None,
             }),
         }],
     };

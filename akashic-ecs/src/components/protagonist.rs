@@ -1,39 +1,40 @@
-use agent::agent::{Context, LayerKind};
+use agent::{
+    agent::{Context, LayerKind},
+    core::Message,
+};
 use bevy_ecs::component::Component;
 use serde_json::json;
 
-use crate::{prompts::protagonist_prompt, resources::world_state::WorldState, utils::build_layer};
+use crate::{prompts::protagonist_prompt::PROTAGONIST_PROMPT, utils::build_layer};
 
 #[derive(Component)]
 pub struct Protagonist {
-    protagonist_profile: String,
+    context: Context,
 }
 
 impl Protagonist {
-    pub fn new(prota_profile: &str) -> Self {
-        Self {
-            protagonist_profile: prota_profile.to_string(),
-        }
+    pub fn new(world_profile: &str, protagonist_profile: &str) -> Self {
+        let system_prompt = PROTAGONIST_PROMPT
+            .replace("{world_profile}", world_profile)
+            .replace("{protagonist_profile}", protagonist_profile);
+
+        let context = Context::new().layer(build_layer(
+            "upper-narrator-system-prompt",
+            LayerKind::System,
+            json!(system_prompt),
+            100,
+        ));
+        Self { context }
     }
 
-    pub fn build_task_context(&self, world_state: &WorldState) -> Context {
-        let prompt = protagonist_prompt::TASK_PROMPT
-            .replace("{protagonist_profile}", &self.protagonist_profile)
-            .replace("{world_history}", &world_state.history_text())
-            .replace(
-                "{latest_world_change}",
-                &world_state.latest_history_entry_text(),
-            )
-            .replace("{current_location}", &world_state.current_location_text())
-            .replace("{current_scene}", &world_state.current_scene_text())
-            .replace("{npcs_state}", &world_state.npcs_state_text())
-            .replace("{protagonist_state}", &world_state.protagonist_state_text());
+    pub fn context(&self) -> &Context {
+        &self.context
+    }
+    pub fn add_user_message(&mut self, content: &str) {
+        self.context.add_message(Message::user(content));
+    }
 
-        Context::new().layer(build_layer(
-            "protagonist-task",
-            LayerKind::System,
-            json!(prompt),
-            100,
-        ))
+    pub fn append_assistant_message(&mut self, content: &str) {
+        self.context.add_message(Message::assistant(content));
     }
 }

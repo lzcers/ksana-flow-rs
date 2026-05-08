@@ -15,8 +15,7 @@ use futures::{Stream, StreamExt, task::noop_waker_ref};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TaskKind {
-    FateScenePlanning,
-    FateConsequence,
+    FatePlanning,
     ProtagonistAction,
     Narration,
 }
@@ -71,6 +70,8 @@ impl TaskManager {
     pub fn spawn_task(&mut self, entity: Entity, kind: TaskKind, ctx: &Context) {
         let msgs = ctx.to_messages();
         let model = self.model_for_kind(kind);
+        // println!("spawn task {:?}", kind);
+        // println!("{}", serde_json::to_string(&msgs).unwrap());
         let stream = Box::pin(stream! {
             let mut inner_stream = pin!(call_model(&model, &msgs, None));
             while let Some(event) = inner_stream.next().await {
@@ -92,10 +93,7 @@ impl TaskManager {
 
     fn model_for_kind(&self, kind: TaskKind) -> ChatModel {
         let mut model = self.model.clone();
-        model.set_output_json(matches!(
-            kind,
-            TaskKind::FateScenePlanning | TaskKind::FateConsequence
-        ));
+        model.set_output_json(matches!(kind, TaskKind::FatePlanning));
         model
     }
 
@@ -134,7 +132,7 @@ impl TaskManager {
                     result.status = TaskStatus::Running;
                     result.chunks.push(content);
                 }
-                Poll::Ready(Some(CallModelEvent::Completed { content, .. })) => {
+                Poll::Ready(Some(CallModelEvent::Completed { content, usage, .. })) => {
                     result.result = Some(Ok(content));
                     result.status = TaskStatus::Done;
                     return TaskStatus::Done;
@@ -158,10 +156,6 @@ impl TaskManager {
                 }
             }
         }
-    }
-
-    pub fn task_status(&self, entity: Entity) -> Option<TaskStatus> {
-        self.results.get(&entity).map(|task| task.status)
     }
 
     pub fn task_result(&self, entity: Entity) -> Option<TaskResult> {

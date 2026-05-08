@@ -300,9 +300,10 @@ async fn model_compression_writes_summary_layer_and_keeps_recent_turns() {
 
     let output_messages = compressed.to_messages();
     assert!(matches!(output_messages[0], Message::System { .. }));
-    let system_content = output_messages[0].content();
-    assert!(system_content.contains("[Previous conversation summary]"));
-    assert!(system_content.contains("Decided to inspect config first."));
+    assert!(matches!(output_messages[1], Message::User { .. }));
+    let memory_content = output_messages[1].content();
+    assert!(memory_content.contains("[Previous conversation summary]"));
+    assert!(memory_content.contains("Decided to inspect config first."));
 }
 
 #[tokio::test(flavor = "current_thread")]

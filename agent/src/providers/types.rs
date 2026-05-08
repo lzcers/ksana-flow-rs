@@ -37,6 +37,10 @@ pub struct Usage {
     pub completion_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_hit_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_miss_tokens: Option<u32>,
 }
 
 impl Usage {
@@ -185,9 +189,12 @@ impl Request {
         self
     }
     pub fn with_response_format_json(mut self) -> Self {
-        self.extra.insert("response_format".to_string(), json!({
-            "type": "json_object",
-        }));
+        self.extra.insert(
+            "response_format".to_string(),
+            json!({
+                "type": "json_object",
+            }),
+        );
         self
     }
 }

@@ -131,13 +131,13 @@ impl Context {
         let mut sorted_layers: Vec<_> = self.layers.iter().collect();
         sorted_layers.sort_by(|a, b| b.meta.priority.cmp(&a.meta.priority));
 
-        // 构建系统消息
+        // 构建稳定的 system 前缀，只放规则类上下文。
         let system_parts: Vec<String> = sorted_layers
             .iter()
             .filter(|l| {
                 matches!(
                     l.kind,
-                    LayerKind::System | LayerKind::Soul | LayerKind::User | LayerKind::Memory
+                    LayerKind::System | LayerKind::Soul | LayerKind::User
                 )
             })
             .filter_map(|l| layer_to_system_content(l))
@@ -145,6 +145,16 @@ impl Context {
 
         if !system_parts.is_empty() {
             messages.push(Message::system(system_parts.join("\n\n---\n\n")));
+        }
+
+        // 运行时记忆作为独立 user message 发送，避免污染稳定 system prompt，
+        // 同时让更稳定的前缀更容易命中 provider 侧缓存。
+        for layer in &sorted_layers {
+            if layer.kind == LayerKind::Memory
+                && let Some(content) = layer_to_user_content(layer)
+            {
+                messages.push(Message::user(content));
+            }
         }
 
         // 添加对话历史
@@ -261,6 +271,13 @@ fn layer_to_system_content(layer: &Layer) -> Option<String> {
             };
             Some(format!("# 用户信息\n\n{}", content))
         }
+        _ => None,
+    }
+}
+
+/// 将层转换为运行时输入消息内容
+fn layer_to_user_content(layer: &Layer) -> Option<String> {
+    match &layer.kind {
         LayerKind::Memory => {
             if let Value::Array(items) = &layer.data {
                 let entries: Vec<String> = items
@@ -269,7 +286,7 @@ fn layer_to_system_content(layer: &Layer) -> Option<String> {
                         if let Value::Object(map) = item {
                             map.get("content")
                                 .and_then(|v| v.as_str())
-                                .map(|s| format!("- {}", s))
+                                .map(ToString::to_string)
                         } else {
                             None
                         }
@@ -278,7 +295,7 @@ fn layer_to_system_content(layer: &Layer) -> Option<String> {
                 if entries.is_empty() {
                     None
                 } else {
-                    Some(format!("# 记忆\n\n{}", entries.join("\n")))
+                    Some(entries.join("\n\n"))
                 }
             } else {
                 None
@@ -376,6 +393,39 @@ mod tests {
         let messages = ctx.to_messages();
         assert_eq!(messages.len(), 3); // system + 2 conversation
         assert!(matches!(messages[0], Message::System { .. }));
+    }
+
+    #[test]
+    fn test_memory_layers_become_user_messages() {
+        let ctx = Context::new()
+            .layer(
+                Layer::new("system", LayerKind::System, Value::String("Be helpful.".into()))
+                    .with_priority(100),
+            )
+            .layer(
+                Layer::new(
+                    "history",
+                    LayerKind::Memory,
+                    serde_json::json!([{ "content": "世界历史摘要\n王国陷入内战。" }]),
+                )
+                .with_priority(60),
+            )
+            .layer(
+                Layer::new(
+                    "state",
+                    LayerKind::Memory,
+                    serde_json::json!([{ "content": "当前状态\n位置：王都广场" }]),
+                )
+                .with_priority(40),
+            );
+
+        let messages = ctx.to_messages();
+        assert_eq!(messages.len(), 3);
+        assert!(matches!(messages[0], Message::System { .. }));
+        assert!(matches!(messages[1], Message::User { .. }));
+        assert!(matches!(messages[2], Message::User { .. }));
+        assert_eq!(messages[1].content(), "世界历史摘要\n王国陷入内战。");
+        assert_eq!(messages[2].content(), "当前状态\n位置：王都广场");
     }
 
     #[test]
