@@ -82,13 +82,13 @@ async fn main() {
     let mut frame = 0;
     let mut last_phase = None;
     loop {
-        let phase = {
+        let (turn_index, phase) = {
             let turn_state = world.resource::<TurnState>();
-            turn_state.phase
+            (turn_state.turn_index, turn_state.phase)
         };
 
         if phase == TurnPhase::Failed {
-            eprintln!("demo 在第 {frame} 帧进入失败态。");
+            eprintln!("demo 在 {} 轮, {:?}阶段失败", turn_index, phase);
             return;
         }
         if last_phase != Some(phase) {
@@ -138,10 +138,13 @@ fn print_result(world: &mut World) {
 
     println!("world snapshot:");
     println!("{}", world_snapshot.to_ledger());
+    println!("");
     println!("narrator latest msg:");
     println!("{}", narrator_latest_msg);
+    println!("");
     println!("protagonist action:");
     println!("{selected_action}");
+    println!("");
 }
 
 fn print_task_chunks(world: &World, task_chunk_offsets: &mut HashMap<Entity, usize>) {

@@ -21,7 +21,7 @@ use crate::{
 pub fn fate_weaver_system(
     turn_state: Res<TurnState>,
     mut query: Query<(Entity, &mut FateWeaver)>,
-    mut protagonist_action: ResMut<ProtagonistAction>,
+    protagonist_action: ResMut<ProtagonistAction>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
@@ -68,8 +68,14 @@ pub fn fate_weaver_apply_system(
     match task_result.status {
         TaskStatus::Done => {
             let raw_output = task_success_output(&task_result);
-            let next_world_snapshot = parse_json_response::<WorldSnapshot>(&raw_output)
-                .unwrap_or_else(|err| panic!("解析 FateWeaver 输出失败: {err}"));
+            let next_world_snapshot = match parse_json_response::<WorldSnapshot>(&raw_output) {
+                Ok(snapshot) => snapshot,
+                Err(message) => {
+                    write_task_failed(&mut event_writer, &turn_state, entity, message);
+                    task_manager.clear_task(entity);
+                    return;
+                }
+            };
             let ledger = next_world_snapshot.to_ledger();
             *world_snapshot = next_world_snapshot;
             fate_weaver.append_assistant_message(&ledger);

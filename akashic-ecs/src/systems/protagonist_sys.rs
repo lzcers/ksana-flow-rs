@@ -58,8 +58,14 @@ pub fn protagonist_apply_system(
     match task_result.status {
         TaskStatus::Done => {
             let raw_output = task_success_output(&task_result);
-            let action_list = parse_json_response::<ProtagonistOptions>(&raw_output)
-                .unwrap_or_else(|err| panic!("解析 Protagonist 输出失败: {err}"));
+            let action_list = match parse_json_response::<ProtagonistOptions>(&raw_output) {
+                Ok(action_list) => action_list,
+                Err(message) => {
+                    write_task_failed(&mut event_writer, &turn_state, entity, message);
+                    task_manager.clear_task(entity);
+                    return;
+                }
+            };
             // 默认选第一个选项
             // 提交选项到 ProtagonistAction 资源
             protagonist_action.set(action_list.first_action().unwrap_or("continue").to_string());

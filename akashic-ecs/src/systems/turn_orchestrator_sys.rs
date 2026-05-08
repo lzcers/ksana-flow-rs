@@ -36,8 +36,26 @@ fn handle_event(event: &TurnEvent, turn_state: &mut TurnState) {
         TurnEvent::ProtagonistCompleted => {
             turn_state.finish_turn();
         }
-        TurnEvent::TaskFailed { .. } => {
-            turn_state.phase = TurnPhase::Failed;
+        TurnEvent::TaskFailed { stage, message, .. } => {
+            if is_retryable_parse_failure(message) {
+                println!("JSON 解析失败，回滚到阶段: {:?}", stage);
+                turn_state.phase = rollback_phase(*stage);
+            } else {
+                println!("任务失败，错误信息: {:?}", message);
+                turn_state.phase = TurnPhase::Failed;
+            }
         }
+    }
+}
+
+fn is_retryable_parse_failure(message: &str) -> bool {
+    message.contains("无法解析 JSON 响应")
+}
+
+fn rollback_phase(stage: TurnPhase) -> TurnPhase {
+    match stage {
+        TurnPhase::FateWeaving => TurnPhase::Idle,
+        TurnPhase::AwaitingProtagonist => TurnPhase::ProtagonistAction,
+        other => other,
     }
 }
