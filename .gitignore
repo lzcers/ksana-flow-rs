@@ -9,3 +9,4 @@ nul
 .playwright-cli
 .omx
 node_modules
+*.txt
