@@ -74,7 +74,6 @@ pub fn call_model(
                 let reasoning_content = chunk.reasoning_content;
                 let tool_calls = chunk.tool_calls;
                 let usage = chunk.usage;
-
                 if !content.is_empty() {
                     final_content.push_str(&content);
                     yield CallModelEvent::TextChunk(content);
@@ -104,7 +103,6 @@ pub fn call_model(
                     break;
                 }
         }
-
         if !completed {
             yield CallModelEvent::Completed {
                 content: final_content,

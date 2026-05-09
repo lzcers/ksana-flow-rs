@@ -179,7 +179,8 @@ impl TaskManager {
                     return TaskStatus::Error;
                 }
                 Poll::Pending => {
-                    if Instant::now().duration_since(task.last_progress_at) > TASK_NO_PROGRESS_TIMEOUT
+                    if Instant::now().duration_since(task.last_progress_at)
+                        > TASK_NO_PROGRESS_TIMEOUT
                     {
                         result.status = TaskStatus::Error;
                         result.result.get_or_insert_with(|| {
@@ -256,7 +257,8 @@ mod tests {
         let entity = Entity::from_raw_u32(2).expect("valid entity id");
         let mut manager = make_manager();
         let mut handle = TaskHandle::new(Box::pin(stream::pending::<CallModelEvent>()));
-        handle.last_progress_at = Instant::now() - TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
+        handle.last_progress_at =
+            Instant::now() - TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
         manager.tasks.insert(entity, handle);
         manager.results.insert(
             entity,

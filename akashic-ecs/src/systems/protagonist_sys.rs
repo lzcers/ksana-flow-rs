@@ -32,7 +32,6 @@ pub fn protagonist_system(
     let Ok((entity, mut protagonist)) = query.single_mut() else {
         return;
     };
-    let round = turn_state.turn_index;
     let protagonist_action = protagonist_action.get();
     protagonist.add_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::ProtagonistAction, &protagonist.context());

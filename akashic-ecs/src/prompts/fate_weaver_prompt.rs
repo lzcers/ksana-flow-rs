@@ -82,7 +82,8 @@ pub static FATE_BASE_SYSTEM_PROMPT: &str = r#"
 
 ## 输出格式规范
 
-你必须只输出一个合法的 JSON 对象，不要使用任何 markdown 代码块，不要添加任何解释文字。格式如下：
+你必须只输出一个合法的 JSON 对象，禁止返回空内容、禁止省略字段、禁止截断内容，不要使用任何 markdown 代码块，不要添加任何解释文字。
+格式如下：
 {output_schema}
 
 ---
