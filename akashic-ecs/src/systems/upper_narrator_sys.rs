@@ -20,9 +20,9 @@ pub fn upper_narrator_system(
     mut query: Query<(Entity, &mut UpperNarrator)>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
+    protagonist_action: ResMut<ProtagonistAction>,
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
-    mut protagonist_action: ResMut<ProtagonistAction>,
 ) {
     if turn_state.phase != TurnPhase::NarratorStory {
         return;

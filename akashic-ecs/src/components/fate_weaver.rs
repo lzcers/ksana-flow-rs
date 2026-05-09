@@ -41,6 +41,9 @@ impl FateWeaver {
         &self.context
     }
 
+    pub fn revert(&mut self) {
+        self.context.rollback_latest_input();
+    }
     pub fn append_user_message(&mut self, content: &str) {
         self.context.add_message(Message::user(content));
     }

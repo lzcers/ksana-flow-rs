@@ -20,6 +20,7 @@ use crate::{
 pub fn protagonist_system(
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
+    protagonist_action: ResMut<ProtagonistAction>,
     mut query: Query<(Entity, &mut Protagonist)>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
@@ -31,7 +32,9 @@ pub fn protagonist_system(
     let Ok((entity, mut protagonist)) = query.single_mut() else {
         return;
     };
-    protagonist.add_user_message(&world_snapshot.to_protagonist_prompt());
+    let round = turn_state.turn_index;
+    let protagonist_action = protagonist_action.get();
+    protagonist.add_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::ProtagonistAction, &protagonist.context());
     event_writer.write(TurnEvent::AwaitingProtagonist);
 }

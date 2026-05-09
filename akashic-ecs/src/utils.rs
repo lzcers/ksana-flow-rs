@@ -1,4 +1,4 @@
-use llm_json::{JsonRepairError, loads, repair_json};
+use jsonrepair_rs::jsonrepair;
 use std::{env, sync::Arc};
 
 use agent::{
@@ -64,8 +64,7 @@ where
     if let Ok(parsed) = serde_json::from_str::<T>(cleaned) {
         return Ok(parsed);
     } else {
-        let repaired = repair_json(cleaned, &Default::default())
-            .expect(&format!("无法解析 JSON 响应: {}", cleaned));
+        let repaired = jsonrepair(cleaned).map_err(|err| format!("无法解析 JSON 响应: {}", err))?;
         if let Ok(parsed) = serde_json::from_str::<T>(&repaired) {
             return Ok(parsed);
         } else {

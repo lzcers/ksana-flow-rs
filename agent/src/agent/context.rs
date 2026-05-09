@@ -228,6 +228,35 @@ impl Context {
         }
     }
 
+    /// 回退最新一轮输入，从最后一个 user 消息开始删除到结尾。
+    pub fn rollback_latest_input(&mut self) -> bool {
+        let Some(layer) = self
+            .layers
+            .iter_mut()
+            .find(|l| l.kind == LayerKind::Conversation)
+        else {
+            return false;
+        };
+
+        let Value::Array(arr) = &mut layer.data else {
+            return false;
+        };
+
+        let rollback_index = arr.iter().rposition(|item| {
+            matches!(
+                serde_json::from_value::<Message>(item.clone()),
+                Ok(Message::User { .. })
+            )
+        });
+
+        if let Some(index) = rollback_index {
+            arr.truncate(index);
+            true
+        } else {
+            false
+        }
+    }
+
     /// 清空对话历史
     pub fn clear_conversation(&mut self) {
         if let Some(layer) = self
@@ -321,10 +350,10 @@ fn layer_to_user_content(layer: &Layer) -> Option<String> {
 
 fn format_message_as_text(message: &Message) -> String {
     match message {
-        Message::System { content } => format!("system: {}", content),
-        Message::User { content } => format!("user: {}", content),
-        Message::Assistant { content, .. } => format!("assistant: {}", content),
-        Message::Tool { content, .. } => format!("tool: {}", content),
+        Message::System { content } => format!("system: \n{}", content),
+        Message::User { content } => format!("user: \n{}", content),
+        Message::Assistant { content, .. } => format!("assistant: \n{}", content),
+        Message::Tool { content, .. } => format!("tool: \n{}", content),
     }
 }
 
@@ -463,6 +492,63 @@ mod tests {
 
         let conv = ctx.conversation();
         assert_eq!(conv.len(), 2);
+    }
+
+    #[test]
+    fn test_context_rollback_latest_input_removes_last_turn() {
+        let mut ctx = Context::new().layer(Layer::new(
+            "conversation",
+            LayerKind::Conversation,
+            serde_json::json!([
+                {"role": "user", "content": "turn 1"},
+                {"role": "assistant", "content": "answer 1"},
+                {"role": "user", "content": "turn 2"},
+                {"role": "assistant", "content": "", "tool_calls": []},
+                {"role": "tool", "tool_call_id": "call_1", "content": "tool result"},
+                {"role": "assistant", "content": "answer 2"}
+            ]),
+        ));
+
+        assert!(ctx.rollback_latest_input());
+
+        let conv = ctx.conversation();
+        assert_eq!(conv.len(), 2);
+        assert_eq!(conv[0].content(), "turn 1");
+        assert_eq!(conv[1].content(), "answer 1");
+    }
+
+    #[test]
+    fn test_context_rollback_latest_input_removes_pending_user_message() {
+        let mut ctx = Context::new().layer(Layer::new(
+            "conversation",
+            LayerKind::Conversation,
+            serde_json::json!([
+                {"role": "user", "content": "turn 1"},
+                {"role": "assistant", "content": "answer 1"},
+                {"role": "user", "content": "pending input"}
+            ]),
+        ));
+
+        assert!(ctx.rollback_latest_input());
+
+        let conv = ctx.conversation();
+        assert_eq!(conv.len(), 2);
+        assert_eq!(conv[0].content(), "turn 1");
+        assert_eq!(conv[1].content(), "answer 1");
+    }
+
+    #[test]
+    fn test_context_rollback_latest_input_returns_false_without_user_message() {
+        let mut ctx = Context::new().layer(Layer::new(
+            "conversation",
+            LayerKind::Conversation,
+            serde_json::json!([
+                {"role": "assistant", "content": "answer only"}
+            ]),
+        ));
+
+        assert!(!ctx.rollback_latest_input());
+        assert_eq!(ctx.conversation().len(), 1);
     }
 
     #[test]

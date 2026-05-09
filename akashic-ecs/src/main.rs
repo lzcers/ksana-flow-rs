@@ -24,9 +24,12 @@ use bevy_ecs::{
     prelude::*,
     schedule::Schedule,
 };
-use std::{collections::HashMap, env, fs::OpenOptions, io::Write};
+use std::{env, fs::OpenOptions, io::Write};
 
 const OUTPUT_FILE_PATH: &str = "akashic_output.txt";
+const FATE_CONTEXT_OUTPUT_FILE_PATH: &str = "fate_weaver_context.txt";
+const NARRATOR_CONTEXT_OUTPUT_FILE_PATH: &str = "upper_narrator_context.txt";
+const PROTAGONIST_CONTEXT_OUTPUT_FILE_PATH: &str = "protagonist_context.txt";
 
 #[tokio::main]
 async fn main() {
@@ -48,14 +51,17 @@ async fn main() {
     world.insert_resource(TaskManager::new(build_chat_model()));
 
     // 实体初始化
+    // 命运编织者，负责故事世界维护
     world.spawn(FateWeaver::new(
         DEFAULT_WORLD_PROFILE,
         DEFAULT_PROTAGONIST_PROFILE,
     ));
+    // 上层叙事者，负责故事世界的文学化描述
     world.spawn(UpperNarrator::new(
         DEFAULT_WORLD_PROFILE,
         DEFAULT_PROTAGONIST_PROFILE,
     ));
+    // 主角，负责执行任务
     world.spawn(Protagonist::new(
         DEFAULT_WORLD_PROFILE,
         DEFAULT_PROTAGONIST_PROFILE,
@@ -125,6 +131,7 @@ fn print_frame_status(world: &World, frame: usize) {
 }
 
 fn print_result(world: &mut World) {
+    let turn_index = world.resource::<TurnState>().turn_index;
     let selected_action = world.resource::<ProtagonistAction>().0.clone();
     let world_snapshot = world.resource::<WorldSnapshot>().clone();
     let narrator_latest_msg = {
@@ -146,51 +153,58 @@ fn print_result(world: &mut World) {
     println!("{selected_action}");
     println!("");
 
-    output_file(&narrator_latest_msg, &selected_action);
+    output_context_to_file(world, turn_index);
 }
 
-fn output_file(narrator_latest_msg: &str, protagonist_action: &str) {
-    let output = format!(
-        "narrator latest msg:\n{}\n\nprotagonist action:\n{}\n",
-        narrator_latest_msg, protagonist_action
-    );
+fn output_context_to_file(world: &mut World, turn_index: u64) {
+    let fate_context = {
+        let mut query = world.query::<&FateWeaver>();
+        query
+            .iter(world)
+            .next()
+            .map(|fate_weaver| fate_weaver.context().print())
+            .unwrap_or_default()
+    };
+    let narrator_context = {
+        let mut query = world.query::<&UpperNarrator>();
+        query
+            .iter(world)
+            .next()
+            .map(|upper_narrator| upper_narrator.context().print())
+            .unwrap_or_default()
+    };
+    let protagonist_context = {
+        let mut query = world.query::<&Protagonist>();
+        query
+            .iter(world)
+            .next()
+            .map(|protagonist| protagonist.context().print())
+            .unwrap_or_default()
+    };
 
+    write_to_file(
+        FATE_CONTEXT_OUTPUT_FILE_PATH,
+        &format!("===== turn {} =====\n{}\n", turn_index, fate_context),
+    );
+    write_to_file(
+        NARRATOR_CONTEXT_OUTPUT_FILE_PATH,
+        &format!("===== turn {} =====\n{}\n", turn_index, narrator_context),
+    );
+    write_to_file(
+        PROTAGONIST_CONTEXT_OUTPUT_FILE_PATH,
+        &format!("===== turn {} =====\n{}\n", turn_index, protagonist_context),
+    );
+}
+
+fn write_to_file(path: &str, content: &str) {
     let write_result = OpenOptions::new()
         .create(true)
-        .append(true)
-        .open(OUTPUT_FILE_PATH)
-        .and_then(|mut file| file.write_all(output.as_bytes()));
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(content.as_bytes()));
 
     if let Err(err) = write_result {
-        eprintln!("写入输出文件失败: {err}");
-    }
-}
-
-fn print_task_chunks(world: &World, task_chunk_offsets: &mut HashMap<Entity, usize>) {
-    let mut task_results = world.resource::<TaskManager>().task_results_snapshot();
-    if task_results.is_empty() {
-        task_chunk_offsets.clear();
-        return;
-    }
-
-    task_results.sort_by_key(|(entity, _)| entity.index());
-
-    let active_entities = task_results
-        .iter()
-        .map(|(entity, _)| *entity)
-        .collect::<Vec<_>>();
-    task_chunk_offsets.retain(|entity, _| active_entities.contains(entity));
-
-    for (entity, task_result) in task_results {
-        let printed_count = task_chunk_offsets.get(&entity).copied().unwrap_or(0);
-        if printed_count >= task_result.chunks.len() {
-            continue;
-        }
-
-        for chunk in &task_result.chunks[printed_count..] {
-            println!("[task {:?} {:?} chunk] {}", entity, task_result.kind, chunk);
-        }
-
-        task_chunk_offsets.insert(entity, task_result.chunks.len());
+        eprintln!("写入输出文件失败 ({}): {err}", path);
     }
 }

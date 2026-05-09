@@ -1,6 +1,11 @@
-use bevy_ecs::{message::MessageReader, system::ResMut};
+use bevy_ecs::{
+    entity::Entity,
+    message::MessageReader,
+    system::{Query, ResMut},
+};
 
 use crate::{
+    components::fate_weaver::FateWeaver,
     resources::turn_state::{TurnPhase, TurnState},
     turn_messages::TurnEvent,
 };
@@ -9,14 +14,19 @@ use crate::{
 pub fn turn_orchestrator_system(
     mut event_reader: MessageReader<TurnEvent>,
     mut turn_state: ResMut<TurnState>,
+    mut query: Query<(Entity, &mut FateWeaver)>,
 ) {
     for event in event_reader.read() {
-        handle_event(event, &mut turn_state);
+        handle_event(event, &mut turn_state, &mut query);
     }
 }
 
 // 根据各系统发送的时间，切换 turn_state
-fn handle_event(event: &TurnEvent, turn_state: &mut TurnState) {
+fn handle_event(
+    event: &TurnEvent,
+    turn_state: &mut TurnState,
+    query: &mut Query<(Entity, &mut FateWeaver)>,
+) {
     match event {
         TurnEvent::FatePlanning => {
             turn_state.phase = TurnPhase::FateWeaving;
@@ -39,6 +49,16 @@ fn handle_event(event: &TurnEvent, turn_state: &mut TurnState) {
         TurnEvent::TaskFailed { stage, message, .. } => {
             if is_retryable_parse_failure(message) {
                 println!("JSON 解析失败，{}，回滚到阶段: {:?}", message, stage);
+                match stage {
+                    // 回滚到 FateWeaving phase 时，需要回滚用户输入
+                    TurnPhase::FateWeaving => {
+                        let Ok((_, mut fate_weaver)) = query.single_mut() else {
+                            return;
+                        };
+                        fate_weaver.revert();
+                    }
+                    _ => {}
+                }
                 turn_state.phase = rollback_phase(*stage);
             } else {
                 println!("任务失败，错误信息: {:?}", message);

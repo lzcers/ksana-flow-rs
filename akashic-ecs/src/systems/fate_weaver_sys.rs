@@ -20,8 +20,8 @@ use crate::{
 // FateWeaver 根据当前 phase 决定是做场景编排还是动作后果推演。
 pub fn fate_weaver_system(
     turn_state: Res<TurnState>,
-    mut query: Query<(Entity, &mut FateWeaver)>,
     protagonist_action: ResMut<ProtagonistAction>,
+    mut query: Query<(Entity, &mut FateWeaver)>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
@@ -71,6 +71,7 @@ pub fn fate_weaver_apply_system(
             let next_world_snapshot = match parse_json_response::<WorldSnapshot>(&raw_output) {
                 Ok(snapshot) => snapshot,
                 Err(message) => {
+                    // 重试时可能要删除最后一轮的消息
                     write_task_failed(&mut event_writer, &turn_state, entity, message);
                     task_manager.clear_task(entity);
                     return;

@@ -300,7 +300,7 @@ impl WorldSnapshot {
     }
 
     /// 生成给主角 Agent 的决策提示文本。
-    pub fn to_protagonist_prompt(&self) -> String {
+    pub fn to_protagonist_prompt(&self, protagonist_action: Option<&str>) -> String {
         let enc = &self.encounter;
         let ps = &self.world_state.protagonist;
         let mut out = String::new();
@@ -320,6 +320,11 @@ impl WorldSnapshot {
             for info in &enc.new_info {
                 writeln!(out, "- {}", info).unwrap();
             }
+        }
+
+        // ── 主角行动 ──
+        if let Some(protagonist_action) = protagonist_action {
+            writeln!(out, "主角刚刚的行动：{}", protagonist_action).unwrap();
         }
 
         writeln!(out, "当前困境与内心冲突：{}", enc.inner_conflict).unwrap();
