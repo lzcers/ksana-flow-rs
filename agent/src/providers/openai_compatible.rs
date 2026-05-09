@@ -4,9 +4,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use std::collections::HashMap;
 use std::time::Duration;
 
-use super::{
-    Provider, ProviderError, Request, Response, StreamResponse, parse_api_error, parse_sse_line,
-};
+use super::{Provider, ProviderError, Request, Response, StreamResponse, parse_api_error};
 
 /// OpenAI 兼容的 Provider 实现
 ///
@@ -93,6 +91,33 @@ impl OpenAICompatibleProvider {
     }
 }
 
+fn drain_sse_frames(buffer: &mut String) -> Vec<String> {
+    let mut frames = Vec::new();
+    while let Some(idx) = buffer.find("\n\n") {
+        let frame = buffer[..idx].to_string();
+        let remaining = buffer[idx + 2..].to_string();
+        *buffer = remaining;
+        if !frame.trim().is_empty() {
+            frames.push(frame);
+        }
+    }
+    frames
+}
+
+fn parse_sse_frame(frame: &str) -> Option<StreamResponse> {
+    let payload = frame
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:").map(str::trim_start))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if payload.is_empty() || payload == "[DONE]" {
+        return None;
+    }
+
+    serde_json::from_str::<StreamResponse>(&payload).ok()
+}
+
 #[async_trait]
 impl Provider for OpenAICompatibleProvider {
     /// 发送非流式请求
@@ -146,19 +171,23 @@ impl Provider for OpenAICompatibleProvider {
 
         let stream = response
             .bytes_stream()
-            .map(|chunk_result| {
+            .scan(String::new(), |buffer, chunk_result| {
                 let chunk = match chunk_result {
                     Ok(c) => c,
-                    Err(_) => return vec![],
+                    Err(_) => return futures::future::ready(Some(vec![])),
                 };
 
-                let text = String::from_utf8_lossy(&chunk).to_string();
-                text.lines()
-                    .filter_map(|line| {
-                        parse_sse_line(line)
-                            .and_then(|json| serde_json::from_value::<StreamResponse>(json).ok())
-                    })
-                    .collect::<Vec<_>>()
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
+                if buffer.contains("\r\n") {
+                    *buffer = buffer.replace("\r\n", "\n");
+                }
+
+                let parsed = drain_sse_frames(buffer)
+                    .into_iter()
+                    .filter_map(|frame| parse_sse_frame(&frame))
+                    .collect::<Vec<_>>();
+
+                futures::future::ready(Some(parsed))
             })
             .flat_map(futures::stream::iter);
 
@@ -174,6 +203,7 @@ impl Provider for OpenAICompatibleProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_provider_creation() {
@@ -209,5 +239,45 @@ mod tests {
 
         // 验证 provider 创建成功
         assert_eq!(provider.name(), "test");
+    }
+
+    #[test]
+    fn test_drain_sse_frames_handles_split_chunks() {
+        let mut buffer = String::new();
+        buffer.push_str("data: {\"id\":\"abc\"");
+        assert!(drain_sse_frames(&mut buffer).is_empty());
+
+        buffer.push_str(",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",\"system_fingerprint\":null,\"choices\":[],\"usage\":null}\n\n");
+        let frames = drain_sse_frames(&mut buffer);
+
+        assert_eq!(frames.len(), 1);
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sse_frame_ignores_done_and_parses_json() {
+        assert!(parse_sse_frame("data: [DONE]").is_none());
+
+        let frame = format!(
+            "data: {}\n",
+            json!({
+                "id": "abc",
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "test-model",
+                "system_fingerprint": null,
+                "choices": [{
+                    "index": 0,
+                    "delta": { "content": "hi" },
+                    "finish_reason": "stop"
+                }],
+                "usage": null
+            })
+        );
+
+        let parsed = parse_sse_frame(&frame).expect("frame should parse");
+        assert_eq!(parsed.choices.len(), 1);
+        assert_eq!(parsed.choices[0].delta.content.as_deref(), Some("hi"));
+        assert_eq!(parsed.choices[0].finish_reason.as_deref(), Some("stop"));
     }
 }

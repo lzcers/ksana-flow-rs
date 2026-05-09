@@ -56,6 +56,7 @@ pub fn call_model(
     let mut final_tool_calls = Vec::new();
     let mut final_usage = None;
     stream! {
+        let mut completed = false;
         // 流式调用模型
         let mut response_stream = match model
             .chat_stream(messages.to_vec(), tools_def.map(|tools| tools.to_vec()))
@@ -68,6 +69,7 @@ pub fn call_model(
             }
         };
         while let Some(chunk) = response_stream.next().await {
+                let should_finish = chunk.is_finished || chunk.finish_reason.is_some();
                 let content = chunk.content;
                 let reasoning_content = chunk.reasoning_content;
                 let tool_calls = chunk.tool_calls;
@@ -90,14 +92,27 @@ pub fn call_model(
                 if let Some(usage) = usage {
                     final_usage = Some(usage);
                 }
+
+                if should_finish {
+                    completed = true;
+                    yield CallModelEvent::Completed {
+                        content: final_content.clone(),
+                        reasoning_content: if final_reasoning_content.is_empty() { None } else { Some(final_reasoning_content.clone()) },
+                        tools_call: if final_tool_calls.is_empty() { None } else { Some(final_tool_calls.clone()) },
+                        usage: final_usage.clone(),
+                    };
+                    break;
+                }
         }
 
-        yield CallModelEvent::Completed {
-            content: final_content,
-            reasoning_content: if final_reasoning_content.is_empty() { None } else { Some(final_reasoning_content) },
-            tools_call: if final_tool_calls.is_empty() { None } else { Some(final_tool_calls) },
-            usage: final_usage,
-        };
+        if !completed {
+            yield CallModelEvent::Completed {
+                content: final_content,
+                reasoning_content: if final_reasoning_content.is_empty() { None } else { Some(final_reasoning_content) },
+                tools_call: if final_tool_calls.is_empty() { None } else { Some(final_tool_calls) },
+                usage: final_usage,
+            };
+        }
     }
 }
 
@@ -193,5 +208,80 @@ fn merge_tool_calls(accumulated: &mut Vec<ToolCall>, incremental: Vec<ToolCall>)
             // 新增 tool call
             accumulated.push(inc);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ChatChunk, ChatError};
+    use async_trait::async_trait;
+    use futures::{StreamExt, stream, stream::BoxStream};
+
+    struct MockChatModel {
+        chunks: Vec<ChatChunk>,
+    }
+
+    #[async_trait]
+    impl ChatCapability for MockChatModel {
+        async fn chat(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<Message, ChatError> {
+            panic!("chat should not be called in this test");
+        }
+
+        async fn chat_stream(
+            &self,
+            _msgs: Vec<Message>,
+            _tools: Option<Vec<ToolDef>>,
+        ) -> Result<BoxStream<'static, ChatChunk>, ChatError> {
+            Ok(Box::pin(stream::iter(self.chunks.clone())))
+        }
+    }
+
+    #[tokio::test]
+    async fn call_model_completes_immediately_on_finish_chunk() {
+        let model = MockChatModel {
+            chunks: vec![
+                ChatChunk {
+                    content: "hello".to_string(),
+                    reasoning_content: String::new(),
+                    is_finished: false,
+                    finish_reason: None,
+                    tool_calls: None,
+                    usage: None,
+                },
+                ChatChunk {
+                    content: String::new(),
+                    reasoning_content: String::new(),
+                    is_finished: true,
+                    finish_reason: Some("stop".to_string()),
+                    tool_calls: None,
+                    usage: None,
+                },
+                ChatChunk {
+                    content: "should-not-be-consumed".to_string(),
+                    reasoning_content: String::new(),
+                    is_finished: false,
+                    finish_reason: None,
+                    tool_calls: None,
+                    usage: None,
+                },
+            ],
+        };
+
+        let events = call_model(&model, &[Message::user("hi")], None)
+            .collect::<Vec<_>>()
+            .await;
+
+        assert!(matches!(
+            events.as_slice(),
+            [
+                CallModelEvent::TextChunk(text),
+                CallModelEvent::Completed { content: completed, .. }
+            ] if text == "hello" && completed == "hello"
+        ));
     }
 }

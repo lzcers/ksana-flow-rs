@@ -3,6 +3,7 @@ use std::{
     pin::{Pin, pin},
     sync::Mutex,
     task::{Context as PollContext, Poll},
+    time::{Duration, Instant},
 };
 
 use agent::{
@@ -36,9 +37,13 @@ pub struct TaskManager {
 }
 
 type TaskStream = Pin<Box<dyn Stream<Item = CallModelEvent> + Send>>;
+const TASK_TIMEOUT: Duration = Duration::from_secs(180);
+const TASK_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(45);
 
 pub struct TaskHandle {
     stream: Mutex<TaskStream>,
+    started_at: Instant,
+    last_progress_at: Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -51,8 +56,11 @@ pub struct TaskResult {
 
 impl TaskHandle {
     fn new(stream: TaskStream) -> Self {
+        let now = Instant::now();
         Self {
             stream: Mutex::new(stream),
+            started_at: now,
+            last_progress_at: now,
         }
     }
 }
@@ -125,6 +133,18 @@ impl TaskManager {
             return TaskStatus::Error;
         };
 
+        let now = Instant::now();
+        if now.duration_since(task.started_at) > TASK_TIMEOUT {
+            result.status = TaskStatus::Error;
+            result.result.get_or_insert_with(|| {
+                Err(format!(
+                    "task timed out after {:?} without completing",
+                    TASK_TIMEOUT
+                ))
+            });
+            return TaskStatus::Error;
+        }
+
         let waker = noop_waker_ref();
         let mut cx = PollContext::from_waker(waker);
         let mut stream = task.stream.lock().expect("task stream poisoned");
@@ -133,6 +153,7 @@ impl TaskManager {
             match stream.as_mut().poll_next(&mut cx) {
                 Poll::Ready(Some(CallModelEvent::TextChunk(content))) => {
                     result.status = TaskStatus::Running;
+                    task.last_progress_at = Instant::now();
                     result.chunks.push(content);
                 }
                 Poll::Ready(Some(CallModelEvent::Completed {
@@ -140,11 +161,13 @@ impl TaskManager {
                 })) => {
                     result.result = Some(Ok(content));
                     result.status = TaskStatus::Done;
+                    task.last_progress_at = Instant::now();
                     return TaskStatus::Done;
                 }
                 Poll::Ready(Some(CallModelEvent::Error(error))) => {
                     result.result = Some(Err(error));
                     result.status = TaskStatus::Error;
+                    task.last_progress_at = Instant::now();
                     return TaskStatus::Error;
                 }
                 Poll::Ready(Some(CallModelEvent::ReasoningChunk(_))) => {}
@@ -156,6 +179,17 @@ impl TaskManager {
                     return TaskStatus::Error;
                 }
                 Poll::Pending => {
+                    if Instant::now().duration_since(task.last_progress_at) > TASK_NO_PROGRESS_TIMEOUT
+                    {
+                        result.status = TaskStatus::Error;
+                        result.result.get_or_insert_with(|| {
+                            Err(format!(
+                                "task stalled for {:?} without new output",
+                                TASK_NO_PROGRESS_TIMEOUT
+                            ))
+                        });
+                        return TaskStatus::Error;
+                    }
                     result.status = TaskStatus::Running;
                     return TaskStatus::Running;
                 }
@@ -177,5 +211,73 @@ impl TaskManager {
             .iter()
             .map(|(entity, result)| (*entity, result.clone()))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::stream;
+
+    fn make_manager() -> TaskManager {
+        TaskManager {
+            model: ChatModel::new(),
+            tasks: HashMap::new(),
+            results: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn poll_task_returns_running_for_fresh_pending_stream() {
+        let entity = Entity::from_raw_u32(1).expect("valid entity id");
+        let mut manager = make_manager();
+        manager.tasks.insert(
+            entity,
+            TaskHandle::new(Box::pin(stream::pending::<CallModelEvent>())),
+        );
+        manager.results.insert(
+            entity,
+            TaskResult {
+                kind: TaskKind::Narration,
+                status: TaskStatus::Pending,
+                chunks: Vec::new(),
+                result: None,
+            },
+        );
+
+        let status = manager.poll_task(entity);
+
+        assert_eq!(status, TaskStatus::Running);
+        assert_eq!(manager.results[&entity].status, TaskStatus::Running);
+    }
+
+    #[test]
+    fn poll_task_marks_error_when_stream_stalls() {
+        let entity = Entity::from_raw_u32(2).expect("valid entity id");
+        let mut manager = make_manager();
+        let mut handle = TaskHandle::new(Box::pin(stream::pending::<CallModelEvent>()));
+        handle.last_progress_at = Instant::now() - TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
+        manager.tasks.insert(entity, handle);
+        manager.results.insert(
+            entity,
+            TaskResult {
+                kind: TaskKind::Narration,
+                status: TaskStatus::Running,
+                chunks: Vec::new(),
+                result: None,
+            },
+        );
+
+        let status = manager.poll_task(entity);
+
+        assert_eq!(status, TaskStatus::Error);
+        assert_eq!(manager.results[&entity].status, TaskStatus::Error);
+        assert!(
+            manager.results[&entity]
+                .result
+                .as_ref()
+                .and_then(|result| result.as_ref().err())
+                .is_some_and(|message| message.contains("task stalled"))
+        );
     }
 }
