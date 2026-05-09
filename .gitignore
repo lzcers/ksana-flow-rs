@@ -8,3 +8,4 @@ config.toml
 nul
 .playwright-cli
 .omx
+node_modules

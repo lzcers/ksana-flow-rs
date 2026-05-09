@@ -26,7 +26,6 @@ use bevy_ecs::{
 };
 use std::{env, fs::OpenOptions, io::Write};
 
-const OUTPUT_FILE_PATH: &str = "akashic_output.txt";
 const FATE_CONTEXT_OUTPUT_FILE_PATH: &str = "fate_weaver_context.txt";
 const NARRATOR_CONTEXT_OUTPUT_FILE_PATH: &str = "upper_narrator_context.txt";
 const PROTAGONIST_CONTEXT_OUTPUT_FILE_PATH: &str = "protagonist_context.txt";
@@ -40,7 +39,7 @@ async fn main() {
         return;
     }
 
-    // build world
+    // Build world
     let mut world = World::new();
 
     // 资源初始化
@@ -106,7 +105,6 @@ async fn main() {
             println!("------------------------------------------------------------------------");
         }
         schedule.run(&mut world);
-        // print_task_chunks(&world, &mut HashMap::new());
         frame += 1;
     }
 }
