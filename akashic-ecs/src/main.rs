@@ -4,7 +4,7 @@ use akashic_ecs::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
-        player_input::PlayerInbox,
+        player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::ProtagonistDecisionState,
         story_state::LatestNarration,
         task_manager::TaskManager,
@@ -49,6 +49,7 @@ async fn main() {
     world.init_resource::<WorldSnapshot>();
     world.init_resource::<TurnState>();
     world.init_resource::<PlayerInbox>();
+    world.insert_resource(PlayerInputConfig::auto_select_first());
     world.init_resource::<ProtagonistDecisionState>();
     world.init_resource::<LatestNarration>();
     world.init_resource::<Messages<TurnEvent>>();

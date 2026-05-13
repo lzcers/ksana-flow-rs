@@ -10,7 +10,7 @@ use crate::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
-        player_input::PlayerInbox,
+        player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::{PendingProtagonistChoice, ProtagonistDecisionState},
         story_state::LatestNarration,
         task_manager::TaskManager,
@@ -80,6 +80,7 @@ impl AkashicSessionEngine {
         world.init_resource::<WorldSnapshot>();
         world.init_resource::<TurnState>();
         world.init_resource::<PlayerInbox>();
+        world.insert_resource(player_input_config(choice_resolution_mode));
         world.init_resource::<ProtagonistDecisionState>();
         world.init_resource::<LatestNarration>();
         world.init_resource::<Messages<TurnEvent>>();
@@ -176,15 +177,9 @@ impl AkashicSessionEngine {
                 return Ok(snapshot);
             }
             if snapshot.phase == TurnPhase::AwaitingPlayerChoice && self.task_queue_empty() {
-                if self.choice_resolution_mode == ChoiceResolutionMode::AutoSelectFirst {
-                    let choice_id = snapshot
-                        .choices
-                        .first()
-                        .map(|choice| choice.id.clone())
-                        .ok_or_else(|| "等待玩家选择时未生成任何候选项。".to_string())?;
-                    return self.submit_choice(&choice_id);
+                if self.choice_resolution_mode == ChoiceResolutionMode::WaitForUser {
+                    return Ok(snapshot);
                 }
-                return Ok(snapshot);
             }
 
             self.schedule.run(&mut self.world);
@@ -196,5 +191,12 @@ impl AkashicSessionEngine {
             .resource::<TaskManager>()
             .task_results_snapshot()
             .is_empty()
+    }
+}
+
+fn player_input_config(choice_resolution_mode: ChoiceResolutionMode) -> PlayerInputConfig {
+    match choice_resolution_mode {
+        ChoiceResolutionMode::AutoSelectFirst => PlayerInputConfig::auto_select_first(),
+        ChoiceResolutionMode::WaitForUser => PlayerInputConfig::wait_for_user(),
     }
 }
