@@ -15,15 +15,18 @@ use agent::{
 use async_stream::stream;
 use bevy_ecs::{entity::Entity, resource::Resource};
 use futures::{Stream, StreamExt, task::noop_waker_ref};
+use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     FatePlanning,
     ProtagonistAction,
     Narration,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Pending,
     Running,
@@ -36,6 +39,7 @@ pub struct TaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, TaskHandle>,
     results: HashMap<Entity, TaskResult>,
+    emitted_updates: Vec<TaskUpdate>,
     config: TaskManagerConfig,
 }
 
@@ -72,6 +76,29 @@ pub struct TaskResult {
     pub retry_history: Vec<String>,
     pub chunks: Vec<String>,
     pub result: Option<Result<String, String>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskUpdate {
+    pub kind: TaskKind,
+    pub status: TaskStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl TaskKind {
+    pub fn stage_name(self) -> &'static str {
+        match self {
+            TaskKind::FatePlanning => "fate_weaver",
+            TaskKind::ProtagonistAction => "protagonist",
+            TaskKind::Narration => "upper_narrator",
+        }
+    }
 }
 
 impl TaskHandle {
@@ -136,6 +163,7 @@ impl TaskManager {
             model,
             tasks: HashMap::new(),
             results: HashMap::new(),
+            emitted_updates: Vec::new(),
             config: TaskManagerConfig::default(),
         }
     }
@@ -160,6 +188,13 @@ impl TaskManager {
                 result: None,
             },
         );
+        self.emitted_updates.push(TaskUpdate {
+            kind,
+            status: TaskStatus::Pending,
+            chunk: None,
+            output: None,
+            error: None,
+        });
         self.tasks
             .insert(entity, TaskHandle::new(stream, restart_stream));
     }
@@ -216,17 +251,31 @@ impl TaskManager {
                             result.status = TaskStatus::Running;
                             task.last_progress_at = Instant::now();
                             task.saw_progress = true;
-                            result.chunks.push(content);
+                            result.chunks.push(content.clone());
+                            self.emitted_updates.push(TaskUpdate {
+                                kind: result.kind,
+                                status: TaskStatus::Running,
+                                chunk: Some(content),
+                                output: None,
+                                error: None,
+                            });
                         }
                         Poll::Ready(Some(CallModelEvent::Completed {
                             content, usage: _, ..
                         })) => {
-                            result.result = Some(Ok(content));
+                            result.result = Some(Ok(content.clone()));
                             result.status = TaskStatus::Done;
                             result.last_error = None;
                             task.last_progress_at = Instant::now();
                             task.saw_progress = true;
                             result.attempts = task.attempts;
+                            self.emitted_updates.push(TaskUpdate {
+                                kind: result.kind,
+                                status: TaskStatus::Done,
+                                chunk: None,
+                                output: Some(content),
+                                error: None,
+                            });
                             return TaskStatus::Done;
                         }
                         Poll::Ready(Some(CallModelEvent::Error(error))) => {
@@ -284,6 +333,10 @@ impl TaskManager {
             .collect()
     }
 
+    pub fn drain_emitted_updates(&mut self) -> Vec<TaskUpdate> {
+        std::mem::take(&mut self.emitted_updates)
+    }
+
     fn retry_or_fail(&mut self, entity: Entity, message: String) -> TaskStatus {
         let Some(result) = self.results.get_mut(&entity) else {
             return TaskStatus::Error;
@@ -304,6 +357,13 @@ impl TaskManager {
             result.last_error = Some(message.clone());
             result.retry_history.push(message);
             result.result = None;
+            self.emitted_updates.push(TaskUpdate {
+                kind: result.kind,
+                status: TaskStatus::Pending,
+                chunk: None,
+                output: None,
+                error: result.last_error.clone(),
+            });
             return TaskStatus::Pending;
         }
 
@@ -312,6 +372,13 @@ impl TaskManager {
         result.last_error = Some(message.clone());
         result.retry_history.push(message.clone());
         result.result = Some(Err(message));
+        self.emitted_updates.push(TaskUpdate {
+            kind: result.kind,
+            status: TaskStatus::Error,
+            chunk: None,
+            output: None,
+            error: result.last_error.clone(),
+        });
         TaskStatus::Error
     }
 
@@ -344,6 +411,7 @@ mod tests {
             model: ChatModel::new(),
             tasks: HashMap::new(),
             results: HashMap::new(),
+            emitted_updates: Vec::new(),
             config: TaskManagerConfig {
                 task_timeout: DEFAULT_TASK_TIMEOUT,
                 initial_output_timeout: DEFAULT_TASK_INITIAL_OUTPUT_TIMEOUT,

@@ -8,7 +8,6 @@ use crate::{
     components::upper_narrator::UpperNarrator,
     resources::{
         protagonist_action::ProtagonistDecisionState,
-        story_state::LatestNarration,
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -41,7 +40,6 @@ pub fn upper_narrator_system(
 pub fn upper_narrator_apply_system(
     turn_state: Res<TurnState>,
     mut query: Query<(Entity, &mut UpperNarrator)>,
-    mut latest_narration: ResMut<LatestNarration>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
@@ -60,7 +58,6 @@ pub fn upper_narrator_apply_system(
     match task_result.status {
         TaskStatus::Done => {
             let story_content = task_success_output(&task_result);
-            latest_narration.set(story_content.clone());
             upper_narrator.append_assistant_message(&story_content);
             event_writer.write(TurnEvent::StoryGenerated);
             task_manager.clear_task(entity);

@@ -1,6 +1,8 @@
 use bevy_ecs::resource::Resource;
+use serde::{Deserialize, Serialize};
 
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TurnPhase {
     Idle,                // 初始状态
     FateWeaving,         // 命运编织状态

@@ -6,7 +6,6 @@ use akashic_ecs::{
     resources::{
         player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::ProtagonistDecisionState,
-        story_state::LatestNarration,
         task_manager::TaskManager,
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -51,7 +50,6 @@ async fn main() {
     world.init_resource::<PlayerInbox>();
     world.insert_resource(PlayerInputConfig::auto_select_first());
     world.init_resource::<ProtagonistDecisionState>();
-    world.init_resource::<LatestNarration>();
     world.init_resource::<Messages<TurnEvent>>();
     world.init_resource::<Messages<TurnControl>>();
     world.insert_resource(TaskManager::new(build_chat_model()));

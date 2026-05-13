@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
 /// 世界 Agent 单轮完整输出
-#[derive(Resource, Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct WorldSnapshot {
     pub round: u64,
@@ -42,7 +42,7 @@ pub struct WorldSnapshot {
     pub pacing_note: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct NpcState {
     pub name: String,
@@ -57,7 +57,7 @@ pub struct NpcState {
     pub secrets: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct ItemState {
     pub name: String,
@@ -72,7 +72,7 @@ pub struct ItemState {
     pub relevance: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct OngoingEvent {
     pub name: String,
