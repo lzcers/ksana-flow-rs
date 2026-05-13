@@ -38,7 +38,7 @@ const LobbyPage: React.FC = () => {
             </div>
             <PageTitle
               title="幻世 · 人生回响"
-              subtitle="每一次进入，都会以角色、时代与抉择重写一段命运。参考图中的沉浸式黑金叙事界面将从这里开始。"
+              subtitle="开始你的命运"
             />
             <SectionCard className="max-w-2xl">
               <p className="text-base leading-8 text-[#d3d9e5]">
@@ -51,7 +51,7 @@ const LobbyPage: React.FC = () => {
                 <Play className="h-4 w-4" />
                 开启新人生
               </PrimaryButton>
-            <SecondaryButton className="flex-1" onClick={() => setGameState('corridor')}>
+              <SecondaryButton className="flex-1" onClick={() => setGameState('corridor')}>
                 <BookOpen className="h-4 w-4" />
                 我的回廊
               </SecondaryButton>
@@ -66,11 +66,6 @@ const LobbyPage: React.FC = () => {
                 角色的姓名、外貌、烙印与时代矛盾会共同塑造初始叙事。进入故事后，
                 你可以消耗直觉窥探未来，也可以倾注执念强行放大抉择的结果。
               </p>
-            </div>
-
-            <div className="rounded-[1.6rem] border border-[#6f6655] bg-[#0a1222]/90 p-5">
-              <p className="text-sm text-[#9ca7be]">准备阶段</p>
-              <p className="mt-2 text-xl font-semibold text-[#efe4cd]">角色创建 → 命运开场 → 人生回响</p>
             </div>
           </SectionCard>
         </div>

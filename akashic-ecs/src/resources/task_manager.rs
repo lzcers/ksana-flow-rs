@@ -39,7 +39,7 @@ pub struct TaskManager {
 
 type TaskStream = Pin<Box<dyn Stream<Item = CallModelEvent> + Send>>;
 const TASK_TIMEOUT: Duration = Duration::from_secs(180);
-const TASK_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(45);
+const TASK_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(120);
 const TASK_MAX_RETRIES: usize = 2;
 
 pub struct TaskHandle {

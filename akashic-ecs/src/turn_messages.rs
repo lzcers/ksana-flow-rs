@@ -6,7 +6,7 @@ use crate::resources::turn_state::TurnPhase;
 pub enum TurnControl {
     StartTurn { turn_id: u64 },
     ResetTurn { next_turn_id: Option<u64> },
-    SubmitProtagonistAction { turn_id: u64, action_text: String },
+    SubmitProtagonistAction { turn_id: u64, selection: String },
 }
 
 #[derive(Message, Debug, Clone)]
@@ -16,6 +16,7 @@ pub enum TurnEvent {
     StoryWriting,         // 故事编写中
     StoryGenerated,       // 故事编排完成
     AwaitingProtagonist,  // 等待主角状态
+    PlayerChoicesReady,   // 已生成候选项，等待外部提交
     ProtagonistCompleted, // 主角完成状态
     TaskFailed {
         turn_id: u64,

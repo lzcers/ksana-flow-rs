@@ -6,18 +6,54 @@ use bevy_ecs::{
 
 use crate::{
     components::fate_weaver::FateWeaver,
-    resources::turn_state::{TurnPhase, TurnState},
-    turn_messages::TurnEvent,
+    resources::{
+        protagonist_action::ProtagonistDecisionState,
+        turn_state::{TurnPhase, TurnState},
+    },
+    turn_messages::{TurnControl, TurnEvent},
 };
 
 // 统一管理故事轮次推进
 pub fn turn_orchestrator_system(
+    mut control_reader: MessageReader<TurnControl>,
     mut event_reader: MessageReader<TurnEvent>,
+    mut decision_state: ResMut<ProtagonistDecisionState>,
     mut turn_state: ResMut<TurnState>,
     mut query: Query<(Entity, &mut FateWeaver)>,
 ) {
+    for control in control_reader.read() {
+        handle_control(control, &mut turn_state, &mut decision_state);
+    }
+
     for event in event_reader.read() {
         handle_event(event, &mut turn_state, &mut query);
+    }
+}
+
+fn handle_control(
+    control: &TurnControl,
+    turn_state: &mut TurnState,
+    decision_state: &mut ProtagonistDecisionState,
+) {
+    match control {
+        TurnControl::StartTurn { turn_id } => {
+            turn_state.start_turn(*turn_id);
+        }
+        TurnControl::ResetTurn { next_turn_id } => {
+            decision_state.clear_choices();
+            turn_state.reset(*next_turn_id);
+        }
+        TurnControl::SubmitProtagonistAction { turn_id, selection } => {
+            if turn_state.phase != TurnPhase::AwaitingPlayerChoice {
+                return;
+            }
+            if *turn_id != turn_state.active_turn_id {
+                return;
+            }
+
+            decision_state.commit_selection(selection);
+            turn_state.finish_turn();
+        }
     }
 }
 
@@ -42,6 +78,9 @@ fn handle_event(
         }
         TurnEvent::AwaitingProtagonist => {
             turn_state.phase = TurnPhase::AwaitingProtagonist;
+        }
+        TurnEvent::PlayerChoicesReady => {
+            turn_state.phase = TurnPhase::AwaitingPlayerChoice;
         }
         TurnEvent::ProtagonistCompleted => {
             turn_state.finish_turn();
@@ -76,6 +115,7 @@ fn rollback_phase(stage: TurnPhase) -> TurnPhase {
     match stage {
         TurnPhase::FateWeaving => TurnPhase::Idle,
         TurnPhase::AwaitingProtagonist => TurnPhase::ProtagonistAction,
+        TurnPhase::AwaitingPlayerChoice => TurnPhase::AwaitingPlayerChoice,
         other => other,
     }
 }

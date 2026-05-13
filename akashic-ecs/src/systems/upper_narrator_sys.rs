@@ -7,7 +7,8 @@ use bevy_ecs::{
 use crate::{
     components::upper_narrator::UpperNarrator,
     resources::{
-        protagonist_action::ProtagonistAction,
+        protagonist_action::ProtagonistDecisionState,
+        story_state::LatestNarration,
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -20,7 +21,7 @@ pub fn upper_narrator_system(
     mut query: Query<(Entity, &mut UpperNarrator)>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
-    protagonist_action: ResMut<ProtagonistAction>,
+    decision_state: Res<ProtagonistDecisionState>,
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
 ) {
@@ -31,7 +32,7 @@ pub fn upper_narrator_system(
     let Ok((entity, mut upper_narrator)) = query.single_mut() else {
         return;
     };
-    let protagonist_action = protagonist_action.get();
+    let protagonist_action = decision_state.committed_action();
     upper_narrator.add_user_message(&world_snapshot.to_story_prompt(Some(&protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::Narration, &upper_narrator.context());
     event_writer.write(TurnEvent::StoryWriting);
@@ -40,6 +41,7 @@ pub fn upper_narrator_system(
 pub fn upper_narrator_apply_system(
     turn_state: Res<TurnState>,
     mut query: Query<(Entity, &mut UpperNarrator)>,
+    mut latest_narration: ResMut<LatestNarration>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
@@ -58,6 +60,7 @@ pub fn upper_narrator_apply_system(
     match task_result.status {
         TaskStatus::Done => {
             let story_content = task_success_output(&task_result);
+            latest_narration.set(story_content.clone());
             upper_narrator.append_assistant_message(&story_content);
             event_writer.write(TurnEvent::StoryGenerated);
             task_manager.clear_task(entity);

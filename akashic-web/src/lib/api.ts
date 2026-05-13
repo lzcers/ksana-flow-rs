@@ -13,6 +13,7 @@ interface ApiErrorBody {
   };
 }
 
+/** 角色设定数据，用于创建会话和展示主角信息。 */
 export interface Character {
   name: string;
   gender: string;
@@ -26,12 +27,14 @@ export interface Character {
   background: string;
 }
 
+/** 世界观设定数据，用于创建会话和展示剧情背景。 */
 export interface World {
   era: string;
   coreConflict: string;
   specialRules: string[];
 }
 
+/** 当前剧情节点中的可选项数据。 */
 export interface Choice {
   id: string;
   text: string;
@@ -42,6 +45,7 @@ export interface Choice {
   };
 }
 
+/** 当前剧情节点内容，包含文本、配图和选项。 */
 export interface StoryNode {
   id: string;
   text: string;
@@ -49,6 +53,7 @@ export interface StoryNode {
   choices: Choice[];
 }
 
+/** 会话资源状态，用于展示理智、执念和剩余天数。 */
 export interface SessionResources {
   obsessionPoints: number;
   intuitionPoints: number;
@@ -56,6 +61,7 @@ export interface SessionResources {
   worldNews: string | null;
 }
 
+/** 运行时状态视图，用于展示当前回合与叙事进度。 */
 export interface RuntimeStateView {
   gameState: string;
   phase: string;
@@ -70,6 +76,7 @@ export interface RuntimeStateView {
   latestProtagonistAction: string;
 }
 
+/** 结局详情数据，用于结局页和归档详情页展示。 */
 export interface EndingData {
   biography: string;
   turningPoints: Array<{ cause: string; effect: string }>;
@@ -77,6 +84,7 @@ export interface EndingData {
   cgs: string[];
 }
 
+/** 创建游戏会话后的返回数据。 */
 export interface CreateGameSessionData {
   sessionId: string;
   createdAt: string;
@@ -87,6 +95,7 @@ export interface CreateGameSessionData {
   stateView: RuntimeStateView;
 }
 
+/** 游戏会话快照，用于恢复当前游玩状态。 */
 export interface GameSessionSnapshot {
   sessionId: string;
   status: string;
@@ -98,6 +107,7 @@ export interface GameSessionSnapshot {
   endingStatus: string;
 }
 
+/** 提交选项后的回合推进结果。 */
 export interface SubmitChoiceData {
   accepted: boolean;
   sessionId: string;
@@ -110,6 +120,7 @@ export interface SubmitChoiceData {
   stateView: RuntimeStateView;
 }
 
+/** 直觉预览返回数据，用于查看选项的额外提示。 */
 export interface IntuitionPreviewData {
   choiceId: string;
   previewText: string;
@@ -120,12 +131,14 @@ export interface IntuitionPreviewData {
   resources: SessionResources;
 }
 
+/** 游戏会话结局查询结果。 */
 export interface GameSessionEndingData {
   sessionId: string;
   endingStatus: string;
   ending: EndingData;
 }
 
+/** 创建存档后的返回摘要。 */
 export interface SaveSummary {
   saveId: string;
   sessionId: string;
@@ -136,6 +149,7 @@ export interface SaveSummary {
   savedAt: string;
 }
 
+/** 存档列表项数据，用于存档大厅展示。 */
 export interface SaveListItem {
   saveId: string;
   sessionId: string;
@@ -149,6 +163,7 @@ export interface SaveListItem {
   savedAt: string;
 }
 
+/** 归档列表项数据，用于结局归档列表展示。 */
 export interface ArchiveListItem {
   archiveId: string;
   title: string;
@@ -159,6 +174,7 @@ export interface ArchiveListItem {
   createdAt: string;
 }
 
+/** 单个归档详情数据，包含完整结局内容。 */
 export interface ArchiveDetailData {
   archiveId: string;
   title: string;
@@ -166,12 +182,14 @@ export interface ArchiveDetailData {
   ending: EndingData;
 }
 
+/** 分享卡片生成结果，返回图片地址和过期时间。 */
 export interface ShareCardData {
   shareCardId: string;
   imageUrl: string;
   expiresAt: string;
 }
 
+/** 通用请求封装，统一处理 JSON 响应与错误抛出。 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
@@ -193,6 +211,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (payload as ApiResponse<T>).data;
 }
 
+/** 创建新的游戏会话，返回初始角色、世界和剧情节点。 */
 export function createGameSession(input: {
   character: Character;
   world: World;
@@ -204,10 +223,12 @@ export function createGameSession(input: {
   });
 }
 
+/** 获取指定会话的当前快照，用于进入或恢复游玩页面。 */
 export function getGameSession(sessionId: string) {
   return request<GameSessionSnapshot>(`/api/game-sessions/${sessionId}`);
 }
 
+/** 提交当前选项并推进回合，返回资源变动和最新状态。 */
 export function submitChoice(
   sessionId: string,
   input: {
@@ -221,6 +242,7 @@ export function submitChoice(
   });
 }
 
+/** 生成指定选项的直觉预览内容。 */
 export function createIntuitionPreview(sessionId: string, choiceId: string) {
   return request<IntuitionPreviewData>(`/api/game-sessions/${sessionId}/intuition-preview`, {
     method: 'POST',
@@ -228,10 +250,12 @@ export function createIntuitionPreview(sessionId: string, choiceId: string) {
   });
 }
 
+/** 查询指定会话的结局内容。 */
 export function getGameSessionEnding(sessionId: string) {
   return request<GameSessionEndingData>(`/api/game-sessions/${sessionId}/ending`);
 }
 
+/** 创建存档，可选择同时生成分享卡。 */
 export function createSave(input: {
   sessionId: string;
   title: string;
@@ -243,10 +267,12 @@ export function createSave(input: {
   });
 }
 
+/** 获取全部存档列表。 */
 export function listSaves() {
   return request<{ items: SaveListItem[] }>('/api/saves');
 }
 
+/** 从指定存档加载会话，返回恢复后的当前状态。 */
 export function loadSave(saveId: string) {
   return request<{
     sessionId: string;
@@ -260,14 +286,17 @@ export function loadSave(saveId: string) {
   });
 }
 
+/** 获取结局归档列表。 */
 export function listArchives() {
   return request<{ items: ArchiveListItem[] }>('/api/archives');
 }
 
+/** 获取单个归档的详细结局内容。 */
 export function getArchive(archiveId: string) {
   return request<ArchiveDetailData>(`/api/archives/${archiveId}`);
 }
 
+/** 为存档生成分享卡图片。 */
 export function generateSaveShareCard(saveId: string, style = 'golden-night') {
   return request<ShareCardData>('/api/share/save-card', {
     method: 'POST',
@@ -275,6 +304,7 @@ export function generateSaveShareCard(saveId: string, style = 'golden-night') {
   });
 }
 
+/** 为结局归档生成分享卡图片，可控制是否包含 CG。 */
 export function generateEndingShareCard(
   archiveId: string,
   input: { includeCgs?: boolean; style?: string } = {},

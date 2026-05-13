@@ -8,6 +8,7 @@ pub enum TurnPhase {
     NarratorStory,       // 故事编排状态
     ProtagonistAction,   // 主角行动阶段
     AwaitingProtagonist, // 等待主角状态
+    AwaitingPlayerChoice, // 等待外部玩家提交选择
     Failed,
 }
 

@@ -1,22 +1,63 @@
 use bevy_ecs::resource::Resource;
 use serde::{Deserialize, Serialize};
 
-/// 玩家 / 主角 Agent 做出的行动，等待世界 Agent 消费
+/// 主角决策状态：既保存已确认动作，也保存当前等待外部确认的候选项。
 #[derive(Resource, Debug, Clone)]
-pub struct ProtagonistAction(pub String);
+pub struct ProtagonistDecisionState {
+    committed_action: String,
+    choices: Vec<PendingProtagonistChoice>,
+}
 
-impl ProtagonistAction {
-    pub fn get(&self) -> &str {
-        &self.0
+impl ProtagonistDecisionState {
+    pub fn committed_action(&self) -> &str {
+        &self.committed_action
     }
-    pub fn set(&mut self, action: String) {
-        self.0 = action;
+
+    pub fn choices(&self) -> &[PendingProtagonistChoice] {
+        &self.choices
+    }
+
+    pub fn first_choice_id(&self) -> Option<&str> {
+        self.choices.first().map(|choice| choice.id.as_str())
+    }
+
+    pub fn replace_with_options(&mut self, options: ProtagonistOptions) {
+        self.choices = options
+            .options
+            .into_iter()
+            .enumerate()
+            .map(|(index, option)| PendingProtagonistChoice {
+                id: format!("choice-{}", index + 1),
+                option,
+            })
+            .collect();
+    }
+
+    pub fn clear_choices(&mut self) {
+        self.choices.clear();
+    }
+
+    pub fn commit_selection(&mut self, selection: &str) -> String {
+        let action = self.find_action(selection).unwrap_or(selection).to_string();
+        self.choices.clear();
+        self.committed_action = action.clone();
+        action
+    }
+
+    pub fn find_action(&self, choice_id: &str) -> Option<&str> {
+        self.choices
+            .iter()
+            .find(|choice| choice.id == choice_id)
+            .map(|choice| choice.option.action.as_str())
     }
 }
 
-impl Default for ProtagonistAction {
+impl Default for ProtagonistDecisionState {
     fn default() -> Self {
-        Self("start".to_string())
+        Self {
+            committed_action: "start".to_string(),
+            choices: Vec::new(),
+        }
     }
 }
 
@@ -44,4 +85,11 @@ pub struct ProtagonistOption {
     pub title: String,
     pub action: String,
     pub motivation_and_risk: String,
+}
+
+/// 可供外部玩家提交的主角候选项。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PendingProtagonistChoice {
+    pub id: String,
+    pub option: ProtagonistOption,
 }

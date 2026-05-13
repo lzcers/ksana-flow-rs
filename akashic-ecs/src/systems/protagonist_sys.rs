@@ -8,7 +8,7 @@ use bevy_ecs::{
 use crate::{
     components::protagonist::{self, Protagonist},
     resources::{
-        protagonist_action::{ProtagonistAction, ProtagonistOptions},
+        protagonist_action::{ProtagonistDecisionState, ProtagonistOptions},
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -20,7 +20,7 @@ use crate::{
 pub fn protagonist_system(
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
-    protagonist_action: ResMut<ProtagonistAction>,
+    decision_state: Res<ProtagonistDecisionState>,
     mut query: Query<(Entity, &mut Protagonist)>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
@@ -32,7 +32,7 @@ pub fn protagonist_system(
     let Ok((entity, mut protagonist)) = query.single_mut() else {
         return;
     };
-    let protagonist_action = protagonist_action.get();
+    let protagonist_action = decision_state.committed_action();
     protagonist.add_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::ProtagonistAction, &protagonist.context());
     event_writer.write(TurnEvent::AwaitingProtagonist);
@@ -41,7 +41,7 @@ pub fn protagonist_system(
 pub fn protagonist_apply_system(
     turn_state: Res<TurnState>,
     mut query: Query<(Entity, &mut Protagonist), With<protagonist::Protagonist>>,
-    mut protagonist_action: ResMut<ProtagonistAction>,
+    mut decision_state: ResMut<ProtagonistDecisionState>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
@@ -68,10 +68,21 @@ pub fn protagonist_apply_system(
                     return;
                 }
             };
-            // 默认选第一个选项
-            // 提交选项到 ProtagonistAction 资源
-            protagonist_action.set(action_list.first_action().unwrap_or("continue").to_string());
-            event_writer.write(TurnEvent::ProtagonistCompleted);
+            if action_list.is_empty() {
+                write_task_failed(
+                    &mut event_writer,
+                    &turn_state,
+                    entity,
+                    "主角候选项为空".to_string(),
+                );
+                task_manager.clear_task(entity);
+                return;
+            }
+            if let Ok((_, mut protagonist)) = query.single_mut() {
+                protagonist.append_assistant_message(&raw_output);
+            }
+            decision_state.replace_with_options(action_list);
+            event_writer.write(TurnEvent::PlayerChoicesReady);
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {

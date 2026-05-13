@@ -90,9 +90,11 @@ dependencies = [
 name = "akashic-server"
 version = "0.1.0"
 dependencies = [
+ "akashic-ecs",
  "anyhow",
  "axum",
  "chrono",
+ "futures",
  "serde",
  "serde_json",
  "tokio",

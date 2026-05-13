@@ -4,7 +4,8 @@ use akashic_ecs::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
-        protagonist_action::ProtagonistAction,
+        protagonist_action::ProtagonistDecisionState,
+        story_state::LatestNarration,
         task_manager::TaskManager,
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -16,7 +17,7 @@ use akashic_ecs::{
         turn_orchestrator_sys::turn_orchestrator_system,
         upper_narrator_sys::{upper_narrator_apply_system, upper_narrator_system},
     },
-    turn_messages::TurnEvent,
+    turn_messages::{TurnControl, TurnEvent},
     utils::build_chat_model,
 };
 use bevy_ecs::{
@@ -45,8 +46,10 @@ async fn main() {
     // 资源初始化
     world.init_resource::<WorldSnapshot>();
     world.init_resource::<TurnState>();
-    world.init_resource::<ProtagonistAction>();
+    world.init_resource::<ProtagonistDecisionState>();
+    world.init_resource::<LatestNarration>();
     world.init_resource::<Messages<TurnEvent>>();
+    world.init_resource::<Messages<TurnControl>>();
     world.insert_resource(TaskManager::new(build_chat_model()));
 
     // 实体初始化
@@ -130,7 +133,10 @@ fn print_frame_status(world: &World, frame: usize) {
 
 fn print_result(world: &mut World) {
     let turn_index = world.resource::<TurnState>().turn_index;
-    let selected_action = world.resource::<ProtagonistAction>().0.clone();
+    let selected_action = world
+        .resource::<ProtagonistDecisionState>()
+        .committed_action()
+        .to_string();
     let world_snapshot = world.resource::<WorldSnapshot>().clone();
     let narrator_latest_msg = {
         let mut query = world.query::<&UpperNarrator>();

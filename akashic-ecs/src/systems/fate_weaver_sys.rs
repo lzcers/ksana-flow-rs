@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::{
     components::fate_weaver::FateWeaver,
     resources::{
-        protagonist_action::ProtagonistAction,
+        protagonist_action::ProtagonistDecisionState,
         task_manager::{TaskKind, TaskManager, TaskStatus},
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -20,7 +20,7 @@ use crate::{
 // FateWeaver 根据当前 phase 决定是做场景编排还是动作后果推演。
 pub fn fate_weaver_system(
     turn_state: Res<TurnState>,
-    protagonist_action: ResMut<ProtagonistAction>,
+    decision_state: Res<ProtagonistDecisionState>,
     mut query: Query<(Entity, &mut FateWeaver)>,
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
@@ -36,7 +36,7 @@ pub fn fate_weaver_system(
     // let protagonist_action
     // 创建命运推演任务
     let round = turn_state.turn_index;
-    let protagonist_action = protagonist_action.get();
+    let protagonist_action = decision_state.committed_action();
     fate_weaver.append_user_message(
         &json!({"round": round, "protagonist_action": protagonist_action}).to_string(),
     );
