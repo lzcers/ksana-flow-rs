@@ -2,11 +2,16 @@ import { create } from 'zustand';
 import type {
   ArchiveListItem,
   Character,
+  CreateGameSessionData,
   EndingData,
   GameSessionSnapshot,
+  IntuitionPreviewData,
   RuntimeStateView,
   SaveListItem,
+  StoryStreamEvent,
+  StoryStreamEventName,
   StoryNode,
+  SubmitChoiceData,
   World,
 } from '../lib/api';
 import {
@@ -132,6 +137,39 @@ function applySnapshot(snapshot: GameSessionSnapshot) {
   };
 }
 
+function createSessionToSnapshot(session: CreateGameSessionData): GameSessionSnapshot {
+  return {
+    sessionId: session.sessionId,
+    status: 'active',
+    character: session.character,
+    world: session.world,
+    resources: session.resources,
+    currentNode: session.currentNode,
+    stateView: session.stateView,
+    endingStatus: 'pending',
+  };
+}
+
+function findStoryEvent<Name extends StoryStreamEventName>(
+  events: StoryStreamEvent[],
+  eventName: Name,
+): StoryStreamEvent<Name> | undefined {
+  return events.find((event): event is StoryStreamEvent<Name> => event.event === eventName);
+}
+
+function requireStoryEvent<Name extends StoryStreamEventName>(
+  events: StoryStreamEvent[],
+  eventName: Name,
+  fallbackMessage: string,
+): StoryStreamEvent<Name> {
+  const matched = findStoryEvent(events, eventName);
+  if (!matched) {
+    throw new Error(fallbackMessage);
+  }
+
+  return matched;
+}
+
 export const useGameStore = create<GameStoreState>((set, get) => ({
   ...initialState,
   setGameState: (state) => set({ gameState: state }),
@@ -149,18 +187,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const data = await createGameSession({ character, world });
+      const events = await createGameSession({ character, world });
+      const data = requireStoryEvent(events, 'session.created', '服务端没有返回会话创建结果。').data;
+      const snapshot = createSessionToSnapshot(data);
+
       set({
-        ...applySnapshot({
-          sessionId: data.sessionId,
-          status: 'active',
-          character: data.character,
-          world: data.world,
-          resources: data.resources,
-          currentNode: data.currentNode,
-          stateView: data.stateView,
-          endingStatus: 'pending',
-        }),
+        ...applySnapshot(snapshot),
         endingData: null,
         latestArchiveId: null,
         gameState: 'playing',
@@ -178,14 +210,26 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const snapshot = await getGameSession(sessionId);
+      const events = await getGameSession(sessionId);
+      const snapshot = requireStoryEvent(
+        events,
+        'session.snapshot',
+        '服务端没有返回会话快照。',
+      ).data;
+
       set({
         ...applySnapshot(snapshot),
+        endingData: null,
         gameState: snapshot.endingStatus === 'ready' ? 'ending' : 'playing',
       });
 
       if (snapshot.endingStatus === 'ready') {
-        const ending = await getGameSessionEnding(sessionId);
+        const endingEvents = await getGameSessionEnding(sessionId);
+        const ending = requireStoryEvent(
+          endingEvents,
+          'ending.ready',
+          '服务端没有返回结局内容。',
+        ).data;
         set({ endingData: ending.ending });
       }
     } catch (error) {
@@ -203,19 +247,31 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      await submitChoiceRequest(sessionId, { choiceId, useObsession });
-      const snapshot = await getGameSession(sessionId);
+      const events = await submitChoiceRequest(sessionId, { choiceId, useObsession });
+      const snapshot = requireStoryEvent(
+        events,
+        'session.snapshot',
+        '服务端没有返回推进后的会话快照。',
+      ).data;
+      const endingEvent = findStoryEvent(events, 'ending.ready');
       set(applySnapshot(snapshot));
 
       if (snapshot.endingStatus === 'ready') {
-        const ending = await getGameSessionEnding(sessionId);
+        const ending =
+          endingEvent?.data ??
+          requireStoryEvent(
+            await getGameSessionEnding(sessionId),
+            'ending.ready',
+            '服务端没有返回结局内容。',
+          ).data;
+
         set({
           endingData: ending.ending,
           gameState: 'ending',
           latestArchiveId: `archive-${sessionId}`,
         });
       } else {
-        set({ gameState: 'playing' });
+        set({ endingData: null, gameState: 'playing' });
       }
     } catch (error) {
       set({ error: error instanceof Error ? error.message : '推进剧情失败。' });
@@ -232,7 +288,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const data = await createIntuitionPreview(sessionId, choiceId);
+      const events = await createIntuitionPreview(sessionId, choiceId);
+      const data = requireStoryEvent(
+        events,
+        'intuition.preview',
+        '服务端没有返回直觉预览结果。',
+      ).data;
+
       set({
         intuitionPoints: data.resources.intuitionPoints,
         obsessionPoints: data.resources.obsessionPoints,
@@ -253,7 +315,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const data = await getGameSessionEnding(sessionId);
+      const events = await getGameSessionEnding(sessionId);
+      const data = requireStoryEvent(
+        events,
+        'ending.ready',
+        '服务端没有返回结局内容。',
+      ).data;
+
       set({
         endingData: data.ending,
         gameState: 'ending',
@@ -311,7 +379,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const loaded = await loadSaveRequest(saveId);
-      const snapshot = await getGameSession(loaded.sessionId);
+      const events = await getGameSession(loaded.sessionId);
+      const snapshot = requireStoryEvent(
+        events,
+        'session.snapshot',
+        '服务端没有返回读档后的会话快照。',
+      ).data;
+
       set({
         ...applySnapshot(snapshot),
         latestSaveId: saveId,
@@ -319,7 +393,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       });
 
       if (snapshot.endingStatus === 'ready') {
-        const ending = await getGameSessionEnding(loaded.sessionId);
+        const endingEvents = await getGameSessionEnding(loaded.sessionId);
+        const ending = requireStoryEvent(
+          endingEvents,
+          'ending.ready',
+          '服务端没有返回结局内容。',
+        ).data;
         set({ endingData: ending.ending, latestArchiveId: `archive-${loaded.sessionId}` });
       } else {
         set({ endingData: null });

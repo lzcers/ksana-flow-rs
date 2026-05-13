@@ -39,7 +39,7 @@ where
 {
     Event::default()
         .event(name)
-        .json_data(ApiResponse::ok(data))
+        .json_data(data)
         .expect("failed to serialize SSE event")
 }
 
@@ -72,13 +72,9 @@ pub async fn create_game_session(
 ) -> StorySseResult {
     let session = state.create_game_session(request)?;
     let session_id = session.session_id.clone();
-    let current_node = session.current_node.clone();
-    let state_view = session.state_view.clone();
 
     Ok(sse_response(vec![
         sse_json_event("session.created", session),
-        sse_json_event("story.node", current_node),
-        sse_json_event("state.updated", state_view),
         sse_done_event("create_game_session.done", Some(session_id)),
     ]))
 }
@@ -89,13 +85,9 @@ pub async fn get_game_session(
 ) -> StorySseResult {
     let snapshot = state.get_game_session(&path.session_id)?;
     let session_id = snapshot.session_id.clone();
-    let current_node = snapshot.current_node.clone();
-    let state_view = snapshot.state_view.clone();
 
     Ok(sse_response(vec![
         sse_json_event("session.snapshot", snapshot),
-        sse_json_event("story.node", current_node),
-        sse_json_event("state.updated", state_view),
         sse_done_event("get_game_session.done", Some(session_id)),
     ]))
 }

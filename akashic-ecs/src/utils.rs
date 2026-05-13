@@ -4,11 +4,12 @@ use std::{env, sync::Arc};
 use agent::{
     agent::{AgentError, Layer, LayerKind, LayerMeta, StepResult},
     models::ChatModel,
-    providers::deepseek_provider_from_env,
+    providers::deepseek_provider,
 };
 use bevy_ecs::{entity::Entity, message::MessageWriter};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::{
     resources::{task_manager::TaskResult, turn_state::TurnState},
@@ -31,9 +32,14 @@ pub fn build_chat_model() -> ChatModel {
     dotenv::dotenv().ok();
 
     let model_name = env::var("AKASHIC_MODEL").unwrap_or_else(|_| "deepseek-v4-flash".to_string());
+    let http_timeout_secs = env::var("AKASHIC_HTTP_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(660);
     let mut model = ChatModel::new();
 
-    if let Ok(provider) = deepseek_provider_from_env() {
+    if let Ok(api_key) = env::var("DEEPSEEK_API_KEY") {
+        let provider = deepseek_provider(api_key).with_timeout(Duration::from_secs(http_timeout_secs));
         model.add_models_for_provider(
             &["deepseek-v4-flash", "deepseek-v4-pro"],
             Arc::new(provider),

@@ -131,6 +131,14 @@ export interface IntuitionPreviewData {
   resources: SessionResources;
 }
 
+/** 单条剧情历史记录。 */
+export interface HistoryItem {
+  type: string;
+  turnIndex: number;
+  text: string;
+  createdAt: string;
+}
+
 /** 游戏会话结局查询结果。 */
 export interface GameSessionEndingData {
   sessionId: string;
@@ -189,6 +197,153 @@ export interface ShareCardData {
   expiresAt: string;
 }
 
+/** SSE 完成事件数据。 */
+export interface StoryStreamDoneData {
+  route: string;
+  sessionId?: string | null;
+}
+
+/** 历史流开始时的元数据。 */
+export interface StoryHistoryMetaData {
+  sessionId: string;
+  totalItems: number;
+}
+
+/** 会话流握手数据。 */
+export interface StoryStreamHandshakeData {
+  sessionId: string;
+  protocol: string;
+  note: string;
+}
+
+export interface StoryStreamEventMap {
+  'session.created': CreateGameSessionData;
+  'session.snapshot': GameSessionSnapshot;
+  'choice.submitted': SubmitChoiceData;
+  'ending.ready': GameSessionEndingData;
+  'intuition.preview': IntuitionPreviewData;
+  'history.started': StoryHistoryMetaData;
+  'history.item': HistoryItem;
+  'stream.handshake': StoryStreamHandshakeData;
+  'create_game_session.done': StoryStreamDoneData;
+  'get_game_session.done': StoryStreamDoneData;
+  'submit_choice.done': StoryStreamDoneData;
+  'get_game_session_ending.done': StoryStreamDoneData;
+  'create_intuition_preview.done': StoryStreamDoneData;
+  'get_game_session_history.done': StoryStreamDoneData;
+  'stream_game_session.done': StoryStreamDoneData;
+}
+
+export type StoryStreamEventName = keyof StoryStreamEventMap;
+
+export interface StoryStreamEvent<Name extends StoryStreamEventName = StoryStreamEventName> {
+  event: Name;
+  data: StoryStreamEventMap[Name];
+}
+
+function parseApiErrorMessage(status: number, payload: unknown) {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'error' in payload &&
+    payload.error &&
+    typeof payload.error === 'object' &&
+    'message' in payload.error &&
+    typeof payload.error.message === 'string'
+  ) {
+    return payload.error.message;
+  }
+
+  return `请求失败：${status}`;
+}
+
+function parseSseChunk(block: string): StoryStreamEvent | null {
+  const lines = block
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0 && !line.startsWith(':'));
+
+  if (!lines.length) {
+    return null;
+  }
+
+  let eventName = 'message';
+  const dataLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('event:')) {
+      eventName = line.slice('event:'.length).trim();
+      continue;
+    }
+
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart());
+    }
+  }
+
+  if (!dataLines.length) {
+    return null;
+  }
+
+  return {
+    event: eventName as StoryStreamEventName,
+    data: JSON.parse(dataLines.join('\n')) as StoryStreamEventMap[StoryStreamEventName],
+  };
+}
+
+async function readStoryStream(response: Response) {
+  if (!response.ok) {
+    let payload: unknown = null;
+
+    try {
+      payload = (await response.json()) as ApiErrorBody;
+    } catch {
+      payload = null;
+    }
+
+    throw new Error(parseApiErrorMessage(response.status, payload));
+  }
+
+  if (!response.body) {
+    throw new Error('服务端没有返回可读取的流。');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const events: StoryStreamEvent[] = [];
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    buffer = buffer.replace(/\r\n/g, '\n');
+
+    let boundaryIndex = buffer.indexOf('\n\n');
+    while (boundaryIndex !== -1) {
+      const chunk = buffer.slice(0, boundaryIndex);
+      buffer = buffer.slice(boundaryIndex + 2);
+
+      const parsed = parseSseChunk(chunk);
+      if (parsed) {
+        events.push(parsed);
+      }
+
+      boundaryIndex = buffer.indexOf('\n\n');
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  const tail = parseSseChunk(buffer.trim());
+  if (tail) {
+    events.push(tail);
+  }
+
+  return events;
+}
+
 /** 通用请求封装，统一处理 JSON 响应与错误抛出。 */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -211,24 +366,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (payload as ApiResponse<T>).data;
 }
 
-/** 创建新的游戏会话，返回初始角色、世界和剧情节点。 */
+/** 故事接口请求封装，统一读取 SSE 中的 JSON 事件。 */
+async function requestStoryStream(path: string, init?: RequestInit) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
+
+  return readStoryStream(response);
+}
+
+/** 创建新的游戏会话，返回故事 SSE 事件。 */
 export function createGameSession(input: {
   character: Character;
   world: World;
   seed?: string;
 }) {
-  return request<CreateGameSessionData>('/api/game-sessions', {
+  return requestStoryStream('/api/game-sessions', {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
-/** 获取指定会话的当前快照，用于进入或恢复游玩页面。 */
+/** 获取指定会话的当前快照流。 */
 export function getGameSession(sessionId: string) {
-  return request<GameSessionSnapshot>(`/api/game-sessions/${sessionId}`);
+  return requestStoryStream(`/api/game-sessions/${sessionId}`);
 }
 
-/** 提交当前选项并推进回合，返回资源变动和最新状态。 */
+/** 提交当前选项并推进回合，返回故事 SSE 事件。 */
 export function submitChoice(
   sessionId: string,
   input: {
@@ -236,23 +405,23 @@ export function submitChoice(
     useObsession: boolean;
   },
 ) {
-  return request<SubmitChoiceData>(`/api/game-sessions/${sessionId}/choices`, {
+  return requestStoryStream(`/api/game-sessions/${sessionId}/choices`, {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
-/** 生成指定选项的直觉预览内容。 */
+/** 生成指定选项的直觉预览流。 */
 export function createIntuitionPreview(sessionId: string, choiceId: string) {
-  return request<IntuitionPreviewData>(`/api/game-sessions/${sessionId}/intuition-preview`, {
+  return requestStoryStream(`/api/game-sessions/${sessionId}/intuition-preview`, {
     method: 'POST',
     body: JSON.stringify({ choiceId }),
   });
 }
 
-/** 查询指定会话的结局内容。 */
+/** 查询指定会话的结局流。 */
 export function getGameSessionEnding(sessionId: string) {
-  return request<GameSessionEndingData>(`/api/game-sessions/${sessionId}/ending`);
+  return requestStoryStream(`/api/game-sessions/${sessionId}/ending`);
 }
 
 /** 创建存档，可选择同时生成分享卡。 */

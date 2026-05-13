@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    env,
     pin::{Pin, pin},
     sync::{Arc, Mutex},
     task::{Context as PollContext, Poll},
@@ -35,18 +36,29 @@ pub struct TaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, TaskHandle>,
     results: HashMap<Entity, TaskResult>,
+    config: TaskManagerConfig,
 }
 
 type TaskStream = Pin<Box<dyn Stream<Item = CallModelEvent> + Send>>;
-const TASK_TIMEOUT: Duration = Duration::from_secs(180);
-const TASK_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(120);
-const TASK_MAX_RETRIES: usize = 2;
+const DEFAULT_TASK_TIMEOUT: Duration = Duration::from_secs(600);
+const DEFAULT_TASK_INITIAL_OUTPUT_TIMEOUT: Duration = Duration::from_secs(300);
+const DEFAULT_TASK_NO_PROGRESS_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_TASK_MAX_RETRIES: usize = 2;
+
+#[derive(Clone, Copy, Debug)]
+struct TaskManagerConfig {
+    task_timeout: Duration,
+    initial_output_timeout: Duration,
+    no_progress_timeout: Duration,
+    max_retries: usize,
+}
 
 pub struct TaskHandle {
     stream: Mutex<TaskStream>,
     restart_stream: Arc<dyn Fn() -> TaskStream + Send + Sync>,
     started_at: Instant,
     last_progress_at: Instant,
+    saw_progress: bool,
     attempts: usize,
 }
 
@@ -70,6 +82,7 @@ impl TaskHandle {
             restart_stream,
             started_at: now,
             last_progress_at: now,
+            saw_progress: false,
             attempts: 1,
         }
     }
@@ -79,9 +92,42 @@ impl TaskHandle {
         self.stream = Mutex::new((self.restart_stream)());
         self.started_at = now;
         self.last_progress_at = now;
+        self.saw_progress = false;
         self.attempts += 1;
         self.attempts
     }
+}
+
+impl Default for TaskManagerConfig {
+    fn default() -> Self {
+        Self {
+            task_timeout: read_env_duration("AKASHIC_TASK_TIMEOUT_SECS", DEFAULT_TASK_TIMEOUT),
+            initial_output_timeout: read_env_duration(
+                "AKASHIC_TASK_INITIAL_OUTPUT_TIMEOUT_SECS",
+                DEFAULT_TASK_INITIAL_OUTPUT_TIMEOUT,
+            ),
+            no_progress_timeout: read_env_duration(
+                "AKASHIC_TASK_NO_PROGRESS_TIMEOUT_SECS",
+                DEFAULT_TASK_NO_PROGRESS_TIMEOUT,
+            ),
+            max_retries: read_env_usize("AKASHIC_TASK_MAX_RETRIES", DEFAULT_TASK_MAX_RETRIES),
+        }
+    }
+}
+
+fn read_env_duration(name: &str, default: Duration) -> Duration {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or(default)
+}
+
+fn read_env_usize(name: &str, default: usize) -> usize {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(default)
 }
 
 impl TaskManager {
@@ -90,6 +136,7 @@ impl TaskManager {
             model,
             tasks: HashMap::new(),
             results: HashMap::new(),
+            config: TaskManagerConfig::default(),
         }
     }
 
@@ -106,7 +153,7 @@ impl TaskManager {
                 kind,
                 status: TaskStatus::Pending,
                 attempts: 1,
-                max_attempts: TASK_MAX_RETRIES + 1,
+                max_attempts: self.config.max_retries + 1,
                 last_error: None,
                 retry_history: Vec::new(),
                 chunks: Vec::new(),
@@ -153,10 +200,10 @@ impl TaskManager {
             };
 
             let now = Instant::now();
-            if now.duration_since(task.started_at) > TASK_TIMEOUT {
+            if now.duration_since(task.started_at) > self.config.task_timeout {
                 Some(format!(
                     "task timed out after {:?} without completing",
-                    TASK_TIMEOUT
+                    self.config.task_timeout
                 ))
             } else {
                 let waker = noop_waker_ref();
@@ -168,6 +215,7 @@ impl TaskManager {
                         Poll::Ready(Some(CallModelEvent::TextChunk(content))) => {
                             result.status = TaskStatus::Running;
                             task.last_progress_at = Instant::now();
+                            task.saw_progress = true;
                             result.chunks.push(content);
                         }
                         Poll::Ready(Some(CallModelEvent::Completed {
@@ -177,6 +225,7 @@ impl TaskManager {
                             result.status = TaskStatus::Done;
                             result.last_error = None;
                             task.last_progress_at = Instant::now();
+                            task.saw_progress = true;
                             result.attempts = task.attempts;
                             return TaskStatus::Done;
                         }
@@ -188,18 +237,24 @@ impl TaskManager {
                             // Treat it as progress so long-thinking requests are not retried early.
                             result.status = TaskStatus::Running;
                             task.last_progress_at = Instant::now();
+                            task.saw_progress = true;
                         }
                         Poll::Ready(None) => {
                             break Some("task ended without completion".to_string());
                         }
                         Poll::Pending => {
-                            if Instant::now().duration_since(task.last_progress_at)
-                                > TASK_NO_PROGRESS_TIMEOUT
-                            {
-                                break Some(format!(
-                                    "task stalled for {:?} without new output",
-                                    TASK_NO_PROGRESS_TIMEOUT
-                                ));
+                            let stall_timeout = if task.saw_progress {
+                                self.config.no_progress_timeout
+                            } else {
+                                self.config.initial_output_timeout
+                            };
+                            if Instant::now().duration_since(task.last_progress_at) > stall_timeout {
+                                let message = if task.saw_progress {
+                                    format!("task stalled for {:?} without new output", stall_timeout)
+                                } else {
+                                    format!("task produced no output for {:?} after start", stall_timeout)
+                                };
+                                break Some(message);
                             }
                             result.status = TaskStatus::Running;
                             result.attempts = task.attempts;
@@ -242,7 +297,7 @@ impl TaskManager {
             return TaskStatus::Error;
         };
 
-        if task.attempts <= TASK_MAX_RETRIES {
+        if task.attempts <= self.config.max_retries {
             let next_attempt = task.restart();
             result.status = TaskStatus::Pending;
             result.attempts = next_attempt;
@@ -289,6 +344,12 @@ mod tests {
             model: ChatModel::new(),
             tasks: HashMap::new(),
             results: HashMap::new(),
+            config: TaskManagerConfig {
+                task_timeout: DEFAULT_TASK_TIMEOUT,
+                initial_output_timeout: DEFAULT_TASK_INITIAL_OUTPUT_TIMEOUT,
+                no_progress_timeout: DEFAULT_TASK_NO_PROGRESS_TIMEOUT,
+                max_retries: DEFAULT_TASK_MAX_RETRIES,
+            },
         }
     }
 
@@ -297,7 +358,7 @@ mod tests {
             kind,
             status,
             attempts: 1,
-            max_attempts: TASK_MAX_RETRIES + 1,
+            max_attempts: DEFAULT_TASK_MAX_RETRIES + 1,
             last_error: None,
             retry_history: Vec::new(),
             chunks: Vec::new(),
@@ -356,8 +417,9 @@ mod tests {
             Box::pin(stream::pending::<CallModelEvent>()),
             vec![retry_stream],
         );
+        handle.saw_progress = true;
         handle.last_progress_at =
-            Instant::now() - TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
+            Instant::now() - DEFAULT_TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
         manager.tasks.insert(entity, handle);
         manager.results.insert(
             entity,
@@ -397,20 +459,20 @@ mod tests {
         let mut manager = make_manager();
         let mut handle =
             make_handle_with_retries(Box::pin(stream::pending::<CallModelEvent>()), Vec::new());
-        handle.started_at = Instant::now() - TASK_TIMEOUT - Duration::from_secs(1);
-        handle.attempts = TASK_MAX_RETRIES + 1;
+        handle.started_at = Instant::now() - DEFAULT_TASK_TIMEOUT - Duration::from_secs(1);
+        handle.attempts = DEFAULT_TASK_MAX_RETRIES + 1;
         manager.tasks.insert(entity, handle);
         manager.results.insert(
             entity,
             make_result(TaskKind::Narration, TaskStatus::Running),
         );
-        manager.results.get_mut(&entity).expect("result").attempts = TASK_MAX_RETRIES + 1;
+        manager.results.get_mut(&entity).expect("result").attempts = DEFAULT_TASK_MAX_RETRIES + 1;
 
         let status = manager.poll_task(entity);
 
         assert_eq!(status, TaskStatus::Error);
         assert_eq!(manager.results[&entity].status, TaskStatus::Error);
-        assert_eq!(manager.results[&entity].attempts, TASK_MAX_RETRIES + 1);
+        assert_eq!(manager.results[&entity].attempts, DEFAULT_TASK_MAX_RETRIES + 1);
         assert_eq!(manager.results[&entity].retry_history.len(), 1);
         assert!(
             manager.results[&entity]
@@ -442,7 +504,7 @@ mod tests {
         ]));
         let mut handle = make_handle_with_retries(stream, Vec::new());
         handle.last_progress_at =
-            Instant::now() - TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
+            Instant::now() - DEFAULT_TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
         manager.tasks.insert(entity, handle);
         manager.results.insert(
             entity,
@@ -460,5 +522,26 @@ mod tests {
             manager.results[&entity].result,
             Some(Ok("done".to_string()))
         );
+    }
+
+    #[test]
+    fn poll_task_uses_longer_timeout_before_first_output() {
+        let entity = Entity::from_raw_u32(5).expect("valid entity id");
+        let mut manager = make_manager();
+        let mut handle =
+            make_handle_with_retries(Box::pin(stream::pending::<CallModelEvent>()), Vec::new());
+        handle.last_progress_at =
+            Instant::now() - DEFAULT_TASK_NO_PROGRESS_TIMEOUT - Duration::from_secs(1);
+        manager.tasks.insert(entity, handle);
+        manager.results.insert(
+            entity,
+            make_result(TaskKind::Narration, TaskStatus::Running),
+        );
+
+        let status = manager.poll_task(entity);
+
+        assert_eq!(status, TaskStatus::Running);
+        assert_eq!(manager.results[&entity].status, TaskStatus::Running);
+        assert!(manager.results[&entity].retry_history.is_empty());
     }
 }
