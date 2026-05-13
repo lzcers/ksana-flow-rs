@@ -1,4 +1,5 @@
 pub mod fate_weaver_sys;
+pub mod player_input_sys;
 pub mod protagonist_sys;
 pub mod task_sys;
 pub mod turn_orchestrator_sys;

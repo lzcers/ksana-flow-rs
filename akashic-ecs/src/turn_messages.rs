@@ -2,11 +2,15 @@ use bevy_ecs::{entity::Entity, message::Message};
 
 use crate::resources::turn_state::TurnPhase;
 
+#[derive(Debug, Clone)]
+pub enum PlayerCommand {
+    SubmitChoice { turn_id: u64, choice_id: String },
+}
+
 #[derive(Message, Debug, Clone)]
 pub enum TurnControl {
     StartTurn { turn_id: u64 },
     ResetTurn { next_turn_id: Option<u64> },
-    SubmitProtagonistAction { turn_id: u64, selection: String },
 }
 
 #[derive(Message, Debug, Clone)]

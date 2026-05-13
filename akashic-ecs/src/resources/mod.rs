@@ -1,3 +1,4 @@
+pub mod player_input;
 pub mod protagonist_action;
 pub mod story_state;
 pub mod task_manager;

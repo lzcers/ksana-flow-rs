@@ -10,6 +10,7 @@ use crate::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
+        player_input::PlayerInbox,
         protagonist_action::{PendingProtagonistChoice, ProtagonistDecisionState},
         story_state::LatestNarration,
         task_manager::TaskManager,
@@ -18,12 +19,13 @@ use crate::{
     },
     systems::{
         fate_weaver_sys::{fate_weaver_apply_system, fate_weaver_system},
+        player_input_sys::player_input_system,
         protagonist_sys::{protagonist_apply_system, protagonist_system},
         task_sys::task_system,
         turn_orchestrator_sys::turn_orchestrator_system,
         upper_narrator_sys::{upper_narrator_apply_system, upper_narrator_system},
     },
-    turn_messages::{TurnControl, TurnEvent},
+    turn_messages::{PlayerCommand, TurnControl, TurnEvent},
     utils::build_chat_model,
 };
 
@@ -77,6 +79,7 @@ impl AkashicSessionEngine {
         let mut world = World::new();
         world.init_resource::<WorldSnapshot>();
         world.init_resource::<TurnState>();
+        world.init_resource::<PlayerInbox>();
         world.init_resource::<ProtagonistDecisionState>();
         world.init_resource::<LatestNarration>();
         world.init_resource::<Messages<TurnEvent>>();
@@ -92,6 +95,7 @@ impl AkashicSessionEngine {
             (
                 task_system,
                 message_update_system,
+                player_input_system,
                 turn_orchestrator_system,
                 fate_weaver_system,
                 fate_weaver_apply_system,
@@ -121,18 +125,17 @@ impl AkashicSessionEngine {
             return Err("当前会话尚未进入等待玩家选择阶段。".to_string());
         }
 
-        let selected_action = snapshot
+        snapshot
             .choices
             .iter()
             .find(|choice| choice.id == choice_id)
-            .map(|choice| choice.option.action.clone())
             .ok_or_else(|| format!("所选分支 `{choice_id}` 不存在或已失效。"))?;
 
         self.world
-            .resource_mut::<Messages<TurnControl>>()
-            .write(TurnControl::SubmitProtagonistAction {
+            .resource_mut::<PlayerInbox>()
+            .push(PlayerCommand::SubmitChoice {
                 turn_id: snapshot.active_turn_id,
-                selection: selected_action,
+                choice_id: choice_id.to_string(),
             });
 
         self.run_until_stable(true)

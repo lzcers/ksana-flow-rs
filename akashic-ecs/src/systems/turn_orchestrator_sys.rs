@@ -43,17 +43,6 @@ fn handle_control(
             decision_state.clear_choices();
             turn_state.reset(*next_turn_id);
         }
-        TurnControl::SubmitProtagonistAction { turn_id, selection } => {
-            if turn_state.phase != TurnPhase::AwaitingPlayerChoice {
-                return;
-            }
-            if *turn_id != turn_state.active_turn_id {
-                return;
-            }
-
-            decision_state.commit_selection(selection);
-            turn_state.finish_turn();
-        }
     }
 }
 
