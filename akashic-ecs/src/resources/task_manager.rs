@@ -81,6 +81,7 @@ pub struct TaskResult {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskUpdate {
+    pub entity: String,
     pub kind: TaskKind,
     pub status: TaskStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +90,10 @@ pub struct TaskUpdate {
     pub output: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+fn task_entity_label(entity: Entity) -> String {
+    format!("{entity:?}")
 }
 
 impl TaskKind {
@@ -189,6 +194,7 @@ impl TaskManager {
             },
         );
         self.emitted_updates.push(TaskUpdate {
+            entity: task_entity_label(entity),
             kind,
             status: TaskStatus::Pending,
             chunk: None,
@@ -253,6 +259,7 @@ impl TaskManager {
                             task.saw_progress = true;
                             result.chunks.push(content.clone());
                             self.emitted_updates.push(TaskUpdate {
+                                entity: task_entity_label(entity),
                                 kind: result.kind,
                                 status: TaskStatus::Running,
                                 chunk: Some(content),
@@ -270,6 +277,7 @@ impl TaskManager {
                             task.saw_progress = true;
                             result.attempts = task.attempts;
                             self.emitted_updates.push(TaskUpdate {
+                                entity: task_entity_label(entity),
                                 kind: result.kind,
                                 status: TaskStatus::Done,
                                 chunk: None,
@@ -297,11 +305,18 @@ impl TaskManager {
                             } else {
                                 self.config.initial_output_timeout
                             };
-                            if Instant::now().duration_since(task.last_progress_at) > stall_timeout {
+                            if Instant::now().duration_since(task.last_progress_at) > stall_timeout
+                            {
                                 let message = if task.saw_progress {
-                                    format!("task stalled for {:?} without new output", stall_timeout)
+                                    format!(
+                                        "task stalled for {:?} without new output",
+                                        stall_timeout
+                                    )
                                 } else {
-                                    format!("task produced no output for {:?} after start", stall_timeout)
+                                    format!(
+                                        "task produced no output for {:?} after start",
+                                        stall_timeout
+                                    )
                                 };
                                 break Some(message);
                             }
@@ -358,6 +373,7 @@ impl TaskManager {
             result.retry_history.push(message);
             result.result = None;
             self.emitted_updates.push(TaskUpdate {
+                entity: task_entity_label(entity),
                 kind: result.kind,
                 status: TaskStatus::Pending,
                 chunk: None,
@@ -373,6 +389,7 @@ impl TaskManager {
         result.retry_history.push(message.clone());
         result.result = Some(Err(message));
         self.emitted_updates.push(TaskUpdate {
+            entity: task_entity_label(entity),
             kind: result.kind,
             status: TaskStatus::Error,
             chunk: None,
@@ -540,7 +557,10 @@ mod tests {
 
         assert_eq!(status, TaskStatus::Error);
         assert_eq!(manager.results[&entity].status, TaskStatus::Error);
-        assert_eq!(manager.results[&entity].attempts, DEFAULT_TASK_MAX_RETRIES + 1);
+        assert_eq!(
+            manager.results[&entity].attempts,
+            DEFAULT_TASK_MAX_RETRIES + 1
+        );
         assert_eq!(manager.results[&entity].retry_history.len(), 1);
         assert!(
             manager.results[&entity]

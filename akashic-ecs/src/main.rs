@@ -4,6 +4,7 @@ use akashic_ecs::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
+        export::ExportState,
         player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::ProtagonistDecisionState,
         task_manager::TaskManager,
@@ -11,6 +12,7 @@ use akashic_ecs::{
         world_snapshot::WorldSnapshot,
     },
     systems::{
+        export_sys::export_system,
         fate_weaver_sys::{fate_weaver_apply_system, fate_weaver_system},
         player_input_sys::player_input_system,
         protagonist_sys::{protagonist_apply_system, protagonist_system},
@@ -53,6 +55,7 @@ async fn main() {
     world.init_resource::<Messages<TurnEvent>>();
     world.init_resource::<Messages<TurnControl>>();
     world.insert_resource(TaskManager::new(build_chat_model()));
+    world.insert_resource(ExportState::new());
 
     // 实体初始化
     // 命运编织者，负责故事世界维护
@@ -86,6 +89,7 @@ async fn main() {
             upper_narrator_apply_system,
             protagonist_system,
             protagonist_apply_system,
+            export_system,
         )
             .chain(),
     );
