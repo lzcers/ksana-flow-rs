@@ -4,13 +4,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnPhase {
-    Idle,                // 初始状态
-    FateWeaving,         // 命运编织状态
-    NarratorWriting,     // 故事编写状态
-    NarratorStory,       // 故事编排状态
-    ProtagonistAction,   // 主角行动阶段
-    AwaitingProtagonist, // 等待主角状态
+    Idle,                 // 初始状态
+    FateWeaving,          // 命运编织状态
+    NarratorWriting,      // 故事编写状态
+    NarratorStory,        // 故事编排状态
+    ProtagonistAction,    // 主角行动阶段
+    AwaitingProtagonist,  // 等待主角状态
     AwaitingPlayerChoice, // 等待外部玩家提交选择
+    TurnFinished,         // 轮次结束状态
     Failed,
 }
 
@@ -51,6 +52,13 @@ impl TurnState {
     pub fn finish_turn(&mut self) {
         self.turn_index += 1;
         self.active_turn_id = self.turn_index;
+        self.phase = TurnPhase::TurnFinished;
+    }
+
+    pub fn continue_turn(&mut self, turn_id: u64) {
+        if self.phase != TurnPhase::TurnFinished || self.active_turn_id != turn_id {
+            return;
+        }
         self.phase = TurnPhase::Idle;
     }
 }

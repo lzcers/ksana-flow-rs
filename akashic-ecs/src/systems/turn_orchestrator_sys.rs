@@ -39,6 +39,9 @@ fn handle_control(
         TurnControl::StartTurn { turn_id } => {
             turn_state.start_turn(*turn_id);
         }
+        TurnControl::ContinueTurn { turn_id } => {
+            turn_state.continue_turn(*turn_id);
+        }
         TurnControl::ResetTurn { next_turn_id } => {
             decision_state.clear_choices();
             turn_state.reset(*next_turn_id);

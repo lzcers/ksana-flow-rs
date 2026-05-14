@@ -5,7 +5,7 @@ use std::{
 
 use bevy_ecs::{
     entity::Entity,
-    system::{Res, ResMut},
+    system::{Local, Res, ResMut},
 };
 
 use crate::resources::{
@@ -24,8 +24,9 @@ pub struct ChunkPrinterState {
 pub fn export_system(
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
-    mut task_manager: ResMut<TaskManager>,
     export_state: Res<ExportState>,
+    mut task_manager: ResMut<TaskManager>,
+    mut printer_state: Local<ChunkPrinterState>,
 ) {
     // 获取任务快照，并转为 TaskView
     let task_results = task_manager.task_results_snapshot();
@@ -55,6 +56,8 @@ pub fn export_system(
             export_state.publish_task_update(task, update);
         }
     }
+    // 单独模块测试时打印任务 chunk
+    // print_task_chunks(&task_manager, &mut printer_state);
 }
 
 // 打印任务的 task_chunk

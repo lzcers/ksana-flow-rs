@@ -10,6 +10,7 @@ pub enum PlayerCommand {
 #[derive(Message, Debug, Clone)]
 pub enum TurnControl {
     StartTurn { turn_id: u64 },
+    ContinueTurn { turn_id: u64 },
     ResetTurn { next_turn_id: Option<u64> },
 }
 
