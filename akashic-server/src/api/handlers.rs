@@ -1,6 +1,10 @@
 use std::{convert::Infallible, time::Duration};
 
 use akashic_ecs::resources::export::TaskEvent;
+use akashic_ecs::resources::{
+    export::TaskView,
+    task_manager::{TaskKind, TaskStatus},
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -10,6 +14,7 @@ use axum::{
 use futures::{StreamExt, stream};
 use serde::Serialize;
 use tokio::sync::broadcast;
+use tracing::warn;
 
 use crate::{error::AppError, state::AppState};
 
@@ -22,16 +27,44 @@ type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
 type StorySseResult = Result<Response, AppError>;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StreamDoneData {
     route: &'static str,
     session_id: Option<String>,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StreamWarningData {
     session_id: String,
     reason: &'static str,
     skipped: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StreamHandshakeData {
+    session_id: String,
+    protocol: &'static str,
+    note: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskUpdateData {
+    entity: String,
+    kind: TaskKind,
+    status: TaskStatus,
+    chunk: Option<String>,
+    output: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskUpdatedData {
+    task: TaskView,
+    update: TaskUpdateData,
 }
 
 fn sse_json_event<T>(name: &str, data: T) -> Event
@@ -90,10 +123,34 @@ pub async fn stream_game_session(
 ) -> StorySseResult {
     let live_stream = state.open_game_session_stream(&path.session_id).await?;
     let session_id = live_stream.session_id.clone();
+    let startup_state = state.clone();
+    let startup_session_id = session_id.clone();
+
+    tokio::spawn(async move {
+        if let Err(error) = startup_state
+            .ensure_game_session_started(&startup_session_id)
+            .await
+        {
+            warn!(
+                session_id = %startup_session_id,
+                error = ?error,
+                "failed to start game session for live stream"
+            );
+        }
+    });
+
+    let handshake_stream = stream::iter([Ok::<_, Infallible>(sse_json_event(
+        "stream.handshake",
+        StreamHandshakeData {
+            session_id: session_id.clone(),
+            protocol: "sse",
+            note: "subscribed",
+        },
+    ))]);
     let initial_events = live_stream
         .tasks
         .into_iter()
-        .map(|task| Ok::<_, Infallible>(sse_json_event("task.updated", task)));
+        .map(|task| Ok::<_, Infallible>(task_updated_sse(task)));
 
     let initial_stream = stream::iter(initial_events);
     let live_stream = stream::unfold(
@@ -127,17 +184,44 @@ pub async fn stream_game_session(
         },
     );
 
-    Ok(Sse::new(initial_stream.chain(live_stream))
-        .keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(15))
-                .text("keep-alive"),
-        )
-        .into_response())
+    Ok(
+        Sse::new(handshake_stream.chain(initial_stream).chain(live_stream))
+            .keep_alive(
+                KeepAlive::new()
+                    .interval(Duration::from_secs(15))
+                    .text("keep-alive"),
+            )
+            .into_response(),
+    )
 }
 
 fn session_event_to_sse(event: TaskEvent) -> Event {
     match event {
-        TaskEvent::TaskUpdated { task } => sse_json_event("task.updated", task),
+        TaskEvent::TaskUpdated { task } => task_updated_sse(task),
+    }
+}
+
+fn task_updated_sse(task: TaskView) -> Event {
+    let update = task_update_from_view(&task);
+    sse_json_event("task.updated", TaskUpdatedData { task, update })
+}
+
+fn task_update_from_view(task: &TaskView) -> TaskUpdateData {
+    TaskUpdateData {
+        entity: task.entity.clone(),
+        kind: task.kind,
+        status: task.status,
+        chunk: match task.status {
+            TaskStatus::Running => task.chunks.last().cloned(),
+            _ => None,
+        },
+        output: match task.status {
+            TaskStatus::Done => task.output.clone(),
+            _ => None,
+        },
+        error: match task.status {
+            TaskStatus::Error => task.error.clone().or_else(|| task.last_error.clone()),
+            _ => None,
+        },
     }
 }

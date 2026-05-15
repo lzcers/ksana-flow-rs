@@ -1,8 +1,8 @@
 pub mod ask_user;
 pub mod execution_policy;
 pub mod metrics;
-pub mod update_frame;
 pub mod send_model_evt;
+pub mod update_frame;
 
 use crate::agent::agent_actor::lifecycle::{LifeCycle, LifeCycleContext, LifeCycleFlow};
 

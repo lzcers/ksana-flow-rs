@@ -112,7 +112,6 @@ impl AppState {
             .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
-        ensure_session_started(session).await?;
         let snapshot = session.engine.get_game_session();
 
         Ok(LiveSessionStream {
@@ -120,6 +119,15 @@ impl AppState {
             tasks: snapshot.tasks.clone(),
             event_rx: session.engine.subscribe_events(),
         })
+    }
+
+    pub async fn ensure_game_session_started(&self, session_id: &str) -> Result<(), AppError> {
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
+
+        ensure_session_started(session).await
     }
 }
 

@@ -1,5 +1,8 @@
 use crate::agent::{
-    AgentActorEvent, agent_actor::lifecycle::{LifeCycle, LifeCycleFlow, LifeCycleResult}, call_model::CallModelEvent, hooks::{HookName, LifeCycleContext, LifeCycleHook}
+    AgentActorEvent,
+    agent_actor::lifecycle::{LifeCycle, LifeCycleFlow, LifeCycleResult},
+    call_model::CallModelEvent,
+    hooks::{HookName, LifeCycleContext, LifeCycleHook},
 };
 
 pub struct SendModelEvtHook;
