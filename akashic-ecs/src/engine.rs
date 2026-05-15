@@ -34,8 +34,6 @@ use crate::{
     utils::build_chat_model,
 };
 
-const DEFAULT_SPIN_WAIT: Duration = Duration::from_millis(10);
-
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {

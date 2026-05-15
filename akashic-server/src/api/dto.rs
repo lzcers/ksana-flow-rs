@@ -127,11 +127,8 @@ pub struct CreateGameSessionRequest {
 pub struct CreateGameSessionData {
     pub session_id: String,
     pub created_at: String,
-    pub character: Character,
-    pub world: World,
-    pub resources: SessionResources,
-    pub current_node: StoryNode,
-    pub state_view: RuntimeStateView,
+    pub status: String,
+    pub ending_status: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

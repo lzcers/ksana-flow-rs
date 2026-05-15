@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type {
   ArchiveListItem,
   Character,
-  CreateGameSessionData,
   EndingData,
   GameSessionSnapshot,
   RuntimeStateView,
@@ -135,19 +134,6 @@ function applySnapshot(snapshot: GameSessionSnapshot) {
   };
 }
 
-function createSessionToSnapshot(session: CreateGameSessionData): GameSessionSnapshot {
-  return {
-    sessionId: session.sessionId,
-    status: 'active',
-    character: session.character,
-    world: session.world,
-    resources: session.resources,
-    currentNode: session.currentNode,
-    stateView: session.stateView,
-    endingStatus: 'pending',
-  };
-}
-
 function findStoryEvent<Name extends StoryStreamEventName>(
   events: StoryStreamEvent[],
   eventName: Name,
@@ -185,8 +171,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const data = await createGameSession({ character, world });
-      const snapshot = createSessionToSnapshot(data);
+      const session = await createGameSession({ character, world });
+      const events = await getGameSession(session.sessionId);
+      const snapshot = requireStoryEvent(
+        events,
+        'session.snapshot',
+        '服务端没有返回会话快照。',
+      ).data;
 
       set({
         ...applySnapshot(snapshot),

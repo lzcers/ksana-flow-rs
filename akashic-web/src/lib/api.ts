@@ -136,11 +136,8 @@ export interface EndingData {
 export interface CreateGameSessionData {
   sessionId: string;
   createdAt: string;
-  character: Character;
-  world: World;
-  resources: SessionResources;
-  currentNode: StoryNode;
-  stateView: RuntimeStateView;
+  status: string;
+  endingStatus: string;
 }
 
 /** 游戏会话快照，用于恢复当前游玩状态。 */
@@ -501,7 +498,7 @@ async function requestStoryStream(path: string, init?: RequestInit) {
   return readStoryStream(response);
 }
 
-/** 创建新的游戏会话，返回初始化后的会话数据。 */
+/** 创建新的游戏会话，返回最小会话元数据。 */
 export function createGameSession(input: {
   character: Character;
   world: World;

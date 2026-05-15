@@ -57,20 +57,13 @@ impl AppState {
         let created_at = now_string();
         let protagonist_profile = build_protagonist_profile(&request.character);
         let world_profile = build_world_profile(&request.world);
-        let mut engine =
-            AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
-        let snapshot = engine
-            .continue_turn()
-            .await
-            .map_err(AppError::bad_request)?;
-        let resources = initial_resources(&request.world, &snapshot);
-
-        let mut session = SessionRecord {
+        let engine = AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
+        let session = SessionRecord {
             session_id: session_id.clone(),
-            status: "active".to_string(),
+            status: "pending".to_string(),
             character: request.character.clone(),
             world: request.world.clone(),
-            resources,
+            resources: initial_resources(&request.world),
             current_node: empty_story_node(&request.world.era),
             state_view: empty_state_view(),
             ending_status: "pending".to_string(),
@@ -79,34 +72,16 @@ impl AppState {
             last_selected_choice: None,
             engine,
         };
-        apply_engine_snapshot(&mut session, &snapshot);
-        session.history.push(HistoryItem {
-            item_type: "narration".to_string(),
-            turn_index: session.state_view.turn_index,
-            text: session.current_node.text.clone(),
-            created_at: created_at.clone(),
-        });
 
-        let response = GameSessionSnapshot {
-            session_id: session.session_id.clone(),
-            status: session.status.clone(),
-            character: session.character.clone(),
-            world: session.world.clone(),
-            resources: session.resources.clone(),
-            current_node: session.current_node.clone(),
-            state_view: session.state_view.clone(),
-            ending_status: session.ending_status.clone(),
-        };
-
-        self.sessions.lock().await.insert(session_id, session);
+        self.sessions
+            .lock()
+            .await
+            .insert(session_id.clone(), session);
         Ok(CreateGameSessionData {
-            session_id: response.session_id,
+            session_id,
             created_at,
-            character: response.character,
-            world: response.world,
-            resources: response.resources,
-            current_node: response.current_node,
-            state_view: response.state_view,
+            status: "pending".to_string(),
+            ending_status: "pending".to_string(),
         })
     }
 
@@ -114,10 +89,12 @@ impl AppState {
         &self,
         session_id: &str,
     ) -> Result<GameSessionSnapshot, AppError> {
-        let sessions = self.sessions.lock().await;
+        let mut sessions = self.sessions.lock().await;
         let session = sessions
-            .get(session_id)
+            .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
+
+        ensure_session_started(session).await?;
 
         Ok(snapshot_from_session(session))
     }
@@ -234,10 +211,12 @@ impl AppState {
         &self,
         session_id: &str,
     ) -> Result<LiveSessionStream, AppError> {
-        let sessions = self.sessions.lock().await;
+        let mut sessions = self.sessions.lock().await;
         let session = sessions
-            .get(session_id)
+            .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
+
+        ensure_session_started(session).await?;
 
         Ok(LiveSessionStream {
             handshake: StreamHandshakeData {
@@ -260,6 +239,27 @@ impl AppState {
     }
 }
 
+async fn ensure_session_started(session: &mut SessionRecord) -> Result<(), AppError> {
+    if session.status != "pending" {
+        return Ok(());
+    }
+
+    let snapshot = session
+        .engine
+        .continue_turn()
+        .await
+        .map_err(AppError::bad_request)?;
+    apply_engine_snapshot(session, &snapshot);
+    session.history.push(HistoryItem {
+        item_type: "narration".to_string(),
+        turn_index: session.state_view.turn_index,
+        text: session.current_node.text.clone(),
+        created_at: now_string(),
+    });
+
+    Ok(())
+}
+
 fn snapshot_from_session(session: &SessionRecord) -> GameSessionSnapshot {
     GameSessionSnapshot {
         session_id: session.session_id.clone(),
@@ -273,16 +273,12 @@ fn snapshot_from_session(session: &SessionRecord) -> GameSessionSnapshot {
     }
 }
 
-fn initial_resources(world: &World, snapshot: &Session) -> SessionResources {
+fn initial_resources(world: &World) -> SessionResources {
     SessionResources {
         obsession_points: 3,
         intuition_points: 5,
         days_left: 30,
-        world_news: Some(if snapshot.world_snapshot.current_event.is_empty() {
-            format!("{}的命运涟漪开始汇聚。", world.era)
-        } else {
-            snapshot.world_snapshot.current_event.clone()
-        }),
+        world_news: Some(format!("{}的命运涟漪尚未展开。", world.era)),
     }
 }
 
@@ -424,16 +420,16 @@ fn empty_story_node(era: &str) -> StoryNode {
 fn empty_state_view() -> RuntimeStateView {
     RuntimeStateView {
         game_state: "booting".to_string(),
-        phase: "Booting".to_string(),
+        phase: "Pending".to_string(),
         turn_index: 0,
         active_turn_id: 0,
-        current_location: String::new(),
-        current_scene: String::new(),
-        protagonist_state: String::new(),
-        npcs_state: String::new(),
-        latest_history: String::new(),
+        current_location: "待命运落笔".to_string(),
+        current_scene: "会话初始化中".to_string(),
+        protagonist_state: "命运尚未展开".to_string(),
+        npcs_state: "关键角色仍未入场".to_string(),
+        latest_history: "会话已创建，等待首次状态查询。".to_string(),
         latest_broadcast_summary: String::new(),
-        latest_protagonist_action: String::new(),
+        latest_protagonist_action: "尚未做出选择".to_string(),
     }
 }
 
