@@ -55,7 +55,7 @@ pub fn export_system(
             .find(|(entity, _)| format!("{entity:?}") == update.entity)
             .map(|(_, result)| TaskView::from_task_result(update.entity.clone(), result.clone()))
         {
-            export_state.publish_task_update(task, update);
+            export_state.publish_task_update(task);
         }
     }
     // 单独模块测试时打印任务 chunk

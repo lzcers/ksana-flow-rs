@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Clock3,
   Eye,
@@ -18,9 +18,12 @@ import {
   StatusPill,
   StoryFrame,
 } from '../components/AkashicUI';
+import { subscribeGameSessionStream } from '../lib/api';
+import type { StoryStreamEventMap } from '../lib/api';
 
 const GameplayPage: React.FC = () => {
   const {
+    sessionId,
     currentNode,
     submitChoice,
     obsessionPoints,
@@ -34,13 +37,24 @@ const GameplayPage: React.FC = () => {
     latestSaveId,
     isLoading,
     error,
+    refreshSession,
   } = useGameStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
+  const bootstrappedSessionIdRef = useRef<string | null>(null);
 
   const currentLocation = stateView?.currentLocation ?? '灰雾城区 · 未知坐标';
+
+  useEffect(() => {
+    if (!sessionId || currentNode || bootstrappedSessionIdRef.current === sessionId) {
+      return;
+    }
+
+    bootstrappedSessionIdRef.current = sessionId;
+
+  }, [currentNode, sessionId]);
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -49,7 +63,95 @@ const GameplayPage: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
-  if (!currentNode) return null;
+  useEffect(() => {
+    if (!sessionId) {
+      return undefined;
+    }
+
+    const unsubscribe = subscribeGameSessionStream(sessionId, {
+      onEvent: (event) => {
+        switch (event.event) {
+          case 'task.updated': {
+            const { task, update } = event.data as StoryStreamEventMap['task.updated'];
+
+            if (update.chunk) {
+              console.log('[GameplayPage][stream chunk]', {
+                entity: task.entity,
+                kind: task.kind,
+                status: update.status,
+                chunk: update.chunk,
+              });
+            }
+
+            if (update.output) {
+              console.log('[GameplayPage][stream output]', {
+                entity: task.entity,
+                kind: task.kind,
+                status: update.status,
+                output: update.output,
+              });
+            }
+
+            if (update.error) {
+              console.error('[GameplayPage][stream error]', {
+                entity: task.entity,
+                kind: task.kind,
+                status: update.status,
+                error: update.error,
+              });
+            }
+            break;
+          }
+          case 'session.snapshot': {
+            const snapshot = event.data as StoryStreamEventMap['session.snapshot'];
+            console.log('[GameplayPage][session snapshot]', {
+              sessionId: snapshot.sessionId,
+              turnIndex: snapshot.stateView.turnIndex,
+              text: snapshot.currentNode.text,
+            });
+            break;
+          }
+          case 'stream.warning':
+            console.warn(
+              '[GameplayPage][stream warning]',
+              event.data as StoryStreamEventMap['stream.warning'],
+            );
+            break;
+          default:
+            break;
+        }
+      },
+      onError: (streamError) => {
+        console.error('[GameplayPage][stream connection error]', streamError);
+      },
+    });
+
+    return unsubscribe;
+  }, [sessionId]);
+
+  if (!currentNode) {
+    return (
+      <ScreenShell className="items-stretch">
+        <StoryFrame className="relative max-w-4xl overflow-hidden px-4 py-8 sm:px-5 sm:py-10 md:px-6 md:py-12">
+          <div className="space-y-3 text-center">
+            <p className="text-lg font-semibold text-[#f6eddc]">
+              {isLoading ? '命运正在显影...' : '已进入故事，正在同步当前章节。'}
+            </p>
+            <p className="text-sm leading-6 text-[#9ca7be]">
+              {error ?? '稍候片刻，开场叙事与可选行动会在这里展开。'}
+            </p>
+            {!isLoading && sessionId ? (
+              <div className="pt-2">
+                <PrimaryButton type="button" onClick={() => void refreshSession()}>
+                  重新同步故事
+                </PrimaryButton>
+              </div>
+            ) : null}
+          </div>
+        </StoryFrame>
+      </ScreenShell>
+    );
+  }
 
   const handlePreview = async (choiceId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -148,9 +250,8 @@ const GameplayPage: React.FC = () => {
                   <button
                     onClick={() => void handleChoiceClick(choice.id)}
                     disabled={isTyping || isLoading || choice.disabled}
-                    className={`akashic-choice min-h-[5rem] flex-1 disabled:cursor-not-allowed disabled:opacity-50 ${
-                      activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
-                    }`}
+                    className={`akashic-choice min-h-[5rem] flex-1 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
+                      }`}
                   >
                     <div className="text-left">
                       <div className="text-lg font-semibold leading-7 sm:text-xl sm:leading-8">{choice.text}</div>

@@ -2,7 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
-    resources::{export::SessionEvent, turn_state::TurnPhase},
+    resources::{
+        export::{TaskEvent, TaskView},
+        turn_state::TurnPhase,
+    },
 };
 use chrono::Utc;
 use tokio::sync::{Mutex, broadcast};
@@ -12,7 +15,7 @@ use crate::{
     api::dto::{
         Character, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
         CreateGameSessionRequest, GameSessionControlCommand, GameSessionWorldStateData,
-        HistoryItem, HistoryListData, SessionChoiceInput, StreamHandshakeData, World,
+        HistoryItem, SessionChoiceInput, World,
     },
     error::AppError,
 };
@@ -30,10 +33,9 @@ struct SessionRecord {
 }
 
 pub struct LiveSessionStream {
-    pub handshake: StreamHandshakeData,
-    pub state: GameSessionWorldStateData,
-    pub history: HistoryListData,
-    pub event_rx: broadcast::Receiver<SessionEvent>,
+    pub session_id: String,
+    pub tasks: Vec<TaskView>,
+    pub event_rx: broadcast::Receiver<TaskEvent>,
 }
 
 impl AppState {
@@ -74,7 +76,7 @@ impl AppState {
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
         ensure_session_started(session).await?;
-        let snapshot = session.engine.current_session();
+        let snapshot = session.engine.get_game_session();
 
         Ok(world_state_from_session(session, &snapshot))
     }
@@ -111,19 +113,11 @@ impl AppState {
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
         ensure_session_started(session).await?;
-        let snapshot = session.engine.current_session();
+        let snapshot = session.engine.get_game_session();
 
         Ok(LiveSessionStream {
-            handshake: StreamHandshakeData {
-                session_id: session_id.to_string(),
-                protocol: "engine-sse".to_string(),
-                note: "当前连接直接订阅 akashic-ecs 的会话事件流，可实时接收任务输出、回合推进与世界状态更新。"
-                    .to_string(),
-            },
-            state: world_state_from_session(session, &snapshot),
-            history: HistoryListData {
-                items: session.history.clone(),
-            },
+            session_id: session_id.to_string(),
+            tasks: snapshot.tasks.clone(),
             event_rx: session.engine.subscribe_events(),
         })
     }
@@ -154,7 +148,7 @@ async fn apply_choice(
     choice: SessionChoiceInput,
 ) -> Result<ControlGameSessionData, AppError> {
     ensure_session_started(session).await?;
-    let current = session.engine.current_session();
+    let current = session.engine.get_game_session();
     let selected_choice = current
         .choices
         .iter()
@@ -189,7 +183,7 @@ async fn apply_choice(
 }
 
 async fn ensure_session_started(session: &mut SessionRecord) -> Result<(), AppError> {
-    let current = session.engine.current_session();
+    let current = session.engine.get_game_session();
     if current.phase != TurnPhase::Idle {
         return Ok(());
     }

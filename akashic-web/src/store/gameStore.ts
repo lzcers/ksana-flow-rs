@@ -172,16 +172,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     try {
       const session = await createGameSession({ character, world });
-      const events = await getGameSession(session.sessionId);
-      const snapshot = requireStoryEvent(
-        events,
-        'session.snapshot',
-        '服务端没有返回会话快照。',
-      ).data;
 
       set({
-        ...applySnapshot(snapshot),
+        sessionId: session.sessionId,
+        currentNode: null,
+        stateView: null,
+        obsessionPoints: initialState.obsessionPoints,
+        intuitionPoints: initialState.intuitionPoints,
+        daysLeft: initialState.daysLeft,
+        worldNews: null,
+        turnIndex: 0,
         endingData: null,
+        latestSaveId: null,
         latestArchiveId: null,
         gameState: 'playing',
       });

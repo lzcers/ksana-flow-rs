@@ -95,6 +95,7 @@ async fn main() {
     );
 
     println!("== Akashic ECS ==");
+    println!("[api] akashic-ecs main loop started");
 
     let mut frame = 0;
     let mut last_reported_finished_turn = None;
@@ -120,6 +121,10 @@ async fn main() {
             print_frame_status(&world, frame);
             println!("");
             print_result(&mut world);
+            println!(
+                "[api] continue turn requested: turn_id={} phase={:?}",
+                turn_index, phase
+            );
             world
                 .resource_mut::<Messages<TurnControl>>()
                 .write(TurnControl::ContinueTurn {
@@ -166,6 +171,13 @@ fn print_result(world: &mut World) {
             .and_then(|narrator| narrator.context().print_latest_msg())
             .unwrap_or_default()
     };
+
+    println!(
+        "[api] output result: turn_index={} narrator_chars={} action_chars={}",
+        turn_index,
+        narrator_latest_msg.chars().count(),
+        selected_action.chars().count()
+    );
 
     println!("world snapshot:");
     println!("{}", world_snapshot.to_ledger());

@@ -3,7 +3,7 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 
 use crate::resources::{
-    task_manager::{TaskKind, TaskResult, TaskStatus, TaskUpdate},
+    task_manager::{TaskKind, TaskResult, TaskStatus},
     turn_state::TurnPhase,
     world_snapshot::WorldSnapshot,
 };
@@ -36,31 +36,20 @@ pub struct TaskView {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum SessionEvent {
-    TurnChanged {
-        phase: TurnPhase,
-        turn_index: u64,
-        active_turn_id: u64,
-    },
-    WorldSnapshotUpdated {
-        world: WorldSnapshot,
-    },
-    TaskUpdated {
-        task: TaskView,
-        update: TaskUpdate,
-    },
+pub enum TaskEvent {
+    TaskUpdated { task: TaskView },
 }
 
 #[derive(Resource)]
 pub struct ExportState {
     snapshot_tx: watch::Sender<SessionSnapshot>,
-    event_tx: broadcast::Sender<SessionEvent>,
+    event_tx: broadcast::Sender<TaskEvent>,
 }
 
 #[derive(Clone)]
 pub struct ExportHandle {
     snapshot_rx: watch::Receiver<SessionSnapshot>,
-    event_tx: broadcast::Sender<SessionEvent>,
+    event_tx: broadcast::Sender<TaskEvent>,
 }
 
 impl ExportState {
@@ -89,40 +78,11 @@ impl ExportState {
     }
 
     pub fn publish_snapshot(&self, snapshot: SessionSnapshot) {
-        let (turn_changed, world_changed) = {
-            let current = self.snapshot_tx.borrow();
-            (
-                current.phase != snapshot.phase
-                    || current.turn_index != snapshot.turn_index
-                    || current.active_turn_id != snapshot.active_turn_id,
-                current.world != snapshot.world,
-            )
-        };
-
-        let turn_phase = snapshot.phase;
-        let turn_index = snapshot.turn_index;
-        let active_turn_id = snapshot.active_turn_id;
-        let world = world_changed.then(|| snapshot.world.clone());
-
         self.snapshot_tx.send_replace(snapshot);
-        if turn_changed {
-            let _ = self.event_tx.send(SessionEvent::TurnChanged {
-                phase: turn_phase,
-                turn_index,
-                active_turn_id,
-            });
-        }
-        if let Some(world) = world {
-            let _ = self
-                .event_tx
-                .send(SessionEvent::WorldSnapshotUpdated { world });
-        }
     }
 
-    pub fn publish_task_update(&self, task: TaskView, update: TaskUpdate) {
-        let _ = self
-            .event_tx
-            .send(SessionEvent::TaskUpdated { task, update });
+    pub fn publish_task_update(&self, task: TaskView) {
+        let _ = self.event_tx.send(TaskEvent::TaskUpdated { task });
     }
 
     pub fn current_snapshot(&self) -> SessionSnapshot {
@@ -145,7 +105,7 @@ impl ExportHandle {
         self.snapshot_rx.clone()
     }
 
-    pub fn subscribe_events(&self) -> broadcast::Receiver<SessionEvent> {
+    pub fn subscribe_events(&self) -> broadcast::Receiver<TaskEvent> {
         self.event_tx.subscribe()
     }
 }

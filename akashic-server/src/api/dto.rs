@@ -107,11 +107,6 @@ pub struct ControlGameSessionData {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct HistoryListData {
-    pub items: Vec<HistoryItem>,
-}
-
-#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryItem {
     #[serde(rename = "type")]
@@ -119,14 +114,6 @@ pub struct HistoryItem {
     pub turn_index: u64,
     pub text: String,
     pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamHandshakeData {
-    pub session_id: String,
-    pub protocol: String,
-    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

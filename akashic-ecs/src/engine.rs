@@ -12,7 +12,7 @@ use crate::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
-        export::{ExportHandle, ExportState, SessionEvent, TaskView},
+        export::{ExportHandle, ExportState, TaskEvent, TaskView},
         player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::{PendingProtagonistChoice, ProtagonistDecisionState},
         task_manager::{TaskManager, TaskStatus},
@@ -68,7 +68,7 @@ impl AkashicSessionEngine {
     }
 
     // 获取当前会话状态
-    fn get_game_session(&mut self) -> Session {
+    pub fn get_game_session(&mut self) -> Session {
         let export_snapshot = self.export_handle.current_snapshot();
         let decision_state = self.world.resource::<ProtagonistDecisionState>().clone();
         let latest_narration = self.latest_narration();
@@ -88,13 +88,8 @@ impl AkashicSessionEngine {
     }
 
     // 订阅当前会话事件
-    pub fn subscribe_events(&self) -> broadcast::Receiver<SessionEvent> {
+    pub fn subscribe_events(&self) -> broadcast::Receiver<TaskEvent> {
         self.export_handle.subscribe_events()
-    }
-
-    // 读取当前会话快照但不推进状态机
-    pub fn current_session(&mut self) -> Session {
-        self.get_game_session()
     }
 
     // 继续轮次

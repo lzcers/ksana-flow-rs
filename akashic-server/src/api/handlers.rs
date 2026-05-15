@@ -1,6 +1,6 @@
 use std::{convert::Infallible, time::Duration};
 
-use akashic_ecs::resources::export::SessionEvent;
+use akashic_ecs::resources::export::TaskEvent;
 use axum::{
     Json,
     extract::{Path, State},
@@ -89,16 +89,13 @@ pub async fn stream_game_session(
     Path(path): Path<SessionPath>,
 ) -> StorySseResult {
     let live_stream = state.open_game_session_stream(&path.session_id).await?;
-    let session_id = live_stream.handshake.session_id.clone();
+    let session_id = live_stream.session_id.clone();
+    let initial_events = live_stream
+        .tasks
+        .into_iter()
+        .map(|task| Ok::<_, Infallible>(sse_json_event("task.updated", task)));
 
-    let mut initial_events = Vec::with_capacity(live_stream.history.items.len() + 3);
-    initial_events.push(sse_json_event("stream.handshake", live_stream.handshake));
-    initial_events.push(sse_json_event("world.state", live_stream.state));
-    for item in live_stream.history.items {
-        initial_events.push(sse_json_event("history.item", item));
-    }
-
-    let initial_stream = stream::iter(initial_events.into_iter().map(Ok::<_, Infallible>));
+    let initial_stream = stream::iter(initial_events);
     let live_stream = stream::unfold(
         Some((live_stream.event_rx, session_id)),
         |state| async move {
@@ -139,27 +136,8 @@ pub async fn stream_game_session(
         .into_response())
 }
 
-fn session_event_to_sse(event: SessionEvent) -> Event {
+fn session_event_to_sse(event: TaskEvent) -> Event {
     match event {
-        SessionEvent::TurnChanged {
-            phase,
-            turn_index,
-            active_turn_id,
-        } => sse_json_event(
-            "turn.changed",
-            serde_json::json!({
-                "phase": phase,
-                "turnIndex": turn_index,
-                "activeTurnId": active_turn_id,
-            }),
-        ),
-        SessionEvent::WorldSnapshotUpdated { world } => sse_json_event("world.updated", world),
-        SessionEvent::TaskUpdated { task, update } => sse_json_event(
-            "task.updated",
-            serde_json::json!({
-                "task": task,
-                "update": update,
-            }),
-        ),
+        TaskEvent::TaskUpdated { task } => sse_json_event("task.updated", task),
     }
 }
