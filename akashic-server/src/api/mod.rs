@@ -12,16 +12,12 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/game-sessions", post(handlers::create_game_session))
         .route(
+            "/api/game-sessions/{session_id}/control",
+            post(handlers::control_game_session),
+        )
+        .route(
             "/api/game-sessions/{session_id}",
-            get(handlers::get_game_session),
-        )
-        .route(
-            "/api/game-sessions/{session_id}/choices",
-            post(handlers::submit_choice),
-        )
-        .route(
-            "/api/game-sessions/{session_id}/ending",
-            get(handlers::get_game_session_ending),
+            get(handlers::get_game_session_world),
         )
         .route(
             "/api/game-sessions/{session_id}/stream",

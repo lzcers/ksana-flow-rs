@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use bevy_ecs::{
     message::{Messages, message_update_system},
     prelude::*,
@@ -92,6 +90,11 @@ impl AkashicSessionEngine {
     // 订阅当前会话事件
     pub fn subscribe_events(&self) -> broadcast::Receiver<SessionEvent> {
         self.export_handle.subscribe_events()
+    }
+
+    // 读取当前会话快照但不推进状态机
+    pub fn current_session(&mut self) -> Session {
+        self.get_game_session()
     }
 
     // 继续轮次

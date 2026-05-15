@@ -14,8 +14,8 @@ use tokio::sync::broadcast;
 use crate::{error::AppError, state::AppState};
 
 use super::dto::{
-    ApiResponse, CreateGameSessionData, CreateGameSessionRequest, HealthzData, SessionPath,
-    SubmitChoiceRequest,
+    ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
+    CreateGameSessionRequest, GameSessionWorldStateData, HealthzData, SessionPath,
 };
 
 type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
@@ -48,17 +48,6 @@ fn sse_done_event(route: &'static str, session_id: Option<String>) -> Event {
     sse_json_event(route, StreamDoneData { route, session_id })
 }
 
-fn sse_response(events: Vec<Event>) -> Response {
-    let stream = stream::iter(events.into_iter().map(Ok::<_, Infallible>));
-    Sse::new(stream)
-        .keep_alive(
-            KeepAlive::new()
-                .interval(Duration::from_secs(15))
-                .text("keep-alive"),
-        )
-        .into_response()
-}
-
 pub async fn healthz(State(state): State<AppState>) -> Json<ApiResponse<HealthzData>> {
     let _ = state;
     Json(ApiResponse::ok(HealthzData {
@@ -76,56 +65,23 @@ pub async fn create_game_session(
     Ok(Json(ApiResponse::ok(session)))
 }
 
-pub async fn get_game_session(
+pub async fn get_game_session_world(
     State(state): State<AppState>,
     Path(path): Path<SessionPath>,
-) -> StorySseResult {
-    let snapshot = state.get_game_session(&path.session_id).await?;
-    let session_id = snapshot.session_id.clone();
-
-    Ok(sse_response(vec![
-        sse_json_event("session.snapshot", snapshot),
-        sse_done_event("get_game_session.done", Some(session_id)),
-    ]))
+) -> ApiResult<GameSessionWorldStateData> {
+    let state_view = state.get_game_session_world(&path.session_id).await?;
+    Ok(Json(ApiResponse::ok(state_view)))
 }
 
-pub async fn submit_choice(
+pub async fn control_game_session(
     State(state): State<AppState>,
     Path(path): Path<SessionPath>,
-    Json(request): Json<SubmitChoiceRequest>,
-) -> StorySseResult {
-    let session_id = path.session_id;
-    let submission = state.submit_choice(&session_id, request).await?;
-    let snapshot = state.get_game_session(&session_id).await?;
-    let ending = if snapshot.ending_status == "ready" {
-        Some(state.get_game_session_ending(&session_id).await?)
-    } else {
-        None
-    };
-
-    let mut events = vec![
-        sse_json_event("choice.submitted", submission),
-        sse_json_event("session.snapshot", snapshot),
-    ];
-    if let Some(ending) = ending {
-        events.push(sse_json_event("ending.ready", ending));
-    }
-    events.push(sse_done_event("submit_choice.done", Some(session_id)));
-
-    Ok(sse_response(events))
-}
-
-pub async fn get_game_session_ending(
-    State(state): State<AppState>,
-    Path(path): Path<SessionPath>,
-) -> StorySseResult {
-    let ending = state.get_game_session_ending(&path.session_id).await?;
-    let session_id = ending.session_id.clone();
-
-    Ok(sse_response(vec![
-        sse_json_event("ending.ready", ending),
-        sse_done_event("get_game_session_ending.done", Some(session_id)),
-    ]))
+    Json(request): Json<ControlGameSessionRequest>,
+) -> ApiResult<ControlGameSessionData> {
+    let result = state
+        .control_game_session(&path.session_id, request)
+        .await?;
+    Ok(Json(ApiResponse::ok(result)))
 }
 
 pub async fn stream_game_session(
@@ -137,12 +93,9 @@ pub async fn stream_game_session(
 
     let mut initial_events = Vec::with_capacity(live_stream.history.items.len() + 3);
     initial_events.push(sse_json_event("stream.handshake", live_stream.handshake));
-    initial_events.push(sse_json_event("session.snapshot", live_stream.snapshot));
+    initial_events.push(sse_json_event("world.state", live_stream.state));
     for item in live_stream.history.items {
         initial_events.push(sse_json_event("history.item", item));
-    }
-    if let Some(ending) = live_stream.ending {
-        initial_events.push(sse_json_event("ending.ready", ending));
     }
 
     let initial_stream = stream::iter(initial_events.into_iter().map(Ok::<_, Infallible>));
@@ -192,7 +145,14 @@ fn session_event_to_sse(event: SessionEvent) -> Event {
             phase,
             turn_index,
             active_turn_id,
-        } => sse_json_event("turn.changed", phase),
+        } => sse_json_event(
+            "turn.changed",
+            serde_json::json!({
+                "phase": phase,
+                "turnIndex": turn_index,
+                "activeTurnId": active_turn_id,
+            }),
+        ),
         SessionEvent::WorldSnapshotUpdated { world } => sse_json_event("world.updated", world),
         SessionEvent::TaskUpdated { task, update } => sse_json_event(
             "task.updated",
