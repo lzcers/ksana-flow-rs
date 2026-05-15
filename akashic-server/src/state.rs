@@ -1,32 +1,28 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use akashic_ecs::{
-    engine::{AkashicSessionEngine, AkashicSessionSnapshot, ChoiceResolutionMode},
+    engine::{AkashicSessionEngine, Session},
+    resources::export::SessionEvent,
+    resources::turn_state::TurnPhase,
     resources::world_snapshot::WorldSnapshot,
 };
 use chrono::Utc;
+use tokio::sync::{Mutex, broadcast};
 use uuid::Uuid;
 
 use crate::{
     api::dto::{
-        ArchiveDetailData, ArchiveListData, ArchiveListItem, Character, Choice, ChoiceCostHints,
-        CreateGameSessionData, CreateGameSessionRequest, CreateSaveRequest, EndingData,
-        EndingTurningPoint, GameSessionEndingData, GameSessionSnapshot, HistoryItem,
-        HistoryListData, IntuitionPreviewData, LoadSaveData, ResourceDelta, RuntimeStateView,
-        SaveListData, SaveListItem, SaveSummary, SessionResources, ShareCardData, StoryNode,
+        Character, Choice, ChoiceCostHints, CreateGameSessionData, CreateGameSessionRequest,
+        EndingData, EndingTurningPoint, GameSessionEndingData, GameSessionSnapshot, HistoryItem,
+        HistoryListData, ResourceDelta, RuntimeStateView, SessionResources, StoryNode,
         StreamHandshakeData, SubmitChoiceData, SubmitChoiceRequest, World,
     },
     error::AppError,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AppState {
-    pub service_name: &'static str,
-    pub api_version: &'static str,
-    store: Arc<Mutex<MockStore>>,
+    sessions: Arc<Mutex<HashMap<String, SessionRecord>>>,
 }
 
 struct SessionRecord {
@@ -44,50 +40,16 @@ struct SessionRecord {
     engine: AkashicSessionEngine,
 }
 
-#[derive(Debug, Clone)]
-struct SaveRecord {
-    summary: SaveSummary,
-}
-
-#[derive(Debug, Clone)]
-struct ArchiveRecord {
-    list_item: ArchiveListItem,
-    detail: ArchiveDetailData,
-}
-
-struct MockStore {
-    sessions: HashMap<String, SessionRecord>,
-    saves: HashMap<String, SaveRecord>,
-    archives: HashMap<String, ArchiveRecord>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            service_name: "akashic-server",
-            api_version: "v0-draft",
-            store: Arc::new(Mutex::new(MockStore::default())),
-        }
-    }
-}
-
-impl Default for MockStore {
-    fn default() -> Self {
-        let archives = seed_archives()
-            .into_iter()
-            .map(|archive| (archive.detail.archive_id.clone(), archive))
-            .collect();
-
-        Self {
-            sessions: HashMap::new(),
-            saves: HashMap::new(),
-            archives,
-        }
-    }
+pub struct LiveSessionStream {
+    pub handshake: StreamHandshakeData,
+    pub snapshot: GameSessionSnapshot,
+    pub history: HistoryListData,
+    pub ending: Option<GameSessionEndingData>,
+    pub event_rx: broadcast::Receiver<SessionEvent>,
 }
 
 impl AppState {
-    pub fn create_game_session(
+    pub async fn create_game_session(
         &self,
         request: CreateGameSessionRequest,
     ) -> Result<CreateGameSessionData, AppError> {
@@ -95,12 +57,12 @@ impl AppState {
         let created_at = now_string();
         let protagonist_profile = build_protagonist_profile(&request.character);
         let world_profile = build_world_profile(&request.world);
-        let mut engine = AkashicSessionEngine::new_with_profiles_and_mode(
-            &world_profile,
-            &protagonist_profile,
-            ChoiceResolutionMode::WaitForUser,
-        );
-        let snapshot = engine.bootstrap().map_err(AppError::bad_request)?;
+        let mut engine =
+            AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
+        let snapshot = engine
+            .continue_turn()
+            .await
+            .map_err(AppError::bad_request)?;
         let resources = initial_resources(&request.world, &snapshot);
 
         let mut session = SessionRecord {
@@ -125,29 +87,7 @@ impl AppState {
             created_at: created_at.clone(),
         });
 
-        let response = CreateGameSessionData {
-            session_id: session_id.clone(),
-            created_at,
-            character: session.character.clone(),
-            world: session.world.clone(),
-            resources: session.resources.clone(),
-            current_node: session.current_node.clone(),
-            state_view: session.state_view.clone(),
-        };
-
-        let mut store = self.store.lock().expect("mock store poisoned");
-        store.sessions.insert(session_id, session);
-        Ok(response)
-    }
-
-    pub fn get_game_session(&self, session_id: &str) -> Result<GameSessionSnapshot, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        let session = store
-            .sessions
-            .get(session_id)
-            .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
-
-        Ok(GameSessionSnapshot {
+        let response = GameSessionSnapshot {
             session_id: session.session_id.clone(),
             status: session.status.clone(),
             character: session.character.clone(),
@@ -156,22 +96,46 @@ impl AppState {
             current_node: session.current_node.clone(),
             state_view: session.state_view.clone(),
             ending_status: session.ending_status.clone(),
+        };
+
+        self.sessions.lock().await.insert(session_id, session);
+        Ok(CreateGameSessionData {
+            session_id: response.session_id,
+            created_at,
+            character: response.character,
+            world: response.world,
+            resources: response.resources,
+            current_node: response.current_node,
+            state_view: response.state_view,
         })
     }
 
-    pub fn submit_choice(
+    pub async fn get_game_session(
+        &self,
+        session_id: &str,
+    ) -> Result<GameSessionSnapshot, AppError> {
+        let sessions = self.sessions.lock().await;
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
+
+        Ok(snapshot_from_session(session))
+    }
+
+    pub async fn submit_choice(
         &self,
         session_id: &str,
         request: SubmitChoiceRequest,
     ) -> Result<SubmitChoiceData, AppError> {
-        let mut store = self.store.lock().expect("mock store poisoned");
-        let session = store
-            .sessions
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
         if session.ending_status == "ready" {
-            return Err(AppError::bad_request("当前会话已经抵达结局，无法继续推进。"));
+            return Err(AppError::bad_request(
+                "当前会话已经抵达结局，无法继续推进。",
+            ));
         }
 
         let choice = session
@@ -211,11 +175,11 @@ impl AppState {
         let snapshot = session
             .engine
             .submit_choice(&request.choice_id)
+            .await
             .map_err(AppError::bad_request)?;
         apply_engine_snapshot(session, &snapshot);
 
-        let mut archive_to_upsert = None;
-        if snapshot.finished {
+        if snapshot.phase == TurnPhase::TurnFinished {
             let ending = build_ending(session, &choice.text, request.use_obsession);
             session.status = "completed".to_string();
             session.ending_status = "ready".to_string();
@@ -227,7 +191,6 @@ impl AppState {
                 text: ending.legacy.clone(),
                 created_at: now_string(),
             });
-            archive_to_upsert = Some((session.session_id.clone(), ending));
         } else {
             session.history.push(HistoryItem {
                 item_type: "narration".to_string(),
@@ -237,38 +200,24 @@ impl AppState {
             });
         }
 
-        let response = SubmitChoiceData {
+        Ok(SubmitChoiceData {
             accepted: true,
             session_id: session_id.to_string(),
             turn_id: session.state_view.active_turn_id,
             resource_delta,
             resources: session.resources.clone(),
             state_view: session.state_view.clone(),
-        };
-
-        if let Some((session_key, ending)) = archive_to_upsert {
-            if let Some((archive_id, archive)) = store
-                .sessions
-                .get(&session_key)
-                .map(|session| build_archive_record(session, &ending))
-            {
-                store.archives.insert(archive_id, archive);
-            }
-        }
-
-        Ok(response)
+        })
     }
 
-    pub fn get_game_session_ending(
+    pub async fn get_game_session_ending(
         &self,
         session_id: &str,
     ) -> Result<GameSessionEndingData, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        let session = store
-            .sessions
+        let sessions = self.sessions.lock().await;
+        let session = sessions
             .get(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
-
         let ending = session
             .ending
             .clone()
@@ -281,154 +230,50 @@ impl AppState {
         })
     }
 
-    pub fn create_intuition_preview(
+    pub async fn open_game_session_stream(
         &self,
         session_id: &str,
-        choice_id: &str,
-    ) -> Result<IntuitionPreviewData, AppError> {
-        let mut store = self.store.lock().expect("mock store poisoned");
-        let session = store
-            .sessions
-            .get_mut(session_id)
-            .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
-
-        let choice = session
-            .current_node
-            .choices
-            .iter()
-            .find(|item| item.id == choice_id)
-            .cloned()
-            .ok_or_else(|| AppError::bad_request("无法为不存在的分支生成预览。"))?;
-
-        if session.resources.intuition_points <= 0 {
-            return Err(AppError::bad_request("直觉不足，无法窥探命运碎片。"));
-        }
-
-        session.resources.intuition_points -= 1;
-        Ok(IntuitionPreviewData {
-            choice_id: choice.id,
-            preview_text: format!(
-                "你窥见一段尚未凝固的未来：若踏上“{}”，{}会更快显露真正的震源，而你也会提前承受它的回响。",
-                choice.text, session.world.core_conflict
-            ),
-            resource_delta: ResourceDelta {
-                obsession_points: 0,
-                intuition_points: -1,
-            },
-            resources: session.resources.clone(),
-        })
-    }
-
-    pub fn get_game_session_history(&self, session_id: &str) -> Result<HistoryListData, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        let session = store
-            .sessions
+    ) -> Result<LiveSessionStream, AppError> {
+        let sessions = self.sessions.lock().await;
+        let session = sessions
             .get(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
-        Ok(HistoryListData {
-            items: session.history.clone(),
+        Ok(LiveSessionStream {
+            handshake: StreamHandshakeData {
+                session_id: session_id.to_string(),
+                protocol: "engine-sse".to_string(),
+                note: "当前连接直接订阅 akashic-ecs 的会话事件流，可实时接收任务输出与状态推进。"
+                    .to_string(),
+            },
+            snapshot: snapshot_from_session(session),
+            history: HistoryListData {
+                items: session.history.clone(),
+            },
+            ending: session.ending.clone().map(|ending| GameSessionEndingData {
+                session_id: session.session_id.clone(),
+                ending_status: session.ending_status.clone(),
+                ending,
+            }),
+            event_rx: session.engine.subscribe_events(),
         })
-    }
-
-    pub fn stream_game_session(&self, session_id: &str) -> Result<StreamHandshakeData, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        if !store.sessions.contains_key(session_id) {
-            return Err(AppError::not_found(format!("未找到会话 `{session_id}`")));
-        }
-
-        Ok(StreamHandshakeData {
-            session_id: session_id.to_string(),
-            protocol: "mock-polling".to_string(),
-            note: "当前已接入 ECS 生成链路，但仍未启用真正的流式通道，可继续轮询会话快照与历史接口。"
-                .to_string(),
-        })
-    }
-
-    pub fn create_save(&self, _request: CreateSaveRequest) -> Result<SaveSummary, AppError> {
-        Err(AppError::bad_request(
-            "当前版本已优先打通核心故事链路，暂未恢复存档能力。",
-        ))
-    }
-
-    pub fn list_saves(&self) -> SaveListData {
-        let store = self.store.lock().expect("mock store poisoned");
-        let mut items: Vec<SaveListItem> = store
-            .saves
-            .values()
-            .map(|record| SaveListItem {
-                save_id: record.summary.save_id.clone(),
-                session_id: record.summary.session_id.clone(),
-                title: record.summary.title.clone(),
-                character_name: "".to_string(),
-                background: "".to_string(),
-                era: "".to_string(),
-                turn_index: record.summary.turn_index,
-                summary: record.summary.summary.clone(),
-                cover_image: record.summary.cover_image.clone(),
-                saved_at: record.summary.saved_at.clone(),
-            })
-            .collect();
-        items.sort_by(|left, right| right.saved_at.cmp(&left.saved_at));
-        SaveListData { items }
-    }
-
-    pub fn load_save(&self, _save_id: &str) -> Result<LoadSaveData, AppError> {
-        Err(AppError::bad_request(
-            "当前版本已优先打通核心故事链路，暂未恢复读档能力。",
-        ))
-    }
-
-    pub fn list_archives(&self) -> ArchiveListData {
-        let store = self.store.lock().expect("mock store poisoned");
-        let mut items: Vec<ArchiveListItem> = store
-            .archives
-            .values()
-            .map(|record| record.list_item.clone())
-            .collect();
-        items.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-
-        ArchiveListData { items }
-    }
-
-    pub fn get_archive(&self, archive_id: &str) -> Result<ArchiveDetailData, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        let archive = store
-            .archives
-            .get(archive_id)
-            .ok_or_else(|| AppError::not_found(format!("未找到归档 `{archive_id}`")))?;
-
-        Ok(archive.detail.clone())
-    }
-
-    pub fn generate_save_share_card(
-        &self,
-        save_id: &str,
-        style: &str,
-    ) -> Result<ShareCardData, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        if !store.saves.contains_key(save_id) {
-            return Err(AppError::not_found(format!("未找到存档 `{save_id}`")));
-        }
-
-        Ok(build_share_card("save", save_id, style))
-    }
-
-    pub fn generate_ending_share_card(
-        &self,
-        archive_id: &str,
-        style: &str,
-    ) -> Result<ShareCardData, AppError> {
-        let store = self.store.lock().expect("mock store poisoned");
-        if !store.archives.contains_key(archive_id) {
-            return Err(AppError::not_found(format!("未找到归档 `{archive_id}`")));
-        }
-
-        Ok(build_share_card("ending", archive_id, style))
     }
 }
 
-fn initial_resources(world: &World, snapshot: &AkashicSessionSnapshot) -> SessionResources {
+fn snapshot_from_session(session: &SessionRecord) -> GameSessionSnapshot {
+    GameSessionSnapshot {
+        session_id: session.session_id.clone(),
+        status: session.status.clone(),
+        character: session.character.clone(),
+        world: session.world.clone(),
+        resources: session.resources.clone(),
+        current_node: session.current_node.clone(),
+        state_view: session.state_view.clone(),
+        ending_status: session.ending_status.clone(),
+    }
+}
+
+fn initial_resources(world: &World, snapshot: &Session) -> SessionResources {
     SessionResources {
         obsession_points: 3,
         intuition_points: 5,
@@ -441,8 +286,9 @@ fn initial_resources(world: &World, snapshot: &AkashicSessionSnapshot) -> Sessio
     }
 }
 
-fn apply_engine_snapshot(session: &mut SessionRecord, snapshot: &AkashicSessionSnapshot) {
-    let display_turn_index = if snapshot.finished {
+fn apply_engine_snapshot(session: &mut SessionRecord, snapshot: &Session) {
+    let turn_finished = snapshot.phase == TurnPhase::TurnFinished;
+    let display_turn_index = if turn_finished {
         snapshot.turn_index.max(1)
     } else {
         snapshot.turn_index + 1
@@ -462,12 +308,12 @@ fn apply_engine_snapshot(session: &mut SessionRecord, snapshot: &AkashicSessionS
     } else {
         snapshot.world_snapshot.current_event.clone()
     });
-    session.status = if snapshot.finished {
+    session.status = if turn_finished {
         "completed".to_string()
     } else {
         "active".to_string()
     };
-    session.ending_status = if snapshot.finished {
+    session.ending_status = if turn_finished {
         "ready".to_string()
     } else {
         "pending".to_string()
@@ -476,7 +322,7 @@ fn apply_engine_snapshot(session: &mut SessionRecord, snapshot: &AkashicSessionS
         id: format!("node-{}", display_turn_index),
         text: latest_history.clone(),
         image: cover_image_for(&session.world.era),
-        choices: if snapshot.finished {
+        choices: if turn_finished {
             Vec::new()
         } else {
             snapshot
@@ -499,12 +345,12 @@ fn apply_engine_snapshot(session: &mut SessionRecord, snapshot: &AkashicSessionS
         },
     };
     session.state_view = RuntimeStateView {
-        game_state: if snapshot.finished {
+        game_state: if turn_finished {
             "ending".to_string()
         } else {
             "playing".to_string()
         },
-        phase: if snapshot.finished {
+        phase: if turn_finished {
             "EndingReady".to_string()
         } else {
             "AwaitingChoice".to_string()
@@ -512,7 +358,7 @@ fn apply_engine_snapshot(session: &mut SessionRecord, snapshot: &AkashicSessionS
         turn_index: display_turn_index,
         active_turn_id: snapshot.active_turn_id,
         current_location: snapshot.world_snapshot.location_name.clone(),
-        current_scene: if snapshot.finished {
+        current_scene: if turn_finished {
             "余响归档".to_string()
         } else {
             snapshot.world_snapshot.scene_title.clone()
@@ -591,83 +437,6 @@ fn empty_state_view() -> RuntimeStateView {
     }
 }
 
-fn seed_archives() -> Vec<ArchiveRecord> {
-    vec![
-        ArchiveRecord {
-            list_item: ArchiveListItem {
-                archive_id: "archive-seed-1".to_string(),
-                title: "灰烬港的夜巡人".to_string(),
-                tag: "已归档".to_string(),
-                era: "末日废土".to_string(),
-                summary: "你在塌陷的灯塔下守住最后的航标，让一座濒死聚落撑过风暴夜。"
-                    .to_string(),
-                cover_image: cover_image_for("末日废土"),
-                created_at: now_string(),
-            },
-            detail: ArchiveDetailData {
-                archive_id: "archive-seed-1".to_string(),
-                title: "灰烬港的夜巡人".to_string(),
-                era: "末日废土".to_string(),
-                ending: EndingData {
-                    biography: "在荒原风暴不断逼近的年代，你守住了最后一盏航标灯，让仍愿归乡的人不至于迷失在黑夜里。".to_string(),
-                    turning_points: vec![
-                        EndingTurningPoint {
-                            cause: "灯塔能源濒临熄灭".to_string(),
-                            effect: "你拆下自己的外骨骼供电模块续上最后的火种".to_string(),
-                        },
-                        EndingTurningPoint {
-                            cause: "聚落内部出现背叛".to_string(),
-                            effect: "你选择公开真相，而不是继续维持脆弱的秩序".to_string(),
-                        },
-                    ],
-                    legacy: "你的坚持让幸存者记住：末日并不意味着放弃彼此。".to_string(),
-                    cgs: vec![
-                        cover_image_for("末日废土"),
-                        cover_image_for("蒸汽朋克"),
-                        cover_image_for("星际拓荒"),
-                    ],
-                },
-            },
-        },
-        ArchiveRecord {
-            list_item: ArchiveListItem {
-                archive_id: "archive-seed-2".to_string(),
-                title: "纸鹤坠入星潮".to_string(),
-                tag: "已归档".to_string(),
-                era: "星际拓荒".to_string(),
-                summary: "你在外环殖民地拦截失控信号，把一封迟来的家书送回原主人手中。"
-                    .to_string(),
-                cover_image: cover_image_for("星际拓荒"),
-                created_at: now_string(),
-            },
-            detail: ArchiveDetailData {
-                archive_id: "archive-seed-2".to_string(),
-                title: "纸鹤坠入星潮".to_string(),
-                era: "星际拓荒".to_string(),
-                ending: EndingData {
-                    biography: "你沿着失控电波穿过边境星港，把漂流多年的一封家书送回收件人手中，也让沉默已久的殖民地重新愿意彼此开口。".to_string(),
-                    turning_points: vec![
-                        EndingTurningPoint {
-                            cause: "导航阵列发生错位".to_string(),
-                            effect: "你改写了跃迁窗口，换来了一次本不该存在的重逢".to_string(),
-                        },
-                        EndingTurningPoint {
-                            cause: "家书里藏着殖民地旧案".to_string(),
-                            effect: "你决定公开这段历史，让伤口终于能够愈合".to_string(),
-                        },
-                    ],
-                    legacy: "你让冰冷星海里重新出现了人的温度。".to_string(),
-                    cgs: vec![
-                        cover_image_for("星际拓荒"),
-                        cover_image_for("东方玄幻"),
-                        cover_image_for("蒸汽朋克"),
-                    ],
-                },
-            },
-        },
-    ]
-}
-
 fn build_ending(session: &SessionRecord, choice_text: &str, used_obsession: bool) -> EndingData {
     EndingData {
         biography: format!(
@@ -710,40 +479,6 @@ fn build_ending(session: &SessionRecord, choice_text: &str, used_obsession: bool
             cover_image_for("东方玄幻"),
             cover_image_for("蒸汽朋克"),
         ],
-    }
-}
-
-fn build_archive_record(session: &SessionRecord, ending: &EndingData) -> (String, ArchiveRecord) {
-    let archive_id = format!("archive-{}", session.session_id);
-    let archive = ArchiveRecord {
-        list_item: ArchiveListItem {
-            archive_id: archive_id.clone(),
-            title: format!("{}的回响录", session.character.name),
-            tag: "已归档".to_string(),
-            era: session.world.era.clone(),
-            summary: ending.legacy.clone(),
-            cover_image: ending
-                .cgs
-                .first()
-                .cloned()
-                .unwrap_or_else(|| cover_image_for(&session.world.era)),
-            created_at: now_string(),
-        },
-        detail: ArchiveDetailData {
-            archive_id: archive_id.clone(),
-            title: format!("{}的回响录", session.character.name),
-            era: session.world.era.clone(),
-            ending: ending.clone(),
-        },
-    };
-    (archive_id, archive)
-}
-
-fn build_share_card(kind: &str, subject_id: &str, style: &str) -> ShareCardData {
-    ShareCardData {
-        share_card_id: format!("share-{}", Uuid::new_v4().simple()),
-        image_url: format!("https://cards.akashic.mock/{kind}/{subject_id}?style={style}"),
-        expires_at: (Utc::now() + chrono::TimeDelta::hours(24)).to_rfc3339(),
     }
 }
 

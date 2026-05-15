@@ -76,6 +76,54 @@ export interface RuntimeStateView {
   latestProtagonistAction: string;
 }
 
+export interface WorldSnapshotNpcState {
+  name: string;
+  location: string;
+  mood: string;
+  attitude: string;
+  goal: string;
+  secrets: string[];
+}
+
+export interface WorldSnapshotItemState {
+  name: string;
+  location: string;
+  status: string;
+  awareness: string;
+  relevance: string;
+}
+
+export interface WorldSnapshotOngoingEvent {
+  name: string;
+  status: string;
+  escalation_trigger: string;
+}
+
+export interface WorldSnapshot {
+  round: number;
+  scene_title: string;
+  time_absolute: string;
+  time_relative?: string | null;
+  location_name: string;
+  location_exits: string[];
+  location_status: string;
+  description: string;
+  current_event: string;
+  new_info: string[];
+  inner_conflict: string;
+  hard_anchors: string[];
+  pace: string;
+  atmosphere: string;
+  focal_point: string;
+  protagonist_condition: string;
+  protagonist_known_secrets: string[];
+  npcs: WorldSnapshotNpcState[];
+  items: WorldSnapshotItemState[];
+  events_in_progress: WorldSnapshotOngoingEvent[];
+  unsolved_threads: string[];
+  pacing_note: string;
+}
+
 /** 结局详情数据，用于结局页和归档详情页展示。 */
 export interface EndingData {
   biography: string;
@@ -216,6 +264,53 @@ export interface StoryStreamHandshakeData {
   note: string;
 }
 
+export interface StoryTurnView {
+  phase:
+  | 'idle'
+  | 'fate_weaving'
+  | 'narrator_writing'
+  | 'narrator_story'
+  | 'protagonist_action'
+  | 'awaiting_protagonist'
+  | 'awaiting_player_choice'
+  | 'turn_finished'
+  | 'failed';
+  turnIndex: number;
+  activeTurnId: number;
+}
+
+export interface StoryTaskView {
+  entity: string;
+  kind: 'fate_planning' | 'protagonist_action' | 'narration';
+  status: 'pending' | 'running' | 'done' | 'error';
+  attempts: number;
+  maxAttempts: number;
+  lastError: string | null;
+  chunks: string[];
+  output: string | null;
+  error: string | null;
+}
+
+export interface StoryTaskUpdate {
+  entity: string;
+  kind: 'fate_planning' | 'protagonist_action' | 'narration';
+  status: 'pending' | 'running' | 'done' | 'error';
+  chunk?: string | null;
+  output?: string | null;
+  error?: string | null;
+}
+
+export interface StoryTaskUpdatedData {
+  task: StoryTaskView;
+  update: StoryTaskUpdate;
+}
+
+export interface StoryStreamWarningData {
+  sessionId: string;
+  reason: string;
+  skipped: number;
+}
+
 export interface StoryStreamEventMap {
   'session.created': CreateGameSessionData;
   'session.snapshot': GameSessionSnapshot;
@@ -225,6 +320,10 @@ export interface StoryStreamEventMap {
   'history.started': StoryHistoryMetaData;
   'history.item': HistoryItem;
   'stream.handshake': StoryStreamHandshakeData;
+  'turn.changed': StoryTurnView;
+  'world.updated': WorldSnapshot;
+  'task.updated': StoryTaskUpdatedData;
+  'stream.warning': StoryStreamWarningData;
   'create_game_session.done': StoryStreamDoneData;
   'get_game_session.done': StoryStreamDoneData;
   'submit_choice.done': StoryStreamDoneData;
@@ -240,6 +339,28 @@ export interface StoryStreamEvent<Name extends StoryStreamEventName = StoryStrea
   event: Name;
   data: StoryStreamEventMap[Name];
 }
+
+const LIVE_STORY_STREAM_EVENTS: StoryStreamEventName[] = [
+  'session.created',
+  'session.snapshot',
+  'choice.submitted',
+  'ending.ready',
+  'intuition.preview',
+  'history.started',
+  'history.item',
+  'stream.handshake',
+  'turn.changed',
+  'world.updated',
+  'task.updated',
+  'stream.warning',
+  'create_game_session.done',
+  'get_game_session.done',
+  'submit_choice.done',
+  'get_game_session_ending.done',
+  'create_intuition_preview.done',
+  'get_game_session_history.done',
+  'stream_game_session.done',
+];
 
 function parseApiErrorMessage(status: number, payload: unknown) {
   if (
@@ -380,13 +501,13 @@ async function requestStoryStream(path: string, init?: RequestInit) {
   return readStoryStream(response);
 }
 
-/** 创建新的游戏会话，返回故事 SSE 事件。 */
+/** 创建新的游戏会话，返回初始化后的会话数据。 */
 export function createGameSession(input: {
   character: Character;
   world: World;
   seed?: string;
 }) {
-  return requestStoryStream('/api/game-sessions', {
+  return request<CreateGameSessionData>('/api/game-sessions', {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -395,6 +516,38 @@ export function createGameSession(input: {
 /** 获取指定会话的当前快照流。 */
 export function getGameSession(sessionId: string) {
   return requestStoryStream(`/api/game-sessions/${sessionId}`);
+}
+
+export function subscribeGameSessionStream(
+  sessionId: string,
+  options: {
+    onEvent: (event: StoryStreamEvent) => void;
+    onError?: (event: Event) => void;
+  },
+) {
+  const source = new EventSource(`${API_BASE_URL}/api/game-sessions/${sessionId}/stream`);
+  const listeners = LIVE_STORY_STREAM_EVENTS.map((eventName) => {
+    const listener = (event: MessageEvent<string>) => {
+      const data = JSON.parse(event.data) as StoryStreamEventMap[typeof eventName];
+      options.onEvent({
+        event: eventName,
+        data,
+      });
+    };
+    source.addEventListener(eventName, listener as EventListener);
+    return { eventName, listener };
+  });
+
+  if (options.onError) {
+    source.onerror = options.onError;
+  }
+
+  return () => {
+    for (const { eventName, listener } of listeners) {
+      source.removeEventListener(eventName, listener as EventListener);
+    }
+    source.close();
+  };
 }
 
 /** 提交当前选项并推进回合，返回故事 SSE 事件。 */

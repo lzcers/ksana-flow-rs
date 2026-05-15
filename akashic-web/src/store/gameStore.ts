@@ -5,13 +5,11 @@ import type {
   CreateGameSessionData,
   EndingData,
   GameSessionSnapshot,
-  IntuitionPreviewData,
   RuntimeStateView,
   SaveListItem,
   StoryStreamEvent,
   StoryStreamEventName,
   StoryNode,
-  SubmitChoiceData,
   World,
 } from '../lib/api';
 import {
@@ -187,8 +185,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     set({ isLoading: true, error: null });
 
     try {
-      const events = await createGameSession({ character, world });
-      const data = requireStoryEvent(events, 'session.created', '服务端没有返回会话创建结果。').data;
+      const data = await createGameSession({ character, world });
       const snapshot = createSessionToSnapshot(data);
 
       set({

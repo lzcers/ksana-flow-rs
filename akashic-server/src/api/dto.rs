@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -20,16 +18,6 @@ impl<T> ApiResponse<T> {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SessionPath {
     pub session_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct SavePath {
-    pub save_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ArchivePath {
-    pub archive_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,7 +120,6 @@ pub struct ResourceDelta {
 pub struct CreateGameSessionRequest {
     pub character: Character,
     pub world: World,
-    pub seed: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -186,72 +173,6 @@ pub struct GameSessionEndingData {
     pub ending: EndingData,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSaveRequest {
-    pub session_id: String,
-    pub title: String,
-    pub auto_generate_share_card: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveSummary {
-    pub save_id: String,
-    pub session_id: String,
-    pub title: String,
-    pub summary: String,
-    pub cover_image: String,
-    pub turn_index: u64,
-    pub saved_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SaveListData {
-    pub items: Vec<SaveListItem>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveListItem {
-    pub save_id: String,
-    pub session_id: String,
-    pub title: String,
-    pub character_name: String,
-    pub background: String,
-    pub era: String,
-    pub turn_index: u64,
-    pub summary: String,
-    pub cover_image: String,
-    pub saved_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LoadSaveData {
-    pub session_id: String,
-    pub loaded_from_save_id: String,
-    pub status: String,
-    pub resources: SessionResources,
-    pub current_node: StoryNode,
-    pub state_view: RuntimeStateView,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IntuitionPreviewRequest {
-    pub choice_id: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IntuitionPreviewData {
-    pub choice_id: String,
-    pub preview_text: String,
-    pub resource_delta: ResourceDelta,
-    pub resources: SessionResources,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryListData {
     pub items: Vec<HistoryItem>,
@@ -265,54 +186,6 @@ pub struct HistoryItem {
     pub turn_index: u64,
     pub text: String,
     pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ArchiveListData {
-    pub items: Vec<ArchiveListItem>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArchiveListItem {
-    pub archive_id: String,
-    pub title: String,
-    pub tag: String,
-    pub era: String,
-    pub summary: String,
-    pub cover_image: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArchiveDetailData {
-    pub archive_id: String,
-    pub title: String,
-    pub era: String,
-    pub ending: EndingData,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct GenerateSaveShareCardRequest {
-    pub save_id: String,
-    pub style: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GenerateEndingShareCardRequest {
-    pub archive_id: String,
-    pub include_cgs: bool,
-    pub style: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareCardData {
-    pub share_card_id: String,
-    pub image_url: String,
-    pub expires_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

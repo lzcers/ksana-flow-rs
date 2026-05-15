@@ -1,12 +1,12 @@
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use bevy_ecs::{
     message::{Messages, message_update_system},
     prelude::*,
     schedule::Schedule,
 };
-use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, watch};
+use serde::Serialize;
+use tokio::sync::broadcast;
 
 use crate::{
     components::{
@@ -14,7 +14,7 @@ use crate::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
-        export::{ExportHandle, ExportState, SessionEvent, SessionSnapshot, TaskView},
+        export::{ExportHandle, ExportState, SessionEvent, TaskView},
         player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::{PendingProtagonistChoice, ProtagonistDecisionState},
         task_manager::{TaskManager, TaskStatus},
@@ -34,150 +34,91 @@ use crate::{
     utils::build_chat_model,
 };
 
-const DEFAULT_MAX_ADVANCE_STEPS: usize = 20_000;
 const DEFAULT_SPIN_WAIT: Duration = Duration::from_millis(10);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ChoiceResolutionMode {
-    WaitForUser,
-    AutoSelectFirst,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActivePlayer {
-    System,
-    FateWeaver,
-    Narrator,
-    Protagonist,
-    ExternalPlayer,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AkashicSessionSnapshot {
-    pub phase: TurnPhase,
-    pub turn_index: u64,
-    pub active_turn_id: u64,
-    pub current_player: ActivePlayer,
-    pub current_task: Option<TaskView>,
-    pub tasks: Vec<TaskView>,
-    pub world_snapshot: WorldSnapshot,
-    pub latest_narration: String,
-    pub current_protagonist_action: String,
-    pub choices: Vec<PendingProtagonistChoice>,
-    pub choice_resolution_mode: ChoiceResolutionMode,
-    pub finished: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum EngineCommand {
-    Tick,
-    ContinueTurn { turn_id: Option<u64> },
-    ResetTurn { next_turn_id: Option<u64> },
-    SubmitChoice { choice_id: String },
-    SwitchPlayer { mode: ChoiceResolutionMode },
+pub struct Session {
+    pub phase: TurnPhase,                       // 阶段
+    pub turn_index: u64,                        // 轮次
+    pub active_turn_id: u64,                    // 当前轮次ID
+    pub current_task: Option<TaskView>,         // 当前任务
+    pub tasks: Vec<TaskView>,                   // 任务列表
+    pub world_snapshot: WorldSnapshot,          // 世界快照
+    pub latest_narration: String,               // 最新叙事
+    pub current_protagonist_action: String,     // 当前 protagonist 动作
+    pub choices: Vec<PendingProtagonistChoice>, // 待处理选择
 }
 
 pub struct AkashicSessionEngine {
     world: World,
     schedule: Schedule,
     export_handle: ExportHandle,
-    choice_resolution_mode: ChoiceResolutionMode,
-    max_advance_steps: usize,
-    spin_wait: Duration,
-}
-
-impl Default for ChoiceResolutionMode {
-    fn default() -> Self {
-        Self::WaitForUser
-    }
-}
-
-impl ChoiceResolutionMode {
-    fn player_input_config(self) -> PlayerInputConfig {
-        match self {
-            Self::WaitForUser => PlayerInputConfig::wait_for_user(),
-            Self::AutoSelectFirst => PlayerInputConfig::auto_select_first(),
-        }
-    }
 }
 
 impl AkashicSessionEngine {
+    // 创建实例
     pub fn new() -> Self {
         Self::new_with_profiles(DEFAULT_WORLD_PROFILE, DEFAULT_PROTAGONIST_PROFILE)
     }
 
-    pub fn new_with_mode(mode: ChoiceResolutionMode) -> Self {
-        Self::new_with_profiles_and_mode(DEFAULT_WORLD_PROFILE, DEFAULT_PROTAGONIST_PROFILE, mode)
-    }
-
     pub fn new_with_profiles(world_profile: &str, protagonist_profile: &str) -> Self {
-        Self::new_with_profiles_and_mode(
-            world_profile,
-            protagonist_profile,
-            ChoiceResolutionMode::WaitForUser,
-        )
-    }
-
-    pub fn new_with_profiles_and_mode(
-        world_profile: &str,
-        protagonist_profile: &str,
-        mode: ChoiceResolutionMode,
-    ) -> Self {
-        let (world, export_handle) = build_world(world_profile, protagonist_profile, mode);
+        let (world, export_handle) = build_world(world_profile, protagonist_profile);
         Self {
             world,
             schedule: build_schedule(),
             export_handle,
-            choice_resolution_mode: mode,
-            max_advance_steps: DEFAULT_MAX_ADVANCE_STEPS,
-            spin_wait: DEFAULT_SPIN_WAIT,
         }
     }
 
-    pub fn bootstrap(&mut self) -> Result<AkashicSessionSnapshot, String> {
-        self.advance_until_external_checkpoint(false)
+    // 获取当前会话状态
+    fn get_game_session(&mut self) -> Session {
+        let export_snapshot = self.export_handle.current_snapshot();
+        let decision_state = self.world.resource::<ProtagonistDecisionState>().clone();
+        let latest_narration = self.latest_narration();
+        let current_task = select_current_task(&export_snapshot.tasks);
+
+        Session {
+            phase: export_snapshot.phase,
+            turn_index: export_snapshot.turn_index,
+            active_turn_id: export_snapshot.active_turn_id,
+            tasks: export_snapshot.tasks,
+            world_snapshot: export_snapshot.world,
+            current_protagonist_action: decision_state.committed_action().to_string(),
+            choices: decision_state.choices().to_vec(),
+            latest_narration,
+            current_task,
+        }
     }
 
-    pub fn snapshot(&mut self) -> AkashicSessionSnapshot {
-        self.build_snapshot()
-    }
-
-    pub fn current_export_snapshot(&self) -> SessionSnapshot {
-        self.export_handle.current_snapshot()
-    }
-
-    pub fn snapshot_receiver(&self) -> watch::Receiver<SessionSnapshot> {
-        self.export_handle.snapshot_receiver()
-    }
-
+    // 订阅当前会话事件
     pub fn subscribe_events(&self) -> broadcast::Receiver<SessionEvent> {
         self.export_handle.subscribe_events()
     }
 
-    pub fn tick(&mut self) -> Result<AkashicSessionSnapshot, String> {
-        self.run_one_frame()?;
-        Ok(self.build_snapshot())
+    // 继续轮次
+    pub async fn continue_turn(&mut self) -> Result<Session, String> {
+        match self.world.resource::<TurnState>().phase {
+            TurnPhase::Idle => {
+                self.send_turn_control_command(TurnControl::StartTurn {
+                    turn_id: self.world.resource::<TurnState>().turn_index + 1,
+                });
+            }
+            TurnPhase::TurnFinished => {
+                let finished_turn_id = self.world.resource::<TurnState>().active_turn_id;
+                self.send_turn_control_command(TurnControl::ContinueTurn {
+                    turn_id: finished_turn_id,
+                });
+            }
+            _ => {}
+        }
+
+        self.drive_until(|snapshot| snapshot.phase == TurnPhase::AwaitingPlayerChoice)
+            .await
     }
 
-    pub fn continue_turn(&mut self) -> Result<AkashicSessionSnapshot, String> {
-        let turn_id = self.world.resource::<TurnState>().active_turn_id;
-        self.enqueue_turn_control(TurnControl::ContinueTurn { turn_id });
-        self.advance_until_external_checkpoint(false)
-    }
-
-    pub fn reset_turn(
-        &mut self,
-        next_turn_id: Option<u64>,
-    ) -> Result<AkashicSessionSnapshot, String> {
-        self.enqueue_turn_control(TurnControl::ResetTurn { next_turn_id });
-        self.advance_until_external_checkpoint(false)
-    }
-
-    pub fn submit_choice(&mut self, choice_id: &str) -> Result<AkashicSessionSnapshot, String> {
+    // 提交选择
+    pub async fn submit_choice(&mut self, choice_id: &str) -> Result<Session, String> {
         let turn_id = self.world.resource::<TurnState>().active_turn_id;
         self.world
             .resource_mut::<PlayerInbox>()
@@ -185,64 +126,23 @@ impl AkashicSessionEngine {
                 turn_id,
                 choice_id: choice_id.to_string(),
             });
-        self.advance_until_external_checkpoint(true)
+
+        self.drive_until(|snapshot| snapshot.phase == TurnPhase::TurnFinished)
+            .await
     }
 
-    pub fn switch_player(
-        &mut self,
-        mode: ChoiceResolutionMode,
-    ) -> Result<AkashicSessionSnapshot, String> {
-        self.choice_resolution_mode = mode;
-        *self.world.resource_mut::<PlayerInputConfig>() = mode.player_input_config();
-        self.advance_until_external_checkpoint(false)
-    }
-
-    pub fn apply_command(
-        &mut self,
-        command: EngineCommand,
-    ) -> Result<AkashicSessionSnapshot, String> {
-        match command {
-            EngineCommand::Tick => self.tick(),
-            EngineCommand::ContinueTurn { turn_id } => {
-                let turn_id =
-                    turn_id.unwrap_or_else(|| self.world.resource::<TurnState>().active_turn_id);
-                self.enqueue_turn_control(TurnControl::ContinueTurn { turn_id });
-                self.advance_until_external_checkpoint(false)
-            }
-            EngineCommand::ResetTurn { next_turn_id } => self.reset_turn(next_turn_id),
-            EngineCommand::SubmitChoice { choice_id } => self.submit_choice(&choice_id),
-            EngineCommand::SwitchPlayer { mode } => self.switch_player(mode),
-        }
-    }
-
-    fn advance_until_external_checkpoint(
-        &mut self,
-        auto_continue_finished_turn: bool,
-    ) -> Result<AkashicSessionSnapshot, String> {
-        for _ in 0..self.max_advance_steps {
+    async fn drive_until<P>(&mut self, should_stop: P) -> Result<Session, String>
+    where
+        P: Fn(&Session) -> bool,
+    {
+        loop {
             self.run_one_frame()?;
-            let snapshot = self.build_snapshot();
+            let snapshot = self.get_game_session();
 
-            if snapshot.phase == TurnPhase::TurnFinished && auto_continue_finished_turn {
-                self.enqueue_turn_control(TurnControl::ContinueTurn {
-                    turn_id: snapshot.active_turn_id,
-                });
-                continue;
-            }
-
-            if is_external_checkpoint(&snapshot) {
+            if should_stop(&snapshot) {
                 return Ok(snapshot);
             }
-
-            if snapshot.current_task.is_some() {
-                thread::sleep(self.spin_wait);
-            }
         }
-
-        Err(format!(
-            "引擎在 {} 帧内未到达可对外暴露的稳定状态",
-            self.max_advance_steps
-        ))
     }
 
     fn run_one_frame(&mut self) -> Result<(), String> {
@@ -258,31 +158,6 @@ impl AkashicSessionEngine {
         Ok(())
     }
 
-    fn build_snapshot(&mut self) -> AkashicSessionSnapshot {
-        let export_snapshot = self.export_handle.current_snapshot();
-        let decision_state = self.world.resource::<ProtagonistDecisionState>().clone();
-        let latest_narration = self.latest_narration();
-        let current_task = select_current_task(&export_snapshot.tasks);
-
-        AkashicSessionSnapshot {
-            phase: export_snapshot.turn.phase,
-            turn_index: export_snapshot.turn.turn_index,
-            active_turn_id: export_snapshot.turn.active_turn_id,
-            current_player: active_player_for(
-                export_snapshot.turn.phase,
-                self.choice_resolution_mode,
-            ),
-            current_task,
-            tasks: export_snapshot.tasks,
-            world_snapshot: export_snapshot.world,
-            latest_narration,
-            current_protagonist_action: decision_state.committed_action().to_string(),
-            choices: decision_state.choices().to_vec(),
-            choice_resolution_mode: self.choice_resolution_mode,
-            finished: false,
-        }
-    }
-
     fn latest_narration(&mut self) -> String {
         let mut query = self.world.query::<&UpperNarrator>();
         query
@@ -292,24 +167,20 @@ impl AkashicSessionEngine {
             .unwrap_or_default()
     }
 
-    fn enqueue_turn_control(&mut self, control: TurnControl) {
+    fn send_turn_control_command(&mut self, control: TurnControl) {
         self.world
             .resource_mut::<Messages<TurnControl>>()
             .write(control);
     }
 }
 
-fn build_world(
-    world_profile: &str,
-    protagonist_profile: &str,
-    mode: ChoiceResolutionMode,
-) -> (World, ExportHandle) {
+fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, ExportHandle) {
     let mut world = World::new();
 
     world.init_resource::<WorldSnapshot>();
     world.init_resource::<TurnState>();
     world.init_resource::<PlayerInbox>();
-    world.insert_resource(mode.player_input_config());
+    world.insert_resource(PlayerInputConfig::wait_for_user());
     world.init_resource::<ProtagonistDecisionState>();
     world.init_resource::<Messages<TurnEvent>>();
     world.init_resource::<Messages<TurnControl>>();
@@ -355,24 +226,4 @@ fn select_current_task(tasks: &[TaskView]) -> Option<TaskView> {
                 .find(|task| matches!(task.status, TaskStatus::Pending))
         })
         .cloned()
-}
-
-fn active_player_for(phase: TurnPhase, mode: ChoiceResolutionMode) -> ActivePlayer {
-    match phase {
-        TurnPhase::Idle | TurnPhase::TurnFinished | TurnPhase::Failed => ActivePlayer::System,
-        TurnPhase::FateWeaving => ActivePlayer::FateWeaver,
-        TurnPhase::NarratorWriting | TurnPhase::NarratorStory => ActivePlayer::Narrator,
-        TurnPhase::ProtagonistAction | TurnPhase::AwaitingProtagonist => ActivePlayer::Protagonist,
-        TurnPhase::AwaitingPlayerChoice => match mode {
-            ChoiceResolutionMode::WaitForUser => ActivePlayer::ExternalPlayer,
-            ChoiceResolutionMode::AutoSelectFirst => ActivePlayer::Protagonist,
-        },
-    }
-}
-
-fn is_external_checkpoint(snapshot: &AkashicSessionSnapshot) -> bool {
-    matches!(
-        snapshot.phase,
-        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnFinished
-    ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
 }

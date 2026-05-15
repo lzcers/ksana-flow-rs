@@ -34,7 +34,6 @@ const LobbyPage: React.FC = () => {
           <div className="space-y-6">
             <div className="flex flex-wrap gap-3">
               <StatusPill icon={Sparkles}>Akashic Engine</StatusPill>
-              <StatusPill icon={BookOpen}>选择将生成真实回响</StatusPill>
             </div>
             <PageTitle
               title="幻世 · 人生回响"

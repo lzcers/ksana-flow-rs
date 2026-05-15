@@ -9,7 +9,7 @@ use bevy_ecs::{
 };
 
 use crate::resources::{
-    export::{ExportState, SessionSnapshot, TaskView, TurnView},
+    export::{ExportState, SessionSnapshot, TaskView},
     task_manager::{TaskManager, TaskStatus},
     turn_state::TurnState,
     world_snapshot::WorldSnapshot,
@@ -38,7 +38,9 @@ pub fn export_system(
 
     // 生成会话快照
     let snapshot = SessionSnapshot {
-        turn: TurnView::from_turn_state(&turn_state),
+        phase: turn_state.phase,
+        turn_index: turn_state.turn_index,
+        active_turn_id: turn_state.active_turn_id,
         world: world_snapshot.clone(),
         tasks,
     };
