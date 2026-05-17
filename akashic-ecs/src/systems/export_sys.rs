@@ -59,7 +59,7 @@ pub fn export_system(
         }
     }
     // 单独模块测试时打印任务 chunk
-    // print_task_chunks(&task_manager, &mut printer_state);
+    print_task_chunks(&task_manager, &mut printer_state);
 }
 
 // 打印任务的 task_chunk
@@ -90,7 +90,7 @@ fn print_task_chunks(task_manager: &TaskManager, printer_state: &mut ChunkPrinte
             if printer_state.active_task.is_some() {
                 println!();
             }
-            print!("[task {:?} {:?}] ", entity, result.kind);
+            println!("[task {:?} {:?}] ", entity, result.kind);
             printer_state.active_task = Some(entity);
             wrote_output = true;
         }

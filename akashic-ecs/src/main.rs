@@ -163,7 +163,6 @@ fn print_result(world: &mut World) {
         .resource::<ProtagonistDecisionState>()
         .committed_action()
         .to_string();
-    let world_snapshot = world.resource::<WorldSnapshot>().clone();
     let narrator_latest_msg = {
         let mut query = world.query::<&UpperNarrator>();
         query
@@ -179,16 +178,6 @@ fn print_result(world: &mut World) {
         narrator_latest_msg.chars().count(),
         selected_action.chars().count()
     );
-
-    println!("world snapshot:");
-    println!("{}", world_snapshot.to_ledger());
-    println!("");
-    println!("narrator latest msg:");
-    println!("{}", narrator_latest_msg);
-    println!("");
-    println!("protagonist action:");
-    println!("{selected_action}");
-    println!("");
 
     output_context_to_file(world, turn_index);
 }
