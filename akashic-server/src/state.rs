@@ -120,15 +120,6 @@ impl AppState {
             event_rx: session.engine.subscribe_events(),
         })
     }
-
-    pub async fn ensure_game_session_started(&self, session_id: &str) -> Result<(), AppError> {
-        let mut sessions = self.sessions.lock().await;
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
-
-        ensure_session_started(session).await
-    }
 }
 
 async fn apply_control(
@@ -139,7 +130,7 @@ async fn apply_control(
         GameSessionControlCommand::Continue => {
             let snapshot = session
                 .engine
-                .continue_turn()
+                .advance_turn()
                 .await
                 .map_err(AppError::bad_request)?;
             push_narration_history(session, &snapshot);
@@ -198,7 +189,7 @@ async fn ensure_session_started(session: &mut SessionRecord) -> Result<(), AppEr
 
     let snapshot = session
         .engine
-        .continue_turn()
+        .advance_turn()
         .await
         .map_err(AppError::bad_request)?;
     push_narration_history(session, &snapshot);
@@ -270,7 +261,7 @@ fn visible_turn_index(snapshot: &Session) -> u64 {
     if snapshot.phase == TurnPhase::TurnFinished {
         snapshot.turn_index.max(1)
     } else {
-        snapshot.turn_index + 1
+        snapshot.active_turn_id.max(snapshot.turn_index + 1)
     }
 }
 

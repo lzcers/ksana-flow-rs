@@ -115,6 +115,9 @@ async fn main() {
             println!("");
             print_result(&mut world);
             println!("------------------------------------------------------------------------");
+            world
+                .resource_mut::<Messages<TurnControl>>()
+                .write(TurnControl::AdvanceTurn);
         }
         if phase == TurnPhase::TurnFinished && last_reported_finished_turn != Some(turn_index) {
             println!("");
@@ -127,9 +130,7 @@ async fn main() {
             );
             world
                 .resource_mut::<Messages<TurnControl>>()
-                .write(TurnControl::ContinueTurn {
-                    turn_id: turn_index,
-                });
+                .write(TurnControl::AdvanceTurn);
             last_reported_finished_turn = Some(turn_index);
         }
         schedule.run(&mut world);

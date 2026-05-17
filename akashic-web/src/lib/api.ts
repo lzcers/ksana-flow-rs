@@ -124,6 +124,15 @@ export interface WorldSnapshot {
   pacing_note: string;
 }
 
+export interface PendingProtagonistChoice {
+  id: string;
+  option: {
+    title: string;
+    action: string;
+    motivation_and_risk: string;
+  };
+}
+
 /** 结局详情数据，用于结局页和归档详情页展示。 */
 export interface EndingData {
   biography: string;
@@ -150,6 +159,25 @@ export interface GameSessionSnapshot {
   currentNode: StoryNode;
   stateView: RuntimeStateView;
   endingStatus: string;
+}
+
+export interface GameSessionWorldStateData {
+  sessionId: string;
+  status: string;
+  phase: string;
+  turnIndex: number;
+  activeTurnId: number;
+  worldState: WorldSnapshot;
+  currentTask: StoryTaskView | null;
+  tasks: StoryTaskView[];
+  latestNarration: string;
+  currentProtagonistAction: string;
+  choices: PendingProtagonistChoice[];
+}
+
+export interface ControlGameSessionData {
+  action: string;
+  session: GameSessionWorldStateData;
 }
 
 /** 提交选项后的回合推进结果。 */
@@ -513,6 +541,17 @@ export function createGameSession(input: {
 /** 获取指定会话的当前快照流。 */
 export function getGameSession(sessionId: string) {
   return requestStoryStream(`/api/game-sessions/${sessionId}`);
+}
+
+export function controlGameSession(sessionId: string) {
+  return request<ControlGameSessionData>(`/api/game-sessions/${sessionId}/control`, {
+    method: 'POST',
+    body: JSON.stringify({
+      control: {
+        type: 'continue',
+      },
+    }),
+  });
 }
 
 export function subscribeGameSessionStream(

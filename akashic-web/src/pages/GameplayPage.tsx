@@ -91,7 +91,7 @@ const GameplayPage: React.FC = () => {
     latestSaveId,
     isLoading,
     error,
-    refreshSession,
+    startFirstTurn,
   } = useGameStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
@@ -116,15 +116,6 @@ const GameplayPage: React.FC = () => {
   const isAwaitingStreamedChoices = isStreamingNarration && streamedChoices.length === 0;
 
   useEffect(() => {
-    if (!sessionId || currentNode || bootstrappedSessionIdRef.current === sessionId) {
-      return;
-    }
-
-    bootstrappedSessionIdRef.current = sessionId;
-
-  }, [currentNode, sessionId]);
-
-  useEffect(() => {
     if (!feedback) return undefined;
 
     const timer = window.setTimeout(() => setFeedback(null), 2200);
@@ -142,6 +133,15 @@ const GameplayPage: React.FC = () => {
     const unsubscribe = subscribeGameSessionStream(sessionId, {
       onEvent: (event) => {
         switch (event.event) {
+          case 'stream.handshake':
+            console.log('[GameplayPage][stream handshake]', event.data);
+            if (!currentNode && bootstrappedSessionIdRef.current !== sessionId) {
+              bootstrappedSessionIdRef.current = sessionId;
+              void startFirstTurn().catch((startError) => {
+                console.error('[GameplayPage][control start error]', startError);
+              });
+            }
+            break;
           case 'task.updated': {
             const { task, update } = normalizeTaskUpdatedData(
               event.data as StoryStreamEventMap['task.updated'] | StoryTaskView,
@@ -217,7 +217,7 @@ const GameplayPage: React.FC = () => {
     });
 
     return unsubscribe;
-  }, [sessionId]);
+  }, [currentNode, sessionId, startFirstTurn]);
 
   if (!visibleNode) {
     return (
@@ -225,18 +225,11 @@ const GameplayPage: React.FC = () => {
         <StoryFrame className="relative max-w-4xl overflow-hidden px-4 py-8 sm:px-5 sm:py-10 md:px-6 md:py-12">
           <div className="space-y-3 text-center">
             <p className="text-lg font-semibold text-[#f6eddc]">
-              {isLoading ? '命运正在显影...' : '已进入故事，正在同步当前章节。'}
+              命运正在显影...
             </p>
             <p className="text-sm leading-6 text-[#9ca7be]">
               {error ?? '稍候片刻，开场叙事与可选行动会在这里展开。'}
             </p>
-            {!isLoading && sessionId ? (
-              <div className="pt-2">
-                <PrimaryButton type="button" onClick={() => void refreshSession()}>
-                  重新同步故事
-                </PrimaryButton>
-              </div>
-            ) : null}
           </div>
         </StoryFrame>
       </ScreenShell>

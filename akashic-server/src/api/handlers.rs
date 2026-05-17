@@ -14,7 +14,6 @@ use axum::{
 use futures::{StreamExt, stream};
 use serde::Serialize;
 use tokio::sync::broadcast;
-use tracing::warn;
 
 use crate::{error::AppError, state::AppState};
 
@@ -123,21 +122,6 @@ pub async fn stream_game_session(
 ) -> StorySseResult {
     let live_stream = state.open_game_session_stream(&path.session_id).await?;
     let session_id = live_stream.session_id.clone();
-    let startup_state = state.clone();
-    let startup_session_id = session_id.clone();
-
-    tokio::spawn(async move {
-        if let Err(error) = startup_state
-            .ensure_game_session_started(&startup_session_id)
-            .await
-        {
-            warn!(
-                session_id = %startup_session_id,
-                error = ?error,
-                "failed to start game session for live stream"
-            );
-        }
-    });
 
     let handshake_stream = stream::iter([Ok::<_, Infallible>(sse_json_event(
         "stream.handshake",

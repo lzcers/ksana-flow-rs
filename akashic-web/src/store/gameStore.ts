@@ -4,6 +4,7 @@ import type {
   Character,
   EndingData,
   GameSessionSnapshot,
+  GameSessionWorldStateData,
   RuntimeStateView,
   SaveListItem,
   StoryStreamEvent,
@@ -12,6 +13,7 @@ import type {
   World,
 } from '../lib/api';
 import {
+  controlGameSession,
   createGameSession,
   createIntuitionPreview,
   createSave as createSaveRequest,
@@ -49,6 +51,7 @@ interface GameStoreState {
   updateWorld: (updates: Partial<World>) => void;
   clearError: () => void;
   startGame: () => Promise<void>;
+  startFirstTurn: () => Promise<void>;
   refreshSession: () => Promise<void>;
   submitChoice: (choiceId: string, useObsession?: boolean) => Promise<void>;
   previewChoice: (choiceId: string) => Promise<string>;
@@ -134,6 +137,50 @@ function applySnapshot(snapshot: GameSessionSnapshot) {
   };
 }
 
+function storyNodeFromWorldState(session: GameSessionWorldStateData): StoryNode {
+  return {
+    id: `turn-${session.activeTurnId || session.turnIndex}`,
+    text: session.latestNarration || session.worldState.description,
+    image:
+      'https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20mystical%20dark%20fantasy%20city%20street%20emerging%20from%20mist%2C%20cinematic%20story%20game%20background&image_size=landscape_16_9',
+    choices: session.choices.map((choice) => ({
+      id: choice.id,
+      text: choice.option.title || choice.option.action,
+      disabled: false,
+      costHints: {
+        intuition: 0,
+        obsession: 0,
+      },
+    })),
+  };
+}
+
+function stateViewFromWorldState(session: GameSessionWorldStateData): RuntimeStateView {
+  return {
+    gameState: session.status,
+    phase: session.phase,
+    turnIndex: session.turnIndex,
+    activeTurnId: session.activeTurnId,
+    currentLocation: session.worldState.location_name,
+    currentScene: session.worldState.scene_title,
+    protagonistState: session.worldState.protagonist_condition,
+    npcsState: session.worldState.npcs.map((npc) => `${npc.name}: ${npc.mood}`).join('\n'),
+    latestHistory: session.latestNarration,
+    latestBroadcastSummary: session.worldState.current_event,
+    latestProtagonistAction: session.currentProtagonistAction,
+  };
+}
+
+function applyWorldState(session: GameSessionWorldStateData) {
+  return {
+    sessionId: session.sessionId,
+    currentNode: storyNodeFromWorldState(session),
+    stateView: stateViewFromWorldState(session),
+    turnIndex: session.turnIndex,
+    worldNews: session.worldState.new_info[0] ?? null,
+  };
+}
+
 function findStoryEvent<Name extends StoryStreamEventName>(
   events: StoryStreamEvent[],
   eventName: Name,
@@ -189,6 +236,25 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : '创建会话失败。' });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+  startFirstTurn: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      const result = await controlGameSession(sessionId);
+      set({
+        ...applyWorldState(result.session),
+        endingData: null,
+        gameState: 'playing',
+      });
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : '开始第一轮失败。' });
       throw error;
     } finally {
       set({ isLoading: false });

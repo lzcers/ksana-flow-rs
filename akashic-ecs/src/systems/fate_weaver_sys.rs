@@ -25,8 +25,8 @@ pub fn fate_weaver_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    // 仅在 Idle phase 才执行。
-    if turn_state.phase != TurnPhase::Idle {
+    // 仅在 Ready phase 才允许启动新一轮 Fate 任务。
+    if turn_state.phase != TurnPhase::Ready {
         return;
     }
     let Ok((entity, mut fate_weaver)) = query.single_mut() else {
@@ -35,7 +35,7 @@ pub fn fate_weaver_system(
 
     // let protagonist_action
     // 创建命运推演任务
-    let round = turn_state.turn_index;
+    let round = turn_state.active_turn_id.max(turn_state.turn_index + 1);
     let protagonist_action = decision_state.committed_action();
     fate_weaver.append_user_message(
         &json!({"round": round, "protagonist_action": protagonist_action}).to_string(),

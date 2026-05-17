@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TurnPhase {
-    Idle,                 // 初始状态
+    Idle,                 // 静止等待外部控制
+    Ready,                // 已收到推进命令，允许启动本轮
     FateWeaving,          // 命运编织状态
     NarratorWriting,      // 故事编写状态
     NarratorStory,        // 故事编排状态
@@ -39,26 +40,30 @@ impl Default for TurnState {
 }
 
 impl TurnState {
-    pub fn start_turn(&mut self, turn_id: u64) {
-        self.active_turn_id = turn_id;
-        self.phase = TurnPhase::FateWeaving;
-    }
-
     pub fn reset(&mut self, next_turn_id: Option<u64>) {
         self.phase = TurnPhase::Idle;
         self.active_turn_id = next_turn_id.unwrap_or_else(|| self.turn_index + 1);
     }
 
     pub fn finish_turn(&mut self) {
-        self.turn_index += 1;
+        self.turn_index = self.active_turn_id.max(self.turn_index + 1);
         self.active_turn_id = self.turn_index;
         self.phase = TurnPhase::TurnFinished;
     }
 
-    pub fn continue_turn(&mut self, turn_id: u64) {
-        if self.phase != TurnPhase::TurnFinished || self.active_turn_id != turn_id {
-            return;
+    pub fn advance(&mut self) {
+        match self.phase {
+            TurnPhase::Idle => {
+                if self.active_turn_id <= self.turn_index {
+                    self.active_turn_id = self.turn_index + 1;
+                }
+                self.phase = TurnPhase::Ready;
+            }
+            TurnPhase::TurnFinished => {
+                self.active_turn_id = self.turn_index + 1;
+                self.phase = TurnPhase::Ready;
+            }
+            _ => {}
         }
-        self.phase = TurnPhase::Idle;
     }
 }

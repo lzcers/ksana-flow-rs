@@ -92,25 +92,27 @@ impl AkashicSessionEngine {
         self.export_handle.subscribe_events()
     }
 
-    // 继续轮次
-    pub async fn continue_turn(&mut self) -> Result<Session, String> {
+    // 推进到下一次稳定停点：首轮启动或完成上一轮后进入下一轮。
+    pub async fn advance_turn(&mut self) -> Result<Session, String> {
         match self.world.resource::<TurnState>().phase {
-            TurnPhase::Idle => {
-                self.send_turn_control_command(TurnControl::StartTurn {
-                    turn_id: self.world.resource::<TurnState>().turn_index + 1,
-                });
-            }
-            TurnPhase::TurnFinished => {
-                let finished_turn_id = self.world.resource::<TurnState>().active_turn_id;
-                self.send_turn_control_command(TurnControl::ContinueTurn {
-                    turn_id: finished_turn_id,
-                });
+            TurnPhase::Idle | TurnPhase::TurnFinished => {
+                self.send_turn_control_command(TurnControl::AdvanceTurn);
             }
             _ => {}
         }
 
-        self.drive_until(|snapshot| snapshot.phase == TurnPhase::AwaitingPlayerChoice)
-            .await
+        self.drive_until(|snapshot| {
+            matches!(
+                snapshot.phase,
+                TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnFinished
+            ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
+        })
+        .await
+    }
+
+    // 兼容旧调用方，语义等同于 advance_turn。
+    pub async fn continue_turn(&mut self) -> Result<Session, String> {
+        self.advance_turn().await
     }
 
     // 提交选择

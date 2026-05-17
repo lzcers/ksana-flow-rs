@@ -36,11 +36,8 @@ fn handle_control(
     decision_state: &mut ProtagonistDecisionState,
 ) {
     match control {
-        TurnControl::StartTurn { turn_id } => {
-            turn_state.start_turn(*turn_id);
-        }
-        TurnControl::ContinueTurn { turn_id } => {
-            turn_state.continue_turn(*turn_id);
+        TurnControl::AdvanceTurn => {
+            turn_state.advance();
         }
         TurnControl::ResetTurn { next_turn_id } => {
             decision_state.clear_choices();
@@ -80,7 +77,7 @@ fn handle_event(
         TurnEvent::TaskFailed { stage, message, .. } => {
             if is_retryable_parse_failure(message) {
                 match stage {
-                    // 回滚到 FateWeaving phase 时，需要回滚用户输入
+                    // Fate 重试前需要回滚上一轮追加的输入
                     TurnPhase::FateWeaving => {
                         let Ok((_, mut fate_weaver)) = query.single_mut() else {
                             return;
@@ -103,7 +100,7 @@ fn is_retryable_parse_failure(message: &str) -> bool {
 
 fn rollback_phase(stage: TurnPhase) -> TurnPhase {
     match stage {
-        TurnPhase::FateWeaving => TurnPhase::Idle,
+        TurnPhase::FateWeaving => TurnPhase::Ready,
         TurnPhase::AwaitingProtagonist => TurnPhase::ProtagonistAction,
         TurnPhase::AwaitingPlayerChoice => TurnPhase::AwaitingPlayerChoice,
         other => other,
