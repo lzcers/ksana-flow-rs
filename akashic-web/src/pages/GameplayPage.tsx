@@ -39,7 +39,8 @@ const GameplayPage: React.FC = () => {
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const currentScene = stateView?.currentScene ?? '演示片段';
-  const isResolved = currentNode?.choices.length === 0;
+  const hasChoices = currentNode?.choices.length > 0;
+  const showChoicePendingState = !hasChoices && (isTyping || isLoading);
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -115,100 +116,117 @@ const GameplayPage: React.FC = () => {
 
   return (
     <ScreenShell className="items-stretch">
-      <StoryFrame className="relative max-w-5xl overflow-hidden px-2.5 py-2.5 sm:px-3 sm:py-3 md:px-4 md:py-4">
+      <StoryFrame className="relative flex max-w-5xl flex-col overflow-hidden px-2.5 py-2.5 sm:px-3 sm:py-3 md:px-4 md:py-4">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#08111d]/35 to-[#08111d]" />
-        <div className="relative z-10 space-y-3.5">
-          <div className="flex flex-wrap gap-2">
-            <StatusPill icon={Flame} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">执念 {obsessionPoints}/5</StatusPill>
-            <StatusPill icon={Eye} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">直觉 {intuitionPoints}</StatusPill>
-            <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{daysLeft}日</StatusPill>
-            <StatusPill icon={Sparkles} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{currentScene}</StatusPill>
-          </div>
-          {worldNews ? (
-            <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
-              <Sparkles className="h-3.5 w-3.5 text-amber-200" />
-              <span>{worldNews}</span>
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3">
+          <div className="shrink-0 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              <StatusPill icon={Flame} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">执念 {obsessionPoints}/5</StatusPill>
+              <StatusPill icon={Eye} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">直觉 {intuitionPoints}</StatusPill>
+              <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{daysLeft}日</StatusPill>
+              <StatusPill icon={Sparkles} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{currentScene}</StatusPill>
             </div>
-          ) : null}
-          <section className="akashic-panel px-3 py-3 sm:px-4 sm:py-4 md:px-5 md:py-5">
-            <div className="rounded-[1rem] bg-[#040912]/90 pl-3 sm:rounded-[1.2rem] sm:pl-4 md:rounded-[1.3rem] md:pl-5">
-              <div className="py-3 pr-3 sm:py-4 sm:pr-4 md:py-5 md:pr-5">
-                <div className="min-h-[7rem] whitespace-pre-wrap text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:min-h-[8.5rem] sm:text-[1.2rem] md:min-h-[10rem] md:text-[1.7rem]">
-                  <Typewriter text={currentNode.text} speed={28} onComplete={() => setIsTyping(false)} />
-                </div>
+            {worldNews ? (
+              <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
+                <Sparkles className="h-3.5 w-3.5 text-amber-200" />
+                <span>{worldNews}</span>
               </div>
-            </div>
-          </section>
+            ) : null}
+          </div>
 
-          <div className="space-y-1.5">
-            {currentNode.choices.length ? currentNode.choices.map((choice) => (
-              <div key={choice.id} className="space-y-1">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => void handleChoiceClick(choice.id)}
-                    disabled={isTyping || isLoading || choice.disabled}
-                    className={`akashic-choice h-[3rem] flex-1 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
-                      }`}
-                  >
-                    <div className="flex h-full items-center text-left">
-                      <div className="w-full truncate text-sm font-semibold leading-5 sm:text-[0.95rem]">
-                        {choice.text}
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => void handlePreview(choice.id, e)}
-                    disabled={isTyping || isLoading}
-                    className="akashic-icon-btn h-[3rem] w-[3rem] shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
-                    title="消耗 1 点直觉，窥探命运碎片"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {previews[choice.id] ? (
-                  <div className="rounded-[0.85rem] border border-cyan-400/20 bg-cyan-950/10 px-3 py-1.5 text-[0.72rem] leading-5 text-cyan-100/90 sm:rounded-[1rem] sm:px-4 sm:text-xs">
-                    {previews[choice.id]}
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <section className="akashic-panel flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4 sm:py-4 md:px-5 md:py-5">
+              <div className="flex min-h-0 flex-1 flex-col rounded-[1rem] bg-[#040912]/90 pl-3 sm:rounded-[1.2rem] sm:pl-4 md:rounded-[1.3rem] md:pl-5">
+                <div className="akashic-scroll min-h-0 flex-1 overflow-y-auto py-3 pr-2 sm:py-4 sm:pr-3 md:py-5 md:pr-4">
+                  <div className="whitespace-pre-wrap text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1.2rem] md:text-[1.55rem]">
+                    <Typewriter text={currentNode.text} speed={28} onComplete={() => setIsTyping(false)} />
                   </div>
-                ) : null}
+                </div>
               </div>
-            )) : (
-              <div className="akashic-panel px-3 py-3 text-sm leading-6 text-[#c3cde0]/85 sm:px-4">
-                当前旅程已经收束，没有更多分支可选。你可以返回大厅，开启下一段新人生。
+            </section>
+
+            <div className="shrink-0 space-y-1.5">
+              <div className="rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-1.5 sm:min-h-[10.5rem]">
+                <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 sm:max-h-[32dvh]">
+                  {hasChoices ? currentNode.choices.map((choice) => (
+                    <div key={choice.id} className="space-y-1.5">
+                      <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
+                        <button
+                          onClick={() => void handleChoiceClick(choice.id)}
+                          disabled={isTyping || isLoading || choice.disabled}
+                          className={`akashic-choice h-10 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
+                            }`}
+                        >
+                          <div className="flex min-h-[1.75rem] items-center text-left">
+                            <div className="w-full text-sm font-semibold leading-5 sm:text-[0.95rem]">
+                              {choice.text}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => void handlePreview(choice.id, e)}
+                          disabled={isTyping || isLoading}
+                          className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
+                          title="消耗 1 点直觉，窥探命运碎片"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      {previews[choice.id] ? (
+                        <div className="rounded-[0.8rem] border border-cyan-400/20 bg-cyan-950/10 px-2 py-2 text-[0.7rem] leading-4.5 text-cyan-100/90 sm:rounded-[0.95rem] sm:px-2 sm:py-2 sm:text-xs">
+                          {previews[choice.id]}
+                        </div>
+                      ) : null}
+                    </div>
+                  )) : showChoicePendingState ? (
+                    <div className="flex min-h-[7.5rem] items-center justify-center rounded-[1rem] border border-dashed border-[rgba(116,103,80,0.45)] bg-[rgba(12,18,31,0.72)] px-4 text-center text-xs leading-6 text-[#9ca7be] sm:text-sm">
+                      命运分支正在显现，轻触正文可跳过打字并更快看到可选行动。
+                    </div>
+                  ) : (
+                    <div className="akashic-panel px-3 py-3 text-sm leading-6 text-[#c3cde0]/85 sm:px-4">
+                      当前旅程已经收束，没有更多分支可选。你可以返回大厅，开启下一段新人生。
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
 
-          <div className="flex flex-wrap gap-1.5 pt-0.5">
-            <SecondaryButton
-              onClick={() => setActiveObsession((prev) => !prev)}
-              className={`min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs ${activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}`}
-              disabled={isTyping || isLoading || isResolved}
-            >
-              <Flame className={`h-3.5 w-3.5 ${activeObsession ? 'animate-pulse' : ''}`} />
-              执念
-            </SecondaryButton>
-            <SecondaryButton type="button" onClick={() => void handleSave()} disabled={isLoading || !currentNode || isResolved} className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs">
-              <Save className="h-3.5 w-3.5" />
-              存档
-            </SecondaryButton>
-            <PrimaryButton
-              type="button"
-              className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs"
-              onClick={() => setFeedback(latestSaveId ? `最近存档：${latestSaveId}` : '本地演示模式下可先存档，稍后可继续扩展分享入口。')}
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              分享
-            </PrimaryButton>
-            <SecondaryButton type="button" onClick={() => setGameState('lobby')} className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs">
-              返回大厅
-            </SecondaryButton>
-          </div>
+              <div className="shrink-0 rounded-full border border-[rgba(116,103,80,0.4)] bg-[rgba(8,14,26,0.82)] px-2 py-2 backdrop-blur-md">
+                <div className="flex flex-wrap gap-1.5">
+                  <SecondaryButton
+                    onClick={() => setActiveObsession((prev) => !prev)}
+                    className={`min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs ${activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}`}
+                    disabled={isTyping || isLoading || !hasChoices}
+                  >
+                    <Flame className={`h-3.5 w-3.5 ${activeObsession ? 'animate-pulse' : ''}`} />
+                    执念
+                  </SecondaryButton>
+                  <SecondaryButton type="button" onClick={() => void handleSave()} disabled={isLoading || !currentNode} className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs">
+                    <Save className="h-3.5 w-3.5" />
+                    存档
+                  </SecondaryButton>
+                  <PrimaryButton
+                    type="button"
+                    className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs"
+                    onClick={() => setFeedback(latestSaveId ? `最近存档：${latestSaveId}` : '本地演示模式下可先存档，稍后可继续扩展分享入口。')}
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    分享
+                  </PrimaryButton>
+                  <SecondaryButton type="button" onClick={() => setGameState('lobby')} className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs">
+                    返回大厅
+                  </SecondaryButton>
+                </div>
+              </div>
+            </div>
 
-          {feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{feedback}</p> : null}
-          {error && !feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{error}</p> : null}
+            <div className="shrink-0 min-h-[1.25rem]">
+              {feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{feedback}</p> : null}
+              {error && !feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{error}</p> : null}
+            </div>
+          </div>
         </div>
       </StoryFrame>
     </ScreenShell>

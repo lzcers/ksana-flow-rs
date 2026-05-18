@@ -31,6 +31,7 @@
   * {
     @apply border-border;
   }
+
   html,
   body,
   #root {
@@ -39,6 +40,7 @@
     min-height: 100dvh;
     margin: 0;
   }
+
   body {
     @apply bg-background text-foreground overflow-hidden font-sans;
     background-color: hsl(var(--background));
@@ -54,11 +56,13 @@
   .glass {
     @apply bg-black/40 backdrop-blur-md border border-white/10;
   }
+
   .glass-panel {
     @apply bg-zinc-900/60 backdrop-blur-lg border border-white/5;
   }
+
   .text-shadow {
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
   }
 
   .akashic-surface {
@@ -110,7 +114,7 @@
   }
 
   .akashic-choice {
-    @apply w-full rounded-[1.2rem] border px-4 py-3 text-left transition-all duration-200 sm:rounded-[1.4rem] sm:px-5 sm:py-4 md:rounded-[1.6rem] md:px-6;
+    @apply h-10 w-full rounded-[1.2rem] border px-3 py-1 text-left transition-all duration-200 sm:rounded-[1.4rem] sm:px-4 sm:py-1.5 md:rounded-[1.6rem] md:px-5;
     border-color: rgba(116, 103, 80, 0.6);
     background:
       linear-gradient(180deg, rgba(22, 31, 49, 0.92) 0%, rgba(21, 30, 49, 0.82) 100%);
@@ -124,7 +128,7 @@
   }
 
   .akashic-icon-btn {
-    @apply flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full border transition-all duration-200 sm:h-[4.25rem] sm:w-[4.25rem] md:h-[4.75rem] md:w-[4.75rem];
+    @apply flex h-10 w-10 items-center justify-center rounded-full border transition-all duration-200;
     border-color: rgba(116, 103, 80, 0.6);
     background-color: rgba(42, 46, 57, 0.92);
     color: #f0e7d6;
