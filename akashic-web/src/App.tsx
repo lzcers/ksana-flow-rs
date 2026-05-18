@@ -3,8 +3,6 @@ import { useGameStore } from './store/gameStore';
 import LobbyPage from './pages/LobbyPage';
 import CreationPage from './pages/CreationPage';
 import GameplayPage from './pages/GameplayPage';
-import EndingPage from './pages/EndingPage';
-import CorridorPage from './pages/CorridorPage';
 
 function App() {
   const gameState = useGameStore((state) => state.gameState);
@@ -22,8 +20,6 @@ function App() {
         {gameState === 'lobby' && <LobbyPage />}
         {gameState === 'creation' && <CreationPage />}
         {gameState === 'playing' && <GameplayPage />}
-        {gameState === 'ending' && <EndingPage />}
-        {gameState === 'corridor' && <CorridorPage />}
       </main>
     </div>
   );

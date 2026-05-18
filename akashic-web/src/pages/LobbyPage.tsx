@@ -1,10 +1,9 @@
 import React from 'react';
-import { BookOpen, Play, Sparkles } from 'lucide-react';
+import { Play, Sparkles } from 'lucide-react';
 import {
   PageTitle,
   PrimaryButton,
   ScreenShell,
-  SecondaryButton,
   SectionCard,
   StoryFrame,
   StatusPill,
@@ -41,32 +40,17 @@ const LobbyPage: React.FC = () => {
             />
             <SectionCard className="max-w-2xl">
               <p className="text-base leading-8 text-[#d3d9e5]">
-                从角色塑形、命运开场，到回响结局，整个流程采用统一的深色仪式感面板。
-                你将在一个被规则与叙事共同编织的世界里，感受每次选择带来的分叉与代价。
+                你想开启怎样的人生？
               </p>
             </SectionCard>
-            <div className="flex flex-col gap-4 sm:max-w-md sm:flex-row">
+            <div className="flex">
               <PrimaryButton onClick={handleStart} className="flex-1">
                 <Play className="h-4 w-4" />
                 开启新人生
               </PrimaryButton>
-              <SecondaryButton className="flex-1" onClick={() => setGameState('corridor')}>
-                <BookOpen className="h-4 w-4" />
-                我的回廊
-              </SecondaryButton>
             </div>
           </div>
 
-          <SectionCard className="flex min-h-[22rem] flex-col justify-between">
-            <div className="space-y-3">
-              <p className="text-xs uppercase tracking-[0.35em] text-[#8f9bb4]">Current Ritual</p>
-              <h2 className="text-3xl font-semibold text-[#f6eddc]">书写一个新的原点</h2>
-              <p className="text-sm leading-7 text-[#aeb8cb]">
-                角色的姓名、外貌、烙印与时代矛盾会共同塑造初始叙事。进入故事后，
-                你可以消耗直觉窥探未来，也可以倾注执念强行放大抉择的结果。
-              </p>
-            </div>
-          </SectionCard>
         </div>
       </StoryFrame>
     </ScreenShell>
