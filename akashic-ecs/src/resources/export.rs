@@ -3,6 +3,7 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 
 use crate::resources::{
+    protagonist_action::PendingProtagonistChoice,
     task_manager::{TaskKind, TaskResult, TaskStatus},
     turn_state::TurnPhase,
     world_snapshot::WorldSnapshot,
@@ -17,7 +18,11 @@ pub struct SessionSnapshot {
     pub turn_index: u64,
     pub active_turn_id: u64,
     pub world: WorldSnapshot,
+    pub current_task: Option<TaskView>,
     pub tasks: Vec<TaskView>,
+    pub latest_narration: String,
+    pub current_protagonist_action: String,
+    pub choices: Vec<PendingProtagonistChoice>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

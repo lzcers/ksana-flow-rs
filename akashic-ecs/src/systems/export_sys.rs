@@ -8,13 +8,16 @@ use bevy_ecs::{
     system::{Local, Res, ResMut},
 };
 
+use crate::components::upper_narrator::UpperNarrator;
 use crate::resources::{
     export::{ExportState, SessionSnapshot, TaskView},
+    protagonist_action::ProtagonistDecisionState,
     task_manager::{TaskManager, TaskStatus},
     turn_state::TurnState,
     world_snapshot::WorldSnapshot,
 };
 
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct ChunkPrinterState {
     printed_chunk_offsets: HashMap<Entity, usize>,
@@ -24,9 +27,11 @@ pub struct ChunkPrinterState {
 pub fn export_system(
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
+    decision_state: Res<ProtagonistDecisionState>,
     export_state: Res<ExportState>,
     mut task_manager: ResMut<TaskManager>,
-    mut printer_state: Local<ChunkPrinterState>,
+    narrator_query: bevy_ecs::system::Query<&UpperNarrator>,
+    _printer_state: Local<ChunkPrinterState>,
 ) {
     // 获取任务快照，并转为 TaskView
     let task_results = task_manager.task_results_snapshot();
@@ -35,6 +40,14 @@ pub fn export_system(
         .map(|(entity, result)| TaskView::from_task_result(format!("{entity:?}"), result.clone()))
         .collect::<Vec<_>>();
     tasks.sort_by(|left, right| left.entity.cmp(&right.entity));
+    let current_task = select_current_task(&tasks);
+    let latest_narration = narrator_query
+        .single()
+        .ok()
+        .and_then(|narrator| narrator.context().print_latest_msg())
+        .unwrap_or_default();
+    let current_protagonist_action = decision_state.committed_action().to_string();
+    let choices = decision_state.choices().to_vec();
 
     // 生成会话快照
     let snapshot = SessionSnapshot {
@@ -42,7 +55,11 @@ pub fn export_system(
         turn_index: turn_state.turn_index,
         active_turn_id: turn_state.active_turn_id,
         world: world_snapshot.clone(),
+        current_task,
         tasks,
+        latest_narration,
+        current_protagonist_action,
+        choices,
     };
 
     // 导出快照
@@ -59,10 +76,24 @@ pub fn export_system(
         }
     }
     // 单独模块测试时打印任务 chunk
-    // print_task_chunks(&task_manager, &mut printer_state);
+    // print_task_chunks(&task_manager, &mut _printer_state);
+}
+
+#[allow(dead_code)]
+fn select_current_task(tasks: &[TaskView]) -> Option<TaskView> {
+    tasks
+        .iter()
+        .find(|task| matches!(task.status, TaskStatus::Running))
+        .or_else(|| {
+            tasks
+                .iter()
+                .find(|task| matches!(task.status, TaskStatus::Pending))
+        })
+        .cloned()
 }
 
 // 打印任务的 task_chunk
+#[allow(dead_code)]
 fn print_task_chunks(task_manager: &TaskManager, printer_state: &mut ChunkPrinterState) {
     let task_results = task_manager.task_results_snapshot();
     let active_entities: HashSet<Entity> = task_results.iter().map(|(entity, _)| *entity).collect();

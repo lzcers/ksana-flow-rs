@@ -48,6 +48,7 @@ impl AppState {
         let protagonist_profile = build_protagonist_profile(&request.character);
         let world_profile = build_world_profile(&request.world);
         let engine = AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
+        engine.advance_turn().map_err(AppError::bad_request)?;
         let session = SessionRecord {
             session_id: session_id.clone(),
             history: Vec::new(),
@@ -74,9 +75,8 @@ impl AppState {
         let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
-
-        ensure_session_started(session).await?;
         let snapshot = session.engine.get_game_session();
+        sync_history_with_snapshot(session, &snapshot);
 
         Ok(world_state_from_session(session, &snapshot))
     }
@@ -92,8 +92,8 @@ impl AppState {
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
         match (request.control, request.choice) {
-            (Some(control), None) => apply_control(session, control).await,
-            (None, Some(choice)) => apply_choice(session, choice).await,
+            (Some(control), None) => apply_control(session, control),
+            (None, Some(choice)) => apply_choice(session, choice),
             (None, None) => Err(AppError::bad_request(
                 "请求体至少需要提供 `control` 或 `choice` 之一。",
             )),
@@ -113,27 +113,26 @@ impl AppState {
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
         let snapshot = session.engine.get_game_session();
+        sync_history_with_snapshot(session, &snapshot);
+        let tasks = snapshot.tasks.clone();
 
         Ok(LiveSessionStream {
             session_id: session_id.to_string(),
-            tasks: snapshot.tasks.clone(),
+            tasks,
             event_rx: session.engine.subscribe_events(),
         })
     }
 }
 
-async fn apply_control(
+fn apply_control(
     session: &mut SessionRecord,
     control: GameSessionControlCommand,
 ) -> Result<ControlGameSessionData, AppError> {
     match control {
         GameSessionControlCommand::Continue => {
-            let snapshot = session
-                .engine
-                .advance_turn()
-                .await
-                .map_err(AppError::bad_request)?;
-            push_narration_history(session, &snapshot);
+            session.engine.advance_turn().map_err(AppError::bad_request)?;
+            let snapshot = session.engine.get_game_session();
+            sync_history_with_snapshot(session, &snapshot);
             Ok(ControlGameSessionData {
                 action: "continue".to_string(),
                 session: world_state_from_session(session, &snapshot),
@@ -142,12 +141,12 @@ async fn apply_control(
     }
 }
 
-async fn apply_choice(
+fn apply_choice(
     session: &mut SessionRecord,
     choice: SessionChoiceInput,
 ) -> Result<ControlGameSessionData, AppError> {
-    ensure_session_started(session).await?;
     let current = session.engine.get_game_session();
+    sync_history_with_snapshot(session, &current);
     let selected_choice = current
         .choices
         .iter()
@@ -168,33 +167,17 @@ async fn apply_choice(
         created_at: now_string(),
     });
 
-    let snapshot = session
+    session
         .engine
         .submit_choice(&choice.choice_id)
-        .await
         .map_err(AppError::bad_request)?;
-    push_narration_history(session, &snapshot);
+    let snapshot = session.engine.get_game_session();
+    sync_history_with_snapshot(session, &snapshot);
 
     Ok(ControlGameSessionData {
         action: "submit_choice".to_string(),
         session: world_state_from_session(session, &snapshot),
     })
-}
-
-async fn ensure_session_started(session: &mut SessionRecord) -> Result<(), AppError> {
-    let current = session.engine.get_game_session();
-    if current.phase != TurnPhase::Idle {
-        return Ok(());
-    }
-
-    let snapshot = session
-        .engine
-        .advance_turn()
-        .await
-        .map_err(AppError::bad_request)?;
-    push_narration_history(session, &snapshot);
-
-    Ok(())
 }
 
 fn world_state_from_session(
@@ -214,6 +197,10 @@ fn world_state_from_session(
         current_protagonist_action: current_protagonist_action(session, snapshot),
         choices: snapshot.choices.clone(),
     }
+}
+
+fn sync_history_with_snapshot(session: &mut SessionRecord, snapshot: &Session) {
+    push_narration_history(session, snapshot);
 }
 
 fn push_narration_history(session: &mut SessionRecord, snapshot: &Session) {

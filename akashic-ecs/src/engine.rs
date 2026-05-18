@@ -4,7 +4,10 @@ use bevy_ecs::{
     schedule::Schedule,
 };
 use serde::Serialize;
-use tokio::sync::broadcast;
+use tokio::{
+    sync::{broadcast, mpsc},
+    time::{Duration, sleep},
+};
 
 use crate::{
     components::{
@@ -12,10 +15,10 @@ use crate::{
     },
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
-        export::{ExportHandle, ExportState, TaskEvent, TaskView},
+        export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
         player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::{PendingProtagonistChoice, ProtagonistDecisionState},
-        task_manager::{TaskManager, TaskStatus},
+        task_manager::TaskManager,
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
     },
@@ -32,6 +35,8 @@ use crate::{
     utils::build_chat_model,
 };
 
+const DEFAULT_RUNTIME_TICK_INTERVAL: Duration = Duration::from_millis(20);
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
@@ -47,8 +52,7 @@ pub struct Session {
 }
 
 pub struct AkashicSessionEngine {
-    world: World,
-    schedule: Schedule,
+    command_tx: mpsc::UnboundedSender<EngineCommand>,
     export_handle: ExportHandle,
 }
 
@@ -60,31 +64,18 @@ impl AkashicSessionEngine {
 
     pub fn new_with_profiles(world_profile: &str, protagonist_profile: &str) -> Self {
         let (world, export_handle) = build_world(world_profile, protagonist_profile);
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        SessionRuntime::spawn(world, build_schedule(), command_rx);
         Self {
-            world,
-            schedule: build_schedule(),
+            command_tx,
             export_handle,
         }
     }
 
     // 获取当前会话状态
-    pub fn get_game_session(&mut self) -> Session {
+    pub fn get_game_session(&self) -> Session {
         let export_snapshot = self.export_handle.current_snapshot();
-        let decision_state = self.world.resource::<ProtagonistDecisionState>().clone();
-        let latest_narration = self.latest_narration();
-        let current_task = select_current_task(&export_snapshot.tasks);
-
-        Session {
-            phase: export_snapshot.phase,
-            turn_index: export_snapshot.turn_index,
-            active_turn_id: export_snapshot.active_turn_id,
-            tasks: export_snapshot.tasks,
-            world_snapshot: export_snapshot.world,
-            current_protagonist_action: decision_state.committed_action().to_string(),
-            choices: decision_state.choices().to_vec(),
-            latest_narration,
-            current_task,
-        }
+        Session::from_snapshot(export_snapshot)
     }
 
     // 订阅当前会话事件
@@ -92,50 +83,101 @@ impl AkashicSessionEngine {
         self.export_handle.subscribe_events()
     }
 
-    // 推进到下一次稳定停点：首轮启动或完成上一轮后进入下一轮。
-    pub async fn advance_turn(&mut self) -> Result<Session, String> {
-        match self.world.resource::<TurnState>().phase {
-            TurnPhase::Idle | TurnPhase::TurnFinished => {
-                self.send_turn_control_command(TurnControl::AdvanceTurn);
-            }
-            _ => {}
-        }
-
-        self.drive_until(|snapshot| {
-            matches!(
-                snapshot.phase,
-                TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnFinished
-            ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
-        })
-        .await
+    // 同步提交继续命令，实际推进由后台 runtime 处理。
+    pub fn advance_turn(&self) -> Result<(), String> {
+        self.command_tx
+            .send(EngineCommand::AdvanceTurn)
+            .map_err(|_| "会话运行时已停止，无法继续推进".to_string())
     }
 
-    // 提交选择
-    pub async fn submit_choice(&mut self, choice_id: &str) -> Result<Session, String> {
-        let turn_id = self.world.resource::<TurnState>().active_turn_id;
-        self.world
-            .resource_mut::<PlayerInbox>()
-            .push(PlayerCommand::SubmitChoice {
-                turn_id,
+    // 同步提交玩家选择，实际推进由后台 runtime 处理。
+    pub fn submit_choice(&self, choice_id: &str) -> Result<(), String> {
+        self.command_tx
+            .send(EngineCommand::SubmitChoice {
                 choice_id: choice_id.to_string(),
-            });
+            })
+            .map_err(|_| "会话运行时已停止，无法提交选择".to_string())
+    }
+}
 
-        self.drive_until(|snapshot| snapshot.phase == TurnPhase::TurnFinished)
-            .await
+impl Session {
+    fn from_snapshot(snapshot: SessionSnapshot) -> Self {
+        Self {
+            phase: snapshot.phase,
+            turn_index: snapshot.turn_index,
+            active_turn_id: snapshot.active_turn_id,
+            current_task: snapshot.current_task,
+            tasks: snapshot.tasks,
+            world_snapshot: snapshot.world,
+            latest_narration: snapshot.latest_narration,
+            current_protagonist_action: snapshot.current_protagonist_action,
+            choices: snapshot.choices,
+        }
+    }
+}
+
+enum EngineCommand {
+    AdvanceTurn,
+    SubmitChoice { choice_id: String },
+}
+
+struct SessionRuntime {
+    world: World,
+    schedule: Schedule,
+    command_rx: mpsc::UnboundedReceiver<EngineCommand>,
+}
+
+impl SessionRuntime {
+    fn spawn(world: World, schedule: Schedule, command_rx: mpsc::UnboundedReceiver<EngineCommand>) {
+        tokio::spawn(async move {
+            let mut runtime = Self {
+                world,
+                schedule,
+                command_rx,
+            };
+
+            if let Err(err) = runtime.run_one_frame() {
+                eprintln!("[akashic-session-runtime] 初始导出失败: {err}");
+                return;
+            }
+
+            while let Some(command) = runtime.command_rx.recv().await {
+                if let Err(err) = runtime.apply_command(command) {
+                    eprintln!("[akashic-session-runtime] 命令执行失败: {err}");
+                    break;
+                }
+                if let Err(err) = runtime.drive_until_stable().await {
+                    eprintln!("[akashic-session-runtime] 会话推进失败: {err}");
+                    break;
+                }
+            }
+        });
     }
 
-    async fn drive_until<P>(&mut self, should_stop: P) -> Result<Session, String>
-    where
-        P: Fn(&Session) -> bool,
-    {
+    async fn drive_until_stable(&mut self) -> Result<(), String> {
         loop {
             self.run_one_frame()?;
-            let snapshot = self.get_game_session();
+            let snapshot = Session::from_snapshot(self.export_snapshot());
+            if is_stable_stop_point(&snapshot) {
+                return Ok(());
+            }
+            sleep(DEFAULT_RUNTIME_TICK_INTERVAL).await;
+        }
+    }
 
-            if should_stop(&snapshot) {
-                return Ok(snapshot);
+    fn apply_command(&mut self, command: EngineCommand) -> Result<(), String> {
+        match command {
+            EngineCommand::AdvanceTurn => {
+                self.send_turn_control_command(TurnControl::AdvanceTurn);
+            }
+            EngineCommand::SubmitChoice { choice_id } => {
+                let turn_id = self.world.resource::<TurnState>().active_turn_id;
+                self.world
+                    .resource_mut::<PlayerInbox>()
+                    .push(PlayerCommand::SubmitChoice { turn_id, choice_id });
             }
         }
+        Ok(())
     }
 
     fn run_one_frame(&mut self) -> Result<(), String> {
@@ -151,13 +193,8 @@ impl AkashicSessionEngine {
         Ok(())
     }
 
-    fn latest_narration(&mut self) -> String {
-        let mut query = self.world.query::<&UpperNarrator>();
-        query
-            .iter(&self.world)
-            .next()
-            .and_then(|narrator| narrator.context().print_latest_msg())
-            .unwrap_or_default()
+    fn export_snapshot(&self) -> SessionSnapshot {
+        self.world.resource::<ExportState>().current_snapshot()
     }
 
     fn send_turn_control_command(&mut self, control: TurnControl) {
@@ -209,14 +246,9 @@ fn build_schedule() -> Schedule {
     schedule
 }
 
-fn select_current_task(tasks: &[TaskView]) -> Option<TaskView> {
-    tasks
-        .iter()
-        .find(|task| matches!(task.status, TaskStatus::Running))
-        .or_else(|| {
-            tasks
-                .iter()
-                .find(|task| matches!(task.status, TaskStatus::Pending))
-        })
-        .cloned()
+fn is_stable_stop_point(snapshot: &Session) -> bool {
+    matches!(
+        snapshot.phase,
+        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnFinished
+    ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
 }
