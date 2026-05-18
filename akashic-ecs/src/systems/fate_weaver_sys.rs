@@ -60,7 +60,7 @@ pub fn fate_weaver_apply_system(
         return;
     };
 
-    let Some(task_result) = task_manager.task_result(entity) else {
+    let Some(task_result) = task_manager.results.get(&entity).cloned() else {
         return;
     };
 

@@ -53,7 +53,7 @@ pub fn protagonist_apply_system(
         return;
     };
 
-    let Some(task_result) = task_manager.task_result(entity) else {
+    let Some(task_result) = task_manager.results.get(&entity).cloned() else {
         return;
     };
 

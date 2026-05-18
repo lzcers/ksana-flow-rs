@@ -31,10 +31,14 @@ pub fn export_system(
     export_state: Res<ExportState>,
     mut task_manager: ResMut<TaskManager>,
     narrator_query: bevy_ecs::system::Query<&UpperNarrator>,
-    _printer_state: Local<ChunkPrinterState>,
+    mut _printer_state: Local<ChunkPrinterState>,
 ) {
     // 获取任务快照，并转为 TaskView
-    let task_results = task_manager.task_results_snapshot();
+    let task_results = task_manager
+        .results
+        .iter()
+        .map(|(entity, result)| (*entity, result.clone()))
+        .collect::<Vec<_>>();
     let mut tasks = task_results
         .iter()
         .map(|(entity, result)| TaskView::from_task_result(format!("{entity:?}"), result.clone()))
@@ -66,7 +70,7 @@ pub fn export_system(
     export_state.publish_snapshot(snapshot);
 
     // 导出任务更新
-    for update in task_manager.drain_emitted_updates() {
+    for update in std::mem::take(&mut task_manager.emitted_updates) {
         if let Some(task) = task_results
             .iter()
             .find(|(entity, _)| format!("{entity:?}") == update.entity)
@@ -76,7 +80,7 @@ pub fn export_system(
         }
     }
     // 单独模块测试时打印任务 chunk
-    // print_task_chunks(&task_manager, &mut _printer_state);
+    print_task_chunks(&task_manager, &mut _printer_state);
 }
 
 #[allow(dead_code)]
@@ -95,7 +99,11 @@ fn select_current_task(tasks: &[TaskView]) -> Option<TaskView> {
 // 打印任务的 task_chunk
 #[allow(dead_code)]
 fn print_task_chunks(task_manager: &TaskManager, printer_state: &mut ChunkPrinterState) {
-    let task_results = task_manager.task_results_snapshot();
+    let task_results = task_manager
+        .results
+        .iter()
+        .map(|(entity, result)| (*entity, result.clone()))
+        .collect::<Vec<_>>();
     let active_entities: HashSet<Entity> = task_results.iter().map(|(entity, _)| *entity).collect();
     let mut wrote_output = false;
 

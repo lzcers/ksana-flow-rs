@@ -140,7 +140,12 @@ async fn main() {
 
 fn print_frame_status(world: &World, frame: usize) {
     let turn_state = world.resource::<TurnState>();
-    let task_results = world.resource::<TaskManager>().task_results_snapshot();
+    let task_results = world
+        .resource::<TaskManager>()
+        .results
+        .iter()
+        .map(|(entity, result)| (*entity, result.clone()))
+        .collect::<Vec<_>>();
     let task_summary = if task_results.is_empty() {
         "无活动任务".to_string()
     } else {
