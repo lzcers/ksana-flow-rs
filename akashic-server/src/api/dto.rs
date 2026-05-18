@@ -108,16 +108,6 @@ pub struct ControlGameSessionData {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HistoryItem {
-    #[serde(rename = "type")]
-    pub item_type: String,
-    pub turn_index: u64,
-    pub text: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct HealthzData {
     pub status: String,
     pub service_name: String,

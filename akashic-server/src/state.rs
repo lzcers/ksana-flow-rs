@@ -15,7 +15,7 @@ use crate::{
     api::dto::{
         Character, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
         CreateGameSessionRequest, GameSessionControlCommand, GameSessionWorldStateData,
-        HistoryItem, SessionChoiceInput, World,
+        SessionChoiceInput, World,
     },
     error::AppError,
 };
@@ -27,8 +27,6 @@ pub struct AppState {
 
 struct SessionRecord {
     session_id: String,
-    history: Vec<HistoryItem>,
-    last_selected_choice: Option<String>,
     engine: AkashicSessionEngine,
 }
 
@@ -39,6 +37,7 @@ pub struct LiveSessionStream {
 }
 
 impl AppState {
+    // 创建会话
     pub async fn create_game_session(
         &self,
         request: CreateGameSessionRequest,
@@ -48,11 +47,8 @@ impl AppState {
         let protagonist_profile = build_protagonist_profile(&request.character);
         let world_profile = build_world_profile(&request.world);
         let engine = AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
-        engine.advance_turn().map_err(AppError::bad_request)?;
         let session = SessionRecord {
             session_id: session_id.clone(),
-            history: Vec::new(),
-            last_selected_choice: None,
             engine,
         };
 
@@ -76,7 +72,6 @@ impl AppState {
             .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
         let snapshot = session.engine.get_game_session();
-        sync_history_with_snapshot(session, &snapshot);
 
         Ok(world_state_from_session(session, &snapshot))
     }
@@ -113,7 +108,6 @@ impl AppState {
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
         let snapshot = session.engine.get_game_session();
-        sync_history_with_snapshot(session, &snapshot);
         let tasks = snapshot.tasks.clone();
 
         Ok(LiveSessionStream {
@@ -130,9 +124,11 @@ fn apply_control(
 ) -> Result<ControlGameSessionData, AppError> {
     match control {
         GameSessionControlCommand::Continue => {
-            session.engine.advance_turn().map_err(AppError::bad_request)?;
+            session
+                .engine
+                .advance_turn()
+                .map_err(AppError::bad_request)?;
             let snapshot = session.engine.get_game_session();
-            sync_history_with_snapshot(session, &snapshot);
             Ok(ControlGameSessionData {
                 action: "continue".to_string(),
                 session: world_state_from_session(session, &snapshot),
@@ -146,33 +142,18 @@ fn apply_choice(
     choice: SessionChoiceInput,
 ) -> Result<ControlGameSessionData, AppError> {
     let current = session.engine.get_game_session();
-    sync_history_with_snapshot(session, &current);
-    let selected_choice = current
+    current
         .choices
         .iter()
         .find(|item| item.id == choice.choice_id)
         .cloned()
         .ok_or_else(|| AppError::bad_request("所选分支不存在或已失效。"))?;
-    let selected_text = if selected_choice.option.title.is_empty() {
-        selected_choice.option.action
-    } else {
-        selected_choice.option.title
-    };
-
-    session.last_selected_choice = Some(selected_text.clone());
-    session.history.push(HistoryItem {
-        item_type: "choice".to_string(),
-        turn_index: visible_turn_index(&current),
-        text: selected_text,
-        created_at: now_string(),
-    });
 
     session
         .engine
         .submit_choice(&choice.choice_id)
         .map_err(AppError::bad_request)?;
     let snapshot = session.engine.get_game_session();
-    sync_history_with_snapshot(session, &snapshot);
 
     Ok(ControlGameSessionData {
         action: "submit_choice".to_string(),
@@ -194,35 +175,9 @@ fn world_state_from_session(
         current_task: snapshot.current_task.clone(),
         tasks: snapshot.tasks.clone(),
         latest_narration: latest_narration(snapshot),
-        current_protagonist_action: current_protagonist_action(session, snapshot),
+        current_protagonist_action: current_protagonist_action(snapshot),
         choices: snapshot.choices.clone(),
     }
-}
-
-fn sync_history_with_snapshot(session: &mut SessionRecord, snapshot: &Session) {
-    push_narration_history(session, snapshot);
-}
-
-fn push_narration_history(session: &mut SessionRecord, snapshot: &Session) {
-    let text = latest_narration(snapshot);
-    if text.trim().is_empty() {
-        return;
-    }
-
-    let turn_index = visible_turn_index(snapshot);
-    let duplicated = session.history.last().is_some_and(|item| {
-        item.item_type == "narration" && item.turn_index == turn_index && item.text == text
-    });
-    if duplicated {
-        return;
-    }
-
-    session.history.push(HistoryItem {
-        item_type: "narration".to_string(),
-        turn_index,
-        text,
-        created_at: now_string(),
-    });
 }
 
 fn latest_narration(snapshot: &Session) -> String {
@@ -233,12 +188,9 @@ fn latest_narration(snapshot: &Session) -> String {
     }
 }
 
-fn current_protagonist_action(session: &SessionRecord, snapshot: &Session) -> String {
+fn current_protagonist_action(snapshot: &Session) -> String {
     if snapshot.current_protagonist_action.trim().is_empty() {
-        session
-            .last_selected_choice
-            .clone()
-            .unwrap_or_else(|| "尚未做出选择".to_string())
+        "尚未做出选择".to_string()
     } else {
         snapshot.current_protagonist_action.clone()
     }
