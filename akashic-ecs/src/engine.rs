@@ -110,11 +110,6 @@ impl AkashicSessionEngine {
         .await
     }
 
-    // 兼容旧调用方，语义等同于 advance_turn。
-    pub async fn continue_turn(&mut self) -> Result<Session, String> {
-        self.advance_turn().await
-    }
-
     // 提交选择
     pub async fn submit_choice(&mut self, choice_id: &str) -> Result<Session, String> {
         let turn_id = self.world.resource::<TurnState>().active_turn_id;
