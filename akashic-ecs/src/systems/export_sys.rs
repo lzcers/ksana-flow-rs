@@ -59,7 +59,7 @@ pub fn export_system(
         }
     }
     // 单独模块测试时打印任务 chunk
-    print_task_chunks(&task_manager, &mut printer_state);
+    // print_task_chunks(&task_manager, &mut printer_state);
 }
 
 // 打印任务的 task_chunk
