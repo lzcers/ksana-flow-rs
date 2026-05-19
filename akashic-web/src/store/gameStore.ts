@@ -842,7 +842,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       });
       set({
         sessionId: created.sessionId,
-        ...mapSessionToPlayState(controlled.session, STREAM_PLACEHOLDER_TEXT),
+        ...mapSessionToPlayState(controlled.session),
         isLoading: true,
         error: null,
       });
@@ -863,7 +863,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
               currentNode: state.currentNode
                 ? {
                   ...state.currentNode,
-                  text: nextText ?? state.currentNode.text,
+                  text:
+                    nextText ??
+                    (state.currentNode.text === STREAM_PLACEHOLDER_TEXT ? '' : state.currentNode.text),
                   choices:
                     nextChoices != null
                       ? nextChoices
@@ -878,7 +880,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
                   currentScene: taskLabel(event.task.kind),
                   latestProtagonistAction:
                     protagonistActionText(event.task) ?? state.stateView.latestProtagonistAction,
-                  latestHistory: nextText ?? state.stateView.latestHistory,
+                  latestHistory:
+                    nextText ??
+                    (state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT ? '' : state.stateView.latestHistory),
                   latestBroadcastSummary: nextText ?? state.stateView.latestBroadcastSummary,
                 }
                 : null,
