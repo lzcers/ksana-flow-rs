@@ -29,7 +29,7 @@ const LobbyPage: React.FC = () => {
               'url("https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20mystical%20ancient%20archive%20with%20rainy%20blue%20atmosphere%2C%20dark%20fantasy%20ui%20background%2C%20cinematic%20concept%20art&image_size=landscape_16_9")',
           }}
         />
-        <div className="relative z-10 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="relative z-10">
           <div className="space-y-6">
             <div className="flex flex-wrap gap-3">
               <StatusPill icon={Sparkles}>Akashic Engine</StatusPill>
@@ -38,7 +38,7 @@ const LobbyPage: React.FC = () => {
               title="幻世 · 人生回响"
               subtitle="开始你的命运"
             />
-            <SectionCard className="max-w-2xl">
+            <SectionCard>
               <p className="text-base leading-8 text-[#d3d9e5]">
                 你想开启怎样的人生？
               </p>

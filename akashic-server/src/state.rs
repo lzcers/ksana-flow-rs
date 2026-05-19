@@ -7,6 +7,7 @@ use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
     resources::{
         export::{TaskEvent, TaskView},
+        task_manager::TaskUpdate,
         turn_state::TurnPhase,
     },
 };
@@ -46,6 +47,7 @@ pub struct LiveSessionStream {
 pub struct BufferedTaskEvent {
     pub event_id: u64,
     pub task: TaskView,
+    pub update: TaskUpdate,
 }
 
 struct ReplayBuffer {
@@ -63,10 +65,11 @@ impl ReplayBuffer {
         }
     }
 
-    fn push(&mut self, task: TaskView) -> BufferedTaskEvent {
+    fn push(&mut self, task: TaskView, update: TaskUpdate) -> BufferedTaskEvent {
         let event = BufferedTaskEvent {
             event_id: self.next_event_id,
             task,
+            update,
         };
         self.next_event_id += 1;
         self.events.push_back(event.clone());
@@ -103,8 +106,8 @@ impl AppState {
         let events_tx_for_task = events_tx.clone();
         tokio::spawn(async move {
             while let Ok(event) = event_rx.recv().await {
-                let TaskEvent::TaskUpdated { task } = event;
-                let buffered = replay_for_task.lock().await.push(task);
+                let TaskEvent::TaskUpdated { task, update } = event;
+                let buffered = replay_for_task.lock().await.push(task, update);
                 let _ = events_tx_for_task.send(buffered);
             }
         });

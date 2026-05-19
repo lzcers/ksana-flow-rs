@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Clock3,
   Eye,
@@ -57,6 +57,10 @@ const GameplayPage: React.FC = () => {
     setPreviews({});
     setIsUtilityMenuOpen(false);
   }, [currentNode?.id]);
+
+  const handleTypewriterComplete = useCallback(() => {
+    setIsTyping(false);
+  }, []);
 
   if (!currentNode) {
     return (
@@ -124,33 +128,31 @@ const GameplayPage: React.FC = () => {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#08111d]/35 to-[#08111d]" />
         <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3">
           <div className="shrink-0 space-y-2">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1">
               <StatusPill icon={Flame} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">执念 {obsessionPoints}/5</StatusPill>
               <StatusPill icon={Eye} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">直觉 {intuitionPoints}</StatusPill>
               <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{daysLeft}日</StatusPill>
               <StatusPill icon={Sparkles} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{currentScene}</StatusPill>
             </div>
-            {worldNews ? (
-              <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
-                <Sparkles className="h-3.5 w-3.5 text-amber-200" />
-                <span>{worldNews}</span>
-              </div>
-            ) : null}
+            <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
+              <Sparkles className="h-3.5 w-3.5 text-amber-200" />
+              <span>{worldNews ?? ""}</span>
+            </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3">
-            <section className="akashic-panel flex min-h-0 flex-1 flex-col px-3 py-3 sm:px-4 sm:py-4 md:px-5 md:py-5">
-              <div className="flex min-h-0 flex-1 flex-col rounded-[1rem] bg-[#040912]/90 pl-3 sm:rounded-[1.2rem] sm:pl-4 md:rounded-[1.3rem] md:pl-5">
-                <div className="akashic-scroll min-h-0 flex-1 overflow-y-auto py-3 pr-2 sm:py-4 sm:pr-3 md:py-5 md:pr-4">
-                  <div className="whitespace-pre-wrap text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1.2rem] md:text-[1.55rem]">
-                    <Typewriter text={currentNode.text} speed={28} onComplete={() => setIsTyping(false)} />
+            <section className="akashic-panel flex min-h-0 flex-1 flex-col p-2">
+              <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-[#040912]/90 sm:rounded-[1.2rem] sm:pl-4 md:rounded-[1.3rem] md:pl-5">
+                <div className="akashic-scroll min-h-0 flex-1 overflow-y-auto">
+                  <div className="text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1rem] md:text-[1.2rem]">
+                    <Typewriter text={currentNode.text} speed={28} onComplete={handleTypewriterComplete} />
                   </div>
                 </div>
               </div>
             </section>
 
             <div className="shrink-0 space-y-1.5">
-              <div className="rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-1.5 sm:min-h-[10.5rem]">
+              {hasChoices && <div className="rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-1.5 sm:min-h-[10.5rem]">
                 <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 sm:max-h-[32dvh]">
                   {hasChoices ? currentNode.choices.map((choice) => (
                     <div key={choice.id} className="space-y-1.5">
@@ -185,18 +187,9 @@ const GameplayPage: React.FC = () => {
                         </div>
                       ) : null}
                     </div>
-                  )) : showChoicePendingState ? (
-                    <div className="flex min-h-[7.5rem] items-center justify-center rounded-[1rem] border border-dashed border-[rgba(116,103,80,0.45)] bg-[rgba(12,18,31,0.72)] px-4 text-center text-xs leading-6 text-[#9ca7be] sm:text-sm">
-                      命运分支正在显现，轻触正文可跳过打字并更快看到可选行动。
-                    </div>
-                  ) : (
-                    <div className="akashic-panel px-3 py-3 text-sm leading-6 text-[#c3cde0]/85 sm:px-4">
-                      当前旅程已经收束，没有更多分支可选。你可以返回大厅，开启下一段新人生。
-                    </div>
-                  )}
+                  )) : null}
                 </div>
-              </div>
-
+              </div>}
               <div className="shrink-0 rounded-full border border-[rgba(116,103,80,0.4)] bg-[rgba(8,14,26,0.82)] px-2 py-2 backdrop-blur-md">
                 <div className="relative flex items-center justify-between gap-2">
                   <SecondaryButton

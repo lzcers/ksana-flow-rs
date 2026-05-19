@@ -2,7 +2,7 @@ use std::{convert::Infallible, time::Duration};
 
 use akashic_ecs::resources::{
     export::TaskView,
-    task_manager::{TaskKind, TaskStatus},
+    task_manager::{TaskKind, TaskStatus, TaskUpdate},
 };
 use axum::{
     Json,
@@ -155,7 +155,7 @@ pub async fn stream_game_session(
         live_stream
             .tasks
             .into_iter()
-            .map(|task| Ok::<_, Infallible>(task_updated_sse(None, task)))
+            .map(|task| Ok::<_, Infallible>(initial_task_updated_sse(task)))
             .collect::<Vec<_>>()
     } else {
         live_stream
@@ -209,21 +209,11 @@ pub async fn stream_game_session(
 }
 
 fn buffered_task_updated_sse(event: BufferedTaskEvent) -> Event {
-    task_updated_sse(Some(event.event_id), event.task)
+    task_updated_sse(Some(event.event_id), event.task, event.update)
 }
 
-fn task_updated_sse(event_id: Option<u64>, task: TaskView) -> Event {
-    let update = task_update_from_view(event_id, &task);
-    let event = sse_json_event("task.updated", TaskUpdatedData { task, update });
-    match event_id {
-        Some(value) => event.id(value.to_string()),
-        None => event,
-    }
-}
-
-fn task_update_from_view(event_id: Option<u64>, task: &TaskView) -> TaskUpdateData {
-    TaskUpdateData {
-        event_id,
+fn initial_task_updated_sse(task: TaskView) -> Event {
+    let update = TaskUpdate {
         entity: task.entity.clone(),
         kind: task.kind,
         status: task.status,
@@ -239,5 +229,27 @@ fn task_update_from_view(event_id: Option<u64>, task: &TaskView) -> TaskUpdateDa
             TaskStatus::Error => task.error.clone().or_else(|| task.last_error.clone()),
             _ => None,
         },
+    };
+    task_updated_sse(None, task, update)
+}
+
+fn task_updated_sse(event_id: Option<u64>, task: TaskView, update: TaskUpdate) -> Event {
+    let update = task_update_from_delta(event_id, update);
+    let event = sse_json_event("task.updated", TaskUpdatedData { task, update });
+    match event_id {
+        Some(value) => event.id(value.to_string()),
+        None => event,
+    }
+}
+
+fn task_update_from_delta(event_id: Option<u64>, update: TaskUpdate) -> TaskUpdateData {
+    TaskUpdateData {
+        event_id,
+        entity: update.entity,
+        kind: update.kind,
+        status: update.status,
+        chunk: update.chunk,
+        output: update.output,
+        error: update.error,
     }
 }

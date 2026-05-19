@@ -1,11 +1,20 @@
 import { create } from 'zustand';
+import {
+  controlGameSession,
+  createGameSession,
+  getGameSessionWorld,
+  openGameSessionStream,
+} from '../lib/api';
 import type {
   ArchiveListItem,
   Character,
   Choice,
+  GameSessionWorldStateData,
+  PendingProtagonistChoice,
   RuntimeStateView,
   SaveListItem,
   StoryNode,
+  TaskView,
   World,
 } from '../lib/api';
 
@@ -334,6 +343,18 @@ const initialState = {
   error: null,
 };
 
+let activeSessionStream: EventSource | null = null;
+let activeStreamSessionId: string | null = null;
+let lastStreamEventId: string | null = null;
+const STREAM_PLACEHOLDER_TEXT = '命运正在展开，请稍候...';
+
+function closeActiveSessionStream() {
+  activeSessionStream?.close();
+  activeSessionStream = null;
+  activeStreamSessionId = null;
+  lastStreamEventId = null;
+}
+
 function cloneCharacter(character: Character): Character {
   return {
     ...character,
@@ -467,9 +488,157 @@ function resetPlayState(state: GameStoreState) {
   };
 }
 
+function toChoiceFromSession(choice: PendingProtagonistChoice): Choice {
+  return {
+    id: choice.id,
+    text: choice.option.title || choice.option.action,
+    previewText: choice.option.motivationAndRisk,
+    disabled: false,
+    costHints: {
+      intuition: 1,
+      obsession: 1,
+    },
+  };
+}
+
+function taskLabel(kind: string): string {
+  switch (kind) {
+    case 'fate_planning':
+      return '命运织线';
+    case 'narration':
+      return '叙事展开';
+    case 'protagonist_action':
+      return '主角抉择';
+    default:
+      return '命运推进';
+  }
+}
+
+function taskText(task: TaskView): string | null {
+  const text =
+    task.status === 'running' ? task.chunks[task.chunks.length - 1] : task.output;
+  if (!text?.trim()) {
+    return null;
+  }
+  if (task.kind === 'narration') {
+    return text;
+  }
+  return null;
+}
+
+function protagonistActionText(task: TaskView): string | null {
+  if (task.kind !== 'protagonist_action' || task.status !== 'done' || !task.output?.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(task.output) as {
+      options?: Array<{ title?: string; action?: string; motivation_and_risk?: string }>;
+    };
+    const options = parsed.options ?? [];
+    if (options.length === 0) {
+      return '主角暂时没有可执行的行动选项。';
+    }
+    return options
+      .map((option, index) => option.title?.trim() || option.action?.trim() || `行动 ${index + 1}`)
+      .join(' / ');
+  } catch {
+    return task.output.trim();
+  }
+}
+
+function persistedNarrationText(session: GameSessionWorldStateData): string {
+  const taskNarration = session.tasks.find(
+    (task) => task.kind === 'narration' && task.status === 'done' && task.output?.trim(),
+  );
+  if (taskNarration?.output?.trim()) {
+    return taskNarration.output.trim();
+  }
+
+  if (!isSessionLoading(session) && session.latestNarration.trim()) {
+    return session.latestNarration.trim();
+  }
+
+  return '';
+}
+
+function sessionText(session: GameSessionWorldStateData, fallbackText?: string | null): string {
+  return (
+    fallbackText?.trim() ||
+    persistedNarrationText(session) ||
+    '命运正在编织，请稍候...'
+  );
+}
+
+function sessionNews(session: GameSessionWorldStateData): string | null {
+  return (
+    session.worldState.currentEvent ||
+    session.worldState.newInfo[0] ||
+    session.worldState.locationStatus ||
+    null
+  );
+}
+
+function mapSessionToPlayState(
+  session: GameSessionWorldStateData,
+  fallbackText?: string | null,
+): Pick<GameStoreState, 'currentNode' | 'stateView' | 'worldNews' | 'turnIndex' | 'gameState'> {
+  const text = sessionText(session, fallbackText);
+
+  return {
+    currentNode: {
+      id: `${session.sessionId}-${session.activeTurnId}-${session.phase}`,
+      text,
+      image: STORY_IMAGES.opening,
+      choices: session.choices.map(toChoiceFromSession),
+    },
+    stateView: {
+      gameState: 'playing',
+      phase: session.phase,
+      turnIndex: session.turnIndex,
+      activeTurnId: session.activeTurnId,
+      currentLocation: session.worldState.locationName || '命运现场',
+      currentScene: session.worldState.sceneTitle || '命运展开',
+      protagonistState: session.worldState.protagonistCondition || '等待命运显影',
+      npcsState: session.worldState.currentEvent || '众生仍在命运中回响',
+      latestHistory: text,
+      latestBroadcastSummary: session.worldState.description || text,
+      latestProtagonistAction: session.currentProtagonistAction || '尚未做出选择',
+    },
+    worldNews: sessionNews(session),
+    turnIndex: session.turnIndex,
+    gameState: 'playing',
+  };
+}
+
+function isSessionLoading(session: GameSessionWorldStateData): boolean {
+  return session.status === 'running';
+}
+
+async function refreshSessionState(
+  sessionId: string,
+  set: (partial: Partial<GameStoreState> | ((state: GameStoreState) => Partial<GameStoreState>)) => void,
+) {
+  const session = await getGameSessionWorld(sessionId);
+  if (activeStreamSessionId !== sessionId) {
+    return;
+  }
+
+  set((state) => ({
+    ...mapSessionToPlayState(session, state.currentNode?.text),
+    isLoading: isSessionLoading(session),
+    error: null,
+  }));
+}
+
 export const useGameStore = create<GameStoreState>((set, get) => ({
   ...initialState,
-  setGameState: (state) => set({ gameState: state, error: null }),
+  setGameState: (state) => {
+    if (state !== 'playing') {
+      closeActiveSessionStream();
+    }
+    set({ gameState: state, error: null });
+  },
   updateCharacter: (updates) =>
     set((state) => ({
       character: {
@@ -489,23 +658,145 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   clearError: () => set({ error: null }),
   startGame: async () => {
     const { character, world } = get();
-    const sessionId = `demo-${Date.now()}`;
-    const currentNode = buildStoryNode('opening', character, world);
-
+    closeActiveSessionStream();
     set({
-      sessionId,
-      currentNode,
-      stateView: buildStateView('opening', 1, currentNode.text),
+      sessionId: null,
+      currentNode: {
+        id: 'loading',
+        text: STREAM_PLACEHOLDER_TEXT,
+        image: STORY_IMAGES.opening,
+        choices: [],
+      },
+      stateView: {
+        gameState: 'playing',
+        phase: 'booting',
+        turnIndex: 0,
+        activeTurnId: 0,
+        currentLocation: '命运现场',
+        currentScene: '命运编织中',
+        protagonistState: `${character.name || '无名旅人'} 正踏入 ${world.era}`,
+        npcsState: '诸多回响正在汇聚',
+        latestHistory: STREAM_PLACEHOLDER_TEXT,
+        latestBroadcastSummary: world.coreConflict,
+        latestProtagonistAction: '尚未做出选择',
+      },
       obsessionPoints: 3,
       intuitionPoints: 5,
       daysLeft: 7,
-      worldNews: DEMO_NODES.opening.news,
-      turnIndex: 1,
+      worldNews: '正在创建会话并唤起第一轮命运...',
+      turnIndex: 0,
       latestSaveId: null,
       error: null,
       gameState: 'playing',
-      isLoading: false,
+      isLoading: true,
     });
+
+    try {
+      const created = await createGameSession(character, world);
+      activeStreamSessionId = created.sessionId;
+
+      set({
+        sessionId: created.sessionId,
+        worldNews: '会话已建立，正在推进第一轮...',
+      });
+
+      const controlled = await controlGameSession(created.sessionId, {
+        control: { type: 'continue' },
+      });
+      set({
+        sessionId: created.sessionId,
+        ...mapSessionToPlayState(controlled.session, STREAM_PLACEHOLDER_TEXT),
+        isLoading: true,
+        error: null,
+      });
+
+      activeSessionStream = openGameSessionStream(
+        created.sessionId,
+        {
+          onTaskUpdated: (event, lastEventId) => {
+            if (activeStreamSessionId !== created.sessionId) {
+              return;
+            }
+            lastStreamEventId = lastEventId || lastStreamEventId;
+            const nextText = taskText(event.task);
+            const narrationDelta =
+              event.task.kind === 'narration' && event.task.status === 'running'
+                ? event.update.chunk?.trimEnd() ?? ''
+                : '';
+
+            set((state) => ({
+              worldNews: `命运编织中：${taskLabel(event.task.kind)}`,
+              currentNode: state.currentNode
+                ? {
+                  ...state.currentNode,
+                  text:
+                    narrationDelta
+                      ? state.currentNode.text === STREAM_PLACEHOLDER_TEXT
+                        ? narrationDelta
+                        : `${state.currentNode.text}${narrationDelta}`
+                      : nextText == null
+                        ? state.currentNode.text
+                        : state.currentNode.text === STREAM_PLACEHOLDER_TEXT
+                          ? nextText
+                          : nextText,
+                }
+                : null,
+              stateView: state.stateView
+                ? {
+                  ...state.stateView,
+                  currentScene: taskLabel(event.task.kind),
+                  latestProtagonistAction:
+                    protagonistActionText(event.task) ?? state.stateView.latestProtagonistAction,
+                  latestHistory:
+                    narrationDelta
+                      ? state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT
+                        ? narrationDelta
+                        : `${state.stateView.latestHistory}${narrationDelta}`
+                      : nextText == null
+                        ? state.stateView.latestHistory
+                        : state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT
+                          ? nextText
+                          : nextText,
+                  latestBroadcastSummary:
+                    narrationDelta
+                      ? `${state.stateView.latestBroadcastSummary}${narrationDelta}`
+                      : nextText == null
+                        ? state.stateView.latestBroadcastSummary
+                        : nextText,
+                }
+                : null,
+            }));
+
+            if (event.task.status !== 'running') {
+              void refreshSessionState(created.sessionId, set).catch((error) => {
+                set({
+                  isLoading: false,
+                  error: error instanceof Error ? error.message : '刷新会话状态失败。',
+                });
+              });
+            }
+          },
+          onError: () => {
+            if (activeStreamSessionId !== created.sessionId) {
+              return;
+            }
+            set({
+              error: '叙事流连接出现波动，正在尝试恢复...',
+            });
+          },
+        },
+        lastStreamEventId,
+      );
+
+      await refreshSessionState(created.sessionId, set);
+    } catch (error) {
+      closeActiveSessionStream();
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : '开启旅程失败。',
+      });
+      throw error;
+    }
   },
   submitChoice: async (choiceId, useObsession = false) => {
     const {
@@ -522,6 +813,40 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     if (!sessionId || !currentNode) {
       throw new Error('当前没有可推进的演示剧情。');
+    }
+
+    if (activeStreamSessionId === sessionId) {
+      const nextObsession = useObsession ? Math.max(0, obsessionPoints - 1) : obsessionPoints;
+      const nextDaysLeft = Math.max(1, daysLeft - 1);
+
+      set({
+        isLoading: true,
+        obsessionPoints: nextObsession,
+        intuitionPoints,
+        daysLeft: nextDaysLeft,
+        error: null,
+      });
+
+      try {
+        const controlled = await controlGameSession(sessionId, {
+          choice: { choiceId },
+        });
+
+        set({
+          ...mapSessionToPlayState(controlled.session),
+          isLoading: true,
+          error: null,
+        });
+
+        await refreshSessionState(sessionId, set);
+        return;
+      } catch (error) {
+        set({
+          isLoading: false,
+          error: error instanceof Error ? error.message : '提交选择失败。',
+        });
+        throw error;
+      }
     }
 
     const currentMeta = DEMO_NODES[currentNode.id as DemoNodeId];
@@ -593,6 +918,15 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     if (intuitionPoints <= 0) {
       throw new Error('演示直觉点已耗尽。');
+    }
+
+    const sessionChoice = currentNode.choices.find((item) => item.id === choiceId);
+    if (sessionChoice?.previewText) {
+      set({
+        intuitionPoints: Math.max(0, intuitionPoints - 1),
+        error: null,
+      });
+      return sessionChoice.previewText;
     }
 
     const currentMeta = DEMO_NODES[currentNode.id as DemoNodeId];
@@ -680,9 +1014,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gameState: 'playing',
     });
   },
-  resetGame: () =>
+  resetGame: () => {
+    closeActiveSessionStream();
     set((state) => ({
       ...state,
       ...resetPlayState(state),
-    })),
+    }));
+  },
 }));

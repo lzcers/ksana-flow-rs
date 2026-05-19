@@ -1,9 +1,13 @@
-/** @type {import('tailwindcss').Config} */
+import { type Config } from "tailwindcss";
+
 export default {
-  darkMode: ["class"],
+  darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {
+      borderColor: {
+        border: "var(--border-color, #e5e7eb)", // 对应 border-border
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -47,4 +51,4 @@ export default {
     },
   },
   plugins: [require("tailwindcss-animate")],
-}
+} satisfies Config;

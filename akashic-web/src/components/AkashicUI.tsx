@@ -68,10 +68,10 @@ export function PageTitle({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-center">
       <div className="space-y-2">
-        <h1 className="text-[2rem] font-semibold tracking-wide text-[#f6eddc] sm:text-[2.35rem] md:text-5xl">{title}</h1>
-        {subtitle ? <p className="max-w-2xl text-sm leading-6 text-[#9ca7be] sm:text-[0.95rem] md:text-base">{subtitle}</p> : null}
+        <h1 className="text-[2rem] font-semibold text-center tracking-wide text-[#f6eddc] sm:text-[2.35rem] md:text-5xl">{title}</h1>
+        {subtitle ? <p className="max-w-2xl text-center text-sm leading-6 text-[#9ca7be] sm:text-[0.95rem] md:text-base">{subtitle}</p> : null}
       </div>
       {action ? <div className="shrink-0 self-start">{action}</div> : null}
     </div>

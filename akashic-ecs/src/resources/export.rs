@@ -4,7 +4,7 @@ use tokio::sync::{broadcast, watch};
 
 use crate::resources::{
     protagonist_action::PendingProtagonistChoice,
-    task_manager::{TaskKind, TaskResult, TaskStatus},
+    task_manager::{TaskKind, TaskResult, TaskStatus, TaskUpdate},
     turn_state::TurnPhase,
     world_snapshot::WorldSnapshot,
 };
@@ -42,7 +42,7 @@ pub struct TaskView {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TaskEvent {
-    TaskUpdated { task: TaskView },
+    TaskUpdated { task: TaskView, update: TaskUpdate },
 }
 
 #[derive(Resource)]
@@ -86,8 +86,8 @@ impl ExportState {
         self.snapshot_tx.send_replace(snapshot);
     }
 
-    pub fn publish_task_update(&self, task: TaskView) {
-        let _ = self.event_tx.send(TaskEvent::TaskUpdated { task });
+    pub fn publish_task_update(&self, task: TaskView, update: TaskUpdate) {
+        let _ = self.event_tx.send(TaskEvent::TaskUpdated { task, update });
     }
 
     pub fn current_snapshot(&self) -> SessionSnapshot {

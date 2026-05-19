@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 @layer base {
   :root {
@@ -94,7 +93,8 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
-  .akashic-field {
+  .akashic-field,
+  .akashic-select {
     @apply h-11 w-full rounded-full border px-4 text-sm text-[#f5ecdc] outline-none transition-colors md:h-12 md:text-base;
     border-color: rgba(116, 103, 80, 0.65);
     background-color: rgba(29, 40, 59, 0.88);
@@ -104,13 +104,14 @@
     color: rgba(174, 183, 198, 0.72);
   }
 
-  .akashic-field:focus {
+  .akashic-field:focus,
+  .akashic-select:focus {
     border-color: rgba(210, 185, 144, 0.92);
     box-shadow: 0 0 0 1px rgba(210, 185, 144, 0.35);
   }
 
   .akashic-select {
-    @apply akashic-field appearance-none pr-10;
+    @apply appearance-none pr-10;
   }
 
   .akashic-choice {

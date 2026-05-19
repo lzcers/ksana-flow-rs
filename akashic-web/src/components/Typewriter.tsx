@@ -1,4 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import {
+  AutoScrollContainer,
+  darkTheme,
+  Incremark,
+  ThemeProvider,
+  useIncremark,
+} from '@incremark/react';
+import '@incremark/theme/styles.css';
 
 interface TypewriterProps {
   text: string;
@@ -7,40 +15,50 @@ interface TypewriterProps {
 }
 
 const Typewriter: React.FC<TypewriterProps> = ({ text, speed = 30, onComplete }) => {
-  const [displayedText, setDisplayedText] = useState('');
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const hasCompletedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  const incremarkOptions = useMemo(() => ({
+    math: { tex: true },
+    gfm: true,
+    typewriter: {
+      enabled: true,
+      charsPerTick: 1 as const,
+      tickInterval: speed,
+      effect: 'none' as const,
+    },
+  }), [speed]);
+  const incremark = useIncremark(incremarkOptions);
+  const incremarkRef = useRef(incremark);
 
   useEffect(() => {
-    // Reset when text changes
-    setDisplayedText('');
-    setCurrentIndex(0);
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    incremarkRef.current = incremark;
+  }, [incremark]);
+
+  useEffect(() => {
+    hasCompletedRef.current = false;
+    incremarkRef.current.render(text);
   }, [text]);
 
   useEffect(() => {
-    if (currentIndex < text.length) {
-      const timer = setTimeout(() => {
-        setDisplayedText((prev) => prev + text[currentIndex]);
-        setCurrentIndex((prev) => prev + 1);
-      }, speed);
-      return () => clearTimeout(timer);
-    } else if (currentIndex === text.length) {
-      if (onComplete) onComplete();
+    if (incremark.isDisplayComplete && !hasCompletedRef.current) {
+      hasCompletedRef.current = true;
+      onCompleteRef.current?.();
     }
-  }, [currentIndex, text, speed, onComplete]);
-
-  // Click to skip
-  const handleSkip = () => {
-    if (currentIndex < text.length) {
-      setDisplayedText(text);
-      setCurrentIndex(text.length);
-      if (onComplete) onComplete();
-    }
-  };
+  }, [incremark.isDisplayComplete]);
 
   return (
-    <div className="cursor-pointer h-full whitespace-pre-wrap" onClick={handleSkip}>
-      {displayedText}
-      {currentIndex < text.length && <span className="animate-pulse">|</span>}
+    <div className="h-full">
+      <ThemeProvider theme={darkTheme}>
+        <AutoScrollContainer enabled={false} className="h-full w-full">
+          <div className="h-full text-inherit">
+            <Incremark incremark={incremark} />
+          </div>
+        </AutoScrollContainer>
+      </ThemeProvider>
     </div>
   );
 };
