@@ -3,6 +3,8 @@ import {
   Clock3,
   Eye,
   Flame,
+  House,
+  MoreHorizontal,
   Save,
   Share2,
   Sparkles,
@@ -20,23 +22,24 @@ import {
 const GameplayPage: React.FC = () => {
   const {
     currentNode,
-    submitChoice,
     obsessionPoints,
     intuitionPoints,
     worldNews,
-    previewChoice,
     stateView,
     daysLeft,
-    createSave,
     latestSaveId,
     isLoading,
     error,
+    createSave,
+    submitChoice,
+    previewChoice,
     setGameState,
   } = useGameStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
 
   const currentScene = stateView?.currentScene ?? '演示片段';
   const hasChoices = currentNode?.choices.length > 0;
@@ -52,6 +55,7 @@ const GameplayPage: React.FC = () => {
   useEffect(() => {
     setIsTyping(true);
     setPreviews({});
+    setIsUtilityMenuOpen(false);
   }, [currentNode?.id]);
 
   if (!currentNode) {
@@ -194,7 +198,7 @@ const GameplayPage: React.FC = () => {
               </div>
 
               <div className="shrink-0 rounded-full border border-[rgba(116,103,80,0.4)] bg-[rgba(8,14,26,0.82)] px-2 py-2 backdrop-blur-md">
-                <div className="flex flex-wrap gap-1.5">
+                <div className="relative flex items-center justify-between gap-2">
                   <SecondaryButton
                     onClick={() => setActiveObsession((prev) => !prev)}
                     className={`min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs ${activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}`}
@@ -203,21 +207,53 @@ const GameplayPage: React.FC = () => {
                     <Flame className={`h-3.5 w-3.5 ${activeObsession ? 'animate-pulse' : ''}`} />
                     执念
                   </SecondaryButton>
-                  <SecondaryButton type="button" onClick={() => void handleSave()} disabled={isLoading || !currentNode} className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs">
-                    <Save className="h-3.5 w-3.5" />
-                    存档
-                  </SecondaryButton>
-                  <PrimaryButton
-                    type="button"
-                    className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs"
-                    onClick={() => setFeedback(latestSaveId ? `最近存档：${latestSaveId}` : '本地演示模式下可先存档，稍后可继续扩展分享入口。')}
-                  >
-                    <Share2 className="h-3.5 w-3.5" />
-                    分享
-                  </PrimaryButton>
-                  <SecondaryButton type="button" onClick={() => setGameState('lobby')} className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs">
-                    返回大厅
-                  </SecondaryButton>
+                  <div className="relative">
+                    <SecondaryButton
+                      type="button"
+                      onClick={() => setIsUtilityMenuOpen((prev) => !prev)}
+                      className="min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs"
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                      菜单
+                    </SecondaryButton>
+                    {isUtilityMenuOpen ? (
+                      <div className="absolute bottom-[calc(100%+0.45rem)] right-0 z-20 min-w-[8.8rem] rounded-[0.95rem] border border-[rgba(116,103,80,0.5)] bg-[rgba(7,13,24,0.96)] p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.45)]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGameState('lobby');
+                            setIsUtilityMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] sm:text-xs"
+                        >
+                          <House className="h-3.5 w-3.5" />
+                          返回大厅
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSave();
+                            setIsUtilityMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] sm:text-xs"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          存档
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFeedback(latestSaveId ? `最近存档：${latestSaveId}` : '本地演示模式下可先存档，稍后可继续扩展分享入口。');
+                            setIsUtilityMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] sm:text-xs"
+                        >
+                          <Share2 className="h-3.5 w-3.5" />
+                          分享
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>

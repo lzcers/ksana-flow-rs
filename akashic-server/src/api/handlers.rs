@@ -1,21 +1,24 @@
 use std::{convert::Infallible, time::Duration};
 
-use akashic_ecs::resources::export::TaskEvent;
 use akashic_ecs::resources::{
     export::TaskView,
     task_manager::{TaskKind, TaskStatus},
 };
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
+    http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
     response::{IntoResponse, Response},
 };
 use futures::{StreamExt, stream};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::{error::AppError, state::AppState};
+use crate::{
+    error::AppError,
+    state::{AppState, BufferedTaskEvent},
+};
 
 use super::dto::{
     ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
@@ -48,9 +51,16 @@ struct StreamHandshakeData {
     note: &'static str,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamQuery {
+    since: Option<u64>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TaskUpdateData {
+    event_id: Option<u64>,
     entity: String,
     kind: TaskKind,
     status: TaskStatus,
@@ -119,8 +129,18 @@ pub async fn control_game_session(
 pub async fn stream_game_session(
     State(state): State<AppState>,
     Path(path): Path<SessionPath>,
+    Query(query): Query<StreamQuery>,
+    headers: HeaderMap,
 ) -> StorySseResult {
-    let live_stream = state.open_game_session_stream(&path.session_id).await?;
+    let since = query.since.or_else(|| {
+        headers
+            .get("last-event-id")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+    });
+    let live_stream = state
+        .open_game_session_stream(&path.session_id, since)
+        .await?;
     let session_id = live_stream.session_id.clone();
 
     let handshake_stream = stream::iter([Ok::<_, Infallible>(sse_json_event(
@@ -131,10 +151,19 @@ pub async fn stream_game_session(
             note: "subscribed",
         },
     ))]);
-    let initial_events = live_stream
-        .tasks
-        .into_iter()
-        .map(|task| Ok::<_, Infallible>(task_updated_sse(task)));
+    let initial_events = if live_stream.replayed_events.is_empty() && since.is_none() {
+        live_stream
+            .tasks
+            .into_iter()
+            .map(|task| Ok::<_, Infallible>(task_updated_sse(None, task)))
+            .collect::<Vec<_>>()
+    } else {
+        live_stream
+            .replayed_events
+            .into_iter()
+            .map(|event| Ok::<_, Infallible>(buffered_task_updated_sse(event)))
+            .collect::<Vec<_>>()
+    };
 
     let initial_stream = stream::iter(initial_events);
     let live_stream = stream::unfold(
@@ -146,7 +175,7 @@ pub async fn stream_game_session(
 
             match event_rx.recv().await {
                 Ok(event) => Some((
-                    Ok(session_event_to_sse(event)),
+                    Ok(buffered_task_updated_sse(event)),
                     Some((event_rx, session_id)),
                 )),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => Some((
@@ -179,19 +208,22 @@ pub async fn stream_game_session(
     )
 }
 
-fn session_event_to_sse(event: TaskEvent) -> Event {
-    match event {
-        TaskEvent::TaskUpdated { task } => task_updated_sse(task),
+fn buffered_task_updated_sse(event: BufferedTaskEvent) -> Event {
+    task_updated_sse(Some(event.event_id), event.task)
+}
+
+fn task_updated_sse(event_id: Option<u64>, task: TaskView) -> Event {
+    let update = task_update_from_view(event_id, &task);
+    let event = sse_json_event("task.updated", TaskUpdatedData { task, update });
+    match event_id {
+        Some(value) => event.id(value.to_string()),
+        None => event,
     }
 }
 
-fn task_updated_sse(task: TaskView) -> Event {
-    let update = task_update_from_view(&task);
-    sse_json_event("task.updated", TaskUpdatedData { task, update })
-}
-
-fn task_update_from_view(task: &TaskView) -> TaskUpdateData {
+fn task_update_from_view(event_id: Option<u64>, task: &TaskView) -> TaskUpdateData {
     TaskUpdateData {
+        event_id,
         entity: task.entity.clone(),
         kind: task.kind,
         status: task.status,

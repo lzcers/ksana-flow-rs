@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
@@ -28,12 +31,58 @@ pub struct AppState {
 struct SessionRecord {
     session_id: String,
     engine: AkashicSessionEngine,
+    replay: Arc<Mutex<ReplayBuffer>>,
+    events_tx: broadcast::Sender<BufferedTaskEvent>,
 }
 
 pub struct LiveSessionStream {
     pub session_id: String,
     pub tasks: Vec<TaskView>,
-    pub event_rx: broadcast::Receiver<TaskEvent>,
+    pub replayed_events: Vec<BufferedTaskEvent>,
+    pub event_rx: broadcast::Receiver<BufferedTaskEvent>,
+}
+
+#[derive(Clone)]
+pub struct BufferedTaskEvent {
+    pub event_id: u64,
+    pub task: TaskView,
+}
+
+struct ReplayBuffer {
+    next_event_id: u64,
+    events: VecDeque<BufferedTaskEvent>,
+}
+
+const REPLAY_BUFFER_LIMIT: usize = 256;
+
+impl ReplayBuffer {
+    fn new() -> Self {
+        Self {
+            next_event_id: 1,
+            events: VecDeque::new(),
+        }
+    }
+
+    fn push(&mut self, task: TaskView) -> BufferedTaskEvent {
+        let event = BufferedTaskEvent {
+            event_id: self.next_event_id,
+            task,
+        };
+        self.next_event_id += 1;
+        self.events.push_back(event.clone());
+        if self.events.len() > REPLAY_BUFFER_LIMIT {
+            self.events.pop_front();
+        }
+        event
+    }
+
+    fn events_after(&self, since: Option<u64>) -> Vec<BufferedTaskEvent> {
+        self.events
+            .iter()
+            .filter(|event| since.is_none_or(|last_seen| event.event_id > last_seen))
+            .cloned()
+            .collect()
+    }
 }
 
 impl AppState {
@@ -47,9 +96,23 @@ impl AppState {
         let protagonist_profile = build_protagonist_profile(&request.character);
         let world_profile = build_world_profile(&request.world);
         let engine = AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
+        let replay = Arc::new(Mutex::new(ReplayBuffer::new()));
+        let (events_tx, _) = broadcast::channel(REPLAY_BUFFER_LIMIT);
+        let mut event_rx = engine.subscribe_events();
+        let replay_for_task = Arc::clone(&replay);
+        let events_tx_for_task = events_tx.clone();
+        tokio::spawn(async move {
+            while let Ok(event) = event_rx.recv().await {
+                let TaskEvent::TaskUpdated { task } = event;
+                let buffered = replay_for_task.lock().await.push(task);
+                let _ = events_tx_for_task.send(buffered);
+            }
+        });
         let session = SessionRecord {
             session_id: session_id.clone(),
             engine,
+            replay,
+            events_tx,
         };
 
         self.sessions
@@ -101,6 +164,7 @@ impl AppState {
     pub async fn open_game_session_stream(
         &self,
         session_id: &str,
+        since: Option<u64>,
     ) -> Result<LiveSessionStream, AppError> {
         let mut sessions = self.sessions.lock().await;
         let session = sessions
@@ -109,11 +173,13 @@ impl AppState {
 
         let snapshot = session.engine.get_game_session();
         let tasks = snapshot.tasks.clone();
+        let replayed_events = session.replay.lock().await.events_after(since);
 
         Ok(LiveSessionStream {
             session_id: session_id.to_string(),
             tasks,
-            event_rx: session.engine.subscribe_events(),
+            replayed_events,
+            event_rx: session.events_tx.subscribe(),
         })
     }
 }
