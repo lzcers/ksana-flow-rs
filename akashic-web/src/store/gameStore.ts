@@ -27,6 +27,12 @@ interface GameStoreState {
   character: Character;
   world: World;
   currentNode: StoryNode | null;
+  streamedNarrationText: string;
+  streamedNarrationStatus: TaskView['status'] | null;
+  streamedFatePlanningRaw: string;
+  streamedFatePlanningJson: JsonValue | null;
+  streamedProtagonistActionRaw: string;
+  streamedProtagonistActionJson: JsonValue | null;
   stateView: RuntimeStateView | null;
   obsessionPoints: number;
   intuitionPoints: number;
@@ -91,6 +97,26 @@ interface StreamedProtagonistOption {
   action?: string;
   motivation_and_risk?: string;
   motivationAndRisk?: string;
+}
+
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+type JsonObject = { [key: string]: JsonValue };
+
+interface FatePlanningSummary {
+  sceneTitle: string | null;
+  locationName: string | null;
+  locationStatus: string | null;
+  description: string | null;
+  currentEvent: string | null;
+  newInfo: string[];
+  protagonistCondition: string | null;
 }
 
 const image = (prompt: string) =>
@@ -337,6 +363,12 @@ const initialState = {
   character: initialCharacter,
   world: initialWorld,
   currentNode: null,
+  streamedNarrationText: '',
+  streamedNarrationStatus: null,
+  streamedFatePlanningRaw: '',
+  streamedFatePlanningJson: null,
+  streamedProtagonistActionRaw: '',
+  streamedProtagonistActionJson: null,
   stateView: null,
   obsessionPoints: 3,
   intuitionPoints: 5,
@@ -485,6 +517,12 @@ function resetPlayState(state: GameStoreState) {
     character: cloneCharacter(initialCharacter),
     world: cloneWorld(initialWorld),
     currentNode: null,
+    streamedNarrationText: '',
+    streamedNarrationStatus: null,
+    streamedFatePlanningRaw: '',
+    streamedFatePlanningJson: null,
+    streamedProtagonistActionRaw: '',
+    streamedProtagonistActionJson: null,
     stateView: null,
     obsessionPoints: 3,
     intuitionPoints: 5,
@@ -514,7 +552,7 @@ function toChoiceFromSession(choice: PendingProtagonistChoice): Choice {
 function taskLabel(kind: string): string {
   switch (kind) {
     case 'fate_planning':
-      return '命运织线';
+      return '命运编织';
     case 'narration':
       return '叙事展开';
     case 'protagonist_action':
@@ -545,6 +583,50 @@ function taskText(task: TaskView): string | null {
     return text;
   }
   return null;
+}
+
+function taskRawContent(task: TaskView | null | undefined): string {
+  return task ? taskContent(task) ?? '' : '';
+}
+
+function parseJsonValue(raw: string): JsonValue | null {
+  if (!raw.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as JsonValue;
+  } catch {
+    return null;
+  }
+}
+
+function isJsonObject(value: JsonValue | null): value is JsonObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readJsonString(value: JsonValue | undefined): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function readJsonStringArray(value: JsonValue | undefined): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function summarizeFatePlanning(value: JsonValue | null): FatePlanningSummary | null {
+  if (!isJsonObject(value)) {
+    return null;
+  }
+
+  return {
+    sceneTitle: readJsonString(value.scene_title),
+    locationName: readJsonString(value.location_name),
+    locationStatus: readJsonString(value.location_status),
+    description: readJsonString(value.description),
+    currentEvent: readJsonString(value.current_event),
+    newInfo: readJsonStringArray(value.new_info),
+    protagonistCondition: readJsonString(value.protagonist_condition),
+  };
 }
 
 function toChoiceFromStreamOption(option: StreamedProtagonistOption, index: number): Choice {
@@ -694,6 +776,37 @@ function cloneTask(task: TaskView): TaskView {
   };
 }
 
+function findLatestTaskByKind(tasks: TaskView[], kind: TaskView['kind']): TaskView | null {
+  return findLatestTask(tasks, (task) => task.kind === kind);
+}
+
+function mapSessionToStreamState(
+  session: GameSessionWorldStateData,
+): Pick<
+  GameStoreState,
+  | 'streamedNarrationText'
+  | 'streamedNarrationStatus'
+  | 'streamedFatePlanningRaw'
+  | 'streamedFatePlanningJson'
+  | 'streamedProtagonistActionRaw'
+  | 'streamedProtagonistActionJson'
+> {
+  const latestNarrationTask = findLatestTaskByKind(session.tasks, 'narration');
+  const latestFatePlanningTask = findLatestTaskByKind(session.tasks, 'fate_planning');
+  const latestProtagonistActionTask = findLatestTaskByKind(session.tasks, 'protagonist_action');
+  const fatePlanningRaw = taskRawContent(latestFatePlanningTask);
+  const protagonistActionRaw = taskRawContent(latestProtagonistActionTask);
+
+  return {
+    streamedNarrationText: persistedNarrationText(session),
+    streamedNarrationStatus: latestNarrationTask?.status ?? null,
+    streamedFatePlanningRaw: fatePlanningRaw,
+    streamedFatePlanningJson: parseJsonValue(fatePlanningRaw),
+    streamedProtagonistActionRaw: protagonistActionRaw,
+    streamedProtagonistActionJson: parseJsonValue(protagonistActionRaw),
+  };
+}
+
 function findLatestTask(tasks: TaskView[], predicate: (task: TaskView) => boolean): TaskView | null {
   for (let index = tasks.length - 1; index >= 0; index -= 1) {
     const task = tasks[index];
@@ -761,38 +874,86 @@ function applyStreamTaskToState(
   task: TaskView,
   set: (partial: Partial<GameStoreState> | ((state: GameStoreState) => Partial<GameStoreState>)) => void,
 ) {
-  const nextText = taskText(task);
-  const nextChoices = protagonistActionChoices(task);
+  set((state) => {
+    switch (task.kind) {
+      case 'narration': {
+        const nextText = taskText(task);
+        if (!nextText) {
+          return {};
+        }
 
-  set((state) => ({
-    worldNews: `命运编织中：${taskLabel(task.kind)}`,
-    currentNode: state.currentNode
-      ? {
-        ...state.currentNode,
-        text:
-          nextText ??
-          (state.currentNode.text === STREAM_PLACEHOLDER_TEXT ? '' : state.currentNode.text),
-        choices:
-          nextChoices != null
-            ? nextChoices
-            : task.kind === 'narration'
-              ? []
-              : state.currentNode.choices,
+        return {
+          streamedNarrationText: nextText,
+          streamedNarrationStatus: task.status,
+          currentNode: state.currentNode
+            ? {
+              ...state.currentNode,
+              text: nextText,
+              choices: [],
+            }
+            : null,
+          stateView: state.stateView
+            ? {
+              ...state.stateView,
+              currentScene: taskLabel(task.kind),
+              latestHistory: nextText,
+              latestBroadcastSummary: nextText,
+            }
+            : null,
+        };
       }
-      : null,
-    stateView: state.stateView
-      ? {
-        ...state.stateView,
-        currentScene: taskLabel(task.kind),
-        latestProtagonistAction:
-          protagonistActionText(task) ?? state.stateView.latestProtagonistAction,
-        latestHistory:
-          nextText ??
-          (state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT ? '' : state.stateView.latestHistory),
-        latestBroadcastSummary: nextText ?? state.stateView.latestBroadcastSummary,
+      case 'fate_planning': {
+        const raw = taskRawContent(task);
+        const parsed = parseJsonValue(raw);
+        const summary = summarizeFatePlanning(parsed);
+
+        return {
+          streamedFatePlanningRaw: raw,
+          streamedFatePlanningJson: parsed,
+          worldNews:
+            summary?.currentEvent ??
+            summary?.newInfo[0] ??
+            summary?.locationStatus ??
+            state.worldNews,
+          stateView: state.stateView
+            ? {
+              ...state.stateView,
+              currentScene: summary?.sceneTitle ?? taskLabel(task.kind),
+              currentLocation: summary?.locationName ?? state.stateView.currentLocation,
+              protagonistState: summary?.protagonistCondition ?? state.stateView.protagonistState,
+              latestBroadcastSummary: summary?.description ?? state.stateView.latestBroadcastSummary,
+            }
+            : null,
+        };
       }
-      : null,
-  }));
+      case 'protagonist_action': {
+        const raw = taskRawContent(task);
+        const parsed = parseJsonValue(raw);
+        const nextChoices = protagonistActionChoices(task);
+
+        return {
+          streamedProtagonistActionRaw: raw,
+          streamedProtagonistActionJson: parsed,
+          currentNode: state.currentNode
+            ? {
+              ...state.currentNode,
+              choices: nextChoices ?? state.currentNode.choices,
+            }
+            : null,
+          stateView: state.stateView
+            ? {
+              ...state.stateView,
+              currentScene: taskLabel(task.kind),
+              latestProtagonistAction:
+                protagonistActionText(task) ?? state.stateView.latestProtagonistAction,
+            }
+            : null,
+        };
+      }
+      default:
+        return {};
+    }
+  });
 }
 
 function persistedNarrationText(session: GameSessionWorldStateData): string {
@@ -823,14 +984,15 @@ function sessionText(session: GameSessionWorldStateData, fallbackText?: string |
     return taskNarration;
   }
 
+  if (fallbackText?.trim()) {
+    return fallbackText.trim();
+  }
+
   if (isSessionLoading(session)) {
     return STREAM_PLACEHOLDER_TEXT;
   }
 
-  return (
-    fallbackText?.trim() ||
-    '命运正在编织，请稍候...'
-  );
+  return '命运正在编织，请稍候...';
 }
 
 function sessionNews(session: GameSessionWorldStateData): string | null {
@@ -890,6 +1052,7 @@ async function refreshSessionState(
   replaceActiveStreamTasks(session.tasks);
   set((state) => ({
     ...mapSessionToPlayState(session, state.currentNode?.text),
+    ...mapSessionToStreamState(session),
     isLoading: isSessionLoading(session),
     error: null,
   }));
@@ -944,6 +1107,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         latestBroadcastSummary: world.coreConflict,
         latestProtagonistAction: '尚未做出选择',
       },
+      streamedNarrationText: '',
+      streamedNarrationStatus: null,
+      streamedFatePlanningRaw: '',
+      streamedFatePlanningJson: null,
+      streamedProtagonistActionRaw: '',
+      streamedProtagonistActionJson: null,
       obsessionPoints: 3,
       intuitionPoints: 5,
       daysLeft: 7,
@@ -970,6 +1139,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       set({
         sessionId: created.sessionId,
         ...mapSessionToPlayState(controlled.session),
+        ...mapSessionToStreamState(controlled.session),
         isLoading: true,
         error: null,
       });
@@ -1050,6 +1220,12 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         obsessionPoints: nextObsession,
         intuitionPoints,
         daysLeft: nextDaysLeft,
+        streamedNarrationText: '',
+        streamedNarrationStatus: null,
+        streamedFatePlanningRaw: '',
+        streamedFatePlanningJson: null,
+        streamedProtagonistActionRaw: '',
+        streamedProtagonistActionJson: null,
         currentNode: state.currentNode
           ? {
             ...state.currentNode,
@@ -1073,6 +1249,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
         set({
           ...mapSessionToPlayState(controlled.session),
+          ...mapSessionToStreamState(controlled.session),
           isLoading: true,
           error: null,
         });

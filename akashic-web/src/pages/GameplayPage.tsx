@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Clock3,
   Eye,
@@ -30,6 +30,12 @@ const GameplayPage: React.FC = () => {
     latestSaveId,
     isLoading,
     error,
+    streamedNarrationText,
+    streamedNarrationStatus,
+    streamedFatePlanningRaw,
+    streamedFatePlanningJson,
+    streamedProtagonistActionRaw,
+    streamedProtagonistActionJson,
     createSave,
     submitChoice,
     previewChoice,
@@ -40,6 +46,9 @@ const GameplayPage: React.FC = () => {
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
+  const lastNarrationLogRef = useRef('');
+  const lastFatePlanningLogRef = useRef('');
+  const lastProtagonistActionLogRef = useRef('');
 
   const currentScene = stateView?.currentScene ?? '演示片段';
   const hasChoices = currentNode?.choices.length > 0;
@@ -57,6 +66,67 @@ const GameplayPage: React.FC = () => {
     setPreviews({});
     setIsUtilityMenuOpen(false);
   }, [currentNode?.id]);
+
+  useEffect(() => {
+    setIsTyping(Boolean(currentNode?.text));
+  }, [currentNode?.text]);
+
+  useEffect(() => {
+    const nextNarration = streamedNarrationText.trim();
+
+    if (
+      !nextNarration
+      || streamedNarrationStatus !== 'done'
+      || nextNarration === lastNarrationLogRef.current
+    ) {
+      return;
+    }
+
+    lastNarrationLogRef.current = nextNarration;
+    console.groupCollapsed('[Akashic Stream Debug:narration]');
+    console.log(nextNarration);
+    console.groupEnd();
+  }, [streamedNarrationStatus, streamedNarrationText]);
+
+  useEffect(() => {
+    if (!streamedFatePlanningJson) {
+      return;
+    }
+
+    const serialized = JSON.stringify(streamedFatePlanningJson);
+    if (serialized === lastFatePlanningLogRef.current) {
+      return;
+    }
+
+    lastFatePlanningLogRef.current = serialized;
+    console.groupCollapsed('[Akashic Stream Debug:fate_planning]');
+    console.log('raw', streamedFatePlanningRaw || '(暂无 fate_planning 流)');
+    console.log('parsed', streamedFatePlanningJson);
+    console.groupEnd();
+  }, [
+    streamedFatePlanningRaw,
+    streamedFatePlanningJson,
+  ]);
+
+  useEffect(() => {
+    if (!streamedProtagonistActionJson) {
+      return;
+    }
+
+    const serialized = JSON.stringify(streamedProtagonistActionJson);
+    if (serialized === lastProtagonistActionLogRef.current) {
+      return;
+    }
+
+    lastProtagonistActionLogRef.current = serialized;
+    console.groupCollapsed('[Akashic Stream Debug:protagonist_action]');
+    console.log('raw', streamedProtagonistActionRaw || '(暂无 protagonist_action 流)');
+    console.log('parsed', streamedProtagonistActionJson);
+    console.groupEnd();
+  }, [
+    streamedProtagonistActionRaw,
+    streamedProtagonistActionJson,
+  ]);
 
   const handleTypewriterComplete = useCallback(() => {
     setIsTyping(false);
@@ -134,10 +204,10 @@ const GameplayPage: React.FC = () => {
               <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{daysLeft}日</StatusPill>
               <StatusPill icon={Sparkles} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{currentScene}</StatusPill>
             </div>
-            <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
+            {worldNews && <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
               <Sparkles className="h-3.5 w-3.5 text-amber-200" />
-              <span>{worldNews ?? ""}</span>
-            </div>
+              <span>{worldNews}</span>
+            </div>}
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -152,8 +222,8 @@ const GameplayPage: React.FC = () => {
             </section>
 
             <div className="shrink-0 space-y-1.5">
-              {hasChoices && <div className="rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-1.5 sm:min-h-[10.5rem]">
-                <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 sm:max-h-[32dvh]">
+              {hasChoices && <div className="rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-2">
+                <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 py-0.5">
                   {hasChoices ? currentNode.choices.map((choice) => (
                     <div key={choice.id} className="space-y-1.5">
                       <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
