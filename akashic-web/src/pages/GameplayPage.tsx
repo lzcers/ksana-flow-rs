@@ -125,7 +125,7 @@ const GameplayPage: React.FC = () => {
   return (
     <ScreenShell className="items-stretch">
       <StoryFrame className="relative flex max-w-5xl flex-col overflow-hidden px-2.5 py-2.5 sm:px-3 sm:py-3 md:px-4 md:py-4">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#08111d]/35 to-[#08111d]" />
+        <div className="pointer-events-none absolute inset-0 bg-linear-to-b from-transparent via-[#08111d]/35 to-[#08111d]" />
         <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3">
           <div className="shrink-0 space-y-2">
             <div className="flex flex-wrap gap-1">

@@ -85,6 +85,13 @@ interface SaveSnapshot {
   worldNews: string | null;
 }
 
+interface StreamedProtagonistOption {
+  title?: string;
+  action?: string;
+  motivation_and_risk?: string;
+  motivationAndRisk?: string;
+}
+
 const image = (prompt: string) =>
   `https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=${encodeURIComponent(prompt)}&image_size=landscape_16_9`;
 
@@ -514,9 +521,20 @@ function taskLabel(kind: string): string {
   }
 }
 
+function taskContent(task: TaskView): string | null {
+  if (task.status === 'done' && task.output != null) {
+    return task.output;
+  }
+
+  if (task.chunks.length > 0) {
+    return task.chunks.join('');
+  }
+
+  return task.output;
+}
+
 function taskText(task: TaskView): string | null {
-  const text =
-    task.status === 'running' ? task.chunks[task.chunks.length - 1] : task.output;
+  const text = taskContent(task);
   if (!text?.trim()) {
     return null;
   }
@@ -526,15 +544,134 @@ function taskText(task: TaskView): string | null {
   return null;
 }
 
+function toChoiceFromStreamOption(option: StreamedProtagonistOption, index: number): Choice {
+  return {
+    id: `choice-${index + 1}`,
+    text: option.title?.trim() || option.action?.trim() || `行动 ${index + 1}`,
+    previewText: option.motivationAndRisk?.trim() || option.motivation_and_risk?.trim(),
+    disabled: false,
+    costHints: {
+      intuition: 1,
+      obsession: 1,
+    },
+  };
+}
+
+function parseProtagonistChoicesPayload(raw: string): Choice[] | null {
+  try {
+    const parsed = JSON.parse(raw) as { options?: StreamedProtagonistOption[] };
+    return (parsed.options ?? []).map(toChoiceFromStreamOption);
+  } catch {
+    return null;
+  }
+}
+
+function extractCompletedJsonObjects(raw: string): string[] {
+  const objects: string[] = [];
+  let depth = 0;
+  let startIndex = -1;
+  let isInString = false;
+  let isEscaping = false;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index];
+
+    if (isEscaping) {
+      isEscaping = false;
+      continue;
+    }
+
+    if (char === '\\' && isInString) {
+      isEscaping = true;
+      continue;
+    }
+
+    if (char === '"') {
+      isInString = !isInString;
+      continue;
+    }
+
+    if (isInString) {
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) {
+        startIndex = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0 && startIndex >= 0) {
+        objects.push(raw.slice(startIndex, index + 1));
+        startIndex = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+function parseStreamingProtagonistChoices(raw: string): Choice[] | null {
+  const parsed = parseProtagonistChoicesPayload(raw);
+  if (parsed) {
+    return parsed;
+  }
+
+  const optionsMatch = raw.match(/"options"\s*:\s*\[/);
+  if (!optionsMatch) {
+    return null;
+  }
+
+  const optionSection = raw.slice((optionsMatch.index ?? 0) + optionsMatch[0].length);
+  const optionObjects = extractCompletedJsonObjects(optionSection);
+  if (optionObjects.length === 0) {
+    return null;
+  }
+
+  const options = optionObjects.flatMap((item) => {
+    try {
+      return [JSON.parse(item) as StreamedProtagonistOption];
+    } catch {
+      return [];
+    }
+  });
+
+  return options.map(toChoiceFromStreamOption);
+}
+
+function protagonistActionChoices(task: TaskView): Choice[] | null {
+  if (task.kind !== 'protagonist_action') {
+    return null;
+  }
+
+  const raw = taskContent(task);
+  if (!raw?.trim()) {
+    return null;
+  }
+
+  return parseStreamingProtagonistChoices(raw);
+}
+
 function protagonistActionText(task: TaskView): string | null {
-  if (task.kind !== 'protagonist_action' || task.status !== 'done' || !task.output?.trim()) {
+  const raw = taskContent(task);
+  if (task.kind !== 'protagonist_action' || !raw?.trim()) {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(task.output) as {
-      options?: Array<{ title?: string; action?: string; motivation_and_risk?: string }>;
-    };
+    const parsedChoices = parseStreamingProtagonistChoices(raw);
+    if (parsedChoices) {
+      if (parsedChoices.length === 0) {
+        return '主角暂时没有可执行的行动选项。';
+      }
+      return parsedChoices.map((choice) => choice.text).join(' / ');
+    }
+
+    const parsed = JSON.parse(raw) as { options?: StreamedProtagonistOption[] };
     const options = parsed.options ?? [];
     if (options.length === 0) {
       return '主角暂时没有可执行的行动选项。';
@@ -543,7 +680,7 @@ function protagonistActionText(task: TaskView): string | null {
       .map((option, index) => option.title?.trim() || option.action?.trim() || `行动 ${index + 1}`)
       .join(' / ');
   } catch {
-    return task.output.trim();
+    return raw.trim();
   }
 }
 
@@ -719,26 +856,20 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             }
             lastStreamEventId = lastEventId || lastStreamEventId;
             const nextText = taskText(event.task);
-            const narrationDelta =
-              event.task.kind === 'narration' && event.task.status === 'running'
-                ? event.update.chunk?.trimEnd() ?? ''
-                : '';
+            const nextChoices = protagonistActionChoices(event.task);
 
             set((state) => ({
               worldNews: `命运编织中：${taskLabel(event.task.kind)}`,
               currentNode: state.currentNode
                 ? {
                   ...state.currentNode,
-                  text:
-                    narrationDelta
-                      ? state.currentNode.text === STREAM_PLACEHOLDER_TEXT
-                        ? narrationDelta
-                        : `${state.currentNode.text}${narrationDelta}`
-                      : nextText == null
-                        ? state.currentNode.text
-                        : state.currentNode.text === STREAM_PLACEHOLDER_TEXT
-                          ? nextText
-                          : nextText,
+                  text: nextText ?? state.currentNode.text,
+                  choices:
+                    nextChoices != null
+                      ? nextChoices
+                      : event.task.kind === 'narration'
+                        ? []
+                        : state.currentNode.choices,
                 }
                 : null,
               stateView: state.stateView
@@ -747,22 +878,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
                   currentScene: taskLabel(event.task.kind),
                   latestProtagonistAction:
                     protagonistActionText(event.task) ?? state.stateView.latestProtagonistAction,
-                  latestHistory:
-                    narrationDelta
-                      ? state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT
-                        ? narrationDelta
-                        : `${state.stateView.latestHistory}${narrationDelta}`
-                      : nextText == null
-                        ? state.stateView.latestHistory
-                        : state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT
-                          ? nextText
-                          : nextText,
-                  latestBroadcastSummary:
-                    narrationDelta
-                      ? `${state.stateView.latestBroadcastSummary}${narrationDelta}`
-                      : nextText == null
-                        ? state.stateView.latestBroadcastSummary
-                        : nextText,
+                  latestHistory: nextText ?? state.stateView.latestHistory,
+                  latestBroadcastSummary: nextText ?? state.stateView.latestBroadcastSummary,
                 }
                 : null,
             }));
@@ -824,6 +941,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         obsessionPoints: nextObsession,
         intuitionPoints,
         daysLeft: nextDaysLeft,
+        currentNode: {
+          ...currentNode,
+          choices: [],
+        },
         error: null,
       });
 
