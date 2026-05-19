@@ -46,7 +46,6 @@ pub struct LiveSessionStream {
 #[derive(Clone)]
 pub struct BufferedTaskEvent {
     pub event_id: u64,
-    pub task: TaskView,
     pub update: TaskUpdate,
 }
 
@@ -65,10 +64,9 @@ impl ReplayBuffer {
         }
     }
 
-    fn push(&mut self, task: TaskView, update: TaskUpdate) -> BufferedTaskEvent {
+    fn push(&mut self, update: TaskUpdate) -> BufferedTaskEvent {
         let event = BufferedTaskEvent {
             event_id: self.next_event_id,
-            task,
             update,
         };
         self.next_event_id += 1;
@@ -106,8 +104,8 @@ impl AppState {
         let events_tx_for_task = events_tx.clone();
         tokio::spawn(async move {
             while let Ok(event) = event_rx.recv().await {
-                let TaskEvent::TaskUpdated { task, update } = event;
-                let buffered = replay_for_task.lock().await.push(task, update);
+                let TaskEvent::TaskUpdated { update } = event;
+                let buffered = replay_for_task.lock().await.push(update);
                 let _ = events_tx_for_task.send(buffered);
             }
         });

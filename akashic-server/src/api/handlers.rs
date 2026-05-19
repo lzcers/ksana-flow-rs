@@ -71,9 +71,8 @@ struct TaskUpdateData {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TaskUpdatedData {
+struct TaskSnapshotData {
     task: TaskView,
-    update: TaskUpdateData,
 }
 
 fn sse_json_event<T>(name: &str, data: T) -> Event
@@ -155,7 +154,7 @@ pub async fn stream_game_session(
         live_stream
             .tasks
             .into_iter()
-            .map(|task| Ok::<_, Infallible>(initial_task_updated_sse(task)))
+            .map(|task| Ok::<_, Infallible>(initial_task_snapshot_sse(task)))
             .collect::<Vec<_>>()
     } else {
         live_stream
@@ -209,33 +208,16 @@ pub async fn stream_game_session(
 }
 
 fn buffered_task_updated_sse(event: BufferedTaskEvent) -> Event {
-    task_updated_sse(Some(event.event_id), event.task, event.update)
+    task_updated_sse(Some(event.event_id), event.update)
 }
 
-fn initial_task_updated_sse(task: TaskView) -> Event {
-    let update = TaskUpdate {
-        entity: task.entity.clone(),
-        kind: task.kind,
-        status: task.status,
-        chunk: match task.status {
-            TaskStatus::Running => task.chunks.last().cloned(),
-            _ => None,
-        },
-        output: match task.status {
-            TaskStatus::Done => task.output.clone(),
-            _ => None,
-        },
-        error: match task.status {
-            TaskStatus::Error => task.error.clone().or_else(|| task.last_error.clone()),
-            _ => None,
-        },
-    };
-    task_updated_sse(None, task, update)
+fn initial_task_snapshot_sse(task: TaskView) -> Event {
+    sse_json_event("task.snapshot", TaskSnapshotData { task })
 }
 
-fn task_updated_sse(event_id: Option<u64>, task: TaskView, update: TaskUpdate) -> Event {
+fn task_updated_sse(event_id: Option<u64>, update: TaskUpdate) -> Event {
     let update = task_update_from_delta(event_id, update);
-    let event = sse_json_event("task.updated", TaskUpdatedData { task, update });
+    let event = sse_json_event("task.updated", update);
     match event_id {
         Some(value) => event.id(value.to_string()),
         None => event,

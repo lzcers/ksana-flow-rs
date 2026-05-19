@@ -69,15 +69,9 @@ pub fn export_system(
     // 导出快照
     export_state.publish_snapshot(snapshot);
 
-    // 导出任务更新
+    // 导出任务更新。这里只发送增量更新，完整快照由 snapshot 单独承担。
     for update in std::mem::take(&mut task_manager.emitted_updates) {
-        if let Some(task) = task_results
-            .iter()
-            .find(|(entity, _)| format!("{entity:?}") == update.entity)
-            .map(|(_, result)| TaskView::from_task_result(update.entity.clone(), result.clone()))
-        {
-            export_state.publish_task_update(task, update);
-        }
+        export_state.publish_task_update(update);
     }
     // 单独模块测试时打印任务 chunk
     print_task_chunks(&task_manager, &mut _printer_state);

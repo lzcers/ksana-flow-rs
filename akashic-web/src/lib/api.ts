@@ -184,17 +184,18 @@ interface RawControlGameSessionData {
   session: RawGameSessionWorldStateData;
 }
 
-export interface TaskUpdatedEvent {
+export interface TaskSnapshotEvent {
   task: TaskView;
-  update: {
-    eventId?: number;
-    entity: string;
-    kind: string;
-    status: 'pending' | 'running' | 'done' | 'error';
-    chunk?: string | null;
-    output?: string | null;
-    error?: string | null;
-  };
+}
+
+export interface TaskUpdatedEvent {
+  eventId?: number;
+  entity: string;
+  kind: string;
+  status: 'pending' | 'running' | 'done' | 'error';
+  chunk?: string | null;
+  output?: string | null;
+  error?: string | null;
 }
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
@@ -279,6 +280,7 @@ export function getGameSessionWorld(sessionId: string) {
 export function openGameSessionStream(
   sessionId: string,
   handlers: {
+    onTaskSnapshot: (event: TaskSnapshotEvent) => void;
     onTaskUpdated: (event: TaskUpdatedEvent, lastEventId: string) => void;
     onError?: () => void;
   },
@@ -286,6 +288,11 @@ export function openGameSessionStream(
 ) {
   const search = since ? `?since=${encodeURIComponent(since)}` : '';
   const eventSource = new EventSource(`/api/game-sessions/${sessionId}/stream${search}`);
+
+  eventSource.addEventListener('task.snapshot', (rawEvent) => {
+    const event = rawEvent as MessageEvent<string>;
+    handlers.onTaskSnapshot(JSON.parse(event.data) as TaskSnapshotEvent);
+  });
 
   eventSource.addEventListener('task.updated', (rawEvent) => {
     const event = rawEvent as MessageEvent<string>;

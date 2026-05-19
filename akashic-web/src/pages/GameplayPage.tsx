@@ -251,7 +251,7 @@ const GameplayPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="shrink-0 min-h-[1.25rem]">
+            <div className="shrink-0 min-h-5">
               {feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{feedback}</p> : null}
               {error && !feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{error}</p> : null}
             </div>

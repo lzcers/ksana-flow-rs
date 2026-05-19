@@ -14,6 +14,7 @@ import type {
   RuntimeStateView,
   SaveListItem,
   StoryNode,
+  TaskUpdatedEvent,
   TaskView,
   World,
 } from '../lib/api';
@@ -353,6 +354,7 @@ const initialState = {
 let activeSessionStream: EventSource | null = null;
 let activeStreamSessionId: string | null = null;
 let lastStreamEventId: string | null = null;
+let activeStreamTasks = new Map<string, TaskView>();
 const STREAM_PLACEHOLDER_TEXT = '命运正在展开，请稍候...';
 
 function closeActiveSessionStream() {
@@ -360,6 +362,7 @@ function closeActiveSessionStream() {
   activeSessionStream = null;
   activeStreamSessionId = null;
   lastStreamEventId = null;
+  activeStreamTasks = new Map();
 }
 
 function cloneCharacter(character: Character): Character {
@@ -684,6 +687,103 @@ function protagonistActionText(task: TaskView): string | null {
   }
 }
 
+function cloneTask(task: TaskView): TaskView {
+  return {
+    ...task,
+    chunks: [...task.chunks],
+  };
+}
+
+function replaceActiveStreamTasks(tasks: TaskView[]): void {
+  activeStreamTasks = new Map(tasks.map((task) => [task.entity, cloneTask(task)]));
+}
+
+function upsertTaskSnapshot(task: TaskView): TaskView {
+  const nextTask = cloneTask(task);
+  activeStreamTasks.set(task.entity, nextTask);
+  return nextTask;
+}
+
+function applyTaskUpdate(update: TaskUpdatedEvent): TaskView {
+  const currentTask = activeStreamTasks.get(update.entity) ?? {
+    entity: update.entity,
+    kind: update.kind,
+    status: 'pending',
+    attempts: 1,
+    maxAttempts: 1,
+    lastError: null,
+    chunks: [],
+    output: null,
+    error: null,
+  };
+
+  const nextTask: TaskView = {
+    ...currentTask,
+    kind: update.kind,
+    status: update.status,
+    chunks: [...currentTask.chunks],
+  };
+
+  if (update.chunk != null) {
+    nextTask.chunks.push(update.chunk);
+  }
+
+  if (update.output !== undefined) {
+    nextTask.output = update.output;
+  }
+
+  if (update.error !== undefined) {
+    nextTask.error = update.error;
+    nextTask.lastError = update.error;
+  }
+
+  if (update.status === 'done') {
+    nextTask.error = null;
+    nextTask.lastError = null;
+  }
+
+  activeStreamTasks.set(update.entity, nextTask);
+  return nextTask;
+}
+
+function applyStreamTaskToState(
+  task: TaskView,
+  set: (partial: Partial<GameStoreState> | ((state: GameStoreState) => Partial<GameStoreState>)) => void,
+) {
+  const nextText = taskText(task);
+  const nextChoices = protagonistActionChoices(task);
+
+  set((state) => ({
+    worldNews: `命运编织中：${taskLabel(task.kind)}`,
+    currentNode: state.currentNode
+      ? {
+        ...state.currentNode,
+        text:
+          nextText ??
+          (state.currentNode.text === STREAM_PLACEHOLDER_TEXT ? '' : state.currentNode.text),
+        choices:
+          nextChoices != null
+            ? nextChoices
+            : task.kind === 'narration'
+              ? []
+              : state.currentNode.choices,
+      }
+      : null,
+    stateView: state.stateView
+      ? {
+        ...state.stateView,
+        currentScene: taskLabel(task.kind),
+        latestProtagonistAction:
+          protagonistActionText(task) ?? state.stateView.latestProtagonistAction,
+        latestHistory:
+          nextText ??
+          (state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT ? '' : state.stateView.latestHistory),
+        latestBroadcastSummary: nextText ?? state.stateView.latestBroadcastSummary,
+      }
+      : null,
+  }));
+}
+
 function persistedNarrationText(session: GameSessionWorldStateData): string {
   const taskNarration = session.tasks.find(
     (task) => task.kind === 'narration' && task.status === 'done' && task.output?.trim(),
@@ -761,6 +861,7 @@ async function refreshSessionState(
     return;
   }
 
+  replaceActiveStreamTasks(session.tasks);
   set((state) => ({
     ...mapSessionToPlayState(session, state.currentNode?.text),
     isLoading: isSessionLoading(session),
@@ -846,49 +947,27 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         isLoading: true,
         error: null,
       });
+      replaceActiveStreamTasks(controlled.session.tasks);
 
       activeSessionStream = openGameSessionStream(
         created.sessionId,
         {
+          onTaskSnapshot: (event) => {
+            if (activeStreamSessionId !== created.sessionId) {
+              return;
+            }
+
+            applyStreamTaskToState(upsertTaskSnapshot(event.task), set);
+          },
           onTaskUpdated: (event, lastEventId) => {
             if (activeStreamSessionId !== created.sessionId) {
               return;
             }
             lastStreamEventId = lastEventId || lastStreamEventId;
-            const nextText = taskText(event.task);
-            const nextChoices = protagonistActionChoices(event.task);
+            const nextTask = applyTaskUpdate(event);
+            applyStreamTaskToState(nextTask, set);
 
-            set((state) => ({
-              worldNews: `命运编织中：${taskLabel(event.task.kind)}`,
-              currentNode: state.currentNode
-                ? {
-                  ...state.currentNode,
-                  text:
-                    nextText ??
-                    (state.currentNode.text === STREAM_PLACEHOLDER_TEXT ? '' : state.currentNode.text),
-                  choices:
-                    nextChoices != null
-                      ? nextChoices
-                      : event.task.kind === 'narration'
-                        ? []
-                        : state.currentNode.choices,
-                }
-                : null,
-              stateView: state.stateView
-                ? {
-                  ...state.stateView,
-                  currentScene: taskLabel(event.task.kind),
-                  latestProtagonistAction:
-                    protagonistActionText(event.task) ?? state.stateView.latestProtagonistAction,
-                  latestHistory:
-                    nextText ??
-                    (state.stateView.latestHistory === STREAM_PLACEHOLDER_TEXT ? '' : state.stateView.latestHistory),
-                  latestBroadcastSummary: nextText ?? state.stateView.latestBroadcastSummary,
-                }
-                : null,
-            }));
-
-            if (event.task.status !== 'running') {
+            if (nextTask.status !== 'running') {
               void refreshSessionState(created.sessionId, set).catch((error) => {
                 set({
                   isLoading: false,
