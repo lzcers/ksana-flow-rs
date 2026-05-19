@@ -694,6 +694,17 @@ function cloneTask(task: TaskView): TaskView {
   };
 }
 
+function findLatestTask(tasks: TaskView[], predicate: (task: TaskView) => boolean): TaskView | null {
+  for (let index = tasks.length - 1; index >= 0; index -= 1) {
+    const task = tasks[index];
+    if (predicate(task)) {
+      return task;
+    }
+  }
+
+  return null;
+}
+
 function replaceActiveStreamTasks(tasks: TaskView[]): void {
   activeStreamTasks = new Map(tasks.map((task) => [task.entity, cloneTask(task)]));
 }
@@ -785,24 +796,39 @@ function applyStreamTaskToState(
 }
 
 function persistedNarrationText(session: GameSessionWorldStateData): string {
-  const taskNarration = session.tasks.find(
-    (task) => task.kind === 'narration' && task.status === 'done' && task.output?.trim(),
-  );
-  if (taskNarration?.output?.trim()) {
-    return taskNarration.output.trim();
+  const currentNarration =
+    session.currentTask?.kind === 'narration' ? taskText(session.currentTask)?.trim() : null;
+  if (currentNarration) {
+    return currentNarration;
   }
 
   if (!isSessionLoading(session) && session.latestNarration.trim()) {
     return session.latestNarration.trim();
   }
 
+  const completedNarration = findLatestTask(
+    session.tasks,
+    (task) => task.kind === 'narration' && task.status === 'done',
+  );
+  if (completedNarration?.output?.trim()) {
+    return completedNarration.output.trim();
+  }
+
   return '';
 }
 
 function sessionText(session: GameSessionWorldStateData, fallbackText?: string | null): string {
+  const taskNarration = persistedNarrationText(session);
+  if (taskNarration) {
+    return taskNarration;
+  }
+
+  if (isSessionLoading(session)) {
+    return STREAM_PLACEHOLDER_TEXT;
+  }
+
   return (
     fallbackText?.trim() ||
-    persistedNarrationText(session) ||
     '命运正在编织，请稍候...'
   );
 }
@@ -1019,17 +1045,26 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       const nextObsession = useObsession ? Math.max(0, obsessionPoints - 1) : obsessionPoints;
       const nextDaysLeft = Math.max(1, daysLeft - 1);
 
-      set({
+      set((state) => ({
         isLoading: true,
         obsessionPoints: nextObsession,
         intuitionPoints,
         daysLeft: nextDaysLeft,
-        currentNode: {
-          ...currentNode,
-          choices: [],
-        },
+        currentNode: state.currentNode
+          ? {
+            ...state.currentNode,
+            text: STREAM_PLACEHOLDER_TEXT,
+            choices: [],
+          }
+          : null,
+        stateView: state.stateView
+          ? {
+            ...state.stateView,
+            latestHistory: STREAM_PLACEHOLDER_TEXT,
+          }
+          : null,
         error: null,
-      });
+      }));
 
       try {
         const controlled = await controlGameSession(sessionId, {

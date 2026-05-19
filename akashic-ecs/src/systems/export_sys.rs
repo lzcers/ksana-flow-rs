@@ -3,6 +3,7 @@ use std::{
     io::{self, Write},
 };
 
+use agent::core::Message;
 use bevy_ecs::{
     entity::Entity,
     system::{Local, Res, ResMut},
@@ -48,7 +49,7 @@ pub fn export_system(
     let latest_narration = narrator_query
         .single()
         .ok()
-        .and_then(|narrator| narrator.context().print_latest_msg())
+        .and_then(|narrator| latest_assistant_narration(narrator.context().conversation().as_slice()))
         .unwrap_or_default();
     let current_protagonist_action = decision_state.committed_action().to_string();
     let choices = decision_state.choices().to_vec();
@@ -159,5 +160,43 @@ fn print_task_chunks(task_manager: &TaskManager, printer_state: &mut ChunkPrinte
 
     if wrote_output {
         let _ = io::stdout().flush();
+    }
+}
+
+fn latest_assistant_narration(messages: &[Message]) -> Option<String> {
+    messages.iter().rev().find_map(|message| match message {
+        Message::Assistant { content, .. } if !content.trim().is_empty() => {
+            Some(content.trim().to_string())
+        }
+        _ => None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use agent::core::Message;
+
+    use super::latest_assistant_narration;
+
+    #[test]
+    fn latest_assistant_narration_ignores_system_and_user_messages() {
+        let messages = vec![
+            Message::system("system prompt"),
+            Message::user("story prompt"),
+            Message::assistant("第一段叙事"),
+            Message::user("下一轮 prompt"),
+        ];
+
+        assert_eq!(
+            latest_assistant_narration(&messages).as_deref(),
+            Some("第一段叙事")
+        );
+    }
+
+    #[test]
+    fn latest_assistant_narration_returns_none_without_assistant_message() {
+        let messages = vec![Message::system("system prompt"), Message::user("story prompt")];
+
+        assert_eq!(latest_assistant_narration(&messages), None);
     }
 }

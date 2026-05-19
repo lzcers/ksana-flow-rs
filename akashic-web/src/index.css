@@ -174,7 +174,6 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(210, 185, 144, 0.35) transparent;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain;
   }
 
   .akashic-scroll::-webkit-scrollbar {
