@@ -15,10 +15,7 @@ use futures::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
-use crate::{
-    error::AppError,
-    state::{AppState, BufferedTaskEvent},
-};
+use crate::{error::AppError, state::AppState};
 
 use super::dto::{
     ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
@@ -131,16 +128,11 @@ pub async fn stream_game_session(
     Query(query): Query<StreamQuery>,
     headers: HeaderMap,
 ) -> StorySseResult {
-    let since = query.since.or_else(|| {
-        headers
-            .get("last-event-id")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-    });
     let live_stream = state
-        .open_game_session_stream(&path.session_id, since)
+        .open_game_session_stream(&path.session_id, query.since)
         .await?;
     let session_id = live_stream.session_id.clone();
+    let _ = headers;
 
     let handshake_stream = stream::iter([Ok::<_, Infallible>(sse_json_event(
         "stream.handshake",
@@ -150,19 +142,11 @@ pub async fn stream_game_session(
             note: "subscribed",
         },
     ))]);
-    let initial_events = if live_stream.replayed_events.is_empty() && since.is_none() {
-        live_stream
-            .tasks
-            .into_iter()
-            .map(|task| Ok::<_, Infallible>(initial_task_snapshot_sse(task)))
-            .collect::<Vec<_>>()
-    } else {
-        live_stream
-            .replayed_events
-            .into_iter()
-            .map(|event| Ok::<_, Infallible>(buffered_task_updated_sse(event)))
-            .collect::<Vec<_>>()
-    };
+    let initial_events = live_stream
+        .tasks
+        .into_iter()
+        .map(|task| Ok::<_, Infallible>(initial_task_snapshot_sse(task)))
+        .collect::<Vec<_>>();
 
     let initial_stream = stream::iter(initial_events);
     let live_stream = stream::unfold(
@@ -174,7 +158,7 @@ pub async fn stream_game_session(
 
             match event_rx.recv().await {
                 Ok(event) => Some((
-                    Ok(buffered_task_updated_sse(event)),
+                    Ok(task_updated_sse(None, event)),
                     Some((event_rx, session_id)),
                 )),
                 Err(broadcast::error::RecvError::Lagged(skipped)) => Some((
@@ -205,10 +189,6 @@ pub async fn stream_game_session(
             )
             .into_response(),
     )
-}
-
-fn buffered_task_updated_sse(event: BufferedTaskEvent) -> Event {
-    task_updated_sse(Some(event.event_id), event.update)
 }
 
 fn initial_task_snapshot_sse(task: TaskView) -> Event {

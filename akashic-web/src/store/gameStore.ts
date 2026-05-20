@@ -370,6 +370,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     });
 
     try {
+      // 创建会话
       const created = await createGameSession(character, world);
       activeStreamSessionId = created.sessionId;
 
