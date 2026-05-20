@@ -16,7 +16,10 @@ use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/api/game-sessions", post(handlers::create_game_session))
+        .route(
+            "/api/game-sessions/create",
+            post(handlers::create_game_session),
+        )
         .route(
             "/api/game-sessions/{session_id}",
             get(handlers::get_game_session_world),
@@ -29,7 +32,6 @@ pub fn build_router(state: AppState) -> Router {
             "/api/game-sessions/{session_id}/stream",
             get(handlers::stream_game_session),
         )
-        .route("/healthz", get(handlers::healthz))
         .route_layer(middleware::from_fn(log_api_request))
         .with_state(state)
 }

@@ -80,7 +80,6 @@ export interface ApiResponse<T> {
 export interface CreateGameSessionData {
   sessionId: string;
   createdAt: string;
-  status: string;
 }
 
 export interface ProtagonistOption {
@@ -146,7 +145,7 @@ interface RawWorldStateView {
   protagonist_known_secrets: string[];
 }
 
-export interface ControlledSessionData {
+export interface GameSessionWorldStateData {
   sessionId: string;
   status: string;
   phase: string;
@@ -154,12 +153,13 @@ export interface ControlledSessionData {
   activeTurnId: number;
   worldState: WorldStateView;
   currentTask: TaskView | null;
+  tasks: TaskView[];
   latestNarration: string;
   currentProtagonistAction: string;
   choices: PendingProtagonistChoice[];
 }
 
-interface RawControlledSessionData {
+interface RawGameSessionWorldStateData {
   sessionId: string;
   status: string;
   phase: string;
@@ -173,23 +173,13 @@ interface RawControlledSessionData {
   choices: PendingProtagonistChoice[];
 }
 
-export interface ControlledSessionResponse {
+export interface ControlGameSessionData {
   action: string;
-  session: ControlledSessionData;
 }
 
 export type GameSessionControlInput =
   | { control: { type: 'continue' }; choice?: undefined }
   | { control?: undefined; choice: { choiceId: string } };
-
-interface RawControlledSessionResponse {
-  action: string;
-  session: RawControlledSessionData;
-}
-
-export interface TaskSnapshotEvent {
-  task: TaskView;
-}
 
 export interface TaskUpdatedEvent {
   eventId?: number;
@@ -245,39 +235,41 @@ function normalizeWorldState(worldState: RawWorldStateView): WorldStateView {
   };
 }
 
-function normalizeControlledSession(session: RawControlledSessionData): ControlledSessionData {
-  const { tasks: _tasks, ...rest } = session;
-
+function normalizeGameSessionWorldState(
+  session: RawGameSessionWorldStateData,
+): GameSessionWorldStateData {
   return {
-    ...rest,
-    worldState: normalizeWorldState(rest.worldState),
+    ...session,
+    worldState: normalizeWorldState(session.worldState),
   };
 }
 
 export function createGameSession(character: Character, world: World) {
-  return requestJson<CreateGameSessionData>('/api/game-sessions', {
+  return requestJson<CreateGameSessionData>('/api/game-sessions/create', {
     method: 'POST',
     body: JSON.stringify({ character, world }),
   });
+}
+
+export function getGameSessionWorld(sessionId: string) {
+  return requestJson<RawGameSessionWorldStateData>(`/api/game-sessions/${sessionId}`).then(
+    normalizeGameSessionWorldState,
+  );
 }
 
 export function submitGameSessionControl(
   sessionId: string,
   input: GameSessionControlInput,
 ) {
-  return requestJson<RawControlledSessionResponse>(`/api/game-sessions/${sessionId}/control`, {
+  return requestJson<ControlGameSessionData>(`/api/game-sessions/${sessionId}/control`, {
     method: 'POST',
     body: JSON.stringify(input),
-  }).then((data) => ({
-    ...data,
-    session: normalizeControlledSession(data.session),
-  }));
+  });
 }
 
 export function openGameSessionStream(
   sessionId: string,
   handlers: {
-    onTaskSnapshot: (event: TaskSnapshotEvent) => void;
     onTaskUpdated: (event: TaskUpdatedEvent, lastEventId: string) => void;
     onError?: () => void;
   },
@@ -285,11 +277,6 @@ export function openGameSessionStream(
 ) {
   const search = since ? `?since=${encodeURIComponent(since)}` : '';
   const eventSource = new EventSource(`/api/game-sessions/${sessionId}/stream${search}`);
-
-  eventSource.addEventListener('task.snapshot', (rawEvent) => {
-    const event = rawEvent as MessageEvent<string>;
-    handlers.onTaskSnapshot(JSON.parse(event.data) as TaskSnapshotEvent);
-  });
 
   eventSource.addEventListener('task.updated', (rawEvent) => {
     const event = rawEvent as MessageEvent<string>;

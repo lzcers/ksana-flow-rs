@@ -2,7 +2,7 @@ import type {
   ArchiveListItem,
   Character,
   Choice,
-  ControlledSessionData,
+  GameSessionWorldStateData,
   PendingProtagonistChoice,
   RuntimeStateView,
   SaveListItem,
@@ -615,7 +615,7 @@ export function cloneTask(task: TaskView): TaskView {
   };
 }
 
-export function mapControlledSessionState(session: ControlledSessionData): ControlledSessionStateSlice {
+export function mapGameSessionState(session: GameSessionWorldStateData): ControlledSessionStateSlice {
   const currentTask = session.currentTask;
   const narrationText =
     (currentTask?.kind === 'narration' ? taskText(currentTask)?.trim() : null) ||
@@ -660,12 +660,6 @@ export function mapControlledSessionState(session: ControlledSessionData): Contr
     streamedProtagonistActionJson: parseJsonValue(protagonistActionRaw),
     isLoading: session.status === 'running',
   };
-}
-
-export function upsertTaskSnapshot(tasks: Map<string, TaskView>, task: TaskView): TaskView {
-  const nextTask = cloneTask(task);
-  tasks.set(task.entity, nextTask);
-  return nextTask;
 }
 
 export function applyTaskUpdate(tasks: Map<string, TaskView>, update: TaskUpdatedEvent): TaskView {

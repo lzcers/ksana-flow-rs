@@ -27,7 +27,6 @@ import {
   initialCharacter,
   initialWorld,
   isDemoNodeId,
-  mapControlledSessionState,
   parseJsonValue,
   protagonistActionChoices,
   protagonistActionText,
@@ -39,7 +38,6 @@ import {
   taskText,
   type DemoNodeId,
   type JsonValue,
-  upsertTaskSnapshot,
 } from '../utils/gameStoreHelpers';
 
 export type GameState = 'lobby' | 'creation' | 'playing';
@@ -379,25 +377,9 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         worldNews: '会话已建立，正在推进第一轮...',
       });
 
-      const controlled = await submitGameSessionControl(created.sessionId, {
-        control: { type: 'continue' },
-      });
-      set({
-        sessionId: created.sessionId,
-        ...mapControlledSessionState(controlled.session),
-        error: null,
-      });
-
       activeSessionStream = openGameSessionStream(
         created.sessionId,
         {
-          onTaskSnapshot: (event) => {
-            if (activeStreamSessionId !== created.sessionId) {
-              return;
-            }
-
-            applyStreamTaskToState(upsertTaskSnapshot(activeStreamTasks, event.task), set);
-          },
           onTaskUpdated: (event, lastEventId) => {
             if (activeStreamSessionId !== created.sessionId) {
               return;
@@ -417,6 +399,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         },
         lastStreamEventId,
       );
+
+      await submitGameSessionControl(created.sessionId, {
+        control: { type: 'continue' },
+      });
     } catch (error) {
       closeActiveSessionStream();
       set({
@@ -549,109 +535,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     });
   },
   previewChoice: async (choiceId) => {
-    const { currentNode, intuitionPoints } = get();
-
-    if (!currentNode) {
-      throw new Error('当前没有可预览的剧情节点。');
-    }
-
-    if (intuitionPoints <= 0) {
-      throw new Error('演示直觉点已耗尽。');
-    }
-
-    const sessionChoice = currentNode.choices.find((item) => item.id === choiceId);
-    if (sessionChoice?.previewText) {
-      set({
-        intuitionPoints: Math.max(0, intuitionPoints - 1),
-        error: null,
-      });
-      return sessionChoice.previewText;
-    }
-
-    const currentMeta = DEMO_NODES[currentNode.id as DemoNodeId];
-    const choice = currentMeta.choices.find((item) => item.id === choiceId);
-
-    if (!choice) {
-      throw new Error('当前选择不存在。');
-    }
-
-    set({
-      intuitionPoints: Math.max(0, intuitionPoints - 1),
-      error: null,
-    });
-
-    return choice.preview;
+    throw new Error('演示直觉点已耗尽。');
   },
   createSave: async (title) => {
-    const {
-      sessionId,
-      character,
-      world,
-      currentNode,
-      turnIndex,
-      obsessionPoints,
-      intuitionPoints,
-      daysLeft,
-      worldNews,
-      saves,
-    } = get();
-
-    if (!sessionId || !currentNode) {
-      throw new Error('当前没有可保存的演示旅程。');
-    }
-
-    if (!isDemoNodeId(currentNode.id)) {
-      throw new Error('当前收束片段不支持存档，请返回大厅开启新人生。');
-    }
-
-    const saveId = `save-${Date.now()}`;
-    const item = buildSaveItem(saveId, sessionId, character, world, turnIndex, currentNode);
-    const finalItem = title?.trim() ? { ...item, title: title.trim() } : item;
-
-    saveSnapshots.set(saveId, {
-      sessionId,
-      character: cloneCharacter(character),
-      world: cloneWorld(world),
-      currentNodeId: currentNode.id as DemoNodeId,
-      turnIndex,
-      obsessionPoints,
-      intuitionPoints,
-      daysLeft,
-      worldNews,
-    });
-
-    set({
-      saves: [finalItem, ...saves.filter((save) => save.saveId !== saveId)],
-      latestSaveId: saveId,
-      error: null,
-    });
-
-    return saveId;
+    throw new Error('当前没有可保存的演示旅程。');
   },
   loadSave: async (saveId) => {
-    const snapshot = saveSnapshots.get(saveId);
 
-    if (!snapshot) {
-      throw new Error('未找到对应的本地演示存档。');
-    }
-
-    const currentNode = buildStoryNode(snapshot.currentNodeId, snapshot.character, snapshot.world);
-
-    set({
-      sessionId: snapshot.sessionId,
-      character: cloneCharacter(snapshot.character),
-      world: cloneWorld(snapshot.world),
-      currentNode,
-      stateView: buildStateView(snapshot.currentNodeId, snapshot.turnIndex, currentNode.text, '从本地存档恢复旅程'),
-      obsessionPoints: snapshot.obsessionPoints,
-      intuitionPoints: snapshot.intuitionPoints,
-      daysLeft: snapshot.daysLeft,
-      worldNews: snapshot.worldNews,
-      turnIndex: snapshot.turnIndex,
-      latestSaveId: saveId,
-      error: null,
-      gameState: 'playing',
-    });
   },
   resetGame: () => {
     closeActiveSessionStream();

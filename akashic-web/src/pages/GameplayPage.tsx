@@ -52,7 +52,6 @@ const GameplayPage: React.FC = () => {
 
   const currentScene = stateView?.currentScene ?? '演示片段';
   const hasChoices = currentNode?.choices.length > 0;
-  const showChoicePendingState = !hasChoices && (isTyping || isLoading);
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -233,7 +232,7 @@ const GameplayPage: React.FC = () => {
                           className={`akashic-choice h-10 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
                             }`}
                         >
-                          <div className="flex min-h-[1.75rem] items-center text-left">
+                          <div className="flex min-h-7 items-center text-left">
                             <div className="w-full text-sm font-semibold leading-5 sm:text-[0.95rem]">
                               {choice.text}
                             </div>

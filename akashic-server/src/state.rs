@@ -74,7 +74,6 @@ impl AppState {
         Ok(CreateGameSessionData {
             session_id,
             created_at,
-            status: "pending".to_string(),
         })
     }
 
@@ -144,10 +143,8 @@ fn apply_control(
                 .engine
                 .advance_turn()
                 .map_err(AppError::bad_request)?;
-            let snapshot = session.engine.get_game_session();
             Ok(ControlGameSessionData {
                 action: "continue".to_string(),
-                session: world_state_from_session(session, &snapshot),
             })
         }
     }
@@ -173,11 +170,9 @@ fn apply_choice(
         .engine
         .advance_turn()
         .map_err(AppError::bad_request)?;
-    let snapshot = session.engine.get_game_session();
 
     Ok(ControlGameSessionData {
         action: "submit_choice".to_string(),
-        session: world_state_from_session(session, &snapshot),
     })
 }
 

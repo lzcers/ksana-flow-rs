@@ -1,9 +1,6 @@
 use std::{convert::Infallible, time::Duration};
 
-use akashic_ecs::resources::{
-    export::TaskView,
-    task_manager::{TaskKind, TaskStatus, TaskUpdate},
-};
+use akashic_ecs::resources::task_manager::{TaskKind, TaskStatus, TaskUpdate};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -19,7 +16,7 @@ use crate::{error::AppError, state::AppState};
 
 use super::dto::{
     ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
-    CreateGameSessionRequest, GameSessionWorldStateData, HealthzData, SessionPath,
+    CreateGameSessionRequest, GameSessionWorldStateData, SessionPath,
 };
 
 type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
@@ -66,12 +63,6 @@ struct TaskUpdateData {
     error: Option<String>,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TaskSnapshotData {
-    task: TaskView,
-}
-
 fn sse_json_event<T>(name: &str, data: T) -> Event
 where
     T: Serialize,
@@ -84,15 +75,6 @@ where
 
 fn sse_done_event(route: &'static str, session_id: Option<String>) -> Event {
     sse_json_event(route, StreamDoneData { route, session_id })
-}
-
-pub async fn healthz(State(state): State<AppState>) -> Json<ApiResponse<HealthzData>> {
-    let _ = state;
-    Json(ApiResponse::ok(HealthzData {
-        status: "ok".to_string(),
-        service_name: "akashic-server".to_string(),
-        api_version: "mvp".to_string(),
-    }))
 }
 
 pub async fn create_game_session(
@@ -142,13 +124,6 @@ pub async fn stream_game_session(
             note: "subscribed",
         },
     ))]);
-    let initial_events = live_stream
-        .tasks
-        .into_iter()
-        .map(|task| Ok::<_, Infallible>(initial_task_snapshot_sse(task)))
-        .collect::<Vec<_>>();
-
-    let initial_stream = stream::iter(initial_events);
     let live_stream = stream::unfold(
         Some((live_stream.event_rx, session_id)),
         |state| async move {
@@ -180,19 +155,13 @@ pub async fn stream_game_session(
         },
     );
 
-    Ok(
-        Sse::new(handshake_stream.chain(initial_stream).chain(live_stream))
-            .keep_alive(
-                KeepAlive::new()
-                    .interval(Duration::from_secs(15))
-                    .text("keep-alive"),
-            )
-            .into_response(),
-    )
-}
-
-fn initial_task_snapshot_sse(task: TaskView) -> Event {
-    sse_json_event("task.snapshot", TaskSnapshotData { task })
+    Ok(Sse::new(handshake_stream.chain(live_stream))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive"),
+        )
+        .into_response())
 }
 
 fn task_updated_sse(event_id: Option<u64>, update: TaskUpdate) -> Event {

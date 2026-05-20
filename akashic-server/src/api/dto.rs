@@ -61,7 +61,6 @@ pub struct CreateGameSessionRequest {
 pub struct CreateGameSessionData {
     pub session_id: String,
     pub created_at: String,
-    pub status: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -103,13 +102,4 @@ pub struct GameSessionWorldStateData {
 #[serde(rename_all = "camelCase")]
 pub struct ControlGameSessionData {
     pub action: String,
-    pub session: GameSessionWorldStateData,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthzData {
-    pub status: String,
-    pub service_name: String,
-    pub api_version: String,
 }
