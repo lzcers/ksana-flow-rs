@@ -220,6 +220,10 @@ fn apply_choice(
         .engine
         .submit_choice(&choice.choice_id)
         .map_err(AppError::bad_request)?;
+    session
+        .engine
+        .advance_turn()
+        .map_err(AppError::bad_request)?;
     let snapshot = session.engine.get_game_session();
 
     Ok(ControlGameSessionData {

@@ -146,7 +146,7 @@ interface RawWorldStateView {
   protagonist_known_secrets: string[];
 }
 
-export interface GameSessionWorldStateData {
+export interface ControlledSessionData {
   sessionId: string;
   status: string;
   phase: string;
@@ -154,13 +154,12 @@ export interface GameSessionWorldStateData {
   activeTurnId: number;
   worldState: WorldStateView;
   currentTask: TaskView | null;
-  tasks: TaskView[];
   latestNarration: string;
   currentProtagonistAction: string;
   choices: PendingProtagonistChoice[];
 }
 
-interface RawGameSessionWorldStateData {
+interface RawControlledSessionData {
   sessionId: string;
   status: string;
   phase: string;
@@ -174,14 +173,18 @@ interface RawGameSessionWorldStateData {
   choices: PendingProtagonistChoice[];
 }
 
-export interface ControlGameSessionData {
+export interface ControlledSessionResponse {
   action: string;
-  session: GameSessionWorldStateData;
+  session: ControlledSessionData;
 }
 
-interface RawControlGameSessionData {
+export type GameSessionControlInput =
+  | { control: { type: 'continue' }; choice?: undefined }
+  | { control?: undefined; choice: { choiceId: string } };
+
+interface RawControlledSessionResponse {
   action: string;
-  session: RawGameSessionWorldStateData;
+  session: RawControlledSessionData;
 }
 
 export interface TaskSnapshotEvent {
@@ -242,10 +245,12 @@ function normalizeWorldState(worldState: RawWorldStateView): WorldStateView {
   };
 }
 
-function normalizeSession(session: RawGameSessionWorldStateData): GameSessionWorldStateData {
+function normalizeControlledSession(session: RawControlledSessionData): ControlledSessionData {
+  const { tasks: _tasks, ...rest } = session;
+
   return {
-    ...session,
-    worldState: normalizeWorldState(session.worldState),
+    ...rest,
+    worldState: normalizeWorldState(rest.worldState),
   };
 }
 
@@ -256,25 +261,17 @@ export function createGameSession(character: Character, world: World) {
   });
 }
 
-export function controlGameSession(
+export function submitGameSessionControl(
   sessionId: string,
-  body:
-    | { control: { type: 'continue' }; choice?: undefined }
-    | { control?: undefined; choice: { choiceId: string } },
+  input: GameSessionControlInput,
 ) {
-  return requestJson<RawControlGameSessionData>(`/api/game-sessions/${sessionId}/control`, {
+  return requestJson<RawControlledSessionResponse>(`/api/game-sessions/${sessionId}/control`, {
     method: 'POST',
-    body: JSON.stringify(body),
+    body: JSON.stringify(input),
   }).then((data) => ({
     ...data,
-    session: normalizeSession(data.session),
+    session: normalizeControlledSession(data.session),
   }));
-}
-
-export function getGameSessionWorld(sessionId: string) {
-  return requestJson<RawGameSessionWorldStateData>(`/api/game-sessions/${sessionId}`).then(
-    normalizeSession,
-  );
 }
 
 export function openGameSessionStream(
