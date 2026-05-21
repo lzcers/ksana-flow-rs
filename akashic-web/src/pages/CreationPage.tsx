@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronDown, Dices, Sparkles, WandSparkles } from 'lucide-react';
-import { useGameStore } from '../store/gameStore';
+import { useGameUIStore } from '../store/gameStore';
 import {
   FieldLabel,
   PageTitle,
@@ -22,7 +22,7 @@ const backgroundOptions = [
 const eraOptions = ['蒸汽朋克', '星际拓荒', '东方玄幻', '末日废土'];
 
 const CreationPage: React.FC = () => {
-  const { character, world, updateCharacter, updateWorld, setGameState, startGame, isLoading } = useGameStore();
+  const { character, world, updateCharacter, updateWorld, setGameState, startGame, isLoading } = useGameUIStore();
 
   const traitRows = [
     { key: 'courage', label: '勇气', value: character.traits.courage },
@@ -72,11 +72,6 @@ const CreationPage: React.FC = () => {
                 随机骰子
               </SecondaryButton>
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 md:gap-3">
-            <StatusPill icon={Sparkles}>角色塑形</StatusPill>
-            <StatusPill icon={WandSparkles}>叙事开场</StatusPill>
           </div>
 
           <SectionCard className="p-4 md:p-6">

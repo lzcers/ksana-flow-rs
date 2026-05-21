@@ -53,6 +53,7 @@ export type JsonValue =
 type JsonObject = { [key: string]: JsonValue };
 
 interface FatePlanningSummary {
+  round: number | null;
   sceneTitle: string | null;
   locationName: string | null;
   locationStatus: string | null;
@@ -65,7 +66,6 @@ interface FatePlanningSummary {
 export interface ControlledSessionStateSlice {
   currentNode: StoryNode;
   stateView: RuntimeStateView;
-  worldNews: string | null;
   turnIndex: number;
   gameState: 'playing';
   streamedNarrationText: string;
@@ -315,7 +315,7 @@ export function buildStateView(
     protagonistState: node.protagonistState,
     npcsState: '守钟人、提灯小贩、港区耳语者',
     latestHistory: history,
-    latestBroadcastSummary: node.summary,
+    latestBroadcastSummary: node.news,
     latestProtagonistAction: latestAction,
   };
 }
@@ -448,6 +448,19 @@ function readJsonString(value: JsonValue | undefined): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+function readJsonNumber(value: JsonValue | undefined): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
 function readJsonStringArray(value: JsonValue | undefined): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
@@ -458,6 +471,7 @@ export function summarizeFatePlanning(value: JsonValue | null): FatePlanningSumm
   }
 
   return {
+    round: readJsonNumber(value.round),
     sceneTitle: readJsonString(value.scene_title),
     locationName: readJsonString(value.location_name),
     locationStatus: readJsonString(value.location_status),
@@ -642,14 +656,14 @@ export function mapGameSessionState(session: GameSessionWorldStateData): Control
       protagonistState: session.worldState.protagonistCondition || '等待命运显影',
       npcsState: session.worldState.currentEvent || '众生仍在命运中回响',
       latestHistory: narrationText,
-      latestBroadcastSummary: session.worldState.description || narrationText,
+      latestBroadcastSummary:
+        session.worldState.currentEvent ||
+        session.worldState.newInfo[0] ||
+        session.worldState.locationStatus ||
+        session.worldState.description ||
+        narrationText,
       latestProtagonistAction: session.currentProtagonistAction || '尚未做出选择',
     },
-    worldNews:
-      session.worldState.currentEvent ||
-      session.worldState.newInfo[0] ||
-      session.worldState.locationStatus ||
-      null,
     turnIndex: session.turnIndex,
     gameState: 'playing',
     streamedNarrationText: narrationText,

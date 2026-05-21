@@ -9,7 +9,7 @@ import {
   Share2,
   Sparkles,
 } from 'lucide-react';
-import { useGameStore } from '../store/gameStore';
+import { useGameInternalStore, useGameUIStore } from '../store/gameStore';
 import Typewriter from '../components/Typewriter';
 import {
   PrimaryButton,
@@ -24,23 +24,22 @@ const GameplayPage: React.FC = () => {
     currentNode,
     obsessionPoints,
     intuitionPoints,
-    worldNews,
     stateView,
-    daysLeft,
-    latestSaveId,
     isLoading,
     error,
+    createSave,
+    submitChoice,
+    previewChoice,
+    setGameState,
+  } = useGameUIStore();
+  const {
     streamedNarrationText,
     streamedNarrationStatus,
     streamedFatePlanningRaw,
     streamedFatePlanningJson,
     streamedProtagonistActionRaw,
     streamedProtagonistActionJson,
-    createSave,
-    submitChoice,
-    previewChoice,
-    setGameState,
-  } = useGameStore();
+  } = useGameInternalStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
@@ -50,8 +49,11 @@ const GameplayPage: React.FC = () => {
   const lastFatePlanningLogRef = useRef('');
   const lastProtagonistActionLogRef = useRef('');
 
-  const currentScene = stateView?.currentScene ?? '演示片段';
+  const currentRound = Math.max(stateView?.turnIndex ?? 1, 1);
   const hasChoices = currentNode?.choices.length > 0;
+  const isChoiceInteractionDisabled = isTyping || isLoading;
+  const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
+  const statusMessage = feedback ?? error;
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -131,6 +133,10 @@ const GameplayPage: React.FC = () => {
     setIsTyping(false);
   }, []);
 
+  const readErrorMessage = useCallback((cause: unknown, fallback: string) => {
+    return cause instanceof Error ? cause.message : fallback;
+  }, []);
+
   if (!currentNode) {
     return (
       <ScreenShell className="items-stretch">
@@ -166,7 +172,7 @@ const GameplayPage: React.FC = () => {
       }));
       setFeedback('你窥见了一角尚未到来的命运。');
     } catch (previewError) {
-      setFeedback(previewError instanceof Error ? previewError.message : '直觉预览失败。');
+      setFeedback(readErrorMessage(previewError, '直觉预览失败。'));
     }
   };
 
@@ -178,7 +184,7 @@ const GameplayPage: React.FC = () => {
       setPreviews({});
       setFeedback(null);
     } catch (submitError) {
-      setFeedback(submitError instanceof Error ? submitError.message : '推进剧情失败。');
+      setFeedback(readErrorMessage(submitError, '推进剧情失败。'));
     }
   };
 
@@ -187,7 +193,7 @@ const GameplayPage: React.FC = () => {
       await createSave();
       setFeedback('当前旅程已保存到本地演示存档。');
     } catch (saveError) {
-      setFeedback(saveError instanceof Error ? saveError.message : '存档失败。');
+      setFeedback(readErrorMessage(saveError, '存档失败。'));
     }
   };
 
@@ -197,15 +203,15 @@ const GameplayPage: React.FC = () => {
         <div className="pointer-events-none absolute inset-0 bg-linear-to-b from-transparent via-[#08111d]/35 to-[#08111d]" />
         <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3">
           <div className="shrink-0 space-y-2">
-            <div className="flex flex-wrap gap-1">
-              <StatusPill icon={Flame} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">执念 {obsessionPoints}/5</StatusPill>
-              <StatusPill icon={Eye} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">直觉 {intuitionPoints}</StatusPill>
-              <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{daysLeft}日</StatusPill>
-              <StatusPill icon={Sparkles} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">{currentScene}</StatusPill>
+            <div className="flex flex-wrap gap-1 justify-between">
+              <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">第 {currentRound} 轮</StatusPill>
+              <StatusPill icon={null} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">
+                {stateView?.currentScene ?? '命运推进'}
+              </StatusPill>
             </div>
-            {worldNews && <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
-              <Sparkles className="h-3.5 w-3.5 text-amber-200" />
-              <span>{worldNews}</span>
+            {stateView?.latestBroadcastSummary && <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-200" />
+              <span>{stateView.latestBroadcastSummary}</span>
             </div>}
           </div>
 
@@ -228,7 +234,7 @@ const GameplayPage: React.FC = () => {
                       <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
                         <button
                           onClick={() => void handleChoiceClick(choice.id)}
-                          disabled={isTyping || isLoading || choice.disabled}
+                          disabled={isChoiceInteractionDisabled || choice.disabled}
                           className={`akashic-choice h-10 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
                             }`}
                         >
@@ -242,7 +248,7 @@ const GameplayPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={(e) => void handlePreview(choice.id, e)}
-                          disabled={isTyping || isLoading}
+                          disabled={isChoiceInteractionDisabled}
                           className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
                           title="消耗 1 点直觉，窥探命运碎片"
                         >
@@ -261,14 +267,27 @@ const GameplayPage: React.FC = () => {
               </div>}
               <div className="shrink-0 rounded-full border border-[rgba(116,103,80,0.4)] bg-[rgba(8,14,26,0.82)] px-2 py-2 backdrop-blur-md">
                 <div className="relative flex items-center justify-between gap-2">
-                  <SecondaryButton
-                    onClick={() => setActiveObsession((prev) => !prev)}
-                    className={`min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs ${activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}`}
-                    disabled={isTyping || isLoading || !hasChoices}
-                  >
-                    <Flame className={`h-3.5 w-3.5 ${activeObsession ? 'animate-pulse' : ''}`} />
-                    执念
-                  </SecondaryButton>
+                  <div className="flex items-center gap-2">
+                    <SecondaryButton
+                      onClick={() => setActiveObsession((prev) => !prev)}
+                      className={`min-h-0 gap-1.5 px-2.5 py-1.5 text-[0.72rem] leading-4 sm:text-xs ${activeObsession ? 'border-red-300/50 bg-red-950/25 text-red-100' : ''}`}
+                      disabled={isObsessionToggleDisabled}
+                    >
+                      <Flame className={`h-3.5 w-3.5 ${activeObsession ? 'animate-pulse' : ''}`} />
+                      执念
+                    </SecondaryButton>
+                    <div className='flex items-center gap-2'>
+                      <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
+                        <Flame className="h-3.5 w-3.5" />
+                        <span>{`${obsessionPoints}/5`}</span>
+                      </span>
+                      <span className="text-[0.72rem] leading-4 text-[#8f98ab] sm:text-xs">|</span>
+                      <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>{intuitionPoints}</span>
+                      </span>
+                    </div>
+                  </div>
                   <div className="relative">
                     <SecondaryButton
                       type="button"
@@ -305,7 +324,7 @@ const GameplayPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            setFeedback(latestSaveId ? `最近存档：${latestSaveId}` : '本地演示模式下可先存档，稍后可继续扩展分享入口。');
+                            setFeedback('本地演示模式下可先存档，稍后可继续扩展分享入口。');
                             setIsUtilityMenuOpen(false);
                           }}
                           className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] sm:text-xs"
@@ -321,8 +340,7 @@ const GameplayPage: React.FC = () => {
             </div>
 
             <div className="shrink-0 min-h-5">
-              {feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{feedback}</p> : null}
-              {error && !feedback ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{error}</p> : null}
+              {statusMessage ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{statusMessage}</p> : null}
             </div>
           </div>
         </div>

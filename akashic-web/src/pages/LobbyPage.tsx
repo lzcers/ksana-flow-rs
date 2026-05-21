@@ -8,11 +8,11 @@ import {
   StoryFrame,
   StatusPill,
 } from '../components/AkashicUI';
-import { useGameStore } from '../store/gameStore';
+import { useGameUIStore } from '../store/gameStore';
 
 const LobbyPage: React.FC = () => {
-  const setGameState = useGameStore((state) => state.setGameState);
-  const resetGame = useGameStore((state) => state.resetGame);
+  const setGameState = useGameUIStore((state) => state.setGameState);
+  const resetGame = useGameUIStore((state) => state.resetGame);
 
   const handleStart = () => {
     resetGame();

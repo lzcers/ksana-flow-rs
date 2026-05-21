@@ -4,29 +4,24 @@ import {
   openGameSessionStream,
   submitGameSessionControl,
 } from '../lib/api';
-import type {
-  ArchiveListItem,
-  Character,
-  RuntimeStateView,
-  SaveListItem,
-  StoryNode,
-  TaskView,
-  World,
-} from '../lib/api';
+import type { TaskView } from '../lib/api';
+import {
+  createGameUIStore,
+  type GameState,
+  type GameUIActions,
+  type GameUIState,
+  type GameUIStoreState,
+} from './gameUIStore';
 import {
   applyTaskUpdate,
-  buildArchiveItem,
   buildEndingNode,
-  buildSaveItem,
   buildStateView,
   buildStoryNode,
   cloneCharacter,
   cloneWorld,
-  DEMO_ENDINGS,
   DEMO_NODES,
   initialCharacter,
   initialWorld,
-  isDemoNodeId,
   parseJsonValue,
   protagonistActionChoices,
   protagonistActionText,
@@ -38,137 +33,48 @@ import {
   taskText,
   type DemoNodeId,
   type JsonValue,
-} from '../utils/gameStoreHelpers';
+} from './gameStoreHelpers';
 
-export type GameState = 'lobby' | 'creation' | 'playing';
-
-interface GameStoreState {
-  gameState: GameState;
+interface GameInternalState {
+  // 内部状态：当前后端会话 id，用于继续推进会话。
   sessionId: string | null;
-  character: Character;
-  world: World;
-  currentNode: StoryNode | null;
+  // 内部状态：当前已推进到的回合序号。
+  turnIndex: number;
+  // 内部状态：叙事任务流式输出中的正文文本。
   streamedNarrationText: string;
+  // 内部状态：叙事任务当前状态，可用于判断流是否完成。
   streamedNarrationStatus: TaskView['status'] | null;
+  // 内部状态：命运规划原始文本，通常用于调试面板或扩展信息区。
   streamedFatePlanningRaw: string;
+  // 内部状态：命运规划解析后的 JSON，便于派生摘要字段。
   streamedFatePlanningJson: JsonValue | null;
+  // 内部状态：主角行动原始文本，通常用于调试面板或扩展信息区。
   streamedProtagonistActionRaw: string;
+  // 内部状态：主角行动解析后的 JSON，便于生成选项与摘要。
   streamedProtagonistActionJson: JsonValue | null;
-  stateView: RuntimeStateView | null;
-  obsessionPoints: number;
-  intuitionPoints: number;
-  daysLeft: number;
-  worldNews: string | null;
-  turnIndex: number;
-  saves: SaveListItem[];
-  archives: ArchiveListItem[];
-  latestSaveId: string | null;
-  latestArchiveId: string | null;
-  isLoading: boolean;
-  error: string | null;
-  setGameState: (state: GameState) => void;
-  updateCharacter: (updates: Partial<Character>) => void;
-  updateWorld: (updates: Partial<World>) => void;
-  clearError: () => void;
-  startGame: () => Promise<void>;
-  submitChoice: (choiceId: string, useObsession?: boolean) => Promise<void>;
-  previewChoice: (choiceId: string) => Promise<string>;
-  createSave: (title?: string) => Promise<string>;
-  loadSave: (saveId: string) => Promise<void>;
-  resetGame: () => void;
 }
 
-interface SaveSnapshot {
-  sessionId: string;
-  character: Character;
-  world: World;
-  currentNodeId: DemoNodeId;
-  turnIndex: number;
-  obsessionPoints: number;
-  intuitionPoints: number;
-  daysLeft: number;
-  worldNews: string | null;
-}
-
-const seededArchives: ArchiveListItem[] = [
-  {
-    archiveId: 'archive-seeded-1',
-    title: '旧馆藏 · 雨夜抄本',
-    tag: '示例档案',
-    era: '东方玄幻',
-    summary: '一份预置的演示馆藏，用来展示本地归档在无后端时的视觉布局。',
-    coverImage: STORY_IMAGES.corridor,
-    createdAt: '2026-05-18T00:00:00.000Z',
-  },
-];
-
-const seededSaves: SaveListItem[] = [
-  {
-    saveId: 'save-seeded-1',
-    sessionId: 'demo-seeded',
-    title: '示例存档 · 港区雨幕',
-    characterName: '演示旅人',
-    background: '寻梦的学者',
-    era: '蒸汽朋克',
-    turnIndex: 1,
-    summary: '用于展示“进行中存档”样式，不依赖任何后端返回。',
-    coverImage: STORY_IMAGES.opening,
-    savedAt: '2026-05-18T00:00:00.000Z',
-  },
-];
-
-const saveSnapshots = new Map<string, SaveSnapshot>([
-  [
-    'save-seeded-1',
-    {
-      sessionId: 'demo-seeded',
-      character: {
-        name: '演示旅人',
-        gender: '保密',
-        age: 22,
-        appearance: '披着仍带雨意的长风衣，袖口藏着一支记事银笔',
-        traits: { courage: 56, rationality: 68, altruism: 61 },
-        background: '寻梦的学者',
-      },
-      world: {
-        era: '蒸汽朋克',
-        coreConflict: '旧档案馆深处正在泄露不属于这个时代的预言',
-        specialRules: [],
-      },
-      currentNodeId: 'opening',
-      turnIndex: 1,
-      obsessionPoints: 3,
-      intuitionPoints: 4,
-      daysLeft: 6,
-      worldNews: DEMO_NODES.opening.news,
-    },
-  ],
-]);
-
-const initialState = {
+const initialUIState: GameUIState = {
   gameState: 'lobby' as GameState,
-  sessionId: null,
   character: initialCharacter,
   world: initialWorld,
   currentNode: null,
+  stateView: null,
+  obsessionPoints: 3,
+  intuitionPoints: 5,
+  isLoading: false,
+  error: null,
+};
+
+const initialInternalState: GameInternalState = {
+  sessionId: null,
+  turnIndex: 0,
   streamedNarrationText: '',
   streamedNarrationStatus: null,
   streamedFatePlanningRaw: '',
   streamedFatePlanningJson: null,
   streamedProtagonistActionRaw: '',
   streamedProtagonistActionJson: null,
-  stateView: null,
-  obsessionPoints: 3,
-  intuitionPoints: 5,
-  daysLeft: 7,
-  worldNews: null,
-  turnIndex: 0,
-  saves: seededSaves,
-  archives: seededArchives,
-  latestSaveId: null,
-  latestArchiveId: seededArchives[0]?.archiveId ?? null,
-  isLoading: false,
-  error: null,
 };
 
 let activeSessionStream: EventSource | null = null;
@@ -184,37 +90,22 @@ function closeActiveSessionStream() {
   activeStreamTasks = new Map();
 }
 
-function resetPlayState(state: GameStoreState) {
+function resetUIState(): GameUIState {
   return {
     gameState: 'lobby' as GameState,
-    sessionId: null,
     character: cloneCharacter(initialCharacter),
     world: cloneWorld(initialWorld),
     currentNode: null,
-    streamedNarrationText: '',
-    streamedNarrationStatus: null,
-    streamedFatePlanningRaw: '',
-    streamedFatePlanningJson: null,
-    streamedProtagonistActionRaw: '',
-    streamedProtagonistActionJson: null,
     stateView: null,
     obsessionPoints: 3,
     intuitionPoints: 5,
-    daysLeft: 7,
-    worldNews: null,
-    turnIndex: 0,
-    latestSaveId: null,
-    latestArchiveId: state.latestArchiveId,
     isLoading: false,
     error: null,
   };
 }
 
-function applyStreamTaskToState(
-  task: TaskView,
-  set: (partial: Partial<GameStoreState> | ((state: GameStoreState) => Partial<GameStoreState>)) => void,
-) {
-  set((state) => {
+function applyStreamTaskToStores(task: TaskView) {
+  useGameUIStore.setState((state) => {
     const isLoading = task.status === 'pending' || task.status === 'running';
 
     switch (task.kind) {
@@ -224,10 +115,13 @@ function applyStreamTaskToState(
           return { isLoading };
         }
 
-        return {
-          isLoading,
+        useGameInternalStore.setState({
           streamedNarrationText: nextText,
           streamedNarrationStatus: task.status,
+        });
+
+        return {
+          isLoading,
           currentNode: state.currentNode
             ? {
               ...state.currentNode,
@@ -238,9 +132,7 @@ function applyStreamTaskToState(
           stateView: state.stateView
             ? {
               ...state.stateView,
-              currentScene: taskLabel(task.kind),
               latestHistory: nextText,
-              latestBroadcastSummary: nextText,
             }
             : null,
         };
@@ -249,23 +141,27 @@ function applyStreamTaskToState(
         const raw = taskRawContent(task);
         const parsed = parseJsonValue(raw);
         const summary = summarizeFatePlanning(parsed);
+        useGameInternalStore.setState({
+          streamedFatePlanningRaw: raw,
+          streamedFatePlanningJson: parsed,
+        });
 
         return {
           isLoading,
-          streamedFatePlanningRaw: raw,
-          streamedFatePlanningJson: parsed,
-          worldNews:
-            summary?.currentEvent ??
-            summary?.newInfo[0] ??
-            summary?.locationStatus ??
-            state.worldNews,
           stateView: state.stateView
             ? {
               ...state.stateView,
+              turnIndex: summary?.round ?? state.stateView.turnIndex,
+              activeTurnId: summary?.round ?? state.stateView.activeTurnId,
               currentScene: summary?.sceneTitle ?? taskLabel(task.kind),
               currentLocation: summary?.locationName ?? state.stateView.currentLocation,
               protagonistState: summary?.protagonistCondition ?? state.stateView.protagonistState,
-              latestBroadcastSummary: summary?.description ?? state.stateView.latestBroadcastSummary,
+              latestBroadcastSummary:
+                summary?.currentEvent ??
+                summary?.newInfo[0] ??
+                summary?.locationStatus ??
+                summary?.description ??
+                state.stateView.latestBroadcastSummary,
             }
             : null,
         };
@@ -275,10 +171,13 @@ function applyStreamTaskToState(
         const parsed = parseJsonValue(raw);
         const nextChoices = protagonistActionChoices(task);
 
-        return {
-          isLoading,
+        useGameInternalStore.setState({
           streamedProtagonistActionRaw: raw,
           streamedProtagonistActionJson: parsed,
+        });
+
+        return {
+          isLoading,
           currentNode: state.currentNode
             ? {
               ...state.currentNode,
@@ -288,7 +187,6 @@ function applyStreamTaskToState(
           stateView: state.stateView
             ? {
               ...state.stateView,
-              currentScene: taskLabel(task.kind),
               latestProtagonistAction:
                 protagonistActionText(task) ?? state.stateView.latestProtagonistAction,
             }
@@ -301,8 +199,14 @@ function applyStreamTaskToState(
   });
 }
 
-export const useGameStore = create<GameStoreState>((set, get) => ({
-  ...initialState,
+export const useGameInternalStore = create<GameInternalState>(() => ({
+  ...initialInternalState,
+}));
+
+const createGameUIActions = (
+  set: (partial: Partial<GameUIStoreState> | ((state: GameUIStoreState) => Partial<GameUIStoreState>)) => void,
+  get: () => GameUIStoreState,
+): GameUIActions => ({
   setGameState: (state) => {
     if (state !== 'playing') {
       closeActiveSessionStream();
@@ -329,8 +233,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   startGame: async () => {
     const { character, world } = get();
     closeActiveSessionStream();
+    useGameInternalStore.setState({
+      ...initialInternalState,
+    });
     set({
-      sessionId: null,
       currentNode: {
         id: 'loading',
         text: STREAM_PLACEHOLDER_TEXT,
@@ -347,21 +253,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         protagonistState: `${character.name || '无名旅人'} 正踏入 ${world.era}`,
         npcsState: '诸多回响正在汇聚',
         latestHistory: STREAM_PLACEHOLDER_TEXT,
-        latestBroadcastSummary: world.coreConflict,
+        latestBroadcastSummary: '正在创建会话并唤起第一轮命运...',
         latestProtagonistAction: '尚未做出选择',
       },
-      streamedNarrationText: '',
-      streamedNarrationStatus: null,
-      streamedFatePlanningRaw: '',
-      streamedFatePlanningJson: null,
-      streamedProtagonistActionRaw: '',
-      streamedProtagonistActionJson: null,
       obsessionPoints: 3,
       intuitionPoints: 5,
-      daysLeft: 7,
-      worldNews: '正在创建会话并唤起第一轮命运...',
-      turnIndex: 0,
-      latestSaveId: null,
       error: null,
       gameState: 'playing',
       isLoading: true,
@@ -371,11 +267,18 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       // 创建会话
       const created = await createGameSession(character, world);
       activeStreamSessionId = created.sessionId;
-
-      set({
+      useGameInternalStore.setState({
         sessionId: created.sessionId,
-        worldNews: '会话已建立，正在推进第一轮...',
       });
+
+      set((state) => ({
+        stateView: state.stateView
+          ? {
+            ...state.stateView,
+            latestBroadcastSummary: '会话已建立，正在推进第一轮...',
+          }
+          : null,
+      }));
 
       activeSessionStream = openGameSessionStream(
         created.sessionId,
@@ -386,7 +289,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
             }
             lastStreamEventId = lastEventId || lastStreamEventId;
             const nextTask = applyTaskUpdate(activeStreamTasks, event);
-            applyStreamTaskToState(nextTask, set);
+            applyStreamTaskToStores(nextTask);
           },
           onError: () => {
             if (activeStreamSessionId !== created.sessionId) {
@@ -413,16 +316,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }
   },
   submitChoice: async (choiceId, useObsession = false) => {
+    const { sessionId, turnIndex } = useGameInternalStore.getState();
     const {
-      sessionId,
       character,
       world,
       currentNode,
       obsessionPoints,
       intuitionPoints,
-      daysLeft,
-      turnIndex,
-      archives,
     } = get();
 
     if (!sessionId || !currentNode) {
@@ -431,19 +331,11 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
 
     if (activeStreamSessionId === sessionId) {
       const nextObsession = useObsession ? Math.max(0, obsessionPoints - 1) : obsessionPoints;
-      const nextDaysLeft = Math.max(1, daysLeft - 1);
 
       set((state) => ({
         isLoading: true,
         obsessionPoints: nextObsession,
         intuitionPoints,
-        daysLeft: nextDaysLeft,
-        streamedNarrationText: '',
-        streamedNarrationStatus: null,
-        streamedFatePlanningRaw: '',
-        streamedFatePlanningJson: null,
-        streamedProtagonistActionRaw: '',
-        streamedProtagonistActionJson: null,
         currentNode: state.currentNode
           ? {
             ...state.currentNode,
@@ -459,6 +351,14 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
           : null,
         error: null,
       }));
+      useGameInternalStore.setState({
+        streamedNarrationText: '',
+        streamedNarrationStatus: null,
+        streamedFatePlanningRaw: '',
+        streamedFatePlanningJson: null,
+        streamedProtagonistActionRaw: '',
+        streamedProtagonistActionJson: null,
+      });
 
       try {
         await submitGameSessionControl(sessionId, {
@@ -482,20 +382,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }
 
     const nextObsession = useObsession ? Math.max(0, obsessionPoints - 1) : obsessionPoints;
-    const nextDaysLeft = Math.max(1, daysLeft - 1);
 
     if (choice.nextNodeId) {
       const nextNode = buildStoryNode(choice.nextNodeId, character, world);
       set({
         currentNode: nextNode,
         stateView: buildStateView(choice.nextNodeId, turnIndex + 1, nextNode.text, choice.text),
-        worldNews: DEMO_NODES[choice.nextNodeId].news,
         obsessionPoints: nextObsession,
         intuitionPoints,
-        daysLeft: nextDaysLeft,
-        turnIndex: turnIndex + 1,
         error: null,
         gameState: 'playing',
+      });
+      useGameInternalStore.setState({
+        turnIndex: turnIndex + 1,
       });
       return;
     }
@@ -505,9 +404,6 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     }
 
     const endingNode = buildEndingNode(choice.endingId, character, world);
-    const ending = DEMO_ENDINGS[choice.endingId];
-    const archiveItem = buildArchiveItem(choice.endingId, character, world, sessionId);
-
     set({
       currentNode: endingNode,
       stateView: {
@@ -520,34 +416,39 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         protagonistState: '命运已收束',
         npcsState: '馆藏记录已生成',
         latestHistory: endingNode.text,
-        latestBroadcastSummary: ending.summary,
+        latestBroadcastSummary: '命运收束：本次旅程已被写入本地归档演示数据。',
         latestProtagonistAction: choice.text,
       },
-      archives: [archiveItem, ...archives.filter((item) => item.archiveId !== archiveItem.archiveId)],
-      latestArchiveId: archiveItem.archiveId,
       obsessionPoints: nextObsession,
       intuitionPoints,
-      daysLeft: nextDaysLeft,
-      turnIndex: turnIndex + 1,
-      worldNews: '命运收束：本次旅程已被写入本地归档演示数据。',
       error: null,
       gameState: 'playing',
     });
+    useGameInternalStore.setState({
+      turnIndex: turnIndex + 1,
+    });
   },
-  previewChoice: async (choiceId) => {
+  previewChoice: async (_choiceId) => {
     throw new Error('演示直觉点已耗尽。');
   },
-  createSave: async (title) => {
+  createSave: async (_title) => {
     throw new Error('当前没有可保存的演示旅程。');
   },
-  loadSave: async (saveId) => {
+  loadSave: async (_saveId) => {
 
   },
   resetGame: () => {
     closeActiveSessionStream();
+    useGameInternalStore.setState({
+      ...initialInternalState,
+    });
     set((state) => ({
       ...state,
-      ...resetPlayState(state),
+      ...resetUIState(),
     }));
   },
-}));
+});
+
+export const useGameUIStore = createGameUIStore(initialUIState, createGameUIActions);
+
+export const useGameStore = useGameUIStore;

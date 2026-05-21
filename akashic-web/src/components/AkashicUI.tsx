@@ -46,13 +46,13 @@ export function StatusPill({
   children,
   className,
 }: {
-  icon: LucideIcon;
+  icon: LucideIcon | null;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn('akashic-pill', className)}>
-      <Icon className="h-4 w-4 shrink-0" />
+      {Icon ? <Icon className="h-4 w-4 shrink-0" /> : null}
       <span>{children}</span>
     </div>
   );

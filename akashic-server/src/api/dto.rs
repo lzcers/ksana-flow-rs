@@ -24,6 +24,17 @@ pub struct SessionPath {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateProfilesRequest {
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GenerateProfilesData {
+    pub world: String,
+    pub protagonist: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Character {

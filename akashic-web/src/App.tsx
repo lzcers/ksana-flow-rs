@@ -1,11 +1,11 @@
 import React from 'react';
-import { useGameStore } from './store/gameStore';
+import { useGameUIStore } from './store/gameStore';
 import LobbyPage from './pages/LobbyPage';
 import CreationPage from './pages/CreationPage';
 import GameplayPage from './pages/GameplayPage';
 
 function App() {
-  const gameState = useGameStore((state) => state.gameState);
+  const gameState = useGameUIStore((state) => state.gameState);
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-background">

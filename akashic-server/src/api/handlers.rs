@@ -1,6 +1,11 @@
 use std::{convert::Infallible, time::Duration};
 
+use agent::{
+    agent::{CallModelEvent, call_model},
+    core::Message,
+};
 use akashic_ecs::resources::task_manager::{TaskKind, TaskStatus, TaskUpdate};
+use akashic_ecs::utils::build_chat_model;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -16,7 +21,8 @@ use crate::{error::AppError, state::AppState};
 
 use super::dto::{
     ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
-    CreateGameSessionRequest, GameSessionWorldStateData, SessionPath,
+    CreateGameSessionRequest, GameSessionWorldStateData, GenerateProfilesData,
+    GenerateProfilesRequest, SessionPath,
 };
 
 type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
@@ -83,6 +89,48 @@ pub async fn create_game_session(
 ) -> ApiResult<CreateGameSessionData> {
     let session = state.create_game_session(request).await?;
     Ok(Json(ApiResponse::ok(session)))
+}
+
+pub async fn generate_profiles(
+    Json(request): Json<GenerateProfilesRequest>,
+) -> ApiResult<GenerateProfilesData> {
+    if request.prompt.trim().is_empty() {
+        return Err(AppError::bad_request("`prompt` 不能为空。"));
+    }
+
+    let mut model = build_chat_model();
+    model.set_output_json(false);
+
+    let messages = vec![
+        Message::system(
+            "你是一名世界观与角色设定助手。请根据用户提供的创意描述，生成两段纯文本内容。\
+\n输出格式必须严格如下：\
+\n[世界设定]\
+\n这里写世界设定正文\
+\n[主角设定]\
+\n这里写主角设定正文\
+\n不要输出 JSON，不要输出代码块，不要添加额外标题或解释。",
+        ),
+        Message::user(request.prompt),
+    ];
+
+    let mut stream = std::pin::pin!(call_model(&model, &messages, None));
+
+    while let Some(event) = stream.next().await {
+        match event {
+            CallModelEvent::Completed { content, .. } => {
+                let data = parse_generated_profiles(&content)
+                    .ok_or_else(|| AppError::internal("模型返回格式不符合预期。"))?;
+                return Ok(Json(ApiResponse::ok(data)));
+            }
+            CallModelEvent::Error(message) => {
+                return Err(AppError::internal(format!("生成设定失败：{message}")));
+            }
+            CallModelEvent::TextChunk(_) | CallModelEvent::ReasoningChunk(_) => {}
+        }
+    }
+
+    Err(AppError::internal("模型未返回完整结果。"))
 }
 
 pub async fn get_game_session_world(
@@ -182,5 +230,47 @@ fn task_update_from_delta(event_id: Option<u64>, update: TaskUpdate) -> TaskUpda
         chunk: update.chunk,
         output: update.output,
         error: update.error,
+    }
+}
+
+fn parse_generated_profiles(content: &str) -> Option<GenerateProfilesData> {
+    let world_marker = "[世界设定]";
+    let protagonist_marker = "[主角设定]";
+    let world_start = content.find(world_marker)?;
+    let protagonist_start = content.find(protagonist_marker)?;
+    if protagonist_start <= world_start {
+        return None;
+    }
+
+    let world = content[world_start + world_marker.len()..protagonist_start].trim();
+    let protagonist = content[protagonist_start + protagonist_marker.len()..].trim();
+    if world.is_empty() || protagonist.is_empty() {
+        return None;
+    }
+
+    Some(GenerateProfilesData {
+        world: world.to_string(),
+        protagonist: protagonist.to_string(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_generated_profiles;
+
+    #[test]
+    fn parse_generated_profiles_extracts_two_sections() {
+        let result = parse_generated_profiles(
+            "[世界设定]\n蒸汽与神谕并存的海上帝国。\n\n[主角设定]\n一名背负禁忌地图的年轻领航员。",
+        )
+        .expect("should parse");
+
+        assert_eq!(result.world, "蒸汽与神谕并存的海上帝国。");
+        assert_eq!(result.protagonist, "一名背负禁忌地图的年轻领航员。");
+    }
+
+    #[test]
+    fn parse_generated_profiles_rejects_missing_sections() {
+        assert!(parse_generated_profiles("只有一段内容").is_none());
     }
 }

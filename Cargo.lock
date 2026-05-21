@@ -90,6 +90,7 @@ dependencies = [
 name = "akashic-server"
 version = "0.1.0"
 dependencies = [
+ "agent",
  "akashic-ecs",
  "anyhow",
  "axum",
