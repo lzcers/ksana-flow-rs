@@ -46,6 +46,7 @@ export interface RuntimeStateView {
   npcsState: string;
   latestHistory: string;
   latestBroadcastSummary: string;
+  latestBroadcastItems?: string[];
   latestProtagonistAction: string;
 }
 

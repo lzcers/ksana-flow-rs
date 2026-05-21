@@ -45,6 +45,8 @@ const GameplayPage: React.FC = () => {
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
+  const [broadcastIndex, setBroadcastIndex] = useState(0);
+  const [isBroadcastVisible, setIsBroadcastVisible] = useState(true);
   const lastNarrationLogRef = useRef('');
   const lastFatePlanningLogRef = useRef('');
   const lastProtagonistActionLogRef = useRef('');
@@ -54,6 +56,13 @@ const GameplayPage: React.FC = () => {
   const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
   const statusMessage = feedback ?? error;
+  const broadcastItems = (stateView?.latestBroadcastItems ?? [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const broadcastMessages = broadcastItems.length > 0
+    ? broadcastItems
+    : (stateView?.latestBroadcastSummary?.trim() ? [stateView.latestBroadcastSummary.trim()] : []);
+  const activeBroadcastMessage = broadcastMessages[broadcastIndex] ?? broadcastMessages[0] ?? '';
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -67,6 +76,35 @@ const GameplayPage: React.FC = () => {
     setPreviews({});
     setIsUtilityMenuOpen(false);
   }, [currentNode?.id]);
+
+  useEffect(() => {
+    setBroadcastIndex(0);
+    setIsBroadcastVisible(true);
+  }, [broadcastMessages.join('||')]);
+
+  useEffect(() => {
+    if (broadcastMessages.length <= 1) {
+      setIsBroadcastVisible(true);
+      return undefined;
+    }
+
+    let switchTimer: number | null = null;
+    const timer = window.setInterval(() => {
+      setIsBroadcastVisible(false);
+      switchTimer = window.setTimeout(() => {
+        setBroadcastIndex((prev) => (prev + 1) % broadcastMessages.length);
+        setIsBroadcastVisible(true);
+        switchTimer = null;
+      }, 220);
+    }, 2800);
+
+    return () => {
+      window.clearInterval(timer);
+      if (switchTimer !== null) {
+        window.clearTimeout(switchTimer);
+      }
+    };
+  }, [broadcastMessages.length]);
 
   useEffect(() => {
     setIsTyping(Boolean(currentNode?.text));
@@ -209,9 +247,9 @@ const GameplayPage: React.FC = () => {
                 {stateView?.currentScene ?? '命运推进'}
               </StatusPill>
             </div>
-            {stateView?.latestBroadcastSummary && <div className="akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 sm:text-xs">
+            {activeBroadcastMessage && <div className={`akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 transition-all duration-200 ease-out sm:text-xs ${isBroadcastVisible ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0'}`}>
               <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-200" />
-              <span>{stateView.latestBroadcastSummary}</span>
+              <span>{activeBroadcastMessage}</span>
             </div>}
           </div>
 
@@ -276,17 +314,17 @@ const GameplayPage: React.FC = () => {
                       <Flame className={`h-3.5 w-3.5 ${activeObsession ? 'animate-pulse' : ''}`} />
                       执念
                     </SecondaryButton>
-                    <div className='flex items-center gap-2'>
-                      <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
-                        <Flame className="h-3.5 w-3.5" />
-                        <span>{`${obsessionPoints}/5`}</span>
-                      </span>
-                      <span className="text-[0.72rem] leading-4 text-[#8f98ab] sm:text-xs">|</span>
-                      <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>{intuitionPoints}</span>
-                      </span>
-                    </div>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
+                      <Flame className="h-3.5 w-3.5" />
+                      <span>{`${obsessionPoints}/5`}</span>
+                    </span>
+                    <span className="text-[0.72rem] leading-4 text-[#8f98ab] sm:text-xs">|</span>
+                    <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>{intuitionPoints}</span>
+                    </span>
                   </div>
                   <div className="relative">
                     <SecondaryButton

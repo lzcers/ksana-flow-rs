@@ -162,6 +162,10 @@ function applyStreamTaskToStores(task: TaskView) {
                 summary?.locationStatus ??
                 summary?.description ??
                 state.stateView.latestBroadcastSummary,
+              latestBroadcastItems:
+                summary?.newInfo.length
+                  ? summary.newInfo
+                  : state.stateView.latestBroadcastItems,
             }
             : null,
         };
@@ -254,6 +258,7 @@ const createGameUIActions = (
         npcsState: '诸多回响正在汇聚',
         latestHistory: STREAM_PLACEHOLDER_TEXT,
         latestBroadcastSummary: '正在创建会话并唤起第一轮命运...',
+        latestBroadcastItems: ['正在创建会话并唤起第一轮命运...'],
         latestProtagonistAction: '尚未做出选择',
       },
       obsessionPoints: 3,
@@ -276,6 +281,7 @@ const createGameUIActions = (
           ? {
             ...state.stateView,
             latestBroadcastSummary: '会话已建立，正在推进第一轮...',
+            latestBroadcastItems: ['会话已建立，正在推进第一轮...'],
           }
           : null,
       }));
@@ -417,6 +423,7 @@ const createGameUIActions = (
         npcsState: '馆藏记录已生成',
         latestHistory: endingNode.text,
         latestBroadcastSummary: '命运收束：本次旅程已被写入本地归档演示数据。',
+        latestBroadcastItems: ['命运收束：本次旅程已被写入本地归档演示数据。'],
         latestProtagonistAction: choice.text,
       },
       obsessionPoints: nextObsession,

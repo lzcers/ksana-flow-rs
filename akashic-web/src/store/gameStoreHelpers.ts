@@ -316,6 +316,7 @@ export function buildStateView(
     npcsState: '守钟人、提灯小贩、港区耳语者',
     latestHistory: history,
     latestBroadcastSummary: node.news,
+    latestBroadcastItems: [node.news],
     latestProtagonistAction: latestAction,
   };
 }
@@ -662,6 +663,15 @@ export function mapGameSessionState(session: GameSessionWorldStateData): Control
         session.worldState.locationStatus ||
         session.worldState.description ||
         narrationText,
+      latestBroadcastItems:
+        session.worldState.newInfo.length > 0
+          ? session.worldState.newInfo
+          : [
+            session.worldState.currentEvent ||
+            session.worldState.locationStatus ||
+            session.worldState.description ||
+            narrationText,
+          ].filter((item): item is string => Boolean(item)),
       latestProtagonistAction: session.currentProtagonistAction || '尚未做出选择',
     },
     turnIndex: session.turnIndex,
