@@ -30,6 +30,7 @@ interface NarrationRoundEntry {
 interface NarrationHistoryItemProps {
   entry: NarrationRoundEntry;
   isCurrentRound: boolean;
+  isFinished: boolean;
   onComplete?: () => void;
 }
 
@@ -59,6 +60,7 @@ const upsertNarrationRoundEntry = (
 const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
   entry,
   isCurrentRound,
+  isFinished,
   onComplete,
 }) => {
   return (
@@ -75,6 +77,7 @@ const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
       <Typewriter
         text={entry.text}
         animate={isCurrentRound}
+        isFinished={isFinished}
         onComplete={isCurrentRound ? onComplete : undefined}
       />
     </div>
@@ -445,6 +448,7 @@ const GameplayPage: React.FC = () => {
                           key={entry.round}
                           entry={entry}
                           isCurrentRound={entry.round === currentRound}
+                          isFinished={entry.round !== currentRound || streamedNarrationStatus === 'done'}
                           onComplete={handleTypewriterComplete}
                         />
                       );

@@ -17,7 +17,7 @@ interface TypewriterProps {
 const Typewriter: React.FC<TypewriterProps> = ({
   text,
   animate = true,
-  isFinished = true,
+  isFinished = false,
   onComplete,
 }) => {
   const hasCompletedRef = useRef(false);

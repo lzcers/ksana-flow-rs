@@ -89,7 +89,7 @@ export const STORY_IMAGES = {
   corridor: image('vast mystical hall of memory, dark blue archive walls, golden lines, cinematic concept art'),
 };
 
-export const STREAM_PLACEHOLDER_TEXT = '命运正在展开，请稍候...';
+export const STREAM_PLACEHOLDER_TEXT = '命运正在编织中...';
 
 export const initialCharacter: Character = {
   name: '',
