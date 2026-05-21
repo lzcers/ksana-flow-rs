@@ -392,9 +392,9 @@ export function toChoiceFromSession(choice: PendingProtagonistChoice): Choice {
 export function taskLabel(kind: string): string {
   switch (kind) {
     case 'fate_planning':
-      return '命运编织';
+      return '命运编织中...';
     case 'narration':
-      return '叙事展开';
+      return '叙事展开中...';
     case 'protagonist_action':
       return '主角抉择';
     default:

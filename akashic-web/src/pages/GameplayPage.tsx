@@ -4,6 +4,7 @@ import {
   Eye,
   Flame,
   House,
+  Hourglass,
   MoreHorizontal,
   Save,
   Share2,
@@ -18,6 +19,13 @@ import {
   StatusPill,
   StoryFrame,
 } from '../components/AkashicUI';
+import { STREAM_PLACEHOLDER_TEXT } from '../store/gameStoreHelpers';
+
+interface NarrationRoundEntry {
+  round: number;
+  text: string;
+  choiceText?: string;
+}
 
 const GameplayPage: React.FC = () => {
   const {
@@ -46,16 +54,20 @@ const GameplayPage: React.FC = () => {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
   const [broadcastIndex, setBroadcastIndex] = useState(0);
-  const [isBroadcastVisible, setIsBroadcastVisible] = useState(true);
+  const [isBroadcastDragging, setIsBroadcastDragging] = useState(false);
+  const [narrationHistory, setNarrationHistory] = useState<NarrationRoundEntry[]>([]);
   const lastNarrationLogRef = useRef('');
   const lastFatePlanningLogRef = useRef('');
   const lastProtagonistActionLogRef = useRef('');
+  const pendingChoiceTextByRoundRef = useRef<Record<number, string>>({});
+  const broadcastSwipeStartRef = useRef<{ pointerId: number; clientX: number } | null>(null);
 
   const currentRound = Math.max(stateView?.turnIndex ?? 1, 1);
   const hasChoices = currentNode?.choices.length > 0;
   const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
   const statusMessage = feedback ?? error;
+  const isFatePlanningScene = isLoading && (stateView?.currentScene ?? '').includes('命运编织');
   const broadcastItems = (stateView?.latestBroadcastItems ?? [])
     .map((item) => item.trim())
     .filter(Boolean);
@@ -63,6 +75,11 @@ const GameplayPage: React.FC = () => {
     ? broadcastItems
     : (stateView?.latestBroadcastSummary?.trim() ? [stateView.latestBroadcastSummary.trim()] : []);
   const activeBroadcastMessage = broadcastMessages[broadcastIndex] ?? broadcastMessages[0] ?? '';
+  const broadcastCountLabel = broadcastMessages.length > 0
+    ? `${Math.min(broadcastIndex + 1, broadcastMessages.length)}/${broadcastMessages.length}`
+    : '0/0';
+  const latestNarrationText = (streamedNarrationText || currentNode?.text || '').trim();
+  const effectiveNarrationText = latestNarrationText === STREAM_PLACEHOLDER_TEXT ? '' : latestNarrationText;
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -78,33 +95,62 @@ const GameplayPage: React.FC = () => {
   }, [currentNode?.id]);
 
   useEffect(() => {
-    setBroadcastIndex(0);
-    setIsBroadcastVisible(true);
-  }, [broadcastMessages.join('||')]);
-
-  useEffect(() => {
-    if (broadcastMessages.length <= 1) {
-      setIsBroadcastVisible(true);
-      return undefined;
+    if (!currentNode) {
+      setNarrationHistory([]);
+      pendingChoiceTextByRoundRef.current = {};
+      return;
     }
 
-    let switchTimer: number | null = null;
-    const timer = window.setInterval(() => {
-      setIsBroadcastVisible(false);
-      switchTimer = window.setTimeout(() => {
-        setBroadcastIndex((prev) => (prev + 1) % broadcastMessages.length);
-        setIsBroadcastVisible(true);
-        switchTimer = null;
-      }, 220);
-    }, 2800);
+    if (
+      currentRound === 1
+      && currentNode.text === STREAM_PLACEHOLDER_TEXT
+      && !streamedNarrationText.trim()
+    ) {
+      setNarrationHistory([]);
+      pendingChoiceTextByRoundRef.current = {};
+    }
+  }, [currentNode, currentRound, streamedNarrationText]);
 
-    return () => {
-      window.clearInterval(timer);
-      if (switchTimer !== null) {
-        window.clearTimeout(switchTimer);
+  useEffect(() => {
+    if (!effectiveNarrationText) {
+      return;
+    }
+
+    setNarrationHistory((prev) => {
+      const existingIndex = prev.findIndex((item) => item.round === currentRound);
+      const choiceText = pendingChoiceTextByRoundRef.current[currentRound];
+
+      if (existingIndex >= 0) {
+        if (
+          prev[existingIndex]?.text === effectiveNarrationText
+          && prev[existingIndex]?.choiceText === choiceText
+        ) {
+          return prev;
+        }
+
+        const next = [...prev];
+        next[existingIndex] = {
+          round: currentRound,
+          text: effectiveNarrationText,
+          choiceText,
+        };
+        return next;
       }
-    };
-  }, [broadcastMessages.length]);
+
+      return [
+        ...prev,
+        {
+          round: currentRound,
+          text: effectiveNarrationText,
+          choiceText,
+        },
+      ];
+    });
+  }, [currentRound, effectiveNarrationText]);
+
+  useEffect(() => {
+    setBroadcastIndex(0);
+  }, [broadcastMessages.join('||')]);
 
   useEffect(() => {
     setIsTyping(Boolean(currentNode?.text));
@@ -216,6 +262,12 @@ const GameplayPage: React.FC = () => {
 
   const handleChoiceClick = async (choiceId: string) => {
     try {
+      const selectedChoice = currentNode?.choices.find((choice) => choice.id === choiceId);
+      if (selectedChoice) {
+        pendingChoiceTextByRoundRef.current[currentRound + 1] = activeObsession
+          ? `${selectedChoice.text} [执念]`
+          : selectedChoice.text;
+      }
       await submitChoice(choiceId, activeObsession);
       setIsTyping(true);
       setActiveObsession(false);
@@ -235,6 +287,67 @@ const GameplayPage: React.FC = () => {
     }
   };
 
+  const moveBroadcastIndex = useCallback((direction: 'prev' | 'next') => {
+    if (broadcastMessages.length <= 1) {
+      return;
+    }
+
+    setBroadcastIndex((prev) => {
+      if (direction === 'next') {
+        return (prev + 1) % broadcastMessages.length;
+      }
+      return (prev - 1 + broadcastMessages.length) % broadcastMessages.length;
+    });
+  }, [broadcastMessages.length]);
+
+  const handleBroadcastPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+
+    broadcastSwipeStartRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+    };
+    setIsBroadcastDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }, []);
+
+  const handleBroadcastPointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const start = broadcastSwipeStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const deltaX = event.clientX - start.clientX;
+    broadcastSwipeStartRef.current = null;
+    setIsBroadcastDragging(false);
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    if (Math.abs(deltaX) < 36) {
+      return;
+    }
+
+    moveBroadcastIndex(deltaX < 0 ? 'next' : 'prev');
+  }, [moveBroadcastIndex]);
+
+  const handleBroadcastPointerCancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const start = broadcastSwipeStartRef.current;
+    if (!start || start.pointerId !== event.pointerId) {
+      return;
+    }
+
+    broadcastSwipeStartRef.current = null;
+    setIsBroadcastDragging(false);
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
   return (
     <ScreenShell className="items-stretch">
       <StoryFrame className="relative flex max-w-5xl flex-col overflow-hidden px-2.5 py-2.5 sm:px-3 sm:py-3 md:px-4 md:py-4">
@@ -243,67 +356,113 @@ const GameplayPage: React.FC = () => {
           <div className="shrink-0 space-y-2">
             <div className="flex flex-wrap gap-1 justify-between">
               <StatusPill icon={Clock3} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">第 {currentRound} 轮</StatusPill>
-              <StatusPill icon={null} className="px-2.5 py-1 text-[0.7rem] sm:text-xs">
-                {stateView?.currentScene ?? '命运推进'}
+              <StatusPill
+                icon={isFatePlanningScene ? Hourglass : null}
+                iconClassName={isFatePlanningScene ? 'h-3 w-3 animate-spin' : undefined}
+                className="px-2.5 py-1 text-[0.7rem] sm:text-xs"
+              >
+                {stateView?.currentScene}
               </StatusPill>
             </div>
-            {activeBroadcastMessage && <div className={`akashic-pill w-fit border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 transition-all duration-200 ease-out sm:text-xs ${isBroadcastVisible ? 'translate-x-0 opacity-100' : '-translate-x-1 opacity-0'}`}>
-              <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-200" />
-              <span>{activeBroadcastMessage}</span>
-            </div>}
+            <div className="relative h-10 sm:h-11">
+              {activeBroadcastMessage ? (
+                <div
+                  className={`akashic-pill absolute inset-y-0 left-0 flex w-full max-w-full items-start border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 select-none touch-pan-y sm:text-xs ${isBroadcastDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                  onPointerDown={handleBroadcastPointerDown}
+                  onPointerUp={handleBroadcastPointerEnd}
+                  onPointerCancel={handleBroadcastPointerCancel}
+                >
+                  <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-200" />
+                  <span className="line-clamp-2 min-w-0 flex-1 leading-4">{activeBroadcastMessage}</span>
+                  <span className="shrink-0 rounded-full border border-amber-300/25 bg-black/15 px-1.5 py-0.5 text-[0.65rem] leading-none text-amber-100/80 sm:text-[0.7rem]">
+                    {broadcastCountLabel}
+                  </span>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3">
-            <section className="akashic-panel flex min-h-0 flex-1 flex-col p-2">
+            <section className="akashic-panel flex h-[55dvh] shrink-0 flex-col p-2">
               <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-[#040912]/90 sm:rounded-[1.2rem] sm:pl-4 md:rounded-[1.3rem] md:pl-5">
                 <div className="akashic-scroll min-h-0 flex-1 overflow-y-auto">
-                  <div className="text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1rem] md:text-[1.2rem]">
-                    <Typewriter text={currentNode.text} speed={28} onComplete={handleTypewriterComplete} />
+                  <div className="h-full space-y-5 py-1 pr-2 text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1rem] md:text-[1.2rem]">
+                    {narrationHistory.map((entry) => {
+                      const isCurrentRound = entry.round === currentRound;
+                      return (
+                        <div key={entry.round} className="space-y-2">
+                          {entry.choiceText ? (
+                            <div className="rounded-[0.9rem] border border-amber-300/20 bg-amber-950/10 px-3 py-2 text-[0.78rem] font-medium leading-5 text-amber-100/90 sm:text-sm">
+                              <span className="text-xs font-medium tracking-[0.18em] text-[#8f98ab] uppercase">
+                                第 {entry.round} 轮
+                              </span>
+                              &nbsp;&nbsp;
+                              {entry.choiceText}
+                            </div>
+                          ) : null}
+                          <Typewriter
+                            text={entry.text}
+                            animate={isCurrentRound}
+                            onComplete={isCurrentRound ? handleTypewriterComplete : undefined}
+                          />
+                        </div>
+                      );
+                    })}
+                    {!narrationHistory.length && currentNode.text === STREAM_PLACEHOLDER_TEXT ? (
+                      <p className="text-sm font-medium text-[#8f98ab]">
+                        {STREAM_PLACEHOLDER_TEXT}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
             </section>
 
-            <div className="shrink-0 space-y-1.5">
-              {hasChoices && <div className="rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-2">
-                <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 py-0.5">
-                  {hasChoices ? currentNode.choices.map((choice) => (
-                    <div key={choice.id} className="space-y-1.5">
-                      <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
-                        <button
-                          onClick={() => void handleChoiceClick(choice.id)}
-                          disabled={isChoiceInteractionDisabled || choice.disabled}
-                          className={`akashic-choice h-10 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
-                            }`}
-                        >
-                          <div className="flex min-h-7 items-center text-left">
-                            <div className="w-full text-sm font-semibold leading-5 sm:text-[0.95rem]">
-                              {choice.text}
-                            </div>
+            <div className="flex flex-col absolute w-full bottom-0">
+              <div className="flex w-full">
+                {hasChoices &&
+                  <div className="game-choices flex-1 rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-2">
+                    <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 py-0.5">
+                      {hasChoices ? currentNode.choices.map((choice) => (
+                        <div key={choice.id} className="space-y-1.5">
+                          <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
+                            <button
+                              onClick={() => void handleChoiceClick(choice.id)}
+                              disabled={isChoiceInteractionDisabled || choice.disabled}
+                              className={`akashic-choice h-10 disabled:cursor-not-allowed disabled:opacity-50 ${activeObsession ? 'border-red-400/45 bg-red-950/20 text-red-100' : 'text-[#f3ead8]'
+                                }`}
+                            >
+                              <div className="flex min-h-7 items-center text-left">
+                                <div className="w-full text-sm font-semibold leading-5 sm:text-[0.95rem]">
+                                  {choice.text}
+                                </div>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => void handlePreview(choice.id, e)}
+                              disabled={isChoiceInteractionDisabled}
+                              className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
+                              title="消耗 1 点直觉，窥探命运碎片"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
                           </div>
-                        </button>
 
-                        <button
-                          type="button"
-                          onClick={(e) => void handlePreview(choice.id, e)}
-                          disabled={isChoiceInteractionDisabled}
-                          className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
-                          title="消耗 1 点直觉，窥探命运碎片"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {previews[choice.id] ? (
-                        <div className="rounded-[0.8rem] border border-cyan-400/20 bg-cyan-950/10 px-2 py-2 text-[0.7rem] leading-4.5 text-cyan-100/90 sm:rounded-[0.95rem] sm:px-2 sm:py-2 sm:text-xs">
-                          {previews[choice.id]}
+                          {previews[choice.id] ? (
+                            <div className="rounded-[0.8rem] border border-cyan-400/20 bg-cyan-950/10 px-2 py-2 text-[0.7rem] leading-4.5 text-cyan-100/90 sm:rounded-[0.95rem] sm:px-2 sm:py-2 sm:text-xs">
+                              {previews[choice.id]}
+                            </div>
+                          ) : null}
                         </div>
-                      ) : null}
+                      )) : null}
                     </div>
-                  )) : null}
-                </div>
-              </div>}
-              <div className="shrink-0 rounded-full border border-[rgba(116,103,80,0.4)] bg-[rgba(8,14,26,0.82)] px-2 py-2 backdrop-blur-md">
+                  </div>
+                }
+              </div>
+
+              <div className="game-opts inset-x-0 rounded-full border border-[rgba(116,103,80,0.4)] bg-[rgba(8,14,26,0.82)] px-2 py-2 backdrop-blur-md">
                 <div className="relative flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <SecondaryButton
@@ -376,10 +535,10 @@ const GameplayPage: React.FC = () => {
                 </div>
               </div>
             </div>
-
-            <div className="shrink-0 min-h-5">
+            <div className="min-h-5">
               {statusMessage ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{statusMessage}</p> : null}
             </div>
+
           </div>
         </div>
       </StoryFrame>

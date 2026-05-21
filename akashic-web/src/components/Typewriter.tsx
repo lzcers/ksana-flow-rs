@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  AutoScrollContainer,
-  darkTheme,
   Incremark,
+  darkTheme,
   ThemeProvider,
   useIncremark,
 } from '@incremark/react';
@@ -10,29 +9,28 @@ import '@incremark/theme/styles.css';
 
 interface TypewriterProps {
   text: string;
-  speed?: number;
+  animate?: boolean;
+  isFinished?: boolean;
   onComplete?: () => void;
 }
 
-const Typewriter: React.FC<TypewriterProps> = ({ text, speed = 30, onComplete }) => {
-  const [displayText, setDisplayText] = useState('');
+const Typewriter: React.FC<TypewriterProps> = ({
+  text,
+  animate = true,
+  isFinished = true,
+  onComplete,
+}) => {
   const hasCompletedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
-  const displayTextRef = useRef('');
-  const timerRef = useRef<number | null>(null);
-  const incremarkOptions = useMemo(() => ({
+  const previousTextRef = useRef('');
+  const incremark = useIncremark({
     math: { tex: true },
     gfm: true,
-  }), []);
-  const incremark = useIncremark(incremarkOptions);
-  const incremarkRef = useRef(incremark);
-
-  const clearTimer = () => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
+    typewriter: {
+      enabled: animate,
+      effect: 'typing',
+    },
+  });
 
   const completeDisplay = () => {
     if (!hasCompletedRef.current) {
@@ -46,77 +44,54 @@ const Typewriter: React.FC<TypewriterProps> = ({ text, speed = 30, onComplete })
   }, [onComplete]);
 
   useEffect(() => {
-    incremarkRef.current = incremark;
-  }, [incremark]);
+    incremark.typewriter.setEnabled(animate);
+  }, [animate, incremark]);
 
   useEffect(() => {
-    if (!displayText) {
-      incremarkRef.current.reset();
-      return;
-    }
-
-    incremarkRef.current.render(displayText);
-  }, [displayText]);
-
-  useEffect(() => {
-    clearTimer();
+    const previousText = previousTextRef.current;
 
     if (!text) {
-      displayTextRef.current = '';
-      setDisplayText('');
+      previousTextRef.current = '';
+      incremark.reset();
       completeDisplay();
       return;
     }
 
-    if (!text.startsWith(displayTextRef.current)) {
-      displayTextRef.current = '';
-      setDisplayText('');
-    }
-
-    if (displayTextRef.current === text) {
+    if (!animate) {
+      previousTextRef.current = text;
+      incremark.render(text);
       completeDisplay();
       return;
     }
 
     hasCompletedRef.current = false;
-    const tick = () => {
-      const current = displayTextRef.current;
 
-      if (!text.startsWith(current)) {
-        displayTextRef.current = '';
-        setDisplayText('');
-        timerRef.current = window.setTimeout(tick, speed);
-        return;
-      }
+    if (!text.startsWith(previousText)) {
+      incremark.reset();
+      incremark.append(text);
+    } else if (text.length > previousText.length) {
+      incremark.append(text.slice(previousText.length));
+    }
 
-      const next = text.slice(0, current.length + 1);
-      displayTextRef.current = next;
-      setDisplayText(next);
+    if (isFinished) {
+      incremark.finalize();
+    }
 
-      if (next.length >= text.length) {
-        timerRef.current = null;
-        completeDisplay();
-        return;
-      }
+    previousTextRef.current = text;
+  }, [animate, incremark, isFinished, text]);
 
-      timerRef.current = window.setTimeout(tick, speed);
-    };
+  useEffect(() => {
+    if (!text || !animate || !isFinished || !incremark.isDisplayComplete) {
+      return;
+    }
 
-    timerRef.current = window.setTimeout(tick, speed);
-
-    return () => {
-      clearTimer();
-    };
-  }, [text, speed]);
+    completeDisplay();
+  }, [animate, incremark.isDisplayComplete, isFinished, text]);
 
   return (
     <div className="h-full">
       <ThemeProvider theme={darkTheme}>
-        <AutoScrollContainer enabled={false} className="h-full w-full">
-          <div className="h-full text-inherit">
-            <Incremark incremark={incremark} />
-          </div>
-        </AutoScrollContainer>
+        <Incremark incremark={incremark} />
       </ThemeProvider>
     </div>
   );

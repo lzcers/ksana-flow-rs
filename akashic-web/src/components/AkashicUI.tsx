@@ -43,16 +43,18 @@ export function SectionCard({
 
 export function StatusPill({
   icon: Icon,
+  iconClassName,
   children,
   className,
 }: {
   icon: LucideIcon | null;
+  iconClassName?: string;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn('akashic-pill', className)}>
-      {Icon ? <Icon className="h-4 w-4 shrink-0" /> : null}
+      {Icon ? <Icon className={cn('h-4 w-4 shrink-0', iconClassName)} /> : null}
       <span>{children}</span>
     </div>
   );
