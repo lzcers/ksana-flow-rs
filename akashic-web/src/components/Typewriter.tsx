@@ -97,4 +97,8 @@ const Typewriter: React.FC<TypewriterProps> = ({
   );
 };
 
-export default Typewriter;
+const MemoizedTypewriter = React.memo(Typewriter);
+
+MemoizedTypewriter.displayName = 'Typewriter';
+
+export default MemoizedTypewriter;

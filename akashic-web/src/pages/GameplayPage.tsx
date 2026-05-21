@@ -27,6 +27,62 @@ interface NarrationRoundEntry {
   choiceText?: string;
 }
 
+interface NarrationHistoryItemProps {
+  entry: NarrationRoundEntry;
+  isCurrentRound: boolean;
+  onComplete?: () => void;
+}
+
+const upsertNarrationRoundEntry = (
+  entries: NarrationRoundEntry[],
+  nextEntry: NarrationRoundEntry,
+) => {
+  const existingIndex = entries.findIndex((item) => item.round === nextEntry.round);
+
+  if (existingIndex < 0) {
+    return [...entries, nextEntry];
+  }
+
+  const existingEntry = entries[existingIndex];
+  if (
+    existingEntry.text === nextEntry.text
+    && existingEntry.choiceText === nextEntry.choiceText
+  ) {
+    return entries;
+  }
+
+  const nextEntries = [...entries];
+  nextEntries[existingIndex] = nextEntry;
+  return nextEntries;
+};
+
+const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
+  entry,
+  isCurrentRound,
+  onComplete,
+}) => {
+  return (
+    <div className="space-y-2">
+      {entry.choiceText ? (
+        <div className="rounded-[0.9rem] border border-amber-300/20 bg-amber-950/10 px-3 py-2 text-[0.78rem] font-medium leading-5 text-amber-100/90 sm:text-sm">
+          <span className="text-xs font-medium tracking-[0.18em] text-[#8f98ab] uppercase">
+            第 {entry.round} 轮
+          </span>
+          &nbsp;&nbsp;
+          {entry.choiceText}
+        </div>
+      ) : null}
+      <Typewriter
+        text={entry.text}
+        animate={isCurrentRound}
+        onComplete={isCurrentRound ? onComplete : undefined}
+      />
+    </div>
+  );
+});
+
+NarrationHistoryItem.displayName = 'NarrationHistoryItem';
+
 const GameplayPage: React.FC = () => {
   const {
     currentNode,
@@ -112,41 +168,20 @@ const GameplayPage: React.FC = () => {
   }, [currentNode, currentRound, streamedNarrationText]);
 
   useEffect(() => {
-    if (!effectiveNarrationText) {
+    const choiceText = pendingChoiceTextByRoundRef.current[currentRound];
+    const nextText = effectiveNarrationText
+      || (choiceText && currentNode?.text === STREAM_PLACEHOLDER_TEXT ? STREAM_PLACEHOLDER_TEXT : '');
+
+    if (!nextText) {
       return;
     }
 
-    setNarrationHistory((prev) => {
-      const existingIndex = prev.findIndex((item) => item.round === currentRound);
-      const choiceText = pendingChoiceTextByRoundRef.current[currentRound];
-
-      if (existingIndex >= 0) {
-        if (
-          prev[existingIndex]?.text === effectiveNarrationText
-          && prev[existingIndex]?.choiceText === choiceText
-        ) {
-          return prev;
-        }
-
-        const next = [...prev];
-        next[existingIndex] = {
-          round: currentRound,
-          text: effectiveNarrationText,
-          choiceText,
-        };
-        return next;
-      }
-
-      return [
-        ...prev,
-        {
-          round: currentRound,
-          text: effectiveNarrationText,
-          choiceText,
-        },
-      ];
-    });
-  }, [currentRound, effectiveNarrationText]);
+    setNarrationHistory((prev) => upsertNarrationRoundEntry(prev, {
+      round: currentRound,
+      text: nextText,
+      choiceText,
+    }));
+  }, [currentNode?.text, currentRound, effectiveNarrationText]);
 
   useEffect(() => {
     setBroadcastIndex(0);
@@ -261,19 +296,36 @@ const GameplayPage: React.FC = () => {
   };
 
   const handleChoiceClick = async (choiceId: string) => {
+    const selectedChoice = currentNode?.choices.find((choice) => choice.id === choiceId);
+    const nextRound = currentRound + 1;
+    const nextChoiceText = selectedChoice
+      ? (activeObsession ? `${selectedChoice.text} [执念]` : selectedChoice.text)
+      : undefined;
+
     try {
-      const selectedChoice = currentNode?.choices.find((choice) => choice.id === choiceId);
-      if (selectedChoice) {
-        pendingChoiceTextByRoundRef.current[currentRound + 1] = activeObsession
-          ? `${selectedChoice.text} [执念]`
-          : selectedChoice.text;
+      if (nextChoiceText) {
+        pendingChoiceTextByRoundRef.current[nextRound] = nextChoiceText;
+        setNarrationHistory((prev) => upsertNarrationRoundEntry(prev, {
+          round: nextRound,
+          text: STREAM_PLACEHOLDER_TEXT,
+          choiceText: nextChoiceText,
+        }));
       }
+
       await submitChoice(choiceId, activeObsession);
       setIsTyping(true);
       setActiveObsession(false);
       setPreviews({});
       setFeedback(null);
     } catch (submitError) {
+      if (nextChoiceText) {
+        delete pendingChoiceTextByRoundRef.current[nextRound];
+        setNarrationHistory((prev) => prev.filter((entry) => (
+          entry.round !== nextRound
+          || entry.text !== STREAM_PLACEHOLDER_TEXT
+          || entry.choiceText !== nextChoiceText
+        )));
+      }
       setFeedback(readErrorMessage(submitError, '推进剧情失败。'));
     }
   };
@@ -388,24 +440,13 @@ const GameplayPage: React.FC = () => {
                 <div className="akashic-scroll min-h-0 flex-1 overflow-y-auto">
                   <div className="h-full space-y-5 py-1 pr-2 text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1rem] md:text-[1.2rem]">
                     {narrationHistory.map((entry) => {
-                      const isCurrentRound = entry.round === currentRound;
                       return (
-                        <div key={entry.round} className="space-y-2">
-                          {entry.choiceText ? (
-                            <div className="rounded-[0.9rem] border border-amber-300/20 bg-amber-950/10 px-3 py-2 text-[0.78rem] font-medium leading-5 text-amber-100/90 sm:text-sm">
-                              <span className="text-xs font-medium tracking-[0.18em] text-[#8f98ab] uppercase">
-                                第 {entry.round} 轮
-                              </span>
-                              &nbsp;&nbsp;
-                              {entry.choiceText}
-                            </div>
-                          ) : null}
-                          <Typewriter
-                            text={entry.text}
-                            animate={isCurrentRound}
-                            onComplete={isCurrentRound ? handleTypewriterComplete : undefined}
-                          />
-                        </div>
+                        <NarrationHistoryItem
+                          key={entry.round}
+                          entry={entry}
+                          isCurrentRound={entry.round === currentRound}
+                          onComplete={handleTypewriterComplete}
+                        />
                       );
                     })}
                     {!narrationHistory.length && currentNode.text === STREAM_PLACEHOLDER_TEXT ? (
