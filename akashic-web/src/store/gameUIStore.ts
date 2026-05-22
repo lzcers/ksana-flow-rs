@@ -3,7 +3,6 @@ import type { StoreApi, UseBoundStore } from 'zustand';
 import type {
   Character,
   RuntimeStateView,
-  StoryNode,
   World,
 } from '../lib/api';
 
@@ -16,8 +15,6 @@ export interface GameUIState {
   character: Character;
   // 世界设定表单与存档摘要会读取的世界信息。
   world: World;
-  // 当前剧情节点，包含正文、配图与可选项。
-  currentNode: StoryNode | null;
   // 运行时视图模型，驱动右侧状态面板等聚合信息。
   stateView: RuntimeStateView | null;
   // 执念点数。

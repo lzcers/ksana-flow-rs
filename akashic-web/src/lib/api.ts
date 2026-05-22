@@ -28,13 +28,6 @@ export interface Choice {
   };
 }
 
-export interface StoryNode {
-  id: string;
-  text: string;
-  image: string;
-  choices: Choice[];
-}
-
 export interface RuntimeStateView {
   gameState: string;
   phase: string;
@@ -48,29 +41,6 @@ export interface RuntimeStateView {
   latestBroadcastSummary: string;
   latestBroadcastItems?: string[];
   latestProtagonistAction: string;
-}
-
-export interface SaveListItem {
-  saveId: string;
-  sessionId: string;
-  title: string;
-  characterName: string;
-  background: string;
-  era: string;
-  turnIndex: number;
-  summary: string;
-  coverImage: string;
-  savedAt: string;
-}
-
-export interface ArchiveListItem {
-  archiveId: string;
-  title: string;
-  tag: string;
-  era: string;
-  summary: string;
-  coverImage: string;
-  createdAt: string;
 }
 
 export interface ApiResponse<T> {
@@ -104,78 +74,6 @@ export interface TaskView {
   chunks: string[];
   output: string | null;
   error: string | null;
-}
-
-export interface WorldStateView {
-  round: number;
-  sceneTitle: string;
-  timeAbsolute: string;
-  timeRelative?: string | null;
-  locationName: string;
-  locationExits: string[];
-  locationStatus: string;
-  description: string;
-  currentEvent: string;
-  newInfo: string[];
-  innerConflict: string;
-  hardAnchors: string[];
-  pace: string;
-  atmosphere: string;
-  focalPoint: string;
-  protagonistCondition: string;
-  protagonistKnownSecrets: string[];
-}
-
-interface RawWorldStateView {
-  round: number;
-  scene_title: string;
-  time_absolute: string;
-  time_relative?: string | null;
-  location_name: string;
-  location_exits: string[];
-  location_status: string;
-  description: string;
-  current_event: string;
-  new_info: string[];
-  inner_conflict: string;
-  hard_anchors: string[];
-  pace: string;
-  atmosphere: string;
-  focal_point: string;
-  protagonist_condition: string;
-  protagonist_known_secrets: string[];
-}
-
-export interface GameSessionWorldStateData {
-  sessionId: string;
-  status: string;
-  phase: string;
-  turnIndex: number;
-  activeTurnId: number;
-  worldState: WorldStateView;
-  currentTask: TaskView | null;
-  tasks: TaskView[];
-  latestNarration: string;
-  currentProtagonistAction: string;
-  choices: PendingProtagonistChoice[];
-}
-
-interface RawGameSessionWorldStateData {
-  sessionId: string;
-  status: string;
-  phase: string;
-  turnIndex: number;
-  activeTurnId: number;
-  worldState: RawWorldStateView;
-  currentTask: TaskView | null;
-  tasks: TaskView[];
-  latestNarration: string;
-  currentProtagonistAction: string;
-  choices: PendingProtagonistChoice[];
-}
-
-export interface ControlGameSessionData {
-  action: string;
 }
 
 export type GameSessionControlInput =
@@ -214,37 +112,6 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   return payload.data;
 }
 
-function normalizeWorldState(worldState: RawWorldStateView): WorldStateView {
-  return {
-    round: worldState.round,
-    sceneTitle: worldState.scene_title,
-    timeAbsolute: worldState.time_absolute,
-    timeRelative: worldState.time_relative,
-    locationName: worldState.location_name,
-    locationExits: worldState.location_exits,
-    locationStatus: worldState.location_status,
-    description: worldState.description,
-    currentEvent: worldState.current_event,
-    newInfo: worldState.new_info,
-    innerConflict: worldState.inner_conflict,
-    hardAnchors: worldState.hard_anchors,
-    pace: worldState.pace,
-    atmosphere: worldState.atmosphere,
-    focalPoint: worldState.focal_point,
-    protagonistCondition: worldState.protagonist_condition,
-    protagonistKnownSecrets: worldState.protagonist_known_secrets,
-  };
-}
-
-function normalizeGameSessionWorldState(
-  session: RawGameSessionWorldStateData,
-): GameSessionWorldStateData {
-  return {
-    ...session,
-    worldState: normalizeWorldState(session.worldState),
-  };
-}
-
 export function createGameSession(character: Character, world: World) {
   return requestJson<CreateGameSessionData>('/api/game-sessions/create', {
     method: 'POST',
@@ -252,17 +119,11 @@ export function createGameSession(character: Character, world: World) {
   });
 }
 
-export function getGameSessionWorld(sessionId: string) {
-  return requestJson<RawGameSessionWorldStateData>(`/api/game-sessions/${sessionId}`).then(
-    normalizeGameSessionWorldState,
-  );
-}
-
 export function submitGameSessionControl(
   sessionId: string,
   input: GameSessionControlInput,
 ) {
-  return requestJson<ControlGameSessionData>(`/api/game-sessions/${sessionId}/control`, {
+  return requestJson<{ action: string }>(`/api/game-sessions/${sessionId}/control`, {
     method: 'POST',
     body: JSON.stringify(input),
   });

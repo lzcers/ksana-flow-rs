@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Clock3,
   Eye,
@@ -23,8 +23,10 @@ import { STREAM_PLACEHOLDER_TEXT } from '../store/gameStoreHelpers';
 
 interface NarrationRoundEntry {
   round: number;
-  text: string;
-  choiceText?: string;
+  narrationText: string;
+  narrationStatus: 'pending' | 'running' | 'done' | 'error' | null;
+  selectedChoiceText: string | null;
+  isAwaitingNarration: boolean;
 }
 
 interface NarrationHistoryItemProps {
@@ -34,29 +36,6 @@ interface NarrationHistoryItemProps {
   onComplete?: () => void;
 }
 
-const upsertNarrationRoundEntry = (
-  entries: NarrationRoundEntry[],
-  nextEntry: NarrationRoundEntry,
-) => {
-  const existingIndex = entries.findIndex((item) => item.round === nextEntry.round);
-
-  if (existingIndex < 0) {
-    return [...entries, nextEntry];
-  }
-
-  const existingEntry = entries[existingIndex];
-  if (
-    existingEntry.text === nextEntry.text
-    && existingEntry.choiceText === nextEntry.choiceText
-  ) {
-    return entries;
-  }
-
-  const nextEntries = [...entries];
-  nextEntries[existingIndex] = nextEntry;
-  return nextEntries;
-};
-
 const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
   entry,
   isCurrentRound,
@@ -65,21 +44,26 @@ const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
 }) => {
   return (
     <div className="space-y-2">
-      {entry.choiceText ? (
-        <div className="rounded-[0.9rem] border border-amber-300/20 bg-amber-950/10 px-3 py-2 text-[0.78rem] font-medium leading-5 text-amber-100/90 sm:text-sm">
-          <span className="text-xs font-medium tracking-[0.18em] text-[#8f98ab] uppercase">
-            第 {entry.round} 轮
-          </span>
-          &nbsp;&nbsp;
-          {entry.choiceText}
-        </div>
+      <span className="text-xs font-medium tracking-[0.18em] text-[#8f98ab] uppercase">
+        第 {entry.round} 轮
+      </span>
+      {entry.isAwaitingNarration && !entry.narrationText ? (
+        <p className="text-sm font-medium text-[#8f98ab]">
+          {STREAM_PLACEHOLDER_TEXT}
+        </p>
+      ) : (
+        <Typewriter
+          text={entry.narrationText}
+          animate={isCurrentRound}
+          isFinished={isFinished}
+          onComplete={isCurrentRound ? onComplete : undefined}
+        />
+      )}
+      {entry.selectedChoiceText ? (
+        <p className="text-[0.82rem] font-medium leading-6 text-amber-100/90 sm:text-[0.92rem]">
+          你的选择：{entry.selectedChoiceText}
+        </p>
       ) : null}
-      <Typewriter
-        text={entry.text}
-        animate={isCurrentRound}
-        isFinished={isFinished}
-        onComplete={isCurrentRound ? onComplete : undefined}
-      />
     </div>
   );
 });
@@ -88,7 +72,6 @@ NarrationHistoryItem.displayName = 'NarrationHistoryItem';
 
 const GameplayPage: React.FC = () => {
   const {
-    currentNode,
     obsessionPoints,
     intuitionPoints,
     stateView,
@@ -100,12 +83,8 @@ const GameplayPage: React.FC = () => {
     setGameState,
   } = useGameUIStore();
   const {
-    streamedNarrationText,
-    streamedNarrationStatus,
-    streamedFatePlanningRaw,
-    streamedFatePlanningJson,
-    streamedProtagonistActionRaw,
-    streamedProtagonistActionJson,
+    displayRound,
+    roundStates,
   } = useGameInternalStore();
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
@@ -114,15 +93,17 @@ const GameplayPage: React.FC = () => {
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
   const [broadcastIndex, setBroadcastIndex] = useState(0);
   const [isBroadcastDragging, setIsBroadcastDragging] = useState(false);
-  const [narrationHistory, setNarrationHistory] = useState<NarrationRoundEntry[]>([]);
-  const lastNarrationLogRef = useRef('');
-  const lastFatePlanningLogRef = useRef('');
-  const lastProtagonistActionLogRef = useRef('');
-  const pendingChoiceTextByRoundRef = useRef<Record<number, string>>({});
   const broadcastSwipeStartRef = useRef<{ pointerId: number; clientX: number } | null>(null);
 
-  const currentRound = Math.max(stateView?.turnIndex ?? 1, 1);
-  const hasChoices = currentNode?.choices.length > 0;
+  const currentRound = Math.max(displayRound || stateView?.turnIndex || 1, 1);
+  const narrationHistory = useMemo<NarrationRoundEntry[]>(() => (
+    Object.values(roundStates)
+      .filter((entry) => entry.narrationText || entry.selectedChoiceText || entry.isAwaitingNarration)
+      .sort((left, right) => left.round - right.round)
+  ), [roundStates]);
+  const activeRoundState = roundStates[currentRound];
+  const currentRoundChoices = activeRoundState?.choices ?? [];
+  const hasChoices = currentRoundChoices.length > 0;
   const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
   const statusMessage = feedback ?? error;
@@ -137,8 +118,6 @@ const GameplayPage: React.FC = () => {
   const broadcastCountLabel = broadcastMessages.length > 0
     ? `${Math.min(broadcastIndex + 1, broadcastMessages.length)}/${broadcastMessages.length}`
     : '0/0';
-  const latestNarrationText = (streamedNarrationText || currentNode?.text || '').trim();
-  const effectiveNarrationText = latestNarrationText === STREAM_PLACEHOLDER_TEXT ? '' : latestNarrationText;
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -151,105 +130,15 @@ const GameplayPage: React.FC = () => {
     setIsTyping(true);
     setPreviews({});
     setIsUtilityMenuOpen(false);
-  }, [currentNode?.id]);
-
-  useEffect(() => {
-    if (!currentNode) {
-      setNarrationHistory([]);
-      pendingChoiceTextByRoundRef.current = {};
-      return;
-    }
-
-    if (
-      currentRound === 1
-      && currentNode.text === STREAM_PLACEHOLDER_TEXT
-      && !streamedNarrationText.trim()
-    ) {
-      setNarrationHistory([]);
-      pendingChoiceTextByRoundRef.current = {};
-    }
-  }, [currentNode, currentRound, streamedNarrationText]);
-
-  useEffect(() => {
-    const choiceText = pendingChoiceTextByRoundRef.current[currentRound];
-    const nextText = effectiveNarrationText
-      || (choiceText && currentNode?.text === STREAM_PLACEHOLDER_TEXT ? STREAM_PLACEHOLDER_TEXT : '');
-
-    if (!nextText) {
-      return;
-    }
-
-    setNarrationHistory((prev) => upsertNarrationRoundEntry(prev, {
-      round: currentRound,
-      text: nextText,
-      choiceText,
-    }));
-  }, [currentNode?.text, currentRound, effectiveNarrationText]);
+  }, [currentRound]);
 
   useEffect(() => {
     setBroadcastIndex(0);
   }, [broadcastMessages.join('||')]);
 
   useEffect(() => {
-    setIsTyping(Boolean(currentNode?.text));
-  }, [currentNode?.text]);
-
-  useEffect(() => {
-    const nextNarration = streamedNarrationText.trim();
-
-    if (
-      !nextNarration
-      || streamedNarrationStatus !== 'done'
-      || nextNarration === lastNarrationLogRef.current
-    ) {
-      return;
-    }
-
-    lastNarrationLogRef.current = nextNarration;
-    console.groupCollapsed('[Akashic Stream Debug:narration]');
-    console.log(nextNarration);
-    console.groupEnd();
-  }, [streamedNarrationStatus, streamedNarrationText]);
-
-  useEffect(() => {
-    if (!streamedFatePlanningJson) {
-      return;
-    }
-
-    const serialized = JSON.stringify(streamedFatePlanningJson);
-    if (serialized === lastFatePlanningLogRef.current) {
-      return;
-    }
-
-    lastFatePlanningLogRef.current = serialized;
-    console.groupCollapsed('[Akashic Stream Debug:fate_planning]');
-    console.log('raw', streamedFatePlanningRaw || '(暂无 fate_planning 流)');
-    console.log('parsed', streamedFatePlanningJson);
-    console.groupEnd();
-  }, [
-    streamedFatePlanningRaw,
-    streamedFatePlanningJson,
-  ]);
-
-  useEffect(() => {
-    if (!streamedProtagonistActionJson) {
-      return;
-    }
-
-    const serialized = JSON.stringify(streamedProtagonistActionJson);
-    if (serialized === lastProtagonistActionLogRef.current) {
-      return;
-    }
-
-    lastProtagonistActionLogRef.current = serialized;
-    console.groupCollapsed('[Akashic Stream Debug:protagonist_action]');
-    console.log('raw', streamedProtagonistActionRaw || '(暂无 protagonist_action 流)');
-    console.log('parsed', streamedProtagonistActionJson);
-    console.groupEnd();
-  }, [
-    streamedProtagonistActionRaw,
-    streamedProtagonistActionJson,
-  ]);
+    setIsTyping(Boolean(activeRoundState?.narrationText) || Boolean(activeRoundState?.isAwaitingNarration));
+  }, [activeRoundState?.isAwaitingNarration, activeRoundState?.narrationText, currentRound]);
 
   const handleTypewriterComplete = useCallback(() => {
     setIsTyping(false);
@@ -259,7 +148,7 @@ const GameplayPage: React.FC = () => {
     return cause instanceof Error ? cause.message : fallback;
   }, []);
 
-  if (!currentNode) {
+  if (!stateView) {
     return (
       <ScreenShell className="items-stretch">
         <StoryFrame className="relative max-w-4xl overflow-hidden px-4 py-8 sm:px-5 sm:py-10 md:px-6 md:py-12">
@@ -299,36 +188,13 @@ const GameplayPage: React.FC = () => {
   };
 
   const handleChoiceClick = async (choiceId: string) => {
-    const selectedChoice = currentNode?.choices.find((choice) => choice.id === choiceId);
-    const nextRound = currentRound + 1;
-    const nextChoiceText = selectedChoice
-      ? (activeObsession ? `${selectedChoice.text} [执念]` : selectedChoice.text)
-      : undefined;
-
     try {
-      if (nextChoiceText) {
-        pendingChoiceTextByRoundRef.current[nextRound] = nextChoiceText;
-        setNarrationHistory((prev) => upsertNarrationRoundEntry(prev, {
-          round: nextRound,
-          text: STREAM_PLACEHOLDER_TEXT,
-          choiceText: nextChoiceText,
-        }));
-      }
-
       await submitChoice(choiceId, activeObsession);
       setIsTyping(true);
       setActiveObsession(false);
       setPreviews({});
       setFeedback(null);
     } catch (submitError) {
-      if (nextChoiceText) {
-        delete pendingChoiceTextByRoundRef.current[nextRound];
-        setNarrationHistory((prev) => prev.filter((entry) => (
-          entry.round !== nextRound
-          || entry.text !== STREAM_PLACEHOLDER_TEXT
-          || entry.choiceText !== nextChoiceText
-        )));
-      }
       setFeedback(readErrorMessage(submitError, '推进剧情失败。'));
     }
   };
@@ -448,12 +314,12 @@ const GameplayPage: React.FC = () => {
                           key={entry.round}
                           entry={entry}
                           isCurrentRound={entry.round === currentRound}
-                          isFinished={entry.round !== currentRound || streamedNarrationStatus === 'done'}
+                          isFinished={entry.round !== currentRound || entry.narrationStatus === 'done'}
                           onComplete={handleTypewriterComplete}
                         />
                       );
                     })}
-                    {!narrationHistory.length && currentNode.text === STREAM_PLACEHOLDER_TEXT ? (
+                    {!narrationHistory.length && activeRoundState?.isAwaitingNarration ? (
                       <p className="text-sm font-medium text-[#8f98ab]">
                         {STREAM_PLACEHOLDER_TEXT}
                       </p>
@@ -468,7 +334,7 @@ const GameplayPage: React.FC = () => {
                 {hasChoices &&
                   <div className="game-choices flex-1 rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-2">
                     <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 py-0.5">
-                      {hasChoices ? currentNode.choices.map((choice) => (
+                      {currentRoundChoices.map((choice) => (
                         <div key={choice.id} className="space-y-1.5">
                           <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
                             <button
@@ -501,7 +367,7 @@ const GameplayPage: React.FC = () => {
                             </div>
                           ) : null}
                         </div>
-                      )) : null}
+                      ))}
                     </div>
                   </div>
                 }
