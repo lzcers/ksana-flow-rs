@@ -26,7 +26,6 @@ import {
   taskLabel,
   taskRawContent,
   taskText,
-  type JsonValue,
 } from './gameStoreHelpers';
 
 type RoundChoicesStatus = 'idle' | 'loading' | 'ready';
@@ -88,6 +87,22 @@ let activeStreamSessionId: string | null = null;
 let lastStreamEventId: string | null = null;
 let activeStreamTasks = new Map<string, TaskView>();
 
+function areChoicesEqual(left: Choice[], right: Choice[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((choice, index) => {
+    const nextChoice = right[index];
+    return choice.id === nextChoice.id
+      && choice.text === nextChoice.text
+      && choice.previewText === nextChoice.previewText
+      && choice.disabled === nextChoice.disabled
+      && choice.costHints.intuition === nextChoice.costHints.intuition
+      && choice.costHints.obsession === nextChoice.costHints.obsession;
+  });
+}
+
 function closeActiveSessionStream() {
   activeSessionStream?.close();
   activeSessionStream = null;
@@ -112,118 +127,180 @@ function resetUIState(): GameUIState {
 function applyStreamTaskToStores(task: TaskView) {
   const internalState = useGameInternalStore.getState();
   const uiState = useGameUIStore.getState();
-  const activeRound = Math.max(internalState.displayRound || uiState.stateView?.turnIndex || 1, 1);
+  const stateView = uiState.stateView;
+  const activeRound = Math.max(internalState.displayRound || stateView?.turnIndex || 1, 1);
+  const isLoading = task.status === 'pending' || task.status === 'running';
+  let nextInternalState: Partial<GameInternalState> | null = null;
+  let nextUIState: Partial<GameUIState> | null = null;
 
-  useGameUIStore.setState((state) => {
-    const isLoading = task.status === 'pending' || task.status === 'running';
+  switch (task.kind) {
+    case 'narration': {
+      const nextText = taskText(task);
+      if (!nextText) {
+        break;
+      }
 
-    switch (task.kind) {
-      case 'narration': {
-        const nextText = taskText(task);
-        if (!nextText) {
-          return { isLoading };
-        }
+      const previousRoundState = internalState.roundStates[activeRound];
+      const nextRoundState = createRoundState(activeRound, {
+        ...(previousRoundState ?? {}),
+        round: activeRound,
+        narrationText: nextText,
+        narrationStatus: task.status,
+        isAwaitingNarration: false,
+      });
+      const nextTurnIndex = Math.max(internalState.turnIndex, activeRound);
 
-        useGameInternalStore.setState((prev) => ({
-          turnIndex: Math.max(prev.turnIndex, activeRound),
+      if (
+        internalState.turnIndex !== nextTurnIndex
+        || internalState.displayRound !== activeRound
+        || previousRoundState?.narrationText !== nextRoundState.narrationText
+        || previousRoundState?.narrationStatus !== nextRoundState.narrationStatus
+        || previousRoundState?.isAwaitingNarration !== nextRoundState.isAwaitingNarration
+      ) {
+        nextInternalState = {
+          turnIndex: nextTurnIndex,
           displayRound: activeRound,
           roundStates: {
-            ...prev.roundStates,
-            [activeRound]: createRoundState(activeRound, {
-              ...(prev.roundStates[activeRound] ?? {}),
-              round: activeRound,
-              narrationText: nextText,
-              narrationStatus: task.status,
-              isAwaitingNarration: false,
-            }),
+            ...internalState.roundStates,
+            [activeRound]: nextRoundState,
           },
-        }));
-
-        return {
-          isLoading,
-          stateView: state.stateView
-            ? {
-              ...state.stateView,
-              latestHistory: nextText,
-            }
-            : null,
         };
       }
-      case 'fate_planning': {
-        const raw = taskRawContent(task);
-        const parsed = parseJsonValue(raw);
-        const summary = summarizeFatePlanning(parsed);
-        const nextRound = Math.max(summary?.round ?? activeRound, 1);
-        useGameInternalStore.setState((prev) => ({
-          turnIndex: Math.max(prev.turnIndex, nextRound),
-          displayRound: prev.displayRound || nextRound,
-          roundStates: prev.roundStates[nextRound]
-            ? prev.roundStates
+
+      if (stateView && stateView.latestHistory !== nextText) {
+        nextUIState = {
+          stateView: {
+            ...stateView,
+            latestHistory: nextText,
+          },
+        };
+      }
+      break;
+    }
+    case 'fate_planning': {
+      const raw = taskRawContent(task);
+      const parsed = parseJsonValue(raw);
+      const summary = summarizeFatePlanning(parsed);
+      const nextRound = Math.max(summary?.round ?? activeRound, 1);
+      const hadRoundState = Boolean(internalState.roundStates[nextRound]);
+      const nextTurnIndex = Math.max(internalState.turnIndex, nextRound);
+      const nextDisplayRound = internalState.displayRound || nextRound;
+
+      if (
+        internalState.turnIndex !== nextTurnIndex
+        || internalState.displayRound !== nextDisplayRound
+        || !hadRoundState
+      ) {
+        nextInternalState = {
+          turnIndex: nextTurnIndex,
+          displayRound: nextDisplayRound,
+          roundStates: hadRoundState
+            ? internalState.roundStates
             : {
-              ...prev.roundStates,
+              ...internalState.roundStates,
               [nextRound]: createRoundState(nextRound, {
                 isAwaitingNarration: true,
               }),
             },
-        }));
-
-        return {
-          isLoading,
-          stateView: state.stateView
-            ? {
-              ...state.stateView,
-              turnIndex: nextRound,
-              activeTurnId: nextRound,
-              currentScene: summary?.sceneTitle ?? taskLabel(task.kind),
-              currentLocation: summary?.locationName ?? state.stateView.currentLocation,
-              protagonistState: summary?.protagonistCondition ?? state.stateView.protagonistState,
-              latestBroadcastSummary:
-                summary?.currentEvent ??
-                summary?.newInfo[0] ??
-                summary?.locationStatus ??
-                summary?.description ??
-                state.stateView.latestBroadcastSummary,
-              latestBroadcastItems:
-                summary?.newInfo.length
-                  ? summary.newInfo
-                  : state.stateView.latestBroadcastItems,
-            }
-            : null,
         };
       }
-      case 'protagonist_action': {
-        const raw = taskRawContent(task);
-        const nextChoices = protagonistActionChoices(task);
-        const choicesStatus: RoundChoicesStatus = nextChoices ? 'ready' : 'loading';
 
-        useGameInternalStore.setState((prev) => ({
-          roundStates: {
-            ...prev.roundStates,
-            [activeRound]: createRoundState(activeRound, {
-              ...(prev.roundStates[activeRound] ?? {}),
-              round: activeRound,
-              choices: nextChoices ?? [],
-              choicesStatus,
-              isAwaitingNarration: false,
-            }),
-          },
-        }));
-
-        return {
-          isLoading,
-          stateView: state.stateView
-            ? {
-              ...state.stateView,
-              latestProtagonistAction:
-                protagonistActionText(task) ?? state.stateView.latestProtagonistAction,
-            }
-            : null,
+      if (stateView) {
+        const nextBroadcastItems = summary?.newInfo.length
+          ? summary.newInfo
+          : stateView.latestBroadcastItems;
+        const nextStateView = {
+          ...stateView,
+          turnIndex: nextRound,
+          activeTurnId: nextRound,
+          currentScene: summary?.sceneTitle ?? taskLabel(task.kind),
+          currentLocation: summary?.locationName ?? stateView.currentLocation,
+          protagonistState: summary?.protagonistCondition ?? stateView.protagonistState,
+          latestBroadcastSummary:
+            summary?.currentEvent ??
+            summary?.newInfo[0] ??
+            summary?.locationStatus ??
+            summary?.description ??
+            stateView.latestBroadcastSummary,
+          latestBroadcastItems: nextBroadcastItems,
         };
+
+        if (
+          stateView.turnIndex !== nextStateView.turnIndex
+          || stateView.activeTurnId !== nextStateView.activeTurnId
+          || stateView.currentScene !== nextStateView.currentScene
+          || stateView.currentLocation !== nextStateView.currentLocation
+          || stateView.protagonistState !== nextStateView.protagonistState
+          || stateView.latestBroadcastSummary !== nextStateView.latestBroadcastSummary
+          || stateView.latestBroadcastItems !== nextStateView.latestBroadcastItems
+        ) {
+          nextUIState = {
+            stateView: nextStateView,
+          };
+        }
       }
-      default:
-        return { isLoading };
+      break;
     }
-  });
+    case 'protagonist_action': {
+      const nextChoices = protagonistActionChoices(task);
+      const choicesStatus: RoundChoicesStatus = nextChoices ? 'ready' : 'loading';
+      const previousRoundState = internalState.roundStates[activeRound];
+      const normalizedChoices = nextChoices ?? [];
+      const nextRoundState = createRoundState(activeRound, {
+        ...(previousRoundState ?? {}),
+        round: activeRound,
+        choices: normalizedChoices,
+        choicesStatus,
+        isAwaitingNarration: false,
+      });
+
+      if (
+        !previousRoundState
+        || previousRoundState.choicesStatus !== nextRoundState.choicesStatus
+        || previousRoundState.isAwaitingNarration !== nextRoundState.isAwaitingNarration
+        || !areChoicesEqual(previousRoundState.choices, normalizedChoices)
+      ) {
+        nextInternalState = {
+          roundStates: {
+            ...internalState.roundStates,
+            [activeRound]: nextRoundState,
+          },
+        };
+      }
+
+      const nextProtagonistAction = protagonistActionText(task);
+      if (
+        stateView
+        && nextProtagonistAction
+        && stateView.latestProtagonistAction !== nextProtagonistAction
+      ) {
+        nextUIState = {
+          stateView: {
+            ...stateView,
+            latestProtagonistAction: nextProtagonistAction,
+          },
+        };
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (uiState.isLoading !== isLoading) {
+    nextUIState = {
+      ...(nextUIState ?? {}),
+      isLoading,
+    };
+  }
+
+  if (nextInternalState) {
+    useGameInternalStore.setState(nextInternalState);
+  }
+
+  if (nextUIState) {
+    useGameUIStore.setState(nextUIState);
+  }
 }
 
 export const useGameInternalStore = create<GameInternalState>(() => ({

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Incremark,
   darkTheme,
@@ -23,14 +23,23 @@ const Typewriter: React.FC<TypewriterProps> = ({
   const hasCompletedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   const previousTextRef = useRef('');
-  const incremark = useIncremark({
+  const incremarkOptions = useMemo(() => ({
     math: { tex: true },
     gfm: true,
     typewriter: {
       enabled: animate,
-      effect: 'typing',
+      effect: 'typing' as const,
     },
-  });
+  }), [animate]);
+  const incremark = useIncremark(incremarkOptions);
+  const {
+    append,
+    finalize,
+    isDisplayComplete,
+    render,
+    reset,
+    typewriter: { setEnabled },
+  } = incremark;
 
   const completeDisplay = () => {
     if (!hasCompletedRef.current) {
@@ -44,22 +53,22 @@ const Typewriter: React.FC<TypewriterProps> = ({
   }, [onComplete]);
 
   useEffect(() => {
-    incremark.typewriter.setEnabled(animate);
-  }, [animate, incremark]);
+    setEnabled(animate);
+  }, [animate, setEnabled]);
 
   useEffect(() => {
     const previousText = previousTextRef.current;
 
     if (!text) {
       previousTextRef.current = '';
-      incremark.reset();
+      reset();
       completeDisplay();
       return;
     }
 
     if (!animate) {
       previousTextRef.current = text;
-      incremark.render(text);
+      render(text);
       completeDisplay();
       return;
     }
@@ -67,26 +76,26 @@ const Typewriter: React.FC<TypewriterProps> = ({
     hasCompletedRef.current = false;
 
     if (!text.startsWith(previousText)) {
-      incremark.reset();
-      incremark.append(text);
+      reset();
+      append(text);
     } else if (text.length > previousText.length) {
-      incremark.append(text.slice(previousText.length));
+      append(text.slice(previousText.length));
     }
 
     if (isFinished) {
-      incremark.finalize();
+      finalize();
     }
 
     previousTextRef.current = text;
-  }, [animate, incremark, isFinished, text]);
+  }, [animate, append, finalize, isFinished, render, reset, text]);
 
   useEffect(() => {
-    if (!text || !animate || !isFinished || !incremark.isDisplayComplete) {
+    if (!text || !animate || !isFinished || !isDisplayComplete) {
       return;
     }
 
     completeDisplay();
-  }, [animate, incremark.isDisplayComplete, isFinished, text]);
+  }, [animate, isDisplayComplete, isFinished, text]);
 
   return (
     <div className="h-full">

@@ -13,7 +13,6 @@ import {
 import { useGameInternalStore, useGameUIStore } from '../store/gameStore';
 import Typewriter from '../components/Typewriter';
 import {
-  PrimaryButton,
   ScreenShell,
   SecondaryButton,
   StatusPill,
@@ -35,6 +34,8 @@ interface NarrationHistoryItemProps {
   isFinished: boolean;
   onComplete?: () => void;
 }
+
+const EMPTY_BROADCAST_ITEMS: string[] = [];
 
 const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
   entry,
@@ -71,21 +72,20 @@ const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
 NarrationHistoryItem.displayName = 'NarrationHistoryItem';
 
 const GameplayPage: React.FC = () => {
-  const {
-    obsessionPoints,
-    intuitionPoints,
-    stateView,
-    isLoading,
-    error,
-    createSave,
-    submitChoice,
-    previewChoice,
-    setGameState,
-  } = useGameUIStore();
-  const {
-    displayRound,
-    roundStates,
-  } = useGameInternalStore();
+  const obsessionPoints = useGameUIStore((state) => state.obsessionPoints);
+  const intuitionPoints = useGameUIStore((state) => state.intuitionPoints);
+  const turnIndex = useGameUIStore((state) => state.stateView?.turnIndex);
+  const currentScene = useGameUIStore((state) => state.stateView?.currentScene ?? '');
+  const latestBroadcastItems = useGameUIStore((state) => state.stateView?.latestBroadcastItems ?? EMPTY_BROADCAST_ITEMS);
+  const latestBroadcastSummary = useGameUIStore((state) => state.stateView?.latestBroadcastSummary ?? '');
+  const isLoading = useGameUIStore((state) => state.isLoading);
+  const error = useGameUIStore((state) => state.error);
+  const createSave = useGameUIStore((state) => state.createSave);
+  const submitChoice = useGameUIStore((state) => state.submitChoice);
+  const previewChoice = useGameUIStore((state) => state.previewChoice);
+  const setGameState = useGameUIStore((state) => state.setGameState);
+  const displayRound = useGameInternalStore((state) => state.displayRound);
+  const roundStates = useGameInternalStore((state) => state.roundStates);
   const [isTyping, setIsTyping] = useState(true);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
@@ -95,7 +95,7 @@ const GameplayPage: React.FC = () => {
   const [isBroadcastDragging, setIsBroadcastDragging] = useState(false);
   const broadcastSwipeStartRef = useRef<{ pointerId: number; clientX: number } | null>(null);
 
-  const currentRound = Math.max(displayRound || stateView?.turnIndex || 1, 1);
+  const currentRound = Math.max(displayRound || turnIndex || 1, 1);
   const narrationHistory = useMemo<NarrationRoundEntry[]>(() => (
     Object.values(roundStates)
       .filter((entry) => entry.narrationText || entry.selectedChoiceText || entry.isAwaitingNarration)
@@ -107,13 +107,15 @@ const GameplayPage: React.FC = () => {
   const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
   const statusMessage = feedback ?? error;
-  const isFatePlanningScene = isLoading && (stateView?.currentScene ?? '').includes('命运编织');
-  const broadcastItems = (stateView?.latestBroadcastItems ?? [])
+  const shouldType = Boolean(activeRoundState?.narrationText) || Boolean(activeRoundState?.isAwaitingNarration);
+  const isFatePlanningScene = isLoading && currentScene.includes('命运编织');
+  const broadcastItems = latestBroadcastItems
     .map((item) => item.trim())
     .filter(Boolean);
   const broadcastMessages = broadcastItems.length > 0
     ? broadcastItems
-    : (stateView?.latestBroadcastSummary?.trim() ? [stateView.latestBroadcastSummary.trim()] : []);
+    : (latestBroadcastSummary.trim() ? [latestBroadcastSummary.trim()] : []);
+  const broadcastKey = broadcastMessages.join('||');
   const activeBroadcastMessage = broadcastMessages[broadcastIndex] ?? broadcastMessages[0] ?? '';
   const broadcastCountLabel = broadcastMessages.length > 0
     ? `${Math.min(broadcastIndex + 1, broadcastMessages.length)}/${broadcastMessages.length}`
@@ -133,12 +135,12 @@ const GameplayPage: React.FC = () => {
   }, [currentRound]);
 
   useEffect(() => {
-    setBroadcastIndex(0);
-  }, [broadcastMessages.join('||')]);
+    setBroadcastIndex((prev) => (prev === 0 ? prev : 0));
+  }, [broadcastKey]);
 
   useEffect(() => {
-    setIsTyping(Boolean(activeRoundState?.narrationText) || Boolean(activeRoundState?.isAwaitingNarration));
-  }, [activeRoundState?.isAwaitingNarration, activeRoundState?.narrationText, currentRound]);
+    setIsTyping((prev) => (prev === shouldType ? prev : shouldType));
+  }, [shouldType]);
 
   const handleTypewriterComplete = useCallback(() => {
     setIsTyping(false);
@@ -147,28 +149,6 @@ const GameplayPage: React.FC = () => {
   const readErrorMessage = useCallback((cause: unknown, fallback: string) => {
     return cause instanceof Error ? cause.message : fallback;
   }, []);
-
-  if (!stateView) {
-    return (
-      <ScreenShell className="items-stretch">
-        <StoryFrame className="relative max-w-4xl overflow-hidden px-4 py-8 sm:px-5 sm:py-10 md:px-6 md:py-12">
-          <div className="space-y-4 text-center">
-            <p className="text-lg font-semibold text-[#f6eddc]">
-              还没有可展示的演示剧情
-            </p>
-            <p className="text-sm leading-6 text-[#9ca7be]">
-              {error ?? '先在创建页生成一段本地演示旅程，然后再回来体验页面跳转与选择交互。'}
-            </p>
-            <div className="flex justify-center">
-              <PrimaryButton onClick={() => setGameState('creation')}>
-                进入创建页
-              </PrimaryButton>
-            </div>
-          </div>
-        </StoryFrame>
-      </ScreenShell>
-    );
-  }
 
   const handlePreview = async (choiceId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -221,6 +201,15 @@ const GameplayPage: React.FC = () => {
     });
   }, [broadcastMessages.length]);
 
+  const releaseBroadcastPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    broadcastSwipeStartRef.current = null;
+    setIsBroadcastDragging(false);
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
   const handleBroadcastPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return;
@@ -241,19 +230,14 @@ const GameplayPage: React.FC = () => {
     }
 
     const deltaX = event.clientX - start.clientX;
-    broadcastSwipeStartRef.current = null;
-    setIsBroadcastDragging(false);
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
+    releaseBroadcastPointer(event);
 
     if (Math.abs(deltaX) < 36) {
       return;
     }
 
     moveBroadcastIndex(deltaX < 0 ? 'next' : 'prev');
-  }, [moveBroadcastIndex]);
+  }, [moveBroadcastIndex, releaseBroadcastPointer]);
 
   const handleBroadcastPointerCancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const start = broadcastSwipeStartRef.current;
@@ -261,13 +245,8 @@ const GameplayPage: React.FC = () => {
       return;
     }
 
-    broadcastSwipeStartRef.current = null;
-    setIsBroadcastDragging(false);
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }, []);
+    releaseBroadcastPointer(event);
+  }, [releaseBroadcastPointer]);
 
   return (
     <ScreenShell className="items-stretch">
@@ -282,7 +261,7 @@ const GameplayPage: React.FC = () => {
                 iconClassName={isFatePlanningScene ? 'h-3 w-3 animate-spin' : undefined}
                 className="px-2.5 py-1 text-[0.7rem] sm:text-xs"
               >
-                {stateView?.currentScene}
+                {currentScene}
               </StatusPill>
             </div>
             <div className="relative h-10 sm:h-11">
