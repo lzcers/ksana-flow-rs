@@ -325,7 +325,12 @@ export function cloneTask(task: TaskView): TaskView {
 }
 
 export function applyTaskUpdate(tasks: Map<string, TaskView>, update: TaskUpdatedEvent): TaskView {
-  const currentTask = tasks.get(update.entity) ?? {
+  const existingTask = tasks.get(update.entity);
+  const shouldResetTask =
+    update.status === 'pending'
+    || !existingTask
+    || existingTask.kind !== update.kind;
+  const currentTask = shouldResetTask ? {
     entity: update.entity,
     kind: update.kind,
     status: 'pending',
@@ -335,7 +340,7 @@ export function applyTaskUpdate(tasks: Map<string, TaskView>, update: TaskUpdate
     chunks: [],
     output: null,
     error: null,
-  };
+  } : existingTask;
 
   const nextTask: TaskView = {
     ...currentTask,

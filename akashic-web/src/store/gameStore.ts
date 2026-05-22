@@ -86,6 +86,7 @@ let activeSessionStream: EventSource | null = null;
 let activeStreamSessionId: string | null = null;
 let lastStreamEventId: string | null = null;
 let activeStreamTasks = new Map<string, TaskView>();
+let activeStreamTaskRounds = new Map<string, number>();
 
 function areChoicesEqual(left: Choice[], right: Choice[]): boolean {
   if (left.length !== right.length) {
@@ -109,6 +110,7 @@ function closeActiveSessionStream() {
   activeStreamSessionId = null;
   lastStreamEventId = null;
   activeStreamTasks = new Map();
+  activeStreamTaskRounds = new Map();
 }
 
 function resetUIState(): GameUIState {
@@ -124,11 +126,14 @@ function resetUIState(): GameUIState {
   };
 }
 
-function applyStreamTaskToStores(task: TaskView) {
+function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
   const internalState = useGameInternalStore.getState();
   const uiState = useGameUIStore.getState();
   const stateView = uiState.stateView;
-  const activeRound = Math.max(internalState.displayRound || stateView?.turnIndex || 1, 1);
+  const activeRound = Math.max(
+    boundRound ?? internalState.displayRound ?? stateView?.turnIndex ?? 1,
+    1,
+  );
   const isLoading = task.status === 'pending' || task.status === 'running';
   let nextInternalState: Partial<GameInternalState> | null = null;
   let nextUIState: Partial<GameUIState> | null = null;
@@ -394,8 +399,17 @@ const createGameUIActions = (
               return;
             }
             lastStreamEventId = lastEventId || lastStreamEventId;
+            if (
+              event.status === 'pending'
+              && (event.kind === 'narration' || event.kind === 'protagonist_action')
+            ) {
+              const internalState = useGameInternalStore.getState();
+              const stateView = useGameUIStore.getState().stateView;
+              const boundRound = Math.max(internalState.displayRound || stateView?.turnIndex || 1, 1);
+              activeStreamTaskRounds.set(event.entity, boundRound);
+            }
             const nextTask = applyTaskUpdate(activeStreamTasks, event);
-            applyStreamTaskToStores(nextTask);
+            applyStreamTaskToStores(nextTask, activeStreamTaskRounds.get(event.entity));
           },
           onError: () => {
             if (activeStreamSessionId !== created.sessionId) {
