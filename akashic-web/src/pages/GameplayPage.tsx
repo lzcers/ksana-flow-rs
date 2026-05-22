@@ -86,7 +86,7 @@ const GameplayPage: React.FC = () => {
   const setGameState = useGameUIStore((state) => state.setGameState);
   const displayRound = useGameInternalStore((state) => state.displayRound);
   const roundStates = useGameInternalStore((state) => state.roundStates);
-  const [isTyping, setIsTyping] = useState(true);
+  const [completedTypingKey, setCompletedTypingKey] = useState<string | null>(null);
   const [activeObsession, setActiveObsession] = useState(false);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -104,10 +104,12 @@ const GameplayPage: React.FC = () => {
   const activeRoundState = roundStates[currentRound];
   const currentRoundChoices = activeRoundState?.choices ?? [];
   const hasChoices = currentRoundChoices.length > 0;
+  const shouldType = Boolean(activeRoundState?.narrationText) || Boolean(activeRoundState?.isAwaitingNarration);
+  const typingKey = `${currentRound}:${activeRoundState?.isAwaitingNarration ? '1' : '0'}:${activeRoundState?.narrationText ?? ''}`;
+  const isTyping = shouldType && completedTypingKey !== typingKey;
   const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
   const statusMessage = feedback ?? error;
-  const shouldType = Boolean(activeRoundState?.narrationText) || Boolean(activeRoundState?.isAwaitingNarration);
   const isFatePlanningScene = isLoading && currentScene.includes('命运编织');
   const broadcastItems = latestBroadcastItems
     .map((item) => item.trim())
@@ -129,7 +131,6 @@ const GameplayPage: React.FC = () => {
   }, [feedback]);
 
   useEffect(() => {
-    setIsTyping(true);
     setPreviews({});
     setIsUtilityMenuOpen(false);
   }, [currentRound]);
@@ -138,13 +139,9 @@ const GameplayPage: React.FC = () => {
     setBroadcastIndex((prev) => (prev === 0 ? prev : 0));
   }, [broadcastKey]);
 
-  useEffect(() => {
-    setIsTyping((prev) => (prev === shouldType ? prev : shouldType));
-  }, [shouldType]);
-
   const handleTypewriterComplete = useCallback(() => {
-    setIsTyping(false);
-  }, []);
+    setCompletedTypingKey(typingKey);
+  }, [typingKey]);
 
   const readErrorMessage = useCallback((cause: unknown, fallback: string) => {
     return cause instanceof Error ? cause.message : fallback;
@@ -170,7 +167,6 @@ const GameplayPage: React.FC = () => {
   const handleChoiceClick = async (choiceId: string) => {
     try {
       await submitChoice(choiceId, activeObsession);
-      setIsTyping(true);
       setActiveObsession(false);
       setPreviews({});
       setFeedback(null);

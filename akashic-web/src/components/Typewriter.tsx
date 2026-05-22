@@ -1,11 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import {
-  Incremark,
-  darkTheme,
-  ThemeProvider,
-  useIncremark,
-} from '@incremark/react';
-import '@incremark/theme/styles.css';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface TypewriterProps {
   text: string;
@@ -13,6 +6,9 @@ interface TypewriterProps {
   isFinished?: boolean;
   onComplete?: () => void;
 }
+
+const CHARS_PER_TICK = 2;
+const TICK_MS = 18;
 
 const Typewriter: React.FC<TypewriterProps> = ({
   text,
@@ -23,23 +19,7 @@ const Typewriter: React.FC<TypewriterProps> = ({
   const hasCompletedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
   const previousTextRef = useRef('');
-  const incremarkOptions = useMemo(() => ({
-    math: { tex: true },
-    gfm: true,
-    typewriter: {
-      enabled: animate,
-      effect: 'typing' as const,
-    },
-  }), [animate]);
-  const incremark = useIncremark(incremarkOptions);
-  const {
-    append,
-    finalize,
-    isDisplayComplete,
-    render,
-    reset,
-    typewriter: { setEnabled },
-  } = incremark;
+  const [visibleLength, setVisibleLength] = useState(0);
 
   const completeDisplay = () => {
     if (!hasCompletedRef.current) {
@@ -53,56 +33,52 @@ const Typewriter: React.FC<TypewriterProps> = ({
   }, [onComplete]);
 
   useEffect(() => {
-    setEnabled(animate);
-  }, [animate, setEnabled]);
-
-  useEffect(() => {
-    const previousText = previousTextRef.current;
-
     if (!text) {
       previousTextRef.current = '';
-      reset();
+      setVisibleLength(0);
       completeDisplay();
       return;
     }
 
     if (!animate) {
       previousTextRef.current = text;
-      render(text);
+      setVisibleLength(text.length);
       completeDisplay();
       return;
     }
 
+    if (!text.startsWith(previousTextRef.current)) {
+      setVisibleLength(0);
+    }
+
     hasCompletedRef.current = false;
-
-    if (!text.startsWith(previousText)) {
-      reset();
-      append(text);
-    } else if (text.length > previousText.length) {
-      append(text.slice(previousText.length));
-    }
-
-    if (isFinished) {
-      finalize();
-    }
-
     previousTextRef.current = text;
-  }, [animate, append, finalize, isFinished, render, reset, text]);
+  }, [animate, text]);
 
   useEffect(() => {
-    if (!text || !animate || !isFinished || !isDisplayComplete) {
+    if (!text || !animate || visibleLength >= text.length) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setVisibleLength((prev) => Math.min(prev + CHARS_PER_TICK, text.length));
+    }, TICK_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [animate, text, visibleLength]);
+
+  useEffect(() => {
+    if (!text || !animate || !isFinished || visibleLength < text.length) {
       return;
     }
 
     completeDisplay();
-  }, [animate, isDisplayComplete, isFinished, text]);
+  }, [animate, isFinished, text, visibleLength]);
 
   return (
-    <div className="h-full">
-      <ThemeProvider theme={darkTheme}>
-        <Incremark incremark={incremark} />
-      </ThemeProvider>
-    </div>
+    <p className="whitespace-pre-wrap break-words text-inherit">
+      {text.slice(0, visibleLength)}
+    </p>
   );
 };
 
