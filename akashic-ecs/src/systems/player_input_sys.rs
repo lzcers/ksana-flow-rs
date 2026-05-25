@@ -37,7 +37,7 @@ pub fn player_input_system(
                 if turn_id != turn_state.active_turn_id {
                     continue;
                 }
-                if decision_state.find_action(&choice_id).is_none() {
+                if choice_id.trim().is_empty() {
                     continue;
                 }
                 decision_state.commit_selection(&choice_id);

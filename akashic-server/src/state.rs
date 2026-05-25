@@ -154,17 +154,14 @@ fn apply_choice(
     session: &mut SessionRecord,
     choice: SessionChoiceInput,
 ) -> Result<ControlGameSessionData, AppError> {
-    let current = session.engine.get_game_session();
-    current
-        .choices
-        .iter()
-        .find(|item| item.id == choice.choice_id)
-        .cloned()
-        .ok_or_else(|| AppError::bad_request("所选分支不存在或已失效。"))?;
+    let selection = choice.choice_id.trim();
+    if selection.is_empty() {
+        return Err(AppError::bad_request("所选行动不能为空。"));
+    }
 
     session
         .engine
-        .submit_choice(&choice.choice_id)
+        .submit_choice(selection)
         .map_err(AppError::bad_request)?;
     session
         .engine

@@ -48,6 +48,7 @@ const GameplayPage: React.FC = () => {
   const roundStates = useGameInternalStore((state) => state.roundStates);
   const [completedTypingKey, setCompletedTypingKey] = useState<string | null>(null);
   const [activeObsession, setActiveObsession] = useState(false);
+  const [obsessionInput, setObsessionInput] = useState('');
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -64,7 +65,8 @@ const GameplayPage: React.FC = () => {
   const typingKey = `${currentRound}:${activeRoundState?.isAwaitingNarration ? '1' : '0'}:${activeRoundState?.narrationText ?? ''}`;
   const isTyping = shouldType && completedTypingKey !== typingKey;
   const isChoiceInteractionDisabled = isTyping || isLoading;
-  const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices;
+  const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices || obsessionPoints <= 0;
+  const isObsessionSubmitDisabled = isChoiceInteractionDisabled || obsessionInput.trim().length === 0;
   const statusMessage = feedback ?? error;
   const broadcastItems = latestBroadcastItems
     .map((item) => item.trim())
@@ -82,6 +84,8 @@ const GameplayPage: React.FC = () => {
 
   useEffect(() => {
     setPreviews({});
+    setObsessionInput('');
+    setActiveObsession(false);
   }, [currentRound]);
 
   const handleTypewriterComplete = useCallback(() => {
@@ -113,10 +117,29 @@ const GameplayPage: React.FC = () => {
     try {
       await submitChoice(choiceId, activeObsession);
       setActiveObsession(false);
+      setObsessionInput('');
       setPreviews({});
       setFeedback(null);
     } catch (submitError) {
       setFeedback(readErrorMessage(submitError, '推进剧情失败。'));
+    }
+  };
+
+  const handleObsessionSubmit = async () => {
+    const actionText = obsessionInput.trim();
+    if (!actionText) {
+      setFeedback('请先写下这次执念行动。');
+      return;
+    }
+
+    try {
+      await submitChoice(actionText, true);
+      setActiveObsession(false);
+      setObsessionInput('');
+      setPreviews({});
+      setFeedback(null);
+    } catch (submitError) {
+      setFeedback(readErrorMessage(submitError, '执念行动提交失败。'));
     }
   };
 
@@ -155,9 +178,13 @@ const GameplayPage: React.FC = () => {
                 choices={currentRoundChoices}
                 previews={previews}
                 activeObsession={activeObsession}
+                obsessionInput={obsessionInput}
                 isChoiceInteractionDisabled={isChoiceInteractionDisabled}
+                isObsessionSubmitDisabled={isObsessionSubmitDisabled}
                 onChoiceClick={handleChoiceClick}
                 onPreview={handlePreview}
+                onObsessionInputChange={setObsessionInput}
+                onObsessionSubmit={handleObsessionSubmit}
               />
 
               <GameplayToolbar
@@ -165,7 +192,10 @@ const GameplayPage: React.FC = () => {
                 isObsessionToggleDisabled={isObsessionToggleDisabled}
                 obsessionPoints={obsessionPoints}
                 intuitionPoints={intuitionPoints}
-                onToggleObsession={() => setActiveObsession((prev) => !prev)}
+                onToggleObsession={() => {
+                  setActiveObsession((prev) => !prev);
+                  setFeedback(null);
+                }}
                 onBackToLobby={() => setGameState('lobby')}
                 onSave={handleSave}
                 onShare={() => setFeedback('本地演示模式下可先存档，稍后可继续扩展分享入口。')}

@@ -450,13 +450,18 @@ const createGameUIActions = (
       throw new Error('当前会话流未就绪，无法提交选择。');
     }
 
+    const selection = choiceId.trim();
+    if (!selection) {
+      throw new Error('当前选择不能为空。');
+    }
+
     const nextObsession = useObsession ? Math.max(0, obsessionPoints - 1) : obsessionPoints;
     const activeRound = Math.max(displayRound || 1, 1);
     const nextRound = activeRound + 1;
-    const selectedChoice = roundStates[activeRound]?.choices.find((choice) => choice.id === choiceId);
+    const selectedChoice = roundStates[activeRound]?.choices.find((choice) => choice.id === selection);
     const selectedChoiceText = selectedChoice
       ? (useObsession ? `${selectedChoice.text} [执念]` : selectedChoice.text)
-      : null;
+      : (useObsession ? `${selection} [执念]` : null);
 
     if (!selectedChoiceText) {
       throw new Error('当前选择不存在。');
@@ -495,7 +500,7 @@ const createGameUIActions = (
 
     try {
       await submitGameSessionControl(sessionId, {
-        choice: { choiceId },
+        choice: { choiceId: selection },
       });
       return;
     } catch (error) {

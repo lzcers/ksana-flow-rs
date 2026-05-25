@@ -38,7 +38,7 @@ export interface GameUIActions {
   clearError: () => void;
   // 操作：创建会话并开始游戏。
   startGame: () => Promise<void>;
-  // 操作：提交当前选择，可选消耗执念点。
+  // 操作：提交当前选择；执念模式下也可直接提交自定义行动文本。
   submitChoice: (choiceId: string, useObsession?: boolean) => Promise<void>;
   // 操作：预览选择结果，通常对应直觉点玩法。
   previewChoice: (choiceId: string) => Promise<string>;
