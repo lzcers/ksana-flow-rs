@@ -4,24 +4,24 @@ use crate::resources::turn_state::TurnPhase;
 
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
-    SubmitChoice { turn_id: u64, choice_id: String },
+    SubmitPlayerChoice { turn_id: u64, choice_id: String },
 }
 
 #[derive(Message, Debug, Clone)]
 pub enum TurnControl {
-    AdvanceTurn,
-    ResetTurn { next_turn_id: Option<u64> },
+    StartNextTurn,
+    ResetToIdle { next_turn_id: Option<u64> },
 }
 
 #[derive(Message, Debug, Clone)]
 pub enum TurnEvent {
-    FatePlanning,         // 命运编织状态
-    FateGenerated,        // 命运编织完成
-    StoryWriting,         // 故事编写中
-    StoryGenerated,       // 故事编排完成
-    AwaitingProtagonist,  // 等待主角状态
-    PlayerChoicesReady,   // 已生成候选项，等待外部提交
-    ProtagonistCompleted, // 主角完成状态
+    FateStarted,        // 命运任务已启动
+    FateCompleted,      // 命运任务已完成
+    NarrationStarted,   // 叙事任务已启动
+    NarrationCompleted, // 叙事任务已完成
+    ProtagonistStarted, // 主角任务已启动
+    ChoicesPrepared,    // 已生成候选项，等待外部提交
+    DecisionCommitted,  // 玩家或自动选择已提交
     TaskFailed {
         turn_id: u64,
         stage: TurnPhase,

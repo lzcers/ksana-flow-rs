@@ -36,49 +36,49 @@ fn handle_control(
     decision_state: &mut ProtagonistDecisionState,
 ) {
     match control {
-        TurnControl::AdvanceTurn => {
+        TurnControl::StartNextTurn => {
             turn_state.advance();
         }
-        TurnControl::ResetTurn { next_turn_id } => {
+        TurnControl::ResetToIdle { next_turn_id } => {
             decision_state.clear_choices();
             turn_state.reset(*next_turn_id);
         }
     }
 }
 
-// 根据各系统发送的时间，切换 turn_state
+// 根据各系统发送的事件，切换 turn_state
 fn handle_event(
     event: &TurnEvent,
     turn_state: &mut TurnState,
     query: &mut Query<(Entity, &mut FateWeaver)>,
 ) {
     match event {
-        TurnEvent::FatePlanning => {
-            turn_state.phase = TurnPhase::FateWeaving;
+        TurnEvent::FateStarted => {
+            turn_state.phase = TurnPhase::FateRunning;
         }
-        TurnEvent::FateGenerated => {
-            turn_state.phase = TurnPhase::NarratorStory;
+        TurnEvent::FateCompleted => {
+            turn_state.phase = TurnPhase::NarrationReady;
         }
-        TurnEvent::StoryWriting => {
-            turn_state.phase = TurnPhase::NarratorWriting;
+        TurnEvent::NarrationStarted => {
+            turn_state.phase = TurnPhase::NarrationRunning;
         }
-        TurnEvent::StoryGenerated => {
-            turn_state.phase = TurnPhase::ProtagonistAction;
+        TurnEvent::NarrationCompleted => {
+            turn_state.phase = TurnPhase::ProtagonistReady;
         }
-        TurnEvent::AwaitingProtagonist => {
-            turn_state.phase = TurnPhase::AwaitingProtagonist;
+        TurnEvent::ProtagonistStarted => {
+            turn_state.phase = TurnPhase::ProtagonistRunning;
         }
-        TurnEvent::PlayerChoicesReady => {
+        TurnEvent::ChoicesPrepared => {
             turn_state.phase = TurnPhase::AwaitingPlayerChoice;
         }
-        TurnEvent::ProtagonistCompleted => {
+        TurnEvent::DecisionCommitted => {
             turn_state.finish_turn();
         }
         TurnEvent::TaskFailed { stage, message, .. } => {
             if is_retryable_parse_failure(message) {
                 match stage {
                     // Fate 重试前需要回滚上一轮追加的输入
-                    TurnPhase::FateWeaving => {
+                    TurnPhase::FateRunning => {
                         let Ok((_, mut fate_weaver)) = query.single_mut() else {
                             return;
                         };
@@ -100,8 +100,8 @@ fn is_retryable_parse_failure(message: &str) -> bool {
 
 fn rollback_phase(stage: TurnPhase) -> TurnPhase {
     match stage {
-        TurnPhase::FateWeaving => TurnPhase::Ready,
-        TurnPhase::AwaitingProtagonist => TurnPhase::ProtagonistAction,
+        TurnPhase::FateRunning => TurnPhase::TurnReady,
+        TurnPhase::ProtagonistRunning => TurnPhase::ProtagonistReady,
         TurnPhase::AwaitingPlayerChoice => TurnPhase::AwaitingPlayerChoice,
         other => other,
     }

@@ -98,7 +98,7 @@ async fn main() {
     println!("[api] akashic-ecs main loop started");
 
     let mut frame = 0;
-    let mut last_reported_finished_turn = None;
+    let mut last_reported_completed_turn = None;
     loop {
         let (turn_index, phase) = {
             let turn_state = world.resource::<TurnState>();
@@ -117,9 +117,9 @@ async fn main() {
             println!("------------------------------------------------------------------------");
             world
                 .resource_mut::<Messages<TurnControl>>()
-                .write(TurnControl::AdvanceTurn);
+                .write(TurnControl::StartNextTurn);
         }
-        if phase == TurnPhase::TurnFinished && last_reported_finished_turn != Some(turn_index) {
+        if phase == TurnPhase::TurnComplete && last_reported_completed_turn != Some(turn_index) {
             println!("");
             print_frame_status(&world, frame);
             println!("");
@@ -130,8 +130,8 @@ async fn main() {
             );
             world
                 .resource_mut::<Messages<TurnControl>>()
-                .write(TurnControl::AdvanceTurn);
-            last_reported_finished_turn = Some(turn_index);
+                .write(TurnControl::StartNextTurn);
+            last_reported_completed_turn = Some(turn_index);
         }
         schedule.run(&mut world);
         frame += 1;

@@ -24,7 +24,7 @@ pub fn upper_narrator_system(
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
 ) {
-    if turn_state.phase != TurnPhase::NarratorStory {
+    if turn_state.phase != TurnPhase::NarrationReady {
         return;
     }
 
@@ -34,7 +34,7 @@ pub fn upper_narrator_system(
     let protagonist_action = decision_state.committed_action();
     upper_narrator.add_user_message(&world_snapshot.to_story_prompt(Some(&protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::Narration, &upper_narrator.context());
-    event_writer.write(TurnEvent::StoryWriting);
+    event_writer.write(TurnEvent::NarrationStarted);
 }
 
 pub fn upper_narrator_apply_system(
@@ -43,7 +43,7 @@ pub fn upper_narrator_apply_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    if turn_state.phase != TurnPhase::NarratorWriting {
+    if turn_state.phase != TurnPhase::NarrationRunning {
         return;
     }
 
@@ -59,7 +59,7 @@ pub fn upper_narrator_apply_system(
         TaskStatus::Done => {
             let story_content = task_success_output(&task_result);
             upper_narrator.append_assistant_message(&story_content);
-            event_writer.write(TurnEvent::StoryGenerated);
+            event_writer.write(TurnEvent::NarrationCompleted);
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {

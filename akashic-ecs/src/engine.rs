@@ -83,17 +83,17 @@ impl AkashicSessionEngine {
         self.export_handle.subscribe_events()
     }
 
-    // 同步提交继续命令，实际推进由后台 runtime 处理。
-    pub fn advance_turn(&self) -> Result<(), String> {
+    // 同步提交下一轮启动命令，实际推进由后台 runtime 处理。
+    pub fn start_next_turn(&self) -> Result<(), String> {
         self.command_tx
-            .send(EngineCommand::AdvanceTurn)
+            .send(EngineCommand::StartNextTurn)
             .map_err(|_| "会话运行时已停止，无法继续推进".to_string())
     }
 
     // 同步提交玩家选择，实际推进由后台 runtime 处理。
-    pub fn submit_choice(&self, choice_id: &str) -> Result<(), String> {
+    pub fn submit_player_choice(&self, choice_id: &str) -> Result<(), String> {
         self.command_tx
-            .send(EngineCommand::SubmitChoice {
+            .send(EngineCommand::SubmitPlayerChoice {
                 choice_id: choice_id.to_string(),
             })
             .map_err(|_| "会话运行时已停止，无法提交选择".to_string())
@@ -117,8 +117,8 @@ impl Session {
 }
 
 enum EngineCommand {
-    AdvanceTurn,
-    SubmitChoice { choice_id: String },
+    StartNextTurn,
+    SubmitPlayerChoice { choice_id: String },
 }
 
 struct SessionRuntime {
@@ -167,14 +167,14 @@ impl SessionRuntime {
 
     fn apply_command(&mut self, command: EngineCommand) -> Result<(), String> {
         match command {
-            EngineCommand::AdvanceTurn => {
-                self.send_turn_control_command(TurnControl::AdvanceTurn);
+            EngineCommand::StartNextTurn => {
+                self.send_turn_control_command(TurnControl::StartNextTurn);
             }
-            EngineCommand::SubmitChoice { choice_id } => {
+            EngineCommand::SubmitPlayerChoice { choice_id } => {
                 let turn_id = self.world.resource::<TurnState>().active_turn_id;
                 self.world
                     .resource_mut::<PlayerInbox>()
-                    .push(PlayerCommand::SubmitChoice { turn_id, choice_id });
+                    .push(PlayerCommand::SubmitPlayerChoice { turn_id, choice_id });
             }
         }
         Ok(())
@@ -249,6 +249,6 @@ fn build_schedule() -> Schedule {
 fn is_stable_stop_point(snapshot: &Session) -> bool {
     matches!(
         snapshot.phase,
-        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnFinished
+        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete
     ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
 }

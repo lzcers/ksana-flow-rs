@@ -27,13 +27,13 @@ pub fn player_input_system(
             return;
         };
         decision_state.commit_selection(&choice_id);
-        event_writer.write(TurnEvent::ProtagonistCompleted);
+        event_writer.write(TurnEvent::DecisionCommitted);
         return;
     }
 
     while let Some(command) = player_inbox.pop() {
         match command {
-            PlayerCommand::SubmitChoice { turn_id, choice_id } => {
+            PlayerCommand::SubmitPlayerChoice { turn_id, choice_id } => {
                 if turn_id != turn_state.active_turn_id {
                     continue;
                 }
@@ -41,7 +41,7 @@ pub fn player_input_system(
                     continue;
                 }
                 decision_state.commit_selection(&choice_id);
-                event_writer.write(TurnEvent::ProtagonistCompleted);
+                event_writer.write(TurnEvent::DecisionCommitted);
                 break;
             }
         }

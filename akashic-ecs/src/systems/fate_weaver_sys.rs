@@ -25,8 +25,8 @@ pub fn fate_weaver_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    // 仅在 Ready phase 才允许启动新一轮 Fate 任务。
-    if turn_state.phase != TurnPhase::Ready {
+    // 仅在 TurnReady phase 才允许启动新一轮 Fate 任务。
+    if turn_state.phase != TurnPhase::TurnReady {
         return;
     }
     let Ok((entity, mut fate_weaver)) = query.single_mut() else {
@@ -42,7 +42,7 @@ pub fn fate_weaver_system(
     );
     task_manager.spawn_task(entity, TaskKind::FatePlanning, &fate_weaver.context());
     // 发送场景 fate 规划事件
-    event_writer.write(TurnEvent::FatePlanning);
+    event_writer.write(TurnEvent::FateStarted);
 }
 
 pub fn fate_weaver_apply_system(
@@ -52,7 +52,7 @@ pub fn fate_weaver_apply_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    if turn_state.phase != TurnPhase::FateWeaving {
+    if turn_state.phase != TurnPhase::FateRunning {
         return;
     }
 
@@ -80,7 +80,7 @@ pub fn fate_weaver_apply_system(
             *world_snapshot = next_world_snapshot;
             // FateWeaver 需要保留完整结构化快照，供下一轮直接从上一条 assistant JSON 继续推演。
             fate_weaver.append_assistant_message(&raw_output);
-            event_writer.write(TurnEvent::FateGenerated);
+            event_writer.write(TurnEvent::FateCompleted);
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {

@@ -25,7 +25,7 @@ pub fn protagonist_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    if turn_state.phase != TurnPhase::ProtagonistAction {
+    if turn_state.phase != TurnPhase::ProtagonistReady {
         return;
     }
 
@@ -35,7 +35,7 @@ pub fn protagonist_system(
     let protagonist_action = decision_state.committed_action();
     protagonist.add_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
     task_manager.spawn_task(entity, TaskKind::ProtagonistAction, &protagonist.context());
-    event_writer.write(TurnEvent::AwaitingProtagonist);
+    event_writer.write(TurnEvent::ProtagonistStarted);
 }
 
 pub fn protagonist_apply_system(
@@ -45,7 +45,7 @@ pub fn protagonist_apply_system(
     mut task_manager: ResMut<TaskManager>,
     mut event_writer: MessageWriter<TurnEvent>,
 ) {
-    if turn_state.phase != TurnPhase::AwaitingProtagonist {
+    if turn_state.phase != TurnPhase::ProtagonistRunning {
         return;
     }
 
@@ -82,7 +82,7 @@ pub fn protagonist_apply_system(
                 protagonist.append_assistant_message(&raw_output);
             }
             decision_state.replace_with_options(action_list);
-            event_writer.write(TurnEvent::PlayerChoicesReady);
+            event_writer.write(TurnEvent::ChoicesPrepared);
             task_manager.clear_task(entity);
         }
         TaskStatus::Error => {

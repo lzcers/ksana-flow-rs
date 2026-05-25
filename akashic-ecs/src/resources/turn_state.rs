@@ -5,14 +5,14 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum TurnPhase {
     Idle,                 // 静止等待外部控制
-    Ready,                // 已收到推进命令，允许启动本轮
-    FateWeaving,          // 命运编织状态
-    NarratorWriting,      // 故事编写状态
-    NarratorStory,        // 故事编排状态
-    ProtagonistAction,    // 主角行动阶段
-    AwaitingProtagonist,  // 等待主角状态
+    TurnReady,            // 已收到推进命令，允许启动本轮
+    FateRunning,          // 命运任务执行中
+    NarrationReady,       // 叙事任务待启动
+    NarrationRunning,     // 叙事任务执行中
+    ProtagonistReady,     // 主角任务待启动
+    ProtagonistRunning,   // 主角任务执行中
     AwaitingPlayerChoice, // 等待外部玩家提交选择
-    TurnFinished,         // 轮次结束状态
+    TurnComplete,         // 轮次完成，等待继续控制
     Failed,
 }
 
@@ -48,7 +48,7 @@ impl TurnState {
     pub fn finish_turn(&mut self) {
         self.turn_index = self.active_turn_id.max(self.turn_index + 1);
         self.active_turn_id = self.turn_index;
-        self.phase = TurnPhase::TurnFinished;
+        self.phase = TurnPhase::TurnComplete;
     }
 
     pub fn advance(&mut self) {
@@ -57,11 +57,11 @@ impl TurnState {
                 if self.active_turn_id <= self.turn_index {
                     self.active_turn_id = self.turn_index + 1;
                 }
-                self.phase = TurnPhase::Ready;
+                self.phase = TurnPhase::TurnReady;
             }
-            TurnPhase::TurnFinished => {
+            TurnPhase::TurnComplete => {
                 self.active_turn_id = self.turn_index + 1;
-                self.phase = TurnPhase::Ready;
+                self.phase = TurnPhase::TurnReady;
             }
             _ => {}
         }

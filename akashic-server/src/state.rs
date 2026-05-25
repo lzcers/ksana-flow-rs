@@ -141,7 +141,7 @@ fn apply_control(
         GameSessionControlCommand::Continue => {
             session
                 .engine
-                .advance_turn()
+                .start_next_turn()
                 .map_err(AppError::bad_request)?;
             Ok(ControlGameSessionData {
                 action: "continue".to_string(),
@@ -161,11 +161,11 @@ fn apply_choice(
 
     session
         .engine
-        .submit_choice(selection)
+        .submit_player_choice(selection)
         .map_err(AppError::bad_request)?;
     session
         .engine
-        .advance_turn()
+        .start_next_turn()
         .map_err(AppError::bad_request)?;
 
     Ok(ControlGameSessionData {
@@ -209,7 +209,7 @@ fn current_protagonist_action(snapshot: &Session) -> String {
 }
 
 fn visible_turn_index(snapshot: &Session) -> u64 {
-    if snapshot.phase == TurnPhase::TurnFinished {
+    if snapshot.phase == TurnPhase::TurnComplete {
         snapshot.turn_index.max(1)
     } else {
         snapshot.active_turn_id.max(snapshot.turn_index + 1)
@@ -220,7 +220,7 @@ fn status_from_phase(phase: TurnPhase) -> &'static str {
     match phase {
         TurnPhase::Idle => "pending",
         TurnPhase::AwaitingPlayerChoice => "awaiting_player_choice",
-        TurnPhase::TurnFinished => "waiting_control",
+        TurnPhase::TurnComplete => "waiting_control",
         TurnPhase::Failed => "failed",
         _ => "running",
     }
