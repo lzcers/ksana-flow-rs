@@ -11,8 +11,6 @@
     "check": "tsc -b --noEmit"
   },
   "dependencies": {
-    "@incremark/react": "^1.0.2",
-    "@incremark/theme": "^1.0.2",
     "@tailwindcss/vite": "^4.3.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",

@@ -1,29 +1,16 @@
-use std::{
-    collections::{HashMap, HashSet},
-    io::{self, Write},
-};
+use std::io::{self, Write};
 
 use agent::core::Message;
-use bevy_ecs::{
-    entity::Entity,
-    system::{Local, Res, ResMut},
-};
+use bevy_ecs::system::{Res, ResMut};
 
 use crate::components::upper_narrator::UpperNarrator;
 use crate::resources::{
     export::{ExportState, SessionSnapshot, TaskView},
     protagonist_action::ProtagonistDecisionState,
-    task_manager::{TaskManager, TaskStatus},
+    task_manager::{TaskManager, TaskStatus, TaskUpdate},
     turn_state::TurnState,
     world_snapshot::WorldSnapshot,
 };
-
-#[allow(dead_code)]
-#[derive(Default)]
-pub struct ChunkPrinterState {
-    printed_chunk_offsets: HashMap<Entity, usize>,
-    active_task: Option<Entity>,
-}
 
 pub fn export_system(
     turn_state: Res<TurnState>,
@@ -32,7 +19,6 @@ pub fn export_system(
     export_state: Res<ExportState>,
     mut task_manager: ResMut<TaskManager>,
     narrator_query: bevy_ecs::system::Query<&UpperNarrator>,
-    mut _printer_state: Local<ChunkPrinterState>,
 ) {
     // 获取任务快照，并转为 TaskView
     let task_results = task_manager
@@ -49,7 +35,9 @@ pub fn export_system(
     let latest_narration = narrator_query
         .single()
         .ok()
-        .and_then(|narrator| latest_assistant_narration(narrator.context().conversation().as_slice()))
+        .and_then(|narrator| {
+            latest_assistant_narration(narrator.context().conversation().as_slice())
+        })
         .unwrap_or_default();
     let current_protagonist_action = decision_state.committed_action().to_string();
     let choices = decision_state.choices().to_vec();
@@ -71,14 +59,14 @@ pub fn export_system(
     export_state.publish_snapshot(snapshot);
 
     // 导出任务更新。这里只发送增量更新，完整快照由 snapshot 单独承担。
-    for update in std::mem::take(&mut task_manager.emitted_updates) {
-        export_state.publish_task_update(update);
+    let updates = std::mem::take(&mut task_manager.emitted_updates);
+    for update in &updates {
+        export_state.publish_task_update(update.clone());
     }
     // 单独模块测试时打印任务 chunk
-    print_task_chunks(&task_manager, &mut _printer_state);
+    print_task_updates(&updates);
 }
 
-#[allow(dead_code)]
 fn select_current_task(tasks: &[TaskView]) -> Option<TaskView> {
     tasks
         .iter()
@@ -91,78 +79,6 @@ fn select_current_task(tasks: &[TaskView]) -> Option<TaskView> {
         .cloned()
 }
 
-// 打印任务的 task_chunk
-#[allow(dead_code)]
-fn print_task_chunks(task_manager: &TaskManager, printer_state: &mut ChunkPrinterState) {
-    let task_results = task_manager
-        .results
-        .iter()
-        .map(|(entity, result)| (*entity, result.clone()))
-        .collect::<Vec<_>>();
-    let active_entities: HashSet<Entity> = task_results.iter().map(|(entity, _)| *entity).collect();
-    let mut wrote_output = false;
-
-    for (entity, result) in task_results {
-        let offset = *printer_state
-            .printed_chunk_offsets
-            .entry(entity)
-            .or_insert(0);
-        let has_new_chunks = offset < result.chunks.len();
-
-        if !has_new_chunks {
-            if printer_state.active_task == Some(entity)
-                && matches!(result.status, TaskStatus::Done | TaskStatus::Error)
-            {
-                println!();
-                printer_state.active_task = None;
-                wrote_output = true;
-            }
-            continue;
-        }
-
-        if printer_state.active_task != Some(entity) {
-            if printer_state.active_task.is_some() {
-                println!();
-            }
-            println!("[task {:?} {:?}] ", entity, result.kind);
-            printer_state.active_task = Some(entity);
-            wrote_output = true;
-        }
-
-        for chunk in result.chunks[offset..].iter() {
-            print!("{chunk}");
-            wrote_output = true;
-        }
-
-        printer_state
-            .printed_chunk_offsets
-            .insert(entity, result.chunks.len());
-
-        if matches!(result.status, TaskStatus::Done | TaskStatus::Error) {
-            println!();
-            printer_state.active_task = None;
-            wrote_output = true;
-        }
-    }
-
-    if printer_state
-        .active_task
-        .is_some_and(|entity| !active_entities.contains(&entity))
-    {
-        println!();
-        printer_state.active_task = None;
-        wrote_output = true;
-    }
-
-    printer_state
-        .printed_chunk_offsets
-        .retain(|entity, _| active_entities.contains(entity));
-
-    if wrote_output {
-        let _ = io::stdout().flush();
-    }
-}
-
 fn latest_assistant_narration(messages: &[Message]) -> Option<String> {
     messages.iter().rev().find_map(|message| match message {
         Message::Assistant { content, .. } if !content.trim().is_empty() => {
@@ -172,31 +88,23 @@ fn latest_assistant_narration(messages: &[Message]) -> Option<String> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use agent::core::Message;
+// 打印任务的 task_chunk 增量
+fn print_task_updates(updates: &[TaskUpdate]) {
+    let mut wrote_output = false;
 
-    use super::latest_assistant_narration;
+    for update in updates {
+        if let Some(chunk) = &update.chunk {
+            print!("{chunk}");
+            wrote_output = true;
+        }
 
-    #[test]
-    fn latest_assistant_narration_ignores_system_and_user_messages() {
-        let messages = vec![
-            Message::system("system prompt"),
-            Message::user("story prompt"),
-            Message::assistant("第一段叙事"),
-            Message::user("下一轮 prompt"),
-        ];
-
-        assert_eq!(
-            latest_assistant_narration(&messages).as_deref(),
-            Some("第一段叙事")
-        );
+        if matches!(update.status, TaskStatus::Done | TaskStatus::Error) {
+            println!();
+            wrote_output = true;
+        }
     }
 
-    #[test]
-    fn latest_assistant_narration_returns_none_without_assistant_message() {
-        let messages = vec![Message::system("system prompt"), Message::user("story prompt")];
-
-        assert_eq!(latest_assistant_narration(&messages), None);
+    if wrote_output {
+        let _ = io::stdout().flush();
     }
 }
