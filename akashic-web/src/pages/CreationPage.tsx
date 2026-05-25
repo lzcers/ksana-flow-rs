@@ -1,9 +1,8 @@
 import React from 'react';
-import { ChevronDown, Dices, Sparkles, WandSparkles } from 'lucide-react';
+import { ChevronDown, Dices, TriangleAlert } from 'lucide-react';
 import { useGameUIStore } from '../store/gameStore';
 import {
   FieldLabel,
-  PageTitle,
   PrimaryButton,
   ScreenShell,
   SecondaryButton,
@@ -22,7 +21,16 @@ const backgroundOptions = [
 const eraOptions = ['蒸汽朋克', '星际拓荒', '东方玄幻', '末日废土'];
 
 const CreationPage: React.FC = () => {
-  const { character, world, updateCharacter, updateWorld, setGameState, startGame, isLoading } = useGameUIStore();
+  const {
+    character,
+    world,
+    updateCharacter,
+    updateWorld,
+    setGameState,
+    startGame,
+    isLoading,
+    error,
+  } = useGameUIStore();
 
   const traitRows = [
     { key: 'courage', label: '勇气', value: character.traits.courage },
@@ -73,6 +81,16 @@ const CreationPage: React.FC = () => {
               </SecondaryButton>
             </div>
           </div>
+
+          {error ? (
+            <StatusPill
+              icon={TriangleAlert}
+              className="border-[#7f3b3b]/50 bg-[#2a1216]/85 text-[#ffd7d7]"
+              iconClassName="text-[#ff9b9b]"
+            >
+              {error}
+            </StatusPill>
+          ) : null}
 
           <SectionCard className="p-4 md:p-6">
             <FieldLabel>姓名</FieldLabel>
@@ -207,7 +225,7 @@ const CreationPage: React.FC = () => {
               返回大厅
             </SecondaryButton>
             <PrimaryButton onClick={handleStartGame} disabled={!canStart || isLoading} className="w-full sm:w-auto">
-              {isLoading ? '命运编织中...' : '步入幻世'}
+              {isLoading ? '设定生成中...' : '生成开局设定'}
             </PrimaryButton>
           </div>
         </div>

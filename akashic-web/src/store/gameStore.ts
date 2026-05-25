@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import {
   createGameSession,
+  generateProfiles,
   openGameSessionStream,
   submitGameSessionControl,
 } from '../lib/api';
-import type { Choice, PlayerActionInput, TaskView } from '../lib/api';
+import type { Choice, GeneratedProfiles, PlayerActionInput, TaskView } from '../lib/api';
 import {
   createGameUIStore,
   type GameState,
@@ -59,6 +60,8 @@ const initialUIState: GameUIState = {
   obsessionPoints: 3,
   intuitionPoints: 5,
   isLoading: false,
+  startupStage: 'idle',
+  preparedProfiles: null,
   error: null,
 };
 
@@ -87,6 +90,10 @@ let activeStreamSessionId: string | null = null;
 let lastStreamEventId: string | null = null;
 let activeStreamTasks = new Map<string, TaskView>();
 let activeStreamTaskRounds = new Map<string, number>();
+let startupStageTimer: number | null = null;
+
+const MIN_GENERATING_PAGE_MS = 1200;
+const MIN_CREATING_SESSION_STAGE_MS = 450;
 
 function areChoicesEqual(left: Choice[], right: Choice[]): boolean {
   if (left.length !== right.length) {
@@ -114,6 +121,37 @@ function closeActiveSessionStream() {
   activeStreamTaskRounds = new Map();
 }
 
+function clearStartupStageTimer() {
+  if (startupStageTimer !== null) {
+    window.clearTimeout(startupStageTimer);
+    startupStageTimer = null;
+  }
+}
+
+function scheduleStartupStageProgress() {
+  clearStartupStageTimer();
+  startupStageTimer = window.setTimeout(() => {
+    const state = useGameUIStore.getState();
+    if (state.gameState === 'generating' && state.startupStage === 'generating_world') {
+      useGameUIStore.setState({
+        startupStage: 'generating_protagonist',
+      });
+    }
+  }, 1400);
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function waitForNextPaint() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
 function resetUIState(): GameUIState {
   return {
     gameState: 'lobby' as GameState,
@@ -123,6 +161,8 @@ function resetUIState(): GameUIState {
     obsessionPoints: 3,
     intuitionPoints: 5,
     isLoading: false,
+    startupStage: 'idle',
+    preparedProfiles: null,
     error: null,
   };
 }
@@ -318,10 +358,18 @@ const createGameUIActions = (
   get: () => GameUIStoreState,
 ): GameUIActions => ({
   setGameState: (state) => {
+    if (state !== 'generating') {
+      clearStartupStageTimer();
+    }
     if (state !== 'playing') {
       closeActiveSessionStream();
     }
-    set({ gameState: state, error: null });
+    set({
+      gameState: state,
+      startupStage: state === 'generating' ? get().startupStage : 'idle',
+      preparedProfiles: state === 'generating' ? get().preparedProfiles : null,
+      error: null,
+    });
   },
   updateCharacter: (updates) =>
     set((state) => ({
@@ -343,54 +391,106 @@ const createGameUIActions = (
   startGame: async () => {
     const { character, world } = get();
     closeActiveSessionStream();
+    clearStartupStageTimer();
     useGameInternalStore.setState({
       ...initialInternalState,
-      displayRound: 1,
-      roundStates: {
-        1: createRoundState(1, {
-          isAwaitingNarration: true,
-        }),
-      },
     });
     set({
-      stateView: {
-        gameState: 'playing',
-        phase: 'booting',
-        turnIndex: 0,
-        activeTurnId: 0,
-        currentLocation: '命运现场',
-        currentScene: '命运编织中',
-        protagonistState: `${character.name || '无名旅人'} 正踏入 ${world.era}`,
-        npcsState: '诸多回响正在汇聚',
-        latestHistory: STREAM_PLACEHOLDER_TEXT,
-        latestBroadcastSummary: '正在创建会话并唤起第一轮命运...',
-        latestBroadcastItems: ['正在创建会话并唤起第一轮命运...'],
-        latestProtagonistAction: '尚未做出选择',
-      },
-      obsessionPoints: 3,
-      intuitionPoints: 5,
+      gameState: 'generating',
       error: null,
-      gameState: 'playing',
       isLoading: true,
+      startupStage: 'generating_world',
+      preparedProfiles: null,
+      stateView: null,
     });
+    await waitForNextPaint();
+    scheduleStartupStageProgress();
 
     try {
-      // 创建会话
-      const created = await createGameSession(character, world);
-      activeStreamSessionId = created.sessionId;
+      const generatingStartedAt = Date.now();
+      const generatedProfiles = await generateProfiles(character, world);
+      const generatingElapsed = Date.now() - generatingStartedAt;
+      if (generatingElapsed < MIN_GENERATING_PAGE_MS) {
+        await sleep(MIN_GENERATING_PAGE_MS - generatingElapsed);
+      }
+      clearStartupStageTimer();
+      set({
+        startupStage: 'ready_to_enter',
+        preparedProfiles: generatedProfiles,
+        isLoading: false,
+      });
+    } catch (error) {
+      clearStartupStageTimer();
+      closeActiveSessionStream();
       useGameInternalStore.setState({
+        ...initialInternalState,
+      });
+      set({
+        gameState: 'creation',
+        stateView: null,
+        isLoading: false,
+        startupStage: 'idle',
+        error: error instanceof Error ? error.message : '开启旅程失败。',
+      });
+      throw error;
+    }
+  },
+  enterWorld: async () => {
+    const { character, world, preparedProfiles } = get();
+    if (!preparedProfiles) {
+      throw new Error('设定尚未生成完成，无法进入幻世。');
+    }
+
+    set({
+      error: null,
+      isLoading: true,
+    });
+    await waitForNextPaint();
+
+    try {
+      const [created] = await Promise.all([
+        createGameSession({
+          worldProfile: preparedProfiles.world,
+          protagonistProfile: preparedProfiles.protagonist,
+        }),
+        sleep(MIN_CREATING_SESSION_STAGE_MS),
+      ]);
+
+      useGameInternalStore.setState({
+        ...initialInternalState,
         sessionId: created.sessionId,
+        displayRound: 1,
+        roundStates: {
+          1: createRoundState(1, {
+            isAwaitingNarration: true,
+          }),
+        },
+      });
+      set({
+        stateView: {
+          gameState: 'playing',
+          phase: 'booting',
+          turnIndex: 0,
+          activeTurnId: 0,
+          currentLocation: '命运现场',
+          currentScene: '命运编织中',
+          protagonistState: `${character.name || '无名旅人'} 正踏入 ${world.era}`,
+          npcsState: '诸多回响正在汇聚',
+          latestHistory: STREAM_PLACEHOLDER_TEXT,
+          latestBroadcastSummary: '会话已建立，正在推进第一轮...',
+          latestBroadcastItems: ['会话已建立，正在推进第一轮...'],
+          latestProtagonistAction: '尚未做出选择',
+        },
+        obsessionPoints: 3,
+        intuitionPoints: 5,
+        error: null,
+        gameState: 'playing',
+        isLoading: true,
+        startupStage: 'idle',
+        preparedProfiles: null,
       });
 
-      set((state) => ({
-        stateView: state.stateView
-          ? {
-            ...state.stateView,
-            latestBroadcastSummary: '会话已建立，正在推进第一轮...',
-            latestBroadcastItems: ['会话已建立，正在推进第一轮...'],
-          }
-          : null,
-      }));
+      activeStreamSessionId = created.sessionId;
 
       activeSessionStream = openGameSessionStream(
         created.sessionId,
@@ -428,10 +528,11 @@ const createGameUIActions = (
         control: { type: 'continue' },
       });
     } catch (error) {
-      closeActiveSessionStream();
       set({
+        gameState: 'generating',
         isLoading: false,
-        error: error instanceof Error ? error.message : '开启旅程失败。',
+        startupStage: 'ready_to_enter',
+        error: error instanceof Error ? error.message : '进入幻世失败。',
       });
       throw error;
     }

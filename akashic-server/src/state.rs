@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
     resources::{
-        export::{TaskEvent, TaskView},
+        export::TaskEvent,
         protagonist_action::PlayerActionType,
         task_manager::TaskUpdate,
         turn_state::TurnPhase,
@@ -15,9 +15,9 @@ use uuid::Uuid;
 
 use crate::{
     api::dto::{
-        Character, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
+        ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
         CreateGameSessionRequest, GameSessionControlCommand, GameSessionWorldStateData,
-        SessionActionInput, World,
+        SessionActionInput,
     },
     error::AppError,
 };
@@ -35,7 +35,6 @@ struct SessionRecord {
 
 pub struct LiveSessionStream {
     pub session_id: String,
-    pub tasks: Vec<TaskView>,
     pub event_rx: broadcast::Receiver<TaskUpdate>,
 }
 
@@ -45,14 +44,16 @@ impl AppState {
     // 创建会话
     pub async fn create_game_session(
         &self,
-        _request: CreateGameSessionRequest,
+        request: CreateGameSessionRequest,
     ) -> Result<CreateGameSessionData, AppError> {
         let session_id = format!("session-{}", Uuid::new_v4().simple());
         let created_at = now_string();
-        // let protagonist_profile = build_protagonist_profile(&request.character);
-        // let world_profile = build_world_profile(&request.world);
-        // let engine = AkashicSessionEngine::new_with_profiles(&world_profile, &protagonist_profile);
-        let engine = AkashicSessionEngine::new();
+        let world_profile = request.world_profile.trim();
+        let protagonist_profile = request.protagonist_profile.trim();
+        if world_profile.is_empty() || protagonist_profile.is_empty() {
+            return Err(AppError::bad_request("`worldProfile` 与 `protagonistProfile` 不能为空。"));
+        }
+        let engine = AkashicSessionEngine::new_with_profiles(world_profile, protagonist_profile);
         let mut event_rx = engine.subscribe_events();
         let (events_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let events_tx_for_task = events_tx.clone();
@@ -122,13 +123,8 @@ impl AppState {
         let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
-
-        let snapshot = session.engine.get_game_session();
-        let tasks = snapshot.tasks.clone();
-
         Ok(LiveSessionStream {
             session_id: session_id.to_string(),
-            tasks,
             event_rx: session.events_tx.subscribe(),
         })
     }
@@ -239,33 +235,6 @@ fn status_from_phase(phase: TurnPhase) -> &'static str {
         TurnPhase::Failed => "failed",
         _ => "running",
     }
-}
-
-fn build_protagonist_profile(character: &Character) -> String {
-    format!(
-        "## 人物设定\n- 姓名：{}\n- 性别：{}\n- 年龄：{}\n- 外貌：{}\n- 背景：{}\n- 性格倾向：勇气 {} / 理性 {} / 利他 {}\n",
-        character.name,
-        character.gender,
-        character.age,
-        character.appearance,
-        character.background,
-        character.traits.courage,
-        character.traits.rationality,
-        character.traits.altruism,
-    )
-}
-
-fn build_world_profile(world: &World) -> String {
-    format!(
-        "## 世界设定\n- 时代：{}\n- 核心冲突：{}\n- 特殊规则：{}\n",
-        world.era,
-        world.core_conflict,
-        if world.special_rules.is_empty() {
-            "无".to_string()
-        } else {
-            world.special_rules.join("；")
-        }
-    )
 }
 
 fn now_string() -> String {

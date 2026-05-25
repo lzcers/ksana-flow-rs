@@ -2,12 +2,19 @@ import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import type {
   Character,
+  GeneratedProfiles,
   PlayerActionInput,
   RuntimeStateView,
   World,
 } from '../lib/api';
 
-export type GameState = 'lobby' | 'creation' | 'playing';
+export type GameState = 'lobby' | 'creation' | 'generating' | 'playing';
+export type StartupStage =
+  | 'idle'
+  | 'generating_world'
+  | 'generating_protagonist'
+  | 'ready_to_enter'
+  | 'creating_session';
 
 export interface GameUIState {
   // 当前页面所处的整体阶段。
@@ -24,6 +31,10 @@ export interface GameUIState {
   intuitionPoints: number;
   // 全局加载态，控制按钮禁用、骨架屏等。
   isLoading: boolean;
+  // 开局前过渡页当前聚焦的阶段。
+  startupStage: StartupStage;
+  // 已生成但尚未正式注入会话的世界/主角设定。
+  preparedProfiles: GeneratedProfiles | null;
   // 全局错误消息。
   error: string | null;
 }
@@ -37,8 +48,10 @@ export interface GameUIActions {
   updateWorld: (updates: Partial<World>) => void;
   // 操作：清除错误提示。
   clearError: () => void;
-  // 操作：创建会话并开始游戏。
+  // 操作：生成设定并进入过渡页。
   startGame: () => Promise<void>;
+  // 操作：基于已生成设定正式创建会话并进入游戏。
+  enterWorld: () => Promise<void>;
   // 操作：提交当前选择；执念模式下也可直接提交自定义行动文本。
   submitChoice: (
     submission: { input: PlayerActionInput; displayText: string },

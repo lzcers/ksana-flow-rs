@@ -2,6 +2,7 @@ import React from 'react';
 import { useGameUIStore } from './store/gameStore';
 import LobbyPage from './pages/LobbyPage';
 import CreationPage from './pages/CreationPage';
+import GeneratingPage from './pages/GeneratingPage';
 import GameplayPage from './pages/GameplayPage';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
       <main className="akashic-scroll relative z-10 h-full w-full overflow-y-auto overflow-x-hidden">
         {gameState === 'lobby' && <LobbyPage />}
         {gameState === 'creation' && <CreationPage />}
+        {gameState === 'generating' && <GeneratingPage />}
         {gameState === 'playing' && <GameplayPage />}
       </main>
     </div>

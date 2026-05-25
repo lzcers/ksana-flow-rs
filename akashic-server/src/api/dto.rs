@@ -37,36 +37,11 @@ pub struct GenerateProfilesData {
     pub protagonist: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Character {
-    pub name: String,
-    pub gender: String,
-    pub age: u32,
-    pub appearance: String,
-    pub traits: CharacterTraits,
-    pub background: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CharacterTraits {
-    pub courage: u32,
-    pub rationality: u32,
-    pub altruism: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct World {
-    pub era: String,
-    pub core_conflict: String,
-    pub special_rules: Vec<String>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateGameSessionRequest {
-    pub character: Character,
-    pub world: World,
+    pub world_profile: String,
+    pub protagonist_profile: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
