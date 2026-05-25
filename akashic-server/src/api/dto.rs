@@ -1,5 +1,7 @@
 use akashic_ecs::resources::{
-    export::TaskView, protagonist_action::PendingProtagonistChoice, turn_state::TurnPhase,
+    export::TaskView,
+    protagonist_action::{PendingProtagonistChoice, PlayerActionInput},
+    turn_state::TurnPhase,
     world_snapshot::WorldSnapshot,
 };
 use serde::{Deserialize, Serialize};
@@ -74,11 +76,7 @@ pub struct CreateGameSessionData {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SessionChoiceInput {
-    pub choice_id: String,
-}
+pub type SessionActionInput = PlayerActionInput;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -90,7 +88,7 @@ pub enum GameSessionControlCommand {
 #[serde(rename_all = "camelCase")]
 pub struct ControlGameSessionRequest {
     pub control: Option<GameSessionControlCommand>,
-    pub choice: Option<SessionChoiceInput>,
+    pub action: Option<SessionActionInput>,
 }
 
 #[derive(Debug, Clone, Serialize)]

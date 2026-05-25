@@ -10,6 +10,7 @@ import ChoicePanel from '../components/ChoicePanel';
 import GameplayToolbar from '../components/GameplayToolbar';
 import NarrationPanel from '../components/NarrationPanel';
 import type { NarrationRoundEntry } from '../components/gameplayTypes';
+import type { Choice } from '../lib/api';
 
 const EMPTY_BROADCAST_ITEMS: string[] = [];
 
@@ -113,9 +114,15 @@ const GameplayPage: React.FC = () => {
     }
   };
 
-  const handleChoiceClick = async (choiceId: string) => {
+  const handleChoiceClick = async (choice: Choice) => {
     try {
-      await submitChoice(choiceId, activeObsession);
+      await submitChoice({
+        input: {
+          type: 'selected_option',
+          action: choice.action,
+        },
+        displayText: choice.text,
+      }, activeObsession);
       setActiveObsession(false);
       setObsessionInput('');
       setPreviews({});
@@ -125,15 +132,20 @@ const GameplayPage: React.FC = () => {
     }
   };
 
-  const handleObsessionSubmit = async () => {
-    const actionText = obsessionInput.trim();
+  const handleObsessionSubmit = async (actionText: string) => {
     if (!actionText) {
       setFeedback('请先写下这次执念行动。');
       return;
     }
 
     try {
-      await submitChoice(actionText, true);
+      await submitChoice({
+        input: {
+          type: 'free_text',
+          action: actionText,
+        },
+        displayText: actionText,
+      }, true);
       setActiveObsession(false);
       setObsessionInput('');
       setPreviews({});

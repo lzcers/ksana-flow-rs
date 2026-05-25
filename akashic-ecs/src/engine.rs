@@ -17,7 +17,7 @@ use crate::{
     resources::{
         export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
         player_input::{PlayerInbox, PlayerInputConfig},
-        protagonist_action::{PendingProtagonistChoice, ProtagonistDecisionState},
+        protagonist_action::{PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState},
         task_manager::TaskManager,
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -90,13 +90,11 @@ impl AkashicSessionEngine {
             .map_err(|_| "会话运行时已停止，无法继续推进".to_string())
     }
 
-    // 同步提交玩家选择，实际推进由后台 runtime 处理。
-    pub fn submit_player_choice(&self, choice_id: &str) -> Result<(), String> {
+    // 同步提交玩家行动，实际推进由后台 runtime 处理。
+    pub fn submit_player_action(&self, input: PlayerActionInput) -> Result<(), String> {
         self.command_tx
-            .send(EngineCommand::SubmitPlayerChoice {
-                choice_id: choice_id.to_string(),
-            })
-            .map_err(|_| "会话运行时已停止，无法提交选择".to_string())
+            .send(EngineCommand::SubmitPlayerAction { input })
+            .map_err(|_| "会话运行时已停止，无法提交行动".to_string())
     }
 }
 
@@ -118,7 +116,7 @@ impl Session {
 
 enum EngineCommand {
     StartNextTurn,
-    SubmitPlayerChoice { choice_id: String },
+    SubmitPlayerAction { input: PlayerActionInput },
 }
 
 struct SessionRuntime {
@@ -170,11 +168,11 @@ impl SessionRuntime {
             EngineCommand::StartNextTurn => {
                 self.send_turn_control_command(TurnControl::StartNextTurn);
             }
-            EngineCommand::SubmitPlayerChoice { choice_id } => {
+            EngineCommand::SubmitPlayerAction { input } => {
                 let turn_id = self.world.resource::<TurnState>().active_turn_id;
                 self.world
                     .resource_mut::<PlayerInbox>()
-                    .push(PlayerCommand::SubmitPlayerChoice { turn_id, choice_id });
+                    .push(PlayerCommand::SubmitPlayerAction { turn_id, input });
             }
         }
         Ok(())

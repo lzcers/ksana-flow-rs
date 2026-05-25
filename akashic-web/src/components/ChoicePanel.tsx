@@ -11,10 +11,10 @@ interface ChoicePanelProps {
   obsessionInput: string;
   isChoiceInteractionDisabled: boolean;
   isObsessionSubmitDisabled: boolean;
-  onChoiceClick: (choiceId: string) => void | Promise<void>;
+  onChoiceClick: (choice: Choice) => void | Promise<void>;
   onPreview: (choiceId: string, event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onObsessionInputChange: (value: string) => void;
-  onObsessionSubmit: () => void | Promise<void>;
+  onObsessionSubmit: (actionText: string) => void | Promise<void>;
 }
 
 const ChoicePanel: React.FC<ChoicePanelProps> = ({
@@ -31,6 +31,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
   onObsessionSubmit,
 }) => {
   const obsessionInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const submitObsessionAction = () => onObsessionSubmit(obsessionInput.trim());
 
   useEffect(() => {
     if (!activeObsession) {
@@ -53,7 +54,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
               <div key={choice.id} className="space-y-1.5">
                 <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
                   <button
-                    onClick={() => void onChoiceClick(choice.id)}
+                    onClick={() => void onChoiceClick(choice)}
                     disabled={isChoiceInteractionDisabled || choice.disabled}
                     className="akashic-choice h-10 text-[#f3ead8] disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -94,7 +95,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
               onKeyDown={(event) => {
                 if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                   event.preventDefault();
-                  void onObsessionSubmit();
+                  void submitObsessionAction();
                 }
               }}
               disabled={isChoiceInteractionDisabled}
@@ -107,7 +108,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
               </p>
               <SecondaryButton
                 type="button"
-                onClick={() => void onObsessionSubmit()}
+                onClick={() => void submitObsessionAction()}
                 disabled={isObsessionSubmitDisabled}
                 className="min-h-0 px-3 py-1.5 text-[0.72rem] leading-4 text-red-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
               >

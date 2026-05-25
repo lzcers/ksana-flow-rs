@@ -20,6 +20,7 @@ export interface World {
 export interface Choice {
   id: string;
   text: string;
+  action: string;
   disabled: boolean;
   previewText?: string;
   costHints: {
@@ -64,6 +65,13 @@ export interface PendingProtagonistChoice {
   option: ProtagonistOption;
 }
 
+export type PlayerActionType = 'selected_option' | 'free_text';
+
+export interface PlayerActionInput {
+  type: PlayerActionType;
+  action: string;
+}
+
 export interface TaskView {
   entity: string;
   kind: string;
@@ -77,8 +85,8 @@ export interface TaskView {
 }
 
 export type GameSessionControlInput =
-  | { control: { type: 'continue' }; choice?: undefined }
-  | { control?: undefined; choice: { choiceId: string } };
+  | { control: { type: 'continue' }; action?: undefined }
+  | { control?: undefined; action: PlayerActionInput };
 
 export interface TaskUpdatedEvent {
   eventId?: number;

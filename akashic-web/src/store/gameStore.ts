@@ -4,7 +4,7 @@ import {
   openGameSessionStream,
   submitGameSessionControl,
 } from '../lib/api';
-import type { Choice, TaskView } from '../lib/api';
+import type { Choice, PlayerActionInput, TaskView } from '../lib/api';
 import {
   createGameUIStore,
   type GameState,
@@ -97,6 +97,7 @@ function areChoicesEqual(left: Choice[], right: Choice[]): boolean {
     const nextChoice = right[index];
     return choice.id === nextChoice.id
       && choice.text === nextChoice.text
+      && choice.action === nextChoice.action
       && choice.previewText === nextChoice.previewText
       && choice.disabled === nextChoice.disabled
       && choice.costHints.intuition === nextChoice.costHints.intuition
@@ -435,7 +436,7 @@ const createGameUIActions = (
       throw error;
     }
   },
-  submitChoice: async (choiceId, useObsession = false) => {
+  submitChoice: async (submission, useObsession = false) => {
     const { sessionId, displayRound, roundStates } = useGameInternalStore.getState();
     const {
       obsessionPoints,
@@ -450,22 +451,27 @@ const createGameUIActions = (
       throw new Error('当前会话流未就绪，无法提交选择。');
     }
 
-    const selection = choiceId.trim();
-    if (!selection) {
-      throw new Error('当前选择不能为空。');
+    const nextInput: PlayerActionInput = {
+      type: submission.input.type,
+      action: submission.input.action.trim(),
+    };
+    if (!nextInput.action) {
+      throw new Error('当前行动不能为空。');
     }
 
     const nextObsession = useObsession ? Math.max(0, obsessionPoints - 1) : obsessionPoints;
     const activeRound = Math.max(displayRound || 1, 1);
     const nextRound = activeRound + 1;
-    const selectedChoice = roundStates[activeRound]?.choices.find((choice) => choice.id === selection);
-    const selectedChoiceText = selectedChoice
-      ? (useObsession ? `${selectedChoice.text} [执念]` : selectedChoice.text)
-      : (useObsession ? `${selection} [执念]` : null);
-
-    if (!selectedChoiceText) {
+    const currentRoundChoices = roundStates[activeRound]?.choices ?? [];
+    if (
+      nextInput.type === 'selected_option'
+      && !currentRoundChoices.some((choice) => choice.action === nextInput.action)
+    ) {
       throw new Error('当前选择不存在。');
     }
+    const selectedChoiceText = useObsession
+      ? `${submission.displayText} [执念]`
+      : submission.displayText;
 
     const previousRoundState = roundStates[activeRound];
     const previousNextRoundState = roundStates[nextRound];
@@ -500,7 +506,7 @@ const createGameUIActions = (
 
     try {
       await submitGameSessionControl(sessionId, {
-        choice: { choiceId: selection },
+        action: nextInput,
       });
       return;
     } catch (error) {

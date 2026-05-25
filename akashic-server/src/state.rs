@@ -4,6 +4,7 @@ use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
     resources::{
         export::{TaskEvent, TaskView},
+        protagonist_action::PlayerActionType,
         task_manager::TaskUpdate,
         turn_state::TurnPhase,
     },
@@ -16,7 +17,7 @@ use crate::{
     api::dto::{
         Character, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
         CreateGameSessionRequest, GameSessionControlCommand, GameSessionWorldStateData,
-        SessionChoiceInput, World,
+        SessionActionInput, World,
     },
     error::AppError,
 };
@@ -100,14 +101,14 @@ impl AppState {
             .get_mut(session_id)
             .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
 
-        match (request.control, request.choice) {
+        match (request.control, request.action) {
             (Some(control), None) => apply_control(session, control),
-            (None, Some(choice)) => apply_choice(session, choice),
+            (None, Some(action)) => apply_action(session, action),
             (None, None) => Err(AppError::bad_request(
-                "请求体至少需要提供 `control` 或 `choice` 之一。",
+                "请求体至少需要提供 `control` 或 `action` 之一。",
             )),
             (Some(_), Some(_)) => Err(AppError::bad_request(
-                "同一次请求只能执行一种操作：控制命令或玩家选择。",
+                "同一次请求只能执行一种操作：控制命令或玩家行动。",
             )),
         }
     }
@@ -150,18 +151,32 @@ fn apply_control(
     }
 }
 
-fn apply_choice(
+fn apply_action(
     session: &mut SessionRecord,
-    choice: SessionChoiceInput,
+    action: SessionActionInput,
 ) -> Result<ControlGameSessionData, AppError> {
-    let selection = choice.choice_id.trim();
-    if selection.is_empty() {
-        return Err(AppError::bad_request("所选行动不能为空。"));
+    let selected_action = action.action.trim();
+    if selected_action.is_empty() {
+        return Err(AppError::bad_request("提交行动不能为空。"));
+    }
+
+    if action.r#type == PlayerActionType::SelectedOption {
+        let snapshot = session.engine.get_game_session();
+        let is_valid_option = snapshot
+            .choices
+            .iter()
+            .any(|choice| choice.option.action == selected_action);
+        if !is_valid_option {
+            return Err(AppError::bad_request("当前所选行动不在候选列表中。"));
+        }
     }
 
     session
         .engine
-        .submit_player_choice(selection)
+        .submit_player_action(SessionActionInput {
+            r#type: action.r#type,
+            action: selected_action.to_string(),
+        })
         .map_err(AppError::bad_request)?;
     session
         .engine
@@ -169,7 +184,7 @@ fn apply_choice(
         .map_err(AppError::bad_request)?;
 
     Ok(ControlGameSessionData {
-        action: "submit_choice".to_string(),
+        action: "submit_action".to_string(),
     })
 }
 

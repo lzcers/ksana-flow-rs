@@ -74,6 +74,7 @@ export function toChoiceFromSession(choice: PendingProtagonistChoice): Choice {
   return {
     id: choice.id,
     text: choice.option.title || choice.option.action,
+    action: choice.option.action,
     previewText: choice.option.motivationAndRisk,
     disabled: false,
     costHints: {
@@ -178,9 +179,11 @@ export function summarizeFatePlanning(value: JsonValue | null): FatePlanningSumm
 }
 
 function toChoiceFromStreamOption(option: StreamedProtagonistOption, index: number): Choice {
+  const action = option.action?.trim() || '';
   return {
     id: `choice-${index + 1}`,
-    text: option.title?.trim() || option.action?.trim() || `行动 ${index + 1}`,
+    text: option.title?.trim() || action || `行动 ${index + 1}`,
+    action,
     previewText: option.motivationAndRisk?.trim() || option.motivation_and_risk?.trim(),
     disabled: false,
     costHints: {

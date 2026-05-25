@@ -17,8 +17,8 @@ impl ProtagonistDecisionState {
         &self.choices
     }
 
-    pub fn first_choice_id(&self) -> Option<&str> {
-        self.choices.first().map(|choice| choice.id.as_str())
+    pub fn first_choice_action(&self) -> Option<&str> {
+        self.choices.first().map(|choice| choice.option.action.as_str())
     }
 
     pub fn replace_with_options(&mut self, options: ProtagonistOptions) {
@@ -37,18 +37,17 @@ impl ProtagonistDecisionState {
         self.choices.clear();
     }
 
-    pub fn commit_selection(&mut self, selection: &str) -> String {
-        let action = self.find_action(selection).unwrap_or(selection).to_string();
+    pub fn commit_action(&mut self, action: &str) -> String {
+        let action = action.trim().to_string();
         self.choices.clear();
         self.committed_action = action.clone();
         action
     }
 
-    pub fn find_action(&self, choice_id: &str) -> Option<&str> {
+    pub fn has_action(&self, action: &str) -> bool {
         self.choices
             .iter()
-            .find(|choice| choice.id == choice_id)
-            .map(|choice| choice.option.action.as_str())
+            .any(|choice| choice.option.action == action)
     }
 }
 
@@ -85,6 +84,22 @@ pub struct ProtagonistOption {
     pub title: String,
     pub action: String,
     pub motivation_and_risk: String,
+}
+
+/// 玩家提交主角行动时携带的输入类型。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlayerActionType {
+    SelectedOption,
+    FreeText,
+}
+
+/// 玩家提交到 ECS 的主角行动输入。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlayerActionInput {
+    #[serde(rename = "type")]
+    pub r#type: PlayerActionType,
+    pub action: String,
 }
 
 /// 可供外部玩家提交的主角候选项。

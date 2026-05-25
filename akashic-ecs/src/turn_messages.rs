@@ -1,10 +1,10 @@
 use bevy_ecs::{entity::Entity, message::Message};
 
-use crate::resources::turn_state::TurnPhase;
+use crate::resources::{protagonist_action::PlayerActionInput, turn_state::TurnPhase};
 
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
-    SubmitPlayerChoice { turn_id: u64, choice_id: String },
+    SubmitPlayerAction { turn_id: u64, input: PlayerActionInput },
 }
 
 #[derive(Message, Debug, Clone)]
