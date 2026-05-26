@@ -96,6 +96,7 @@ dependencies = [
  "axum",
  "chrono",
  "futures",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",

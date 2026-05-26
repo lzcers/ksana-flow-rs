@@ -1,3 +1,4 @@
+use agent::agent::Context;
 use bevy_ecs::{
     message::{Messages, message_update_system},
     prelude::*,
@@ -5,7 +6,7 @@ use bevy_ecs::{
 };
 use serde::Serialize;
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::{broadcast, mpsc, oneshot},
     time::{Duration, sleep},
 };
 
@@ -17,7 +18,9 @@ use crate::{
     resources::{
         export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
         player_input::{PlayerInbox, PlayerInputConfig},
-        protagonist_action::{PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState},
+        protagonist_action::{
+            PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState,
+        },
         task_manager::TaskManager,
         turn_state::{TurnPhase, TurnState},
         world_snapshot::WorldSnapshot,
@@ -51,6 +54,27 @@ pub struct Session {
     pub choices: Vec<PendingProtagonistChoice>, // 待处理选择
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionArchiveState {
+    pub world_profile: String,
+    pub protagonist_profile: String,
+    pub phase: TurnPhase,
+    pub turn_index: u64,
+    pub active_turn_id: u64,
+    pub world_snapshot: WorldSnapshot,
+    pub committed_action: String,
+    pub choices: Vec<PendingProtagonistChoice>,
+    pub fate_weaver_context: Context,
+    pub upper_narrator_context: Context,
+    pub protagonist_context: Context,
+}
+
+#[derive(Resource, Debug, Clone)]
+struct SessionProfiles {
+    world_profile: String,
+    protagonist_profile: String,
+}
+
 pub struct AkashicSessionEngine {
     command_tx: mpsc::UnboundedSender<EngineCommand>,
     export_handle: ExportHandle,
@@ -70,6 +94,17 @@ impl AkashicSessionEngine {
             command_tx,
             export_handle,
         }
+    }
+
+    pub fn from_archive_state(state: SessionArchiveState) -> Result<Self, String> {
+        validate_archive_state(&state)?;
+        let (world, export_handle) = build_world_from_archive(state);
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        SessionRuntime::spawn(world, build_schedule(), command_rx);
+        Ok(Self {
+            command_tx,
+            export_handle,
+        })
     }
 
     // 获取当前会话状态
@@ -96,6 +131,23 @@ impl AkashicSessionEngine {
             .send(EngineCommand::SubmitPlayerAction { input })
             .map_err(|_| "会话运行时已停止，无法提交行动".to_string())
     }
+
+    pub async fn export_archive_state(&self) -> Result<SessionArchiveState, String> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx
+            .send(EngineCommand::ExportArchiveState { tx })
+            .map_err(|_| "会话运行时已停止，无法导出存档".to_string())?;
+        rx.await
+            .map_err(|_| "会话运行时已停止，无法接收存档导出结果".to_string())?
+    }
+
+    pub async fn wait_until_ready(&self) -> Result<(), String> {
+        let mut snapshot_rx = self.export_handle.snapshot_receiver();
+        snapshot_rx
+            .changed()
+            .await
+            .map_err(|_| "会话运行时已停止，无法等待初始化完成".to_string())
+    }
 }
 
 impl Session {
@@ -116,7 +168,12 @@ impl Session {
 
 enum EngineCommand {
     StartNextTurn,
-    SubmitPlayerAction { input: PlayerActionInput },
+    SubmitPlayerAction {
+        input: PlayerActionInput,
+    },
+    ExportArchiveState {
+        tx: oneshot::Sender<Result<SessionArchiveState, String>>,
+    },
 }
 
 struct SessionRuntime {
@@ -140,13 +197,28 @@ impl SessionRuntime {
             }
 
             while let Some(command) = runtime.command_rx.recv().await {
-                if let Err(err) = runtime.apply_command(command) {
-                    eprintln!("[akashic-session-runtime] 命令执行失败: {err}");
-                    break;
-                }
-                if let Err(err) = runtime.drive_until_stable().await {
-                    eprintln!("[akashic-session-runtime] 会话推进失败: {err}");
-                    break;
+                match command {
+                    EngineCommand::ExportArchiveState { tx } => {
+                        let _ = tx.send(runtime.export_archive_state());
+                    }
+                    EngineCommand::StartNextTurn => {
+                        runtime.send_turn_control_command(TurnControl::StartNextTurn);
+                        if let Err(err) = runtime.drive_until_stable().await {
+                            eprintln!("[akashic-session-runtime] 会话推进失败: {err}");
+                            break;
+                        }
+                    }
+                    EngineCommand::SubmitPlayerAction { input } => {
+                        let turn_id = runtime.world.resource::<TurnState>().active_turn_id;
+                        runtime
+                            .world
+                            .resource_mut::<PlayerInbox>()
+                            .push(PlayerCommand::SubmitPlayerAction { turn_id, input });
+                        if let Err(err) = runtime.drive_until_stable().await {
+                            eprintln!("[akashic-session-runtime] 会话推进失败: {err}");
+                            break;
+                        }
+                    }
                 }
             }
         });
@@ -161,21 +233,6 @@ impl SessionRuntime {
             }
             sleep(DEFAULT_RUNTIME_TICK_INTERVAL).await;
         }
-    }
-
-    fn apply_command(&mut self, command: EngineCommand) -> Result<(), String> {
-        match command {
-            EngineCommand::StartNextTurn => {
-                self.send_turn_control_command(TurnControl::StartNextTurn);
-            }
-            EngineCommand::SubmitPlayerAction { input } => {
-                let turn_id = self.world.resource::<TurnState>().active_turn_id;
-                self.world
-                    .resource_mut::<PlayerInbox>()
-                    .push(PlayerCommand::SubmitPlayerAction { turn_id, input });
-            }
-        }
-        Ok(())
     }
 
     fn run_one_frame(&mut self) -> Result<(), String> {
@@ -195,6 +252,73 @@ impl SessionRuntime {
         self.world.resource::<ExportState>().current_snapshot()
     }
 
+    fn export_archive_state(&mut self) -> Result<SessionArchiveState, String> {
+        let world = &mut self.world;
+        let snapshot = {
+            let export_state = world.resource::<ExportState>();
+            Session::from_snapshot(export_state.current_snapshot())
+        };
+        if !is_stable_stop_point(&snapshot) {
+            return Err("当前会话不在稳定态，无法创建存档".to_string());
+        }
+
+        let profiles = world.resource::<SessionProfiles>().clone();
+        let (phase, turn_index, active_turn_id) = {
+            let turn_state = world.resource::<TurnState>();
+            (
+                turn_state.phase,
+                turn_state.turn_index,
+                turn_state.active_turn_id,
+            )
+        };
+        let world_snapshot = world.resource::<WorldSnapshot>().clone();
+        let (committed_action, choices) = {
+            let protagonist_decision = world.resource::<ProtagonistDecisionState>();
+            (
+                protagonist_decision.committed_action().to_string(),
+                protagonist_decision.choices().to_vec(),
+            )
+        };
+        let fate_weaver_context = {
+            let mut query = world.query::<&FateWeaver>();
+            query
+                .single(world)
+                .map_err(|_| "未找到 FateWeaver 实体，无法导出存档".to_string())?
+                .context()
+                .clone()
+        };
+        let upper_narrator_context = {
+            let mut query = world.query::<&UpperNarrator>();
+            query
+                .single(world)
+                .map_err(|_| "未找到 UpperNarrator 实体，无法导出存档".to_string())?
+                .context()
+                .clone()
+        };
+        let protagonist_context = {
+            let mut query = world.query::<&Protagonist>();
+            query
+                .single(world)
+                .map_err(|_| "未找到 Protagonist 实体，无法导出存档".to_string())?
+                .context()
+                .clone()
+        };
+
+        Ok(SessionArchiveState {
+            world_profile: profiles.world_profile,
+            protagonist_profile: profiles.protagonist_profile,
+            phase,
+            turn_index,
+            active_turn_id,
+            world_snapshot,
+            committed_action,
+            choices,
+            fate_weaver_context,
+            upper_narrator_context,
+            protagonist_context,
+        })
+    }
+
     fn send_turn_control_command(&mut self, control: TurnControl) {
         self.world
             .resource_mut::<Messages<TurnControl>>()
@@ -207,6 +331,10 @@ fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, Export
 
     world.init_resource::<WorldSnapshot>();
     world.init_resource::<TurnState>();
+    world.insert_resource(SessionProfiles {
+        world_profile: world_profile.to_string(),
+        protagonist_profile: protagonist_profile.to_string(),
+    });
     world.init_resource::<PlayerInbox>();
     world.insert_resource(PlayerInputConfig::wait_for_user());
     world.init_resource::<ProtagonistDecisionState>();
@@ -219,6 +347,38 @@ fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, Export
     world.spawn(FateWeaver::new(world_profile, protagonist_profile));
     world.spawn(UpperNarrator::new(world_profile, protagonist_profile));
     world.spawn(Protagonist::new(world_profile, protagonist_profile));
+
+    (world, export_handle)
+}
+
+fn build_world_from_archive(state: SessionArchiveState) -> (World, ExportHandle) {
+    let mut world = World::new();
+
+    world.insert_resource(state.world_snapshot);
+    world.insert_resource(TurnState {
+        phase: state.phase,
+        turn_index: state.turn_index,
+        active_turn_id: state.active_turn_id,
+    });
+    world.insert_resource(SessionProfiles {
+        world_profile: state.world_profile,
+        protagonist_profile: state.protagonist_profile,
+    });
+    world.init_resource::<PlayerInbox>();
+    world.insert_resource(PlayerInputConfig::wait_for_user());
+    world.insert_resource(ProtagonistDecisionState::from_archive(
+        state.committed_action,
+        state.choices,
+    ));
+    world.init_resource::<Messages<TurnEvent>>();
+    world.init_resource::<Messages<TurnControl>>();
+    world.insert_resource(TaskManager::new(build_chat_model()));
+    let (export_state, export_handle) = ExportState::new_with_handle();
+    world.insert_resource(export_state);
+
+    world.spawn(FateWeaver::from_context(state.fate_weaver_context));
+    world.spawn(UpperNarrator::from_context(state.upper_narrator_context));
+    world.spawn(Protagonist::from_context(state.protagonist_context));
 
     (world, export_handle)
 }
@@ -249,4 +409,20 @@ fn is_stable_stop_point(snapshot: &Session) -> bool {
         snapshot.phase,
         TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete
     ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
+}
+
+fn validate_archive_state(state: &SessionArchiveState) -> Result<(), String> {
+    let stable_phase = matches!(
+        state.phase,
+        TurnPhase::Idle | TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete
+    );
+    if !stable_phase {
+        return Err("归档会话不在可恢复的稳定态".to_string());
+    }
+
+    if state.active_turn_id < state.turn_index {
+        return Err("归档会话的 active_turn_id 不能小于 turn_index".to_string());
+    }
+
+    Ok(())
 }

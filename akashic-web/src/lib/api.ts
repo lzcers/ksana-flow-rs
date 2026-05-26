@@ -44,6 +44,26 @@ export interface RuntimeStateView {
   latestProtagonistAction: string;
 }
 
+export interface SessionWorldState {
+  round: number;
+  sceneTitle: string;
+  timeAbsolute: string;
+  timeRelative?: string | null;
+  locationName: string;
+  locationExits: string[];
+  locationStatus: string;
+  description: string;
+  currentEvent: string;
+  newInfo: string[];
+  innerConflict: string;
+  hardAnchors: string[];
+  pace: string;
+  atmosphere: string;
+  focalPoint: string;
+  protagonistCondition: string;
+  protagonistKnownSecrets: string[];
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
@@ -52,6 +72,22 @@ export interface ApiResponse<T> {
 export interface CreateGameSessionData {
   sessionId: string;
   createdAt: string;
+}
+
+export interface CreateSaveSlotInput {
+  title?: string;
+}
+
+export interface CreateSaveSlotData {
+  slotId: string;
+  sessionId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoadGameSessionInput {
+  slotId: string;
 }
 
 export interface GeneratedProfiles {
@@ -92,6 +128,20 @@ export interface TaskView {
   chunks: string[];
   output: string | null;
   error: string | null;
+}
+
+export interface GameSessionWorldStateData {
+  sessionId: string;
+  status: string;
+  phase: string;
+  turnIndex: number;
+  activeTurnId: number;
+  worldState: SessionWorldState;
+  currentTask: TaskView | null;
+  tasks: TaskView[];
+  latestNarration: string;
+  currentProtagonistAction: string;
+  choices: PendingProtagonistChoice[];
 }
 
 export type GameSessionControlInput =
@@ -179,6 +229,20 @@ export function generateProfiles(character: Character, world: World) {
 
 export function createGameSession(input: CreateGameSessionInput) {
   return requestJson<CreateGameSessionData>('/api/game-sessions/create', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function loadGameSession(input: LoadGameSessionInput) {
+  return requestJson<GameSessionWorldStateData>('/api/game-sessions/load', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function createGameSaveSlot(sessionId: string, input: CreateSaveSlotInput) {
+  return requestJson<CreateSaveSlotData>(`/api/game-sessions/${sessionId}/save`, {
     method: 'POST',
     body: JSON.stringify(input),
   });

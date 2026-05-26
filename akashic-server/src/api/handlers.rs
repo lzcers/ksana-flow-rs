@@ -21,8 +21,9 @@ use crate::{error::AppError, state::AppState};
 
 use super::dto::{
     ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
-    CreateGameSessionRequest, GameSessionWorldStateData, GenerateProfilesData,
-    GenerateProfilesRequest, SessionPath,
+    CreateGameSessionRequest, CreateSaveSlotData, CreateSaveSlotRequest,
+    GameSessionWorldStateData, GenerateProfilesData, GenerateProfilesRequest, SessionPath,
+    LoadGameSessionRequest,
 };
 
 type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
@@ -88,6 +89,30 @@ pub async fn create_game_session(
     Json(request): Json<CreateGameSessionRequest>,
 ) -> ApiResult<CreateGameSessionData> {
     let session = state.create_game_session(request).await?;
+    Ok(Json(ApiResponse::ok(session)))
+}
+
+pub async fn create_save_slot(
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
+    Json(request): Json<CreateSaveSlotRequest>,
+) -> ApiResult<CreateSaveSlotData> {
+    let saved = state
+        .create_save_slot(&path.session_id, request.title.as_deref())
+        .await?;
+    Ok(Json(ApiResponse::ok(saved)))
+}
+
+pub async fn load_game_session(
+    State(state): State<AppState>,
+    Json(request): Json<LoadGameSessionRequest>,
+) -> ApiResult<GameSessionWorldStateData> {
+    let slot_id = request.slot_id.trim();
+    if slot_id.is_empty() {
+        return Err(AppError::bad_request("`slotId` 不能为空。"));
+    }
+
+    let session = state.load_game_session_from_slot(slot_id).await?;
     Ok(Json(ApiResponse::ok(session)))
 }
 

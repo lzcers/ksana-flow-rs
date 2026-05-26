@@ -1,9 +1,10 @@
-import React from 'react';
-import { Play, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { Library, FolderOpen, Play, Sparkles, TriangleAlert } from 'lucide-react';
 import {
   PageTitle,
   PrimaryButton,
   ScreenShell,
+  SecondaryButton,
   SectionCard,
   StoryFrame,
   StatusPill,
@@ -13,10 +14,22 @@ import { useGameUIStore } from '../store/gameStore';
 const LobbyPage: React.FC = () => {
   const setGameState = useGameUIStore((state) => state.setGameState);
   const resetGame = useGameUIStore((state) => state.resetGame);
+  const loadSave = useGameUIStore((state) => state.loadSave);
+  const isLoading = useGameUIStore((state) => state.isLoading);
+  const error = useGameUIStore((state) => state.error);
+  const [slotId, setSlotId] = useState('');
 
   const handleStart = () => {
     resetGame();
     setGameState('creation');
+  };
+
+  const handleLoad = async () => {
+    try {
+      await loadSave(slotId);
+    } catch {
+      // Store already exposes the failure reason.
+    }
   };
 
   return (
@@ -38,16 +51,55 @@ const LobbyPage: React.FC = () => {
               title="幻世 · 人生回响"
               subtitle="开始你的命运"
             />
+            {error ? (
+              <StatusPill
+                icon={TriangleAlert}
+                className="border-[#7f3b3b]/50 bg-[#2a1216]/85 text-[#ffd7d7]"
+                iconClassName="text-[#ff9b9b]"
+              >
+                {error}
+              </StatusPill>
+            ) : null}
             <SectionCard>
-              <p className="text-base leading-8 text-[#d3d9e5]">
-                你想开启怎样的人生？
-              </p>
+              <div className="space-y-4">
+                <p className="text-base leading-8 text-[#d3d9e5]">
+                  你想开启怎样的人生？
+                </p>
+                <div className="space-y-3">
+                  <p className="text-sm text-[#9ca7be]">
+                    或者输入一个存档槽 ID，直接回到上一次命运停驻之处。
+                  </p>
+                  <input
+                    type="text"
+                    value={slotId}
+                    onChange={(event) => setSlotId(event.target.value)}
+                    className="akashic-field"
+                    placeholder="例如：slot-main"
+                  />
+                </div>
+              </div>
             </SectionCard>
-            <div className="flex">
-              <PrimaryButton onClick={handleStart} className="flex-1">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <PrimaryButton onClick={handleStart} disabled={isLoading} className="flex-1">
                 <Play className="h-4 w-4" />
                 开启新人生
               </PrimaryButton>
+              <SecondaryButton
+                onClick={() => setGameState('archive_list')}
+                disabled={isLoading}
+                className="flex-1"
+              >
+                <Library className="h-4 w-4" />
+                存档列表
+              </SecondaryButton>
+              <SecondaryButton
+                onClick={handleLoad}
+                disabled={isLoading || !slotId.trim()}
+                className="flex-1"
+              >
+                <FolderOpen className="h-4 w-4" />
+                {isLoading ? '读取中...' : '读取存档'}
+              </SecondaryButton>
             </div>
           </div>
 

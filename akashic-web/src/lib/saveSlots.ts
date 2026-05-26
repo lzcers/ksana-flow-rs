@@ -1,0 +1,48 @@
+export interface StoredSaveSlot {
+  slotId: string;
+  sessionId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const SAVE_SLOTS_STORAGE_KEY = 'akashic-save-slots';
+
+function canUseLocalStorage() {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+export function readStoredSaveSlots(): StoredSaveSlot[] {
+  if (!canUseLocalStorage()) {
+    return [];
+  }
+
+  const raw = window.localStorage.getItem(SAVE_SLOTS_STORAGE_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredSaveSlot[];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((item) => item && typeof item.slotId === 'string')
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  } catch {
+    return [];
+  }
+}
+
+export function upsertStoredSaveSlot(slot: StoredSaveSlot) {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  const nextSlots = [
+    slot,
+    ...readStoredSaveSlots().filter((item) => item.slotId !== slot.slotId),
+  ];
+  window.localStorage.setItem(SAVE_SLOTS_STORAGE_KEY, JSON.stringify(nextSlots));
+}

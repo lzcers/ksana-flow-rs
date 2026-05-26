@@ -37,6 +37,10 @@ impl FateWeaver {
         Self { context }
     }
 
+    pub fn from_context(context: Context) -> Self {
+        Self { context }
+    }
+
     pub fn context(&self) -> &Context {
         &self.context
     }

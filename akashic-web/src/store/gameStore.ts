@@ -1,11 +1,18 @@
 import { create } from 'zustand';
 import {
   createGameSession,
+  createGameSaveSlot,
   generateProfiles,
+  loadGameSession,
   openGameSessionStream,
   submitGameSessionControl,
 } from '../lib/api';
-import type { Choice, GeneratedProfiles, PlayerActionInput, TaskView } from '../lib/api';
+import type {
+  Choice,
+  GameSessionWorldStateData,
+  PlayerActionInput,
+  TaskView,
+} from '../lib/api';
 import {
   createGameUIStore,
   type GameState,
@@ -27,7 +34,9 @@ import {
   taskLabel,
   taskRawContent,
   taskText,
+  toChoiceFromSession,
 } from './gameStoreHelpers';
+import { upsertStoredSaveSlot } from '../lib/saveSlots';
 
 type RoundChoicesStatus = 'idle' | 'loading' | 'ready';
 
@@ -165,6 +174,110 @@ function resetUIState(): GameUIState {
     preparedProfiles: null,
     error: null,
   };
+}
+
+function effectiveDisplayRound(session: GameSessionWorldStateData): number {
+  if (session.phase === 'awaiting_player_choice') {
+    return Math.max(session.activeTurnId, 1);
+  }
+
+  return Math.max(session.turnIndex, session.activeTurnId, 1);
+}
+
+function latestHistoryFromSession(session: GameSessionWorldStateData): string {
+  return session.latestNarration.trim()
+    || session.worldState.description.trim()
+    || STREAM_PLACEHOLDER_TEXT;
+}
+
+function latestBroadcastItemsFromSession(session: GameSessionWorldStateData): string[] {
+  const nextItems = session.worldState.newInfo
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (nextItems.length > 0) {
+    return nextItems;
+  }
+
+  const fallback = session.worldState.currentEvent.trim() || session.worldState.description.trim();
+  return fallback ? [fallback] : [];
+}
+
+function stateViewFromSession(session: GameSessionWorldStateData): GameUIState['stateView'] {
+  const latestBroadcastItems = latestBroadcastItemsFromSession(session);
+  return {
+    gameState: 'playing',
+    phase: session.phase,
+    turnIndex: session.turnIndex,
+    activeTurnId: session.activeTurnId,
+    currentLocation: session.worldState.locationName || '命运现场',
+    currentScene: session.worldState.sceneTitle || '命运回响',
+    protagonistState: session.worldState.protagonistCondition || '命运仍在酝酿',
+    npcsState: session.worldState.currentEvent || '诸多回响正在汇聚',
+    latestHistory: latestHistoryFromSession(session),
+    latestBroadcastSummary:
+      session.worldState.currentEvent
+      || session.worldState.description
+      || '会话已恢复',
+    latestBroadcastItems,
+    latestProtagonistAction: session.currentProtagonistAction || '尚未做出选择',
+  };
+}
+
+function internalStateFromSession(session: GameSessionWorldStateData): GameInternalState {
+  const round = effectiveDisplayRound(session);
+  return {
+    sessionId: session.sessionId,
+    turnIndex: session.turnIndex,
+    displayRound: round,
+    roundStates: {
+      [round]: createRoundState(round, {
+        narrationText: latestHistoryFromSession(session),
+        narrationStatus: session.currentTask?.kind === 'narration' ? session.currentTask.status : null,
+        choices: session.choices.map(toChoiceFromSession),
+        choicesStatus: session.choices.length > 0 ? 'ready' : 'idle',
+        selectedChoiceText: null,
+        isAwaitingNarration: false,
+      }),
+    },
+  };
+}
+
+function connectSessionStream(sessionId: string) {
+  activeStreamSessionId = sessionId;
+  activeSessionStream = openGameSessionStream(
+    sessionId,
+    {
+      onTaskUpdated: (event, lastEventId) => {
+        if (activeStreamSessionId !== sessionId) {
+          return;
+        }
+        lastStreamEventId = lastEventId || lastStreamEventId;
+        if (
+          event.status === 'pending'
+          && (event.kind === 'narration' || event.kind === 'protagonist_action')
+        ) {
+          const internalState = useGameInternalStore.getState();
+          const stateView = useGameUIStore.getState().stateView;
+          const boundRound = Math.max(
+            internalState.displayRound || stateView?.activeTurnId || stateView?.turnIndex || 1,
+            1,
+          );
+          activeStreamTaskRounds.set(event.entity, boundRound);
+        }
+        const nextTask = applyTaskUpdate(activeStreamTasks, event);
+        applyStreamTaskToStores(nextTask, activeStreamTaskRounds.get(event.entity));
+      },
+      onError: () => {
+        if (activeStreamSessionId !== sessionId) {
+          return;
+        }
+        useGameUIStore.setState({
+          error: '叙事流连接出现波动，正在尝试恢复...',
+        });
+      },
+    },
+    lastStreamEventId,
+  );
 }
 
 function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
@@ -490,39 +603,7 @@ const createGameUIActions = (
         preparedProfiles: null,
       });
 
-      activeStreamSessionId = created.sessionId;
-
-      activeSessionStream = openGameSessionStream(
-        created.sessionId,
-        {
-          onTaskUpdated: (event, lastEventId) => {
-            if (activeStreamSessionId !== created.sessionId) {
-              return;
-            }
-            lastStreamEventId = lastEventId || lastStreamEventId;
-            if (
-              event.status === 'pending'
-              && (event.kind === 'narration' || event.kind === 'protagonist_action')
-            ) {
-              const internalState = useGameInternalStore.getState();
-              const stateView = useGameUIStore.getState().stateView;
-              const boundRound = Math.max(internalState.displayRound || stateView?.turnIndex || 1, 1);
-              activeStreamTaskRounds.set(event.entity, boundRound);
-            }
-            const nextTask = applyTaskUpdate(activeStreamTasks, event);
-            applyStreamTaskToStores(nextTask, activeStreamTaskRounds.get(event.entity));
-          },
-          onError: () => {
-            if (activeStreamSessionId !== created.sessionId) {
-              return;
-            }
-            set({
-              error: '叙事流连接出现波动，正在尝试恢复...',
-            });
-          },
-        },
-        lastStreamEventId,
-      );
+      connectSessionStream(created.sessionId);
 
       await submitGameSessionControl(created.sessionId, {
         control: { type: 'continue' },
@@ -640,11 +721,81 @@ const createGameUIActions = (
   previewChoice: async (_choiceId) => {
     throw new Error('演示直觉点已耗尽。');
   },
-  createSave: async (_title) => {
-    throw new Error('当前没有可保存的演示旅程。');
-  },
-  loadSave: async (_saveId) => {
+  createSave: async (title) => {
+    const { sessionId } = useGameInternalStore.getState();
+    if (!sessionId) {
+      throw new Error('当前没有可保存的演示旅程。');
+    }
 
+    const normalizedTitle = title?.trim();
+    set({
+      error: null,
+      isLoading: true,
+    });
+
+    try {
+      const saved = await createGameSaveSlot(sessionId, {
+        title: normalizedTitle || undefined,
+      });
+      upsertStoredSaveSlot({
+        slotId: saved.slotId,
+        sessionId: saved.sessionId,
+        title: saved.title,
+        createdAt: saved.createdAt,
+        updatedAt: saved.updatedAt,
+      });
+      set({
+        isLoading: false,
+      });
+      return saved.slotId;
+    } catch (error) {
+      set({
+        isLoading: false,
+        error: error instanceof Error ? error.message : '存档失败。',
+      });
+      throw error;
+    }
+  },
+  loadSave: async (saveId) => {
+    const slotId = saveId.trim();
+    if (!slotId) {
+      throw new Error('存档槽 ID 不能为空。');
+    }
+
+    closeActiveSessionStream();
+    clearStartupStageTimer();
+    useGameInternalStore.setState({
+      ...initialInternalState,
+    });
+    set({
+      error: null,
+      isLoading: true,
+    });
+
+    try {
+      const loaded = await loadGameSession({ slotId });
+      useGameInternalStore.setState(internalStateFromSession(loaded));
+      set({
+        gameState: 'playing',
+        stateView: stateViewFromSession(loaded),
+        isLoading: false,
+        startupStage: 'idle',
+        preparedProfiles: null,
+        error: null,
+      });
+      connectSessionStream(loaded.sessionId);
+    } catch (error) {
+      closeActiveSessionStream();
+      useGameInternalStore.setState({
+        ...initialInternalState,
+      });
+      set({
+        ...resetUIState(),
+        gameState: 'lobby',
+        error: error instanceof Error ? error.message : '读取存档失败。',
+      });
+      throw error;
+    }
   },
   resetGame: () => {
     closeActiveSessionStream();

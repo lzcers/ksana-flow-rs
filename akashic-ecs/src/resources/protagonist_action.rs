@@ -9,6 +9,13 @@ pub struct ProtagonistDecisionState {
 }
 
 impl ProtagonistDecisionState {
+    pub fn from_archive(committed_action: String, choices: Vec<PendingProtagonistChoice>) -> Self {
+        Self {
+            committed_action,
+            choices,
+        }
+    }
+
     pub fn committed_action(&self) -> &str {
         &self.committed_action
     }

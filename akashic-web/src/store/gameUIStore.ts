@@ -8,7 +8,7 @@ import type {
   World,
 } from '../lib/api';
 
-export type GameState = 'lobby' | 'creation' | 'generating' | 'playing';
+export type GameState = 'lobby' | 'archive_list' | 'creation' | 'generating' | 'playing';
 export type StartupStage =
   | 'idle'
   | 'generating_world'
