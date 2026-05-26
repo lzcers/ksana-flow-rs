@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FolderOpen, Library, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, FolderOpen, Library, Trash2, TriangleAlert } from 'lucide-react';
 import {
   PageTitle,
   PrimaryButton,
@@ -9,7 +9,11 @@ import {
   StoryFrame,
   StatusPill,
 } from '../components/AkashicUI';
-import { readStoredSaveSlots, type StoredSaveSlot } from '../lib/saveSlots';
+import {
+  readStoredSaveSlots,
+  removeStoredSaveSlot,
+  type StoredSaveSlot,
+} from '../lib/saveSlots';
 import { useGameUIStore } from '../store/gameStore';
 
 function formatTimeLabel(value: string) {
@@ -44,6 +48,16 @@ const ArchiveListPage: React.FC = () => {
     } catch {
       // Store already exposes the failure reason.
     }
+  };
+
+  const handleDelete = (slot: StoredSaveSlot) => {
+    const confirmed = window.confirm(`确认删除本地存档索引“${slot.title || slot.slotId}”吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    removeStoredSaveSlot(slot.slotId);
+    setSlots(readStoredSaveSlots());
   };
 
   return (
@@ -108,14 +122,25 @@ const ArchiveListPage: React.FC = () => {
                       创建于 {formatTimeLabel(slot.createdAt)}
                     </p>
                   </div>
-                  <PrimaryButton
-                    onClick={() => handleLoad(slot.slotId)}
-                    disabled={isLoading}
-                    className="w-full"
-                  >
-                    <FolderOpen className="h-4 w-4" />
-                    {isLoading ? '读取中...' : '读取此存档'}
-                  </PrimaryButton>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <PrimaryButton
+                      onClick={() => handleLoad(slot.slotId)}
+                      disabled={isLoading}
+                      className="flex-1"
+                    >
+                      <FolderOpen className="h-4 w-4" />
+                      {isLoading ? '读取中...' : '读取此存档'}
+                    </PrimaryButton>
+                    <SecondaryButton
+                      type="button"
+                      onClick={() => handleDelete(slot)}
+                      disabled={isLoading}
+                      className="flex-1 text-[#ffb6b6] hover:border-[#7f3b3b]/60 hover:bg-[#2a1216]/85 hover:text-[#ffd7d7]"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      删除索引
+                    </SecondaryButton>
+                  </div>
                 </SectionCard>
               ))}
             </div>

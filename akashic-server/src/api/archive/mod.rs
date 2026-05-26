@@ -16,7 +16,7 @@ pub async fn gen_archive_payload(
         title: archive_title(
             title,
             &archive_state.world_snapshot.scene_title,
-            archive_state.turn_index,
+            archive_state.active_turn_id,
         ),
         world_profile: archive_state.world_profile,
         protagonist_profile: archive_state.protagonist_profile,
@@ -34,20 +34,6 @@ pub async fn gen_archive_payload(
             choices: archive_state.choices,
         },
     })
-}
-
-fn archive_title(input: Option<&str>, scene_title: &str, turn_index: u64) -> String {
-    let provided = input.unwrap_or_default().trim();
-    if !provided.is_empty() {
-        return provided.to_string();
-    }
-
-    let scene = scene_title.trim();
-    if !scene.is_empty() {
-        return format!("第{}轮：{}", turn_index, scene);
-    }
-
-    format!("第{}轮存档", turn_index)
 }
 
 pub fn load_archive_payload(
@@ -68,6 +54,19 @@ pub fn load_archive_payload(
     })
 }
 
+fn archive_title(input: Option<&str>, scene_title: &str, turn_index: u64) -> String {
+    let provided = input.unwrap_or_default().trim();
+    if !provided.is_empty() {
+        return provided.to_string();
+    }
+
+    let scene = scene_title.trim();
+    if !scene.is_empty() {
+        return format!("第{}轮：{}", turn_index, scene);
+    }
+
+    format!("第{}轮存档", turn_index)
+}
 #[cfg(test)]
 mod tests {
     use super::*;

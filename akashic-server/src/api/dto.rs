@@ -2,7 +2,7 @@ use akashic_ecs::resources::{
     export::TaskView,
     protagonist_action::{PendingProtagonistChoice, PlayerActionInput},
     turn_state::TurnPhase,
-    world_snapshot::WorldSnapshot,
+    world_snapshot::{ItemState, NpcState, OngoingEvent, WorldSnapshot},
 };
 use serde::{Deserialize, Serialize};
 
@@ -96,12 +96,132 @@ pub struct GameSessionWorldStateData {
     pub phase: TurnPhase,
     pub turn_index: u64,
     pub active_turn_id: u64,
-    pub world_state: WorldSnapshot,
+    pub world_state: WorldStateData,
     pub current_task: Option<TaskView>,
     pub tasks: Vec<TaskView>,
     pub latest_narration: String,
     pub current_protagonist_action: String,
     pub choices: Vec<PendingProtagonistChoice>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorldStateData {
+    pub round: u64,
+    pub scene_title: String,
+    pub time_absolute: String,
+    pub time_relative: Option<String>,
+    pub location_name: String,
+    pub location_exits: Vec<String>,
+    pub location_status: String,
+    pub description: String,
+    pub current_event: String,
+    pub new_info: Vec<String>,
+    pub inner_conflict: String,
+    pub hard_anchors: Vec<String>,
+    pub pace: String,
+    pub atmosphere: String,
+    pub focal_point: String,
+    pub protagonist_condition: String,
+    pub protagonist_known_secrets: Vec<String>,
+    pub npcs: Vec<NpcStateData>,
+    pub items: Vec<ItemStateData>,
+    pub events_in_progress: Vec<OngoingEventData>,
+    pub unsolved_threads: Vec<String>,
+    pub pacing_note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NpcStateData {
+    pub name: String,
+    pub location: String,
+    pub mood: String,
+    pub attitude: String,
+    pub goal: String,
+    pub secrets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemStateData {
+    pub name: String,
+    pub location: String,
+    pub status: String,
+    pub awareness: String,
+    pub relevance: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OngoingEventData {
+    pub name: String,
+    pub status: String,
+    pub escalation_trigger: String,
+}
+
+impl From<WorldSnapshot> for WorldStateData {
+    fn from(value: WorldSnapshot) -> Self {
+        Self {
+            round: value.round,
+            scene_title: value.scene_title,
+            time_absolute: value.time_absolute,
+            time_relative: value.time_relative,
+            location_name: value.location_name,
+            location_exits: value.location_exits,
+            location_status: value.location_status,
+            description: value.description,
+            current_event: value.current_event,
+            new_info: value.new_info,
+            inner_conflict: value.inner_conflict,
+            hard_anchors: value.hard_anchors,
+            pace: value.pace,
+            atmosphere: value.atmosphere,
+            focal_point: value.focal_point,
+            protagonist_condition: value.protagonist_condition,
+            protagonist_known_secrets: value.protagonist_known_secrets,
+            npcs: value.npcs.into_iter().map(Into::into).collect(),
+            items: value.items.into_iter().map(Into::into).collect(),
+            events_in_progress: value.events_in_progress.into_iter().map(Into::into).collect(),
+            unsolved_threads: value.unsolved_threads,
+            pacing_note: value.pacing_note,
+        }
+    }
+}
+
+impl From<NpcState> for NpcStateData {
+    fn from(value: NpcState) -> Self {
+        Self {
+            name: value.name,
+            location: value.location,
+            mood: value.mood,
+            attitude: value.attitude,
+            goal: value.goal,
+            secrets: value.secrets,
+        }
+    }
+}
+
+impl From<ItemState> for ItemStateData {
+    fn from(value: ItemState) -> Self {
+        Self {
+            name: value.name,
+            location: value.location,
+            status: value.status,
+            awareness: value.awareness,
+            relevance: value.relevance,
+        }
+    }
+}
+
+impl From<OngoingEvent> for OngoingEventData {
+    fn from(value: OngoingEvent) -> Self {
+        Self {
+            name: value.name,
+            status: value.status,
+            escalation_trigger: value.escalation_trigger,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -46,3 +46,12 @@ export function upsertStoredSaveSlot(slot: StoredSaveSlot) {
   ];
   window.localStorage.setItem(SAVE_SLOTS_STORAGE_KEY, JSON.stringify(nextSlots));
 }
+
+export function removeStoredSaveSlot(slotId: string) {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  const nextSlots = readStoredSaveSlots().filter((item) => item.slotId !== slotId);
+  window.localStorage.setItem(SAVE_SLOTS_STORAGE_KEY, JSON.stringify(nextSlots));
+}

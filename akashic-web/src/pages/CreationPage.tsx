@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, Dices, TriangleAlert } from 'lucide-react';
+import { ChevronDown, TriangleAlert } from 'lucide-react';
 import { useGameUIStore } from '../store/gameStore';
 import {
   FieldLabel,
@@ -38,21 +38,6 @@ const CreationPage: React.FC = () => {
     { key: 'altruism', label: '利他', value: character.traits.altruism },
   ] as const;
 
-  const handleRandomize = () => {
-    updateCharacter({
-      name: '艾莉亚',
-      gender: '女',
-      age: 24,
-      appearance: '灰蓝眼瞳，佩着一枚旧怀表',
-      traits: { courage: 60, rationality: 70, altruism: 45 },
-      background: '失忆的流浪剑客',
-    });
-    updateWorld({
-      era: '蒸汽朋克',
-      coreConflict: '齿轮城的旧秩序正在崩塌，真相与忠诚互相撕扯',
-    });
-  };
-
   const handleStartGame = async () => {
     try {
       await startGame();
@@ -73,12 +58,6 @@ const CreationPage: React.FC = () => {
               <p className="max-w-2xl text-sm leading-6 text-[#9ca7be] md:text-base">
                 在命运开场前，先为主角定下姓名、性格与时代纹理。每一项设定都会回响到后续叙事。
               </p>
-            </div>
-            <div className="shrink-0 self-start">
-              <SecondaryButton onClick={handleRandomize}>
-                <Dices className="h-4 w-4" />
-                随机骰子
-              </SecondaryButton>
             </div>
           </div>
 
@@ -112,7 +91,6 @@ const CreationPage: React.FC = () => {
                   >
                     <option>男</option>
                     <option>女</option>
-                    <option>保密</option>
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-4 top-[3.15rem] h-4 w-4 -translate-y-1/2 text-[#c8b392] md:top-[3.4rem]" />
                 </div>

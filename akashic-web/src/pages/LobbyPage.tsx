@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Library, FolderOpen, Play, Sparkles, TriangleAlert } from 'lucide-react';
+import React from 'react';
+import { Library, Play, Sparkles, TriangleAlert } from 'lucide-react';
 import {
   PageTitle,
   PrimaryButton,
@@ -14,22 +14,12 @@ import { useGameUIStore } from '../store/gameStore';
 const LobbyPage: React.FC = () => {
   const setGameState = useGameUIStore((state) => state.setGameState);
   const resetGame = useGameUIStore((state) => state.resetGame);
-  const loadSave = useGameUIStore((state) => state.loadSave);
   const isLoading = useGameUIStore((state) => state.isLoading);
   const error = useGameUIStore((state) => state.error);
-  const [slotId, setSlotId] = useState('');
 
   const handleStart = () => {
     resetGame();
     setGameState('creation');
-  };
-
-  const handleLoad = async () => {
-    try {
-      await loadSave(slotId);
-    } catch {
-      // Store already exposes the failure reason.
-    }
   };
 
   return (
@@ -61,23 +51,9 @@ const LobbyPage: React.FC = () => {
               </StatusPill>
             ) : null}
             <SectionCard>
-              <div className="space-y-4">
-                <p className="text-base leading-8 text-[#d3d9e5]">
-                  你想开启怎样的人生？
-                </p>
-                <div className="space-y-3">
-                  <p className="text-sm text-[#9ca7be]">
-                    或者输入一个存档槽 ID，直接回到上一次命运停驻之处。
-                  </p>
-                  <input
-                    type="text"
-                    value={slotId}
-                    onChange={(event) => setSlotId(event.target.value)}
-                    className="akashic-field"
-                    placeholder="例如：slot-main"
-                  />
-                </div>
-              </div>
+              <p className="text-base leading-8 text-[#d3d9e5]">
+                你想开启怎样的人生？
+              </p>
             </SectionCard>
             <div className="flex flex-col gap-3 sm:flex-row">
               <PrimaryButton onClick={handleStart} disabled={isLoading} className="flex-1">
@@ -91,14 +67,6 @@ const LobbyPage: React.FC = () => {
               >
                 <Library className="h-4 w-4" />
                 存档列表
-              </SecondaryButton>
-              <SecondaryButton
-                onClick={handleLoad}
-                disabled={isLoading || !slotId.trim()}
-                className="flex-1"
-              >
-                <FolderOpen className="h-4 w-4" />
-                {isLoading ? '读取中...' : '读取存档'}
               </SecondaryButton>
             </div>
           </div>

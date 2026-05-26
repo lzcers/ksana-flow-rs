@@ -19,6 +19,7 @@ use crate::{
         ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
         CreateSaveSlotData,
         CreateGameSessionRequest, GameSessionControlCommand, GameSessionWorldStateData,
+        WorldStateData,
         SessionActionInput,
     },
     db::ArchiveRepository,
@@ -264,7 +265,7 @@ fn world_state_from_session(
         phase: snapshot.phase,
         turn_index: visible_turn_index(snapshot),
         active_turn_id: snapshot.active_turn_id,
-        world_state: snapshot.world_snapshot.clone(),
+        world_state: WorldStateData::from(snapshot.world_snapshot.clone()),
         current_task: snapshot.current_task.clone(),
         tasks: snapshot.tasks.clone(),
         latest_narration: latest_narration(snapshot),
@@ -321,6 +322,7 @@ mod tests {
         turn_state::TurnPhase,
         world_snapshot::WorldSnapshot,
     };
+    use serde_json::Value;
     use uuid::Uuid;
 
     use super::*;
@@ -387,6 +389,59 @@ mod tests {
         assert_eq!(saved.title, "测试存档");
 
         let _ = fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn game_session_world_state_serializes_world_state_as_camel_case() {
+        let dto = GameSessionWorldStateData {
+            session_id: "session-test".to_string(),
+            status: "awaiting_player_choice".to_string(),
+            phase: TurnPhase::AwaitingPlayerChoice,
+            turn_index: 2,
+            active_turn_id: 2,
+            world_state: WorldStateData::from(WorldSnapshot {
+                round: 2,
+                scene_title: "螺旋楼梯的暗影".to_string(),
+                time_absolute: "第一日 深夜十一点四十二分".to_string(),
+                location_name: "齿轮教堂地下二层".to_string(),
+                new_info: vec!["图纸碎片已安全到手".to_string()],
+                ..WorldSnapshot::default()
+            }),
+            current_task: None,
+            tasks: vec![],
+            latest_narration: "narration".to_string(),
+            current_protagonist_action: "action".to_string(),
+            choices: vec![],
+        };
+
+        let value = serde_json::to_value(dto).expect("dto should serialize");
+        let world_state = value
+            .get("worldState")
+            .and_then(Value::as_object)
+            .expect("worldState should be serialized as object");
+
+        assert_eq!(
+            world_state.get("sceneTitle").and_then(Value::as_str),
+            Some("螺旋楼梯的暗影")
+        );
+        assert_eq!(
+            world_state.get("timeAbsolute").and_then(Value::as_str),
+            Some("第一日 深夜十一点四十二分")
+        );
+        assert_eq!(
+            world_state.get("locationName").and_then(Value::as_str),
+            Some("齿轮教堂地下二层")
+        );
+        assert_eq!(
+            world_state
+                .get("newInfo")
+                .and_then(Value::as_array)
+                .and_then(|items| items.first())
+                .and_then(Value::as_str),
+            Some("图纸碎片已安全到手")
+        );
+        assert!(world_state.get("scene_title").is_none());
+        assert!(world_state.get("new_info").is_none());
     }
 
     fn sample_payload() -> SessionArchivePayload {
