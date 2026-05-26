@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+akashic-ecs = { path = "../ecs" }
 anyhow = { workspace = true }
 agent = { workspace = true }
-akashic-ecs = { path = "../akashic-ecs" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

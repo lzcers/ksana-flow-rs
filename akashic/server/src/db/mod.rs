@@ -64,8 +64,8 @@ impl ArchiveRepository {
         let conn = self.open_connection()?;
         let archive_json =
             serde_json::to_string(payload).context("failed to serialize SessionArchivePayload")?;
-        let turn_index =
-            i64::try_from(payload.turn_state.turn_index).context("turn_index exceeds sqlite INTEGER range")?;
+        let turn_index = i64::try_from(payload.turn_state.turn_index)
+            .context("turn_index exceeds sqlite INTEGER range")?;
         let phase = turn_phase_storage_value(payload)?;
         let now = now_string();
         let created_at = self
@@ -105,8 +105,9 @@ impl ArchiveRepository {
         )
         .with_context(|| format!("failed to upsert save slot `{slot_id}`"))?;
 
-        self.load_save_slot_record(slot_id)?
-            .with_context(|| format!("save slot `{slot_id}` was written but could not be read back"))
+        self.load_save_slot_record(slot_id)?.with_context(|| {
+            format!("save slot `{slot_id}` was written but could not be read back")
+        })
     }
 
     pub fn load_archive_payload(&self, slot_id: &str) -> Result<Option<SessionArchivePayload>> {
@@ -122,8 +123,9 @@ impl ArchiveRepository {
 
         archive_json
             .map(|raw| {
-                serde_json::from_str(&raw)
-                    .with_context(|| format!("failed to deserialize SessionArchivePayload for slot `{slot_id}`"))
+                serde_json::from_str(&raw).with_context(|| {
+                    format!("failed to deserialize SessionArchivePayload for slot `{slot_id}`")
+                })
             })
             .transpose()
     }
@@ -155,7 +157,9 @@ impl ArchiveRepository {
         row.map(
             |(slot_id, session_id, title, created_at, updated_at, archive_json)| -> Result<_> {
                 let payload: SessionArchivePayload = serde_json::from_str(&archive_json)
-                    .with_context(|| format!("failed to deserialize save slot `{slot_id}` payload"))?;
+                    .with_context(|| {
+                        format!("failed to deserialize save slot `{slot_id}` payload")
+                    })?;
                 Ok(SaveSlotRecord {
                     slot_id,
                     session_id,
@@ -171,8 +175,12 @@ impl ArchiveRepository {
 
     fn open_connection(&self) -> Result<Connection> {
         ensure_parent_dir(&self.db_path)?;
-        Connection::open(&self.db_path)
-            .with_context(|| format!("failed to open sqlite database at `{}`", self.db_path.display()))
+        Connection::open(&self.db_path).with_context(|| {
+            format!(
+                "failed to open sqlite database at `{}`",
+                self.db_path.display()
+            )
+        })
     }
 
     fn existing_created_at(&self, conn: &Connection, slot_id: &str) -> Result<Option<String>> {
@@ -219,9 +227,7 @@ mod tests {
 
     use agent::agent::context::Context;
     use akashic_ecs::resources::{
-        history::SessionHistoryLog,
-        turn_state::TurnPhase,
-        world_snapshot::WorldSnapshot,
+        history::SessionHistoryLog, turn_state::TurnPhase, world_snapshot::WorldSnapshot,
     };
     use uuid::Uuid;
 

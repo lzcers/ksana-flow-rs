@@ -53,5 +53,5 @@ fn init_tracing() {
 }
 
 fn default_archive_db_path() -> PathBuf {
-    PathBuf::from("akashic-server-data/archive.sqlite3")
+    PathBuf::from("db-data/archive.sqlite3")
 }
