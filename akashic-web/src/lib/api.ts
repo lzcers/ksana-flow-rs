@@ -137,11 +137,21 @@ export interface GameSessionWorldStateData {
   turnIndex: number;
   activeTurnId: number;
   worldState: SessionWorldState;
+  history: SessionRoundHistoryData[];
   currentTask: TaskView | null;
   tasks: TaskView[];
   latestNarration: string;
   currentProtagonistAction: string;
   choices: PendingProtagonistChoice[];
+}
+
+export interface SessionRoundHistoryData {
+  round: number;
+  worldState: SessionWorldState | null;
+  narrationText: string;
+  choices: PendingProtagonistChoice[];
+  committedAction?: string | null;
+  selectedChoiceText?: string | null;
 }
 
 export type GameSessionControlInput =

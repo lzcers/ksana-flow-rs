@@ -11,6 +11,7 @@ import type {
   Choice,
   GameSessionWorldStateData,
   PlayerActionInput,
+  SessionRoundHistoryData,
   TaskView,
 } from '../lib/api';
 import {
@@ -225,20 +226,84 @@ function stateViewFromSession(session: GameSessionWorldStateData): GameUIState['
 
 function internalStateFromSession(session: GameSessionWorldStateData): GameInternalState {
   const round = effectiveDisplayRound(session);
+  if (session.history.length > 0) {
+    const roundStates = session.history.reduce<Record<number, RoundState>>((acc, entry) => {
+      acc[entry.round] = roundStateFromHistoryEntry(entry, session, round);
+      return acc;
+    }, {});
+
+    if (!roundStates[round]) {
+      roundStates[round] = currentRoundStateFromSession(session, round);
+    }
+
+    return {
+      sessionId: session.sessionId,
+      turnIndex: session.turnIndex,
+      displayRound: round,
+      roundStates,
+    };
+  }
+
   return {
     sessionId: session.sessionId,
     turnIndex: session.turnIndex,
     displayRound: round,
     roundStates: {
-      [round]: createRoundState(round, {
-        narrationText: latestHistoryFromSession(session),
-        narrationStatus: session.currentTask?.kind === 'narration' ? session.currentTask.status : null,
-        choices: session.choices.map(toChoiceFromSession),
-        choicesStatus: session.choices.length > 0 ? 'ready' : 'idle',
-        selectedChoiceText: null,
-        isAwaitingNarration: false,
-      }),
+      [round]: currentRoundStateFromSession(session, round),
     },
+  };
+}
+
+function roundStateFromHistoryEntry(
+  entry: SessionRoundHistoryData,
+  session: GameSessionWorldStateData,
+  currentRound: number,
+): RoundState {
+  const isCurrentRound = entry.round === currentRound;
+  const choices = (isCurrentRound ? session.choices : entry.choices).map(toChoiceFromSession);
+  const selectedChoiceText = entry.selectedChoiceText?.trim()
+    || deriveSelectedChoiceText(entry)
+    || null;
+  const narrationText = entry.narrationText.trim()
+    || (isCurrentRound ? latestHistoryFromSession(session) : '');
+
+  return createRoundState(entry.round, {
+    narrationText,
+    narrationStatus: isCurrentRound && session.currentTask?.kind === 'narration'
+      ? session.currentTask.status
+      : entry.narrationText.trim()
+        ? 'done'
+        : null,
+    choices,
+    choicesStatus: choices.length > 0 ? 'ready' : 'idle',
+    selectedChoiceText,
+    isAwaitingNarration: false,
+  });
+}
+
+function deriveSelectedChoiceText(entry: SessionRoundHistoryData): string | null {
+  const committedAction = entry.committedAction?.trim();
+  if (!committedAction) {
+    return null;
+  }
+
+  const matchedChoice = entry.choices.find((choice) => choice.option.action === committedAction);
+  return matchedChoice?.option.title || committedAction;
+}
+
+function currentRoundStateFromSession(
+  session: GameSessionWorldStateData,
+  round: number,
+): RoundState {
+  return {
+    ...createRoundState(round, {
+      narrationText: latestHistoryFromSession(session),
+      narrationStatus: session.currentTask?.kind === 'narration' ? session.currentTask.status : null,
+      choices: session.choices.map(toChoiceFromSession),
+      choicesStatus: session.choices.length > 0 ? 'ready' : 'idle',
+      selectedChoiceText: null,
+      isAwaitingNarration: false,
+    }),
   };
 }
 

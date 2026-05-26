@@ -3,6 +3,7 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 
 use crate::resources::{
+    history::RoundHistoryEntry,
     protagonist_action::PendingProtagonistChoice,
     task_manager::{TaskKind, TaskResult, TaskStatus, TaskUpdate},
     turn_state::TurnPhase,
@@ -18,6 +19,7 @@ pub struct SessionSnapshot {
     pub turn_index: u64,
     pub active_turn_id: u64,
     pub world: WorldSnapshot,
+    pub history: Vec<RoundHistoryEntry>,
     pub current_task: Option<TaskView>,
     pub tasks: Vec<TaskView>,
     pub latest_narration: String,

@@ -17,6 +17,7 @@ use crate::{
     profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
         export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
+        history::{RoundHistoryEntry, SessionHistoryLog},
         player_input::{PlayerInbox, PlayerInputConfig},
         protagonist_action::{
             PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState,
@@ -28,6 +29,7 @@ use crate::{
     systems::{
         export_sys::export_system,
         fate_weaver_sys::{fate_weaver_apply_system, fate_weaver_system},
+        history_sys::history_sys,
         player_input_sys::player_input_system,
         protagonist_sys::{protagonist_apply_system, protagonist_system},
         task_sys::task_system,
@@ -46,6 +48,7 @@ pub struct Session {
     pub phase: TurnPhase,                       // 阶段
     pub turn_index: u64,                        // 轮次
     pub active_turn_id: u64,                    // 当前轮次ID
+    pub history: Vec<RoundHistoryEntry>,        // 历史时间线
     pub current_task: Option<TaskView>,         // 当前任务
     pub tasks: Vec<TaskView>,                   // 任务列表
     pub world_snapshot: WorldSnapshot,          // 世界快照
@@ -64,6 +67,7 @@ pub struct SessionArchiveState {
     pub world_snapshot: WorldSnapshot,
     pub committed_action: String,
     pub choices: Vec<PendingProtagonistChoice>,
+    pub history_log: SessionHistoryLog,
     pub fate_weaver_context: Context,
     pub upper_narrator_context: Context,
     pub protagonist_context: Context,
@@ -156,6 +160,7 @@ impl Session {
             phase: snapshot.phase,
             turn_index: snapshot.turn_index,
             active_turn_id: snapshot.active_turn_id,
+            history: snapshot.history,
             current_task: snapshot.current_task,
             tasks: snapshot.tasks,
             world_snapshot: snapshot.world,
@@ -279,6 +284,7 @@ impl SessionRuntime {
                 protagonist_decision.choices().to_vec(),
             )
         };
+        let history_log = world.resource::<SessionHistoryLog>().clone();
         let fate_weaver_context = {
             let mut query = world.query::<&FateWeaver>();
             query
@@ -313,6 +319,7 @@ impl SessionRuntime {
             world_snapshot,
             committed_action,
             choices,
+            history_log,
             fate_weaver_context,
             upper_narrator_context,
             protagonist_context,
@@ -331,6 +338,7 @@ fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, Export
 
     world.init_resource::<WorldSnapshot>();
     world.init_resource::<TurnState>();
+    world.init_resource::<SessionHistoryLog>();
     world.insert_resource(SessionProfiles {
         world_profile: world_profile.to_string(),
         protagonist_profile: protagonist_profile.to_string(),
@@ -370,6 +378,7 @@ fn build_world_from_archive(state: SessionArchiveState) -> (World, ExportHandle)
         state.committed_action,
         state.choices,
     ));
+    world.insert_resource(state.history_log);
     world.init_resource::<Messages<TurnEvent>>();
     world.init_resource::<Messages<TurnControl>>();
     world.insert_resource(TaskManager::new(build_chat_model()));
@@ -397,6 +406,7 @@ fn build_schedule() -> Schedule {
             upper_narrator_apply_system,
             protagonist_system,
             protagonist_apply_system,
+            history_sys,
             export_system,
         )
             .chain(),

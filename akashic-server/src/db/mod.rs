@@ -219,6 +219,7 @@ mod tests {
 
     use agent::agent::context::Context;
     use akashic_ecs::resources::{
+        history::SessionHistoryLog,
         turn_state::TurnPhase,
         world_snapshot::WorldSnapshot,
     };
@@ -279,6 +280,7 @@ mod tests {
                 committed_action: "躲进书架阴影".to_string(),
                 choices: Vec::new(),
             },
+            history_log: SessionHistoryLog::default(),
         }
     }
 }

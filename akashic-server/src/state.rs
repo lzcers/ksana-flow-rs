@@ -3,9 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
     resources::{
-        export::TaskEvent,
-        protagonist_action::PlayerActionType,
-        task_manager::TaskUpdate,
+        export::TaskEvent, protagonist_action::PlayerActionType, task_manager::TaskUpdate,
         turn_state::TurnPhase,
     },
 };
@@ -17,10 +15,8 @@ use crate::{
     api::archive,
     api::dto::{
         ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
-        CreateSaveSlotData,
-        CreateGameSessionRequest, GameSessionControlCommand, GameSessionWorldStateData,
-        WorldStateData,
-        SessionActionInput,
+        CreateGameSessionRequest, CreateSaveSlotData, GameSessionControlCommand,
+        GameSessionWorldStateData, RoundHistoryData, SessionActionInput, WorldStateData,
     },
     db::ArchiveRepository,
     error::AppError,
@@ -66,7 +62,9 @@ impl AppState {
         let world_profile = request.world_profile.trim();
         let protagonist_profile = request.protagonist_profile.trim();
         if world_profile.is_empty() || protagonist_profile.is_empty() {
-            return Err(AppError::bad_request("`worldProfile` 与 `protagonistProfile` 不能为空。"));
+            return Err(AppError::bad_request(
+                "`worldProfile` 与 `protagonistProfile` 不能为空。",
+            ));
         }
         let engine = AkashicSessionEngine::new_with_profiles(world_profile, protagonist_profile);
         let session = build_session_record(session_id.clone(), engine);
@@ -92,7 +90,10 @@ impl AppState {
             .ok_or_else(|| AppError::not_found(format!("未找到存档槽 `{slot_id}`")))?;
         let session_id = payload.session_id.clone();
         let engine = archive::load_archive_payload(payload).map_err(AppError::internal)?;
-        engine.wait_until_ready().await.map_err(AppError::internal)?;
+        engine
+            .wait_until_ready()
+            .await
+            .map_err(AppError::internal)?;
         let session = build_session_record(session_id.clone(), engine);
         let snapshot = session.engine.get_game_session();
         let state_view = world_state_from_session(&session, &snapshot);
@@ -266,6 +267,12 @@ fn world_state_from_session(
         turn_index: visible_turn_index(snapshot),
         active_turn_id: snapshot.active_turn_id,
         world_state: WorldStateData::from(snapshot.world_snapshot.clone()),
+        history: snapshot
+            .history
+            .clone()
+            .into_iter()
+            .map(RoundHistoryData::from)
+            .collect(),
         current_task: snapshot.current_task.clone(),
         tasks: snapshot.tasks.clone(),
         latest_narration: latest_narration(snapshot),
@@ -318,6 +325,7 @@ mod tests {
 
     use agent::agent::context::Context;
     use akashic_ecs::resources::{
+        history::{RoundHistoryEntry, SessionHistoryLog},
         protagonist_action::{PendingProtagonistChoice, ProtagonistOption},
         turn_state::TurnPhase,
         world_snapshot::WorldSnapshot,
@@ -350,6 +358,12 @@ mod tests {
         assert_eq!(restored.active_turn_id, 7);
         assert_eq!(restored.current_protagonist_action, "绕到钟楼背面");
         assert_eq!(restored.choices.len(), 1);
+        assert_eq!(restored.history.len(), 1);
+        assert_eq!(restored.history[0].narration_text, "钟声掠过雾墙。");
+        assert_eq!(
+            restored.history[0].selected_choice_text.as_deref(),
+            Some("绕行")
+        );
 
         let loaded_again = state
             .get_game_session_world("session-from-slot")
@@ -407,6 +421,7 @@ mod tests {
                 new_info: vec!["图纸碎片已安全到手".to_string()],
                 ..WorldSnapshot::default()
             }),
+            history: vec![],
             current_task: None,
             tasks: vec![],
             latest_narration: "narration".to_string(),
@@ -473,6 +488,27 @@ mod tests {
                         action: "绕到钟楼背面".to_string(),
                         motivation_and_risk: "视野更好，但会暴露脚步声".to_string(),
                     },
+                }],
+            },
+            history_log: SessionHistoryLog {
+                rounds: vec![RoundHistoryEntry {
+                    round: 7,
+                    world_snapshot: Some(WorldSnapshot {
+                        round: 7,
+                        scene_title: "钟楼阴影".to_string(),
+                        description: "雾气正在台阶间倒灌。".to_string(),
+                        ..WorldSnapshot::default()
+                    }),
+                    narration_text: Some("钟声掠过雾墙。".to_string()),
+                    choices: vec![PendingProtagonistChoice {
+                        id: "choice-1".to_string(),
+                        option: ProtagonistOption {
+                            title: "绕行".to_string(),
+                            action: "绕到钟楼背面".to_string(),
+                            motivation_and_risk: "视野更好，但会暴露脚步声".to_string(),
+                        },
+                    }],
+                    committed_action: Some("绕到钟楼背面".to_string()),
                 }],
             },
         }

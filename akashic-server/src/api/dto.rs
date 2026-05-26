@@ -1,5 +1,6 @@
 use akashic_ecs::resources::{
     export::TaskView,
+    history::RoundHistoryEntry,
     protagonist_action::{PendingProtagonistChoice, PlayerActionInput},
     turn_state::TurnPhase,
     world_snapshot::{ItemState, NpcState, OngoingEvent, WorldSnapshot},
@@ -97,11 +98,23 @@ pub struct GameSessionWorldStateData {
     pub turn_index: u64,
     pub active_turn_id: u64,
     pub world_state: WorldStateData,
+    pub history: Vec<RoundHistoryData>,
     pub current_task: Option<TaskView>,
     pub tasks: Vec<TaskView>,
     pub latest_narration: String,
     pub current_protagonist_action: String,
     pub choices: Vec<PendingProtagonistChoice>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoundHistoryData {
+    pub round: u64,
+    pub world_state: Option<WorldStateData>,
+    pub narration_text: String,
+    pub choices: Vec<PendingProtagonistChoice>,
+    pub committed_action: Option<String>,
+    pub selected_choice_text: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -182,9 +195,32 @@ impl From<WorldSnapshot> for WorldStateData {
             protagonist_known_secrets: value.protagonist_known_secrets,
             npcs: value.npcs.into_iter().map(Into::into).collect(),
             items: value.items.into_iter().map(Into::into).collect(),
-            events_in_progress: value.events_in_progress.into_iter().map(Into::into).collect(),
+            events_in_progress: value
+                .events_in_progress
+                .into_iter()
+                .map(Into::into)
+                .collect(),
             unsolved_threads: value.unsolved_threads,
             pacing_note: value.pacing_note,
+        }
+    }
+}
+
+impl From<RoundHistoryEntry> for RoundHistoryData {
+    fn from(value: RoundHistoryEntry) -> Self {
+        let selected_choice_text = value.committed_action.as_ref().and_then(|action| {
+            value.choices.iter().find_map(|choice| {
+                (choice.option.action == *action).then(|| choice.option.title.clone())
+            })
+        });
+
+        Self {
+            round: value.round,
+            world_state: value.world_snapshot.map(Into::into),
+            narration_text: value.narration_text.unwrap_or_default(),
+            choices: value.choices,
+            committed_action: value.committed_action,
+            selected_choice_text,
         }
     }
 }

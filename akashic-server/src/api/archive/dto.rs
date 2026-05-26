@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use agent::agent::context::Context;
 use akashic_ecs::resources::{
+    history::SessionHistoryLog,
     protagonist_action::PendingProtagonistChoice, turn_state::TurnPhase,
     world_snapshot::WorldSnapshot,
 };
@@ -50,6 +51,9 @@ pub struct SessionArchivePayload {
 
     /// 当前主角决策状态，保证选项可继续提交
     pub protagonist_decision: ProtagonistDecisionArchive,
+
+    /// 每轮结构化历史，保证前端可恢复完整时间线
+    pub history_log: SessionHistoryLog,
 }
 
 /// 数据库存档槽记录

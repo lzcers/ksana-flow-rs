@@ -6,6 +6,7 @@ use bevy_ecs::system::{Res, ResMut};
 use crate::components::upper_narrator::UpperNarrator;
 use crate::resources::{
     export::{ExportState, SessionSnapshot, TaskView},
+    history::SessionHistoryLog,
     protagonist_action::ProtagonistDecisionState,
     task_manager::{TaskManager, TaskStatus, TaskUpdate},
     turn_state::TurnState,
@@ -15,6 +16,7 @@ use crate::resources::{
 pub fn export_system(
     turn_state: Res<TurnState>,
     world_snapshot: Res<WorldSnapshot>,
+    history_log: Res<SessionHistoryLog>,
     decision_state: Res<ProtagonistDecisionState>,
     export_state: Res<ExportState>,
     mut task_manager: ResMut<TaskManager>,
@@ -48,6 +50,7 @@ pub fn export_system(
         turn_index: turn_state.turn_index,
         active_turn_id: turn_state.active_turn_id,
         world: world_snapshot.clone(),
+        history: history_log.rounds.clone(),
         current_task,
         tasks,
         latest_narration,
