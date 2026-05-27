@@ -226,7 +226,7 @@ const GameplayPage: React.FC = () => {
                 }}
                 onBackToLobby={() => setGameState('lobby')}
                 onSave={handleSave}
-                onShare={() => setFeedback('本地演示模式下可先存档，稍后可继续扩展分享入口。')}
+                onShare={() => setFeedback('分享功能即将开放，当前可先导出存档保存这段旅程。')}
               />
             </div>
             <div className="min-h-5">

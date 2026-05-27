@@ -35,11 +35,11 @@ const LobbyPage: React.FC = () => {
         <div className="relative z-10">
           <div className="space-y-6">
             <div className="flex flex-wrap gap-3">
-              <StatusPill icon={Sparkles}>Akashic Engine</StatusPill>
+              <StatusPill icon={Sparkles}>幻世引擎</StatusPill>
             </div>
             <PageTitle
               title="幻世 · 人生回响"
-              subtitle="开始你的命运"
+              subtitle="命运将从此刻展开"
             />
             {error ? (
               <StatusPill
@@ -52,7 +52,7 @@ const LobbyPage: React.FC = () => {
             ) : null}
             <SectionCard>
               <p className="text-base leading-8 text-[#d3d9e5]">
-                你想开启怎样的人生？
+                从一个名字、一段烙印与一道核心矛盾开始，写下属于你的命运。
               </p>
             </SectionCard>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -66,7 +66,7 @@ const LobbyPage: React.FC = () => {
                 className="flex-1"
               >
                 <Library className="h-4 w-4" />
-                存档列表
+                存档与导入
               </SecondaryButton>
             </div>
           </div>

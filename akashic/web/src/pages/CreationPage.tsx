@@ -56,7 +56,7 @@ const CreationPage: React.FC = () => {
             <div className="space-y-2">
               <h1 className="text-[2rem] font-semibold tracking-wide text-[#f6eddc] sm:text-[2.35rem] md:text-5xl">雕琢原点</h1>
               <p className="max-w-2xl text-sm leading-6 text-[#9ca7be] md:text-base">
-                在命运开场前，先为主角定下姓名、性格与时代纹理。每一项设定都会回响到后续叙事。
+                在故事揭幕之前，先为主角定下姓名、性格与时代纹理。每一项设定都会回响进后续命运。
               </p>
             </div>
           </div>
@@ -149,14 +149,14 @@ const CreationPage: React.FC = () => {
           </SectionCard>
 
           <SectionCard className="p-4 md:p-6">
-            <FieldLabel>人生烙印</FieldLabel>
+            <FieldLabel>命运烙印</FieldLabel>
             <div className="relative">
               <select
                 value={character.background}
                 onChange={(e) => updateCharacter({ background: e.target.value })}
                 className="akashic-select"
               >
-                <option value="">选择一个烙印...</option>
+                <option value="">选择一种命运烙印...</option>
                 {backgroundOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -203,7 +203,7 @@ const CreationPage: React.FC = () => {
               返回大厅
             </SecondaryButton>
             <PrimaryButton onClick={handleStartGame} disabled={!canStart || isLoading} className="w-full sm:w-auto">
-              {isLoading ? '设定生成中...' : '生成开局设定'}
+              {isLoading ? '设定生成中...' : '生成命运开局'}
             </PrimaryButton>
           </div>
         </div>

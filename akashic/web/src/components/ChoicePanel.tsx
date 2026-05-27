@@ -77,10 +77,10 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
                     className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
                     title={
                       previews[choice.id]
-                        ? '再次查看已窥见的命运碎片'
+                        ? '再次查看命运碎片'
                         : remainingIntuitionPoints > 0
-                          ? '消耗 1 点直觉，窥探命运碎片'
-                          : '本轮直觉已耗尽'
+                          ? '消耗 1 点直觉，查看命运碎片'
+                          : '本轮直觉已用尽'
                     }
                   >
                     <Eye className="h-4 w-4" />
@@ -104,7 +104,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
                 }
               }}
               disabled={isChoiceInteractionDisabled}
-              placeholder="你可以在此输入你的行动"
+              placeholder="写下你此刻的执念行动"
               className="min-h-24 w-full resize-none rounded-[0.85rem] border border-red-300/25 bg-[rgba(16,8,14,0.72)] px-3 py-2 text-sm leading-5 text-[#f7efe2] outline-none transition-colors placeholder:text-red-100/35 focus:border-red-300/45 disabled:cursor-not-allowed disabled:opacity-60"
             />
 
@@ -117,7 +117,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
                 disabled={isObsessionSubmitDisabled}
                 className="min-h-0 px-3 py-1.5 text-[0.72rem] leading-4 text-red-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-xs"
               >
-                以执念行动
+                提交执念行动
               </SecondaryButton>
             </div>
           </div>

@@ -200,12 +200,12 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(message || `请求失败：${response.status}`);
+    throw new Error(message || '网络似乎起了雾，请稍后再试。');
   }
 
   const payload = (await response.json()) as ApiResponse<T>;
   if (!payload.success) {
-    throw new Error('请求未成功完成。');
+    throw new Error('这次操作没能完成，请稍后再试。');
   }
 
   return payload.data;

@@ -48,7 +48,7 @@ const startupSteps: StartupStep[] = [
     key: 'creating_session',
     label: '注入幻世中',
     title: '唤起第一轮命运',
-    description: '世界与主角设定已经落笔，正在注入会话引擎并唤起开场叙事。',
+    description: '世界与主角设定已经落笔，正在将它们汇入故事，并唤起开场叙事。',
   },
 ];
 
@@ -78,7 +78,7 @@ const rotatingMessages: Record<Exclude<StartupStage, 'idle'>, string[]> = {
   creating_session: [
     '正在注入世界设定',
     '正在唤起第一轮命运',
-    '正在等待叙事引擎接住你的开场',
+    '正在为你铺开故事的开场',
   ],
 };
 
@@ -104,19 +104,19 @@ function stageHeadline(stage: StartupStage, name: string): StageHeadline {
     case 'creating_session':
       return {
         title: '幻世入口正在开启',
-        subtitle: '世界设定与主角设定已经生成，系统正在把它们注入引擎并点亮第一轮叙事。',
+        subtitle: '世界设定与主角设定已经生成，正在将它们汇入幻世，并点亮第一轮叙事。',
       };
     case 'ready_to_enter':
       return {
         title: '设定已经落笔',
-        subtitle: '世界设定与主角设定已经生成完毕。确认之后，系统才会正式注入引擎并展开你的第一轮命运。',
+        subtitle: '世界设定与主角设定已经生成完毕。确认之后，它们将正式汇入幻世，展开你的第一轮命运。',
       };
     case 'generating_world':
     case 'idle':
     default:
       return {
         title: '世界纹理正在编织',
-        subtitle: '系统会先推演世界压力，再收束主角命运，让开场更像一个真正会继续生长的故事。',
+        subtitle: '幻世会先推演世界压力，再收束主角命运，让开场更像一个真正会继续生长的故事。',
       };
   }
 }
@@ -173,10 +173,10 @@ const GeneratingPage: React.FC = () => {
                 {world.era}
               </StatusPill>
               <StatusPill icon={Sparkles} className="border-[#8b5cf6]/30 bg-[#1b1733]/80 text-[#e3d8ff]">
-                {character.background || '命运烙印待定'}
+                {character.background || '命运烙印待揭晓'}
               </StatusPill>
               <StatusPill icon={BookOpenText} className="border-[#7c6b55]/40 bg-[#171311]/80 text-[#efe4cd]">
-                核心矛盾已锁定
+                核心矛盾已经明确
               </StatusPill>
             </div>
 

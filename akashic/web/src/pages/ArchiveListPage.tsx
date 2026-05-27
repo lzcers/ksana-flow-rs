@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Download, FolderOpen, Library, Trash2, TriangleAlert, Upload } from 'lucide-react';
+import { ArrowLeft, Download, FolderOpen, Trash2, TriangleAlert, Upload } from 'lucide-react';
 import {
   PageTitle,
   PrimaryButton,
@@ -103,7 +103,7 @@ const ArchiveListPage: React.FC = () => {
     if (!archive) {
       setFeedback({
         type: 'error',
-        message: `未找到存档“${slot.title || slot.slotId}”的本地压缩内容。`,
+        message: `未找到存档“${slot.title || slot.slotId}”的本地数据。`,
       });
       return;
     }
@@ -144,7 +144,7 @@ const ArchiveListPage: React.FC = () => {
       const rawText = await file.text();
       const parsed = JSON.parse(rawText) as unknown;
       if (!isSharedArchiveFile(parsed)) {
-        throw new Error('文件内容不是有效的压缩存档 JSON。');
+        throw new Error('该文件不是可用的存档文件。');
       }
 
       const slotId = `slot-${crypto.randomUUID().split('-').join('')}`;
@@ -197,7 +197,7 @@ const ArchiveListPage: React.FC = () => {
 
           <PageTitle
             title="存档列表"
-            subtitle="以下存档来自当前浏览器的 localStorage，可直接导出或导入存档。"
+            subtitle="这里保存着你在当前设备上的旅程记录，可随时导入、导出或继续。"
           />
 
           <div className="flex flex-wrap justify-center gap-3">
@@ -233,9 +233,9 @@ const ArchiveListPage: React.FC = () => {
 
           {!hasSlots ? (
             <SectionCard className="space-y-3">
-              <p className="text-base text-[#e9edf7]">当前浏览器里还没有记录任何本地存档。</p>
+              <p className="text-base text-[#e9edf7]">当前设备上还没有留下任何存档。</p>
               <p className="text-sm leading-7 text-[#98a3ba]">
-                先进入一局游戏并点击“存档”，或直接导入一份存档。
+                先开启一段旅程并保存，或直接导入一份已有存档。
               </p>
             </SectionCard>
           ) : (
@@ -246,15 +246,13 @@ const ArchiveListPage: React.FC = () => {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1">
                         <h3 className="text-lg text-[#f2eadf]">{slot.title || '未命名存档'}</h3>
-                        <p className="text-xs uppercase tracking-[0.18em] text-[#8f98ab]">
-                          {slot.slotId}
+                        <p className="text-xs tracking-[0.12em] text-[#8f98ab]">
+                          存档编号：{slot.slotId}
                         </p>
                       </div>
                       <StatusPill icon={null}>最近更新 {formatTimeLabel(slot.updatedAt)}</StatusPill>
                     </div>
-                    <p className="text-sm text-[#b6c0d6]">
-                      Session: {slot.sessionId}
-                    </p>
+                    <p className="text-sm text-[#b6c0d6]">旅程编号：{slot.sessionId}</p>
                     <p className="text-sm text-[#8f98ab]">
                       创建于 {formatTimeLabel(slot.createdAt)}
                     </p>
@@ -266,7 +264,7 @@ const ArchiveListPage: React.FC = () => {
                       className="flex-1"
                     >
                       <FolderOpen className="h-4 w-4" />
-                      {isLoading ? '读取中...' : '读取此存档'}
+                      {isLoading ? '读取中...' : '继续这段旅程'}
                     </PrimaryButton>
                     <SecondaryButton
                       type="button"

@@ -234,9 +234,9 @@ function stateViewFromSession(session: GameSessionWorldStateData): GameUIState['
     latestBroadcastSummary:
       session.worldState.currentEvent
       || session.worldState.description
-      || '会话已恢复',
+      || '旅程已续上',
     latestBroadcastItems,
-    latestProtagonistAction: session.currentProtagonistAction || '尚未做出选择',
+    latestProtagonistAction: session.currentProtagonistAction || '你还没有做出选择',
   };
 }
 
@@ -353,7 +353,7 @@ function connectSessionStream(sessionId: string) {
           return;
         }
         useGameUIStore.setState({
-          error: '叙事流连接出现波动，正在尝试恢复...',
+          error: '连接有些不稳定，正在为你续上这段旅程...',
         });
       },
     },
@@ -629,7 +629,7 @@ const createGameUIActions = (
   enterWorld: async () => {
     const { character, world, preparedProfiles } = get();
     if (!preparedProfiles) {
-      throw new Error('设定尚未生成完成，无法进入幻世。');
+      throw new Error('设定还在准备中，请稍后再进入。');
     }
 
     set({
@@ -669,9 +669,9 @@ const createGameUIActions = (
           protagonistState: `${character.name || '无名旅人'} 正踏入 ${world.era}`,
           npcsState: '诸多回响正在汇聚',
           latestHistory: STREAM_PLACEHOLDER_TEXT,
-          latestBroadcastSummary: '会话已建立，正在推进第一轮...',
-          latestBroadcastItems: ['会话已建立，正在推进第一轮...'],
-          latestProtagonistAction: '尚未做出选择',
+          latestBroadcastSummary: '旅程已开始，正在展开开场内容...',
+          latestBroadcastItems: ['旅程已开始，正在展开开场内容...'],
+          latestProtagonistAction: '你还没有做出选择',
         },
         error: null,
         gameState: 'playing',
@@ -704,11 +704,11 @@ const createGameUIActions = (
     } = useGameValueStore.getState();
 
     if (!sessionId) {
-      throw new Error('当前没有可推进的演示剧情。');
+      throw new Error('当前还没有进行中的旅程。');
     }
 
     if (activeStreamSessionId !== sessionId) {
-      throw new Error('当前会话流未就绪，无法提交选择。');
+      throw new Error('内容还在铺展中，请稍后再选择。');
     }
 
     const nextInput: PlayerActionInput = {
@@ -716,7 +716,7 @@ const createGameUIActions = (
       action: submission.input.action.trim(),
     };
     if (!nextInput.action) {
-      throw new Error('当前行动不能为空。');
+      throw new Error('写下你此刻想做的事。');
     }
 
     if (useObsession && obsessionPoints <= 0) {
@@ -730,7 +730,7 @@ const createGameUIActions = (
       nextInput.type === 'selected_option'
       && !currentRoundChoices.some((choice) => choice.action === nextInput.action)
     ) {
-      throw new Error('当前选择不存在。');
+      throw new Error('这个选项已失效，请重新选择。');
     }
     const selectedChoiceText = useObsession
       ? `${submission.displayText} [执念]`
@@ -804,7 +804,7 @@ const createGameUIActions = (
   createSave: async (title) => {
     const { sessionId } = useGameInternalStore.getState();
     if (!sessionId) {
-      throw new Error('当前没有可保存的演示旅程。');
+      throw new Error('此刻还没有可保存的进度。');
     }
 
     const normalizedTitle = title?.trim();
@@ -841,7 +841,7 @@ const createGameUIActions = (
   loadSave: async (saveId) => {
     const slotId = saveId.trim();
     if (!slotId) {
-      throw new Error('存档槽 ID 不能为空。');
+      throw new Error('未找到要读取的存档。');
     }
 
     closeActiveSessionStream();
@@ -857,7 +857,7 @@ const createGameUIActions = (
     try {
       const archive = readStoredSaveArchive(slotId);
       if (!archive) {
-        throw new Error('未找到本地存档内容。');
+        throw new Error('没有找到这份存档，请确认它仍然存在。');
       }
 
       const loaded = await loadGameSessionFromArchive({

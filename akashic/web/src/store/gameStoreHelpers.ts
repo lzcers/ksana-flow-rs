@@ -294,7 +294,7 @@ export function protagonistActionText(task: TaskView): string | null {
     const parsedChoices = parseStreamingProtagonistChoices(raw);
     if (parsedChoices) {
       if (parsedChoices.length === 0) {
-        return '主角暂时没有可执行的行动选项。';
+        return '前路暂时未显，请稍等剧情展开。';
       }
       return parsedChoices.map((choice) => choice.text).join(' / ');
     }
@@ -302,7 +302,7 @@ export function protagonistActionText(task: TaskView): string | null {
     const parsed = JSON.parse(raw) as { options?: StreamedProtagonistOption[] };
     const options = parsed.options ?? [];
     if (options.length === 0) {
-      return '主角暂时没有可执行的行动选项。';
+      return '前路暂时未显，请稍等剧情展开。';
     }
     return options
       .map((option, index) => option.title?.trim() || option.action?.trim() || `行动 ${index + 1}`)
