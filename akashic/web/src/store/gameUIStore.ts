@@ -79,6 +79,8 @@ export interface GameUIState {
   preparedProfiles: GeneratedProfiles | null;
   // 全局错误消息。
   error: string | null;
+  // 从存档恢复后，当前已存在叙事应直接展示，不再重新打字。
+  skipRestoredNarrationAnimation: boolean;
 }
 
 export interface GameUIActions {
@@ -121,6 +123,7 @@ const initialUIState: GameUIState = {
   startupStage: 'idle',
   preparedProfiles: null,
   error: null,
+  skipRestoredNarrationAnimation: false,
 };
 
 let activeSessionStream: EventSource | null = null;
@@ -199,6 +202,7 @@ function resetUIState(): GameUIState {
     startupStage: 'idle',
     preparedProfiles: null,
     error: null,
+    skipRestoredNarrationAnimation: false,
   };
 }
 
@@ -423,6 +427,17 @@ function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
             latestHistory: nextText,
           },
         };
+      }
+
+      if (uiState.skipRestoredNarrationAnimation) {
+        nextUIState = nextUIState
+          ? {
+            ...nextUIState,
+            skipRestoredNarrationAnimation: false,
+          }
+          : {
+            skipRestoredNarrationAnimation: false,
+          };
       }
       break;
     }
@@ -758,6 +773,7 @@ const createGameUIActions = (
     set({
       isLoading: true,
       error: null,
+      skipRestoredNarrationAnimation: false,
     });
     useGameInternalStore.setState((state) => ({
       displayRound: nextRound,
@@ -888,6 +904,7 @@ const createGameUIActions = (
         startupStage: 'idle',
         preparedProfiles: null,
         error: null,
+        skipRestoredNarrationAnimation: true,
       });
       connectSessionStream(loaded.sessionId);
     } catch (error) {

@@ -24,6 +24,7 @@ const GameplayPage: React.FC = () => {
     latestBroadcastSummary,
     isLoading,
     error,
+    skipRestoredNarrationAnimation,
   } = useGameUIStore(useShallow((state) => ({
     turnIndex: state.stateView?.turnIndex,
     currentScene: state.stateView?.currentScene ?? '',
@@ -31,6 +32,7 @@ const GameplayPage: React.FC = () => {
     latestBroadcastSummary: state.stateView?.latestBroadcastSummary ?? '',
     isLoading: state.isLoading,
     error: state.error,
+    skipRestoredNarrationAnimation: state.skipRestoredNarrationAnimation,
   })));
   const {
     createSave,
@@ -196,9 +198,12 @@ const GameplayPage: React.FC = () => {
               narrationHistory={narrationHistory}
               currentRound={currentRound}
               isAwaitingNarration={Boolean(activeRoundState?.isAwaitingNarration)}
+              skipRestoredNarrationAnimation={skipRestoredNarrationAnimation}
               onTypewriterComplete={handleTypewriterComplete}
             />
-
+            <div className="min-h-5">
+              {statusMessage ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{statusMessage}</p> : null}
+            </div>
             <div className="mt-auto flex touch-pan-y flex-col gap-2">
               <ChoicePanel
                 hasChoices={hasChoices}
@@ -228,10 +233,6 @@ const GameplayPage: React.FC = () => {
                 onShare={() => setFeedback('分享功能即将开放，当前可先导出存档保存这段旅程。')}
               />
             </div>
-            <div className="min-h-5">
-              {statusMessage ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{statusMessage}</p> : null}
-            </div>
-
           </div>
         </div>
       </StoryFrame>
