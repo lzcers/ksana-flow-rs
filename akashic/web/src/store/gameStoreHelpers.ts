@@ -2,6 +2,7 @@ import type {
   Character,
   Choice,
   PendingProtagonistChoice,
+  StoryPreferences,
   TaskUpdatedEvent,
   TaskView,
   World,
@@ -43,17 +44,27 @@ export const initialCharacter: Character = {
   age: 18,
   appearance: '',
   traits: {
-    courage: 50,
-    rationality: 50,
-    altruism: 50,
+    intellect: 5,
+    physique: 5,
+    endurance: 5,
+    courage: 5,
+    rationality: 5,
+    altruism: 5,
   },
   background: '',
 };
 
 export const initialWorld: World = {
   era: '蒸汽朋克',
-  coreConflict: '资源枯竭与永生诱惑',
+  description: '旧秩序仍在勉强维持，但裂痕已经蔓延到每个人的日常。',
   specialRules: [],
+};
+
+export const initialStory: StoryPreferences = {
+  theme: '',
+  atmosphere: '',
+  narrativeStyle: '',
+  taboos: '',
 };
 
 export function cloneCharacter(character: Character): Character {
@@ -67,6 +78,12 @@ export function cloneWorld(world: World): World {
   return {
     ...world,
     specialRules: [...world.specialRules],
+  };
+}
+
+export function cloneStory(story: StoryPreferences): StoryPreferences {
+  return {
+    ...story,
   };
 }
 

@@ -4,6 +4,9 @@ export interface Character {
   age: number;
   appearance: string;
   traits: {
+    intellect: number;
+    physique: number;
+    endurance: number;
     courage: number;
     rationality: number;
     altruism: number;
@@ -13,8 +16,15 @@ export interface Character {
 
 export interface World {
   era: string;
-  coreConflict: string;
+  description: string;
   specialRules: string[];
+}
+
+export interface StoryPreferences {
+  theme: string;
+  atmosphere: string;
+  narrativeStyle: string;
+  taboos: string;
 }
 
 export interface Choice {
@@ -219,39 +229,54 @@ function formatSpecialRules(specialRules: string[]): string {
   return specialRules.map((rule, index) => `${index + 1}. ${rule}`).join('\n');
 }
 
-export function buildGenerateProfilesPrompt(character: Character, world: World): string {
-  return `请基于以下角色创建表单生成“世界设定”和“主角设定”。
+export function buildGenerateProfilesPrompt(
+  character: Character,
+  world: World,
+  story: StoryPreferences,
+): string {
+  return `请基于以下三组设定生成“世界设定”和“主角设定”。
 
 这些表单内容都是已确定事实，禁止改写、替换或否定，只能围绕它们做扩写、补完和强化。
 
-[角色表单]
+[人物设定]
 - 姓名：${character.name}
 - 性别：${character.gender}
 - 年龄：${character.age}
-- 外貌 / 标记：${character.appearance || '未填写'}
-- 人生烙印：${character.background}
-- 特质数值：
+- 人物描述：${character.appearance || '未填写'}
+- 命运烙印：${character.background}
+- 属性分配：
+  - 智力：${character.traits.intellect}
+  - 体力：${character.traits.physique}
+  - 耐力：${character.traits.endurance}
   - 勇气：${character.traits.courage}
   - 理性：${character.traits.rationality}
   - 利他：${character.traits.altruism}
 
-[世界表单]
+[世界设定]
 - 时代：${world.era}
-- 核心矛盾：${world.coreConflict}
+- 世界描述：${world.description}
 - 额外特殊规则：
 ${formatSpecialRules(world.specialRules)}
 
+[故事设定]
+- 题材 / 主题：${story.theme || '未填写'}
+- 故事氛围：${story.atmosphere || '未填写'}
+- 叙事风格：${story.narrativeStyle || '未填写'}
+- 避雷与禁区：${story.taboos || '无'}
+
 [生成目标]
 - 这是长期互动叙事的设定底稿，不是一次性简介。
-- 请让“核心矛盾”同时支配世界设定与主角设定。
-- 世界设定重点写清规则、禁忌、秩序、势力和现实压力。
-- 主角设定重点写清欲望、弱点、行动倾向，以及为何会被卷入主冲突。
-- 请把三项特质转化为行为倾向、判断方式、优势与弱点，不要机械复述数字。
+- 世界设定必须严格建立在“世界设定”事实上，并呼应“故事设定”的期待。
+- 主角设定必须严格建立在“人物设定”事实上，并自然解释主角为何会被卷入这个故事。
+- 世界设定重点写清世界如何运转、现实压力从何而来，以及什么样的秩序正在支配众人。
+- 主角设定重点写清欲望、弱点、行动倾向，以及六项属性如何转化为行为习惯与判断方式。
+- “故事设定”属于强约束，生成结果必须尽量满足题材、氛围与叙事风格要求。
+- “避雷与禁区”必须严格规避，不要以变体、擦边或反讽方式重新引入。
 - 文风偏文学叙事，但内容必须具体、可演绎，能自然推动后续冲突和抉择。`;
 }
 
-export function generateProfiles(character: Character, world: World) {
-  const prompt = buildGenerateProfilesPrompt(character, world);
+export function generateProfiles(character: Character, world: World, story: StoryPreferences) {
+  const prompt = buildGenerateProfilesPrompt(character, world, story);
   return requestJson<GeneratedProfiles>('/api/profiles/generate', {
     method: 'POST',
     body: JSON.stringify({ prompt }),

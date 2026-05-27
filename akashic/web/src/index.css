@@ -95,7 +95,7 @@
 
   .akashic-field,
   .akashic-select {
-    @apply h-11 w-full rounded-full border px-4 text-sm text-[#f5ecdc] outline-none transition-colors md:h-12 md:text-base;
+    @apply h-11 w-full border px-4 text-sm text-[#f5ecdc] outline-none transition-colors md:h-12 md:text-base;
     border-color: rgba(116, 103, 80, 0.65);
     background-color: rgba(29, 40, 59, 0.88);
   }

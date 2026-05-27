@@ -15,6 +15,7 @@ import type {
   PlayerActionInput,
   RuntimeStateView,
   SessionRoundHistoryData,
+  StoryPreferences,
   TaskView,
   World,
 } from '../lib/api';
@@ -35,8 +36,10 @@ import {
 import {
   applyTaskUpdate,
   cloneCharacter,
+  cloneStory,
   cloneWorld,
   initialCharacter,
+  initialStory,
   initialWorld,
   parseJsonValue,
   protagonistActionChoices,
@@ -64,6 +67,8 @@ export interface GameUIState {
   character: Character;
   // 世界设定表单与存档摘要会读取的世界信息。
   world: World;
+  // 故事设定表单会读取的叙事偏好与禁区。
+  story: StoryPreferences;
   // 运行时视图模型，驱动右侧状态面板等聚合信息。
   stateView: RuntimeStateView | null;
   // 全局加载态，控制按钮禁用、骨架屏等。
@@ -83,6 +88,8 @@ export interface GameUIActions {
   updateCharacter: (updates: Partial<Character>) => void;
   // 操作：更新世界设定。
   updateWorld: (updates: Partial<World>) => void;
+  // 操作：更新故事设定。
+  updateStory: (updates: Partial<StoryPreferences>) => void;
   // 操作：清除错误提示。
   clearError: () => void;
   // 操作：生成设定并进入过渡页。
@@ -108,6 +115,7 @@ const initialUIState: GameUIState = {
   gameState: 'lobby',
   character: initialCharacter,
   world: initialWorld,
+  story: initialStory,
   stateView: null,
   isLoading: false,
   startupStage: 'idle',
@@ -185,6 +193,7 @@ function resetUIState(): GameUIState {
     gameState: 'lobby',
     character: cloneCharacter(initialCharacter),
     world: cloneWorld(initialWorld),
+    story: cloneStory(initialStory),
     stateView: null,
     isLoading: false,
     startupStage: 'idle',
@@ -577,9 +586,16 @@ const createGameUIActions = (
         specialRules: updates.specialRules ?? state.world.specialRules,
       },
     })),
+  updateStory: (updates) =>
+    set((state) => ({
+      story: {
+        ...state.story,
+        ...updates,
+      },
+    })),
   clearError: () => set({ error: null }),
   startGame: async () => {
-    const { character, world } = get();
+    const { character, world, story } = get();
     closeActiveSessionStream();
     clearStartupStageTimer();
     useGameInternalStore.setState({
@@ -599,7 +615,7 @@ const createGameUIActions = (
 
     try {
       const generatingStartedAt = Date.now();
-      const generatedProfiles = await generateProfiles(character, world);
+      const generatedProfiles = await generateProfiles(character, world, story);
       const generatingElapsed = Date.now() - generatingStartedAt;
       if (generatingElapsed < MIN_GENERATING_PAGE_MS) {
         await sleep(MIN_GENERATING_PAGE_MS - generatingElapsed);
