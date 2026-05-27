@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, FolderOpen, Library, Trash2, TriangleAlert } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Download, FolderOpen, Library, Trash2, TriangleAlert, Upload } from 'lucide-react';
 import {
   PageTitle,
   PrimaryButton,
@@ -10,11 +10,15 @@ import {
   StatusPill,
 } from '../components/AkashicUI';
 import {
+  readStoredSaveArchive,
   readStoredSaveSlots,
   removeStoredSaveSlot,
+  upsertStoredSaveSlot,
+  writeStoredSaveArchive,
   type StoredSaveSlot,
 } from '../lib/saveSlots';
-import { useGameUIStore } from '../store/gameStore';
+import type { SessionArchivePayload } from '../lib/api';
+import { useGameUIStore } from '../store/gameUIStore';
 
 function formatTimeLabel(value: string) {
   const date = new Date(value);
@@ -29,20 +33,54 @@ function formatTimeLabel(value: string) {
   }).format(date);
 }
 
+function isSessionArchivePayload(value: unknown): value is SessionArchivePayload {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const archive = value as Record<string, unknown>;
+  return typeof archive.session_id === 'string'
+    && typeof archive.title === 'string'
+    && typeof archive.world_profile === 'string'
+    && typeof archive.protagonist_profile === 'string'
+    && archive.turn_state !== null
+    && typeof archive.turn_state === 'object'
+    && archive.history_log !== null
+    && typeof archive.history_log === 'object'
+    && archive.protagonist_decision !== null
+    && typeof archive.protagonist_decision === 'object';
+}
+
+function buildArchiveFileName(slot: StoredSaveSlot) {
+  const baseName = (slot.title || slot.slotId)
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .toLowerCase();
+  return `${baseName || slot.slotId}.json`;
+}
+
 const ArchiveListPage: React.FC = () => {
   const setGameState = useGameUIStore((state) => state.setGameState);
   const loadSave = useGameUIStore((state) => state.loadSave);
   const isLoading = useGameUIStore((state) => state.isLoading);
   const error = useGameUIStore((state) => state.error);
   const [slots, setSlots] = useState<StoredSaveSlot[]>([]);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  const refreshSlots = () => {
+    setSlots(readStoredSaveSlots());
+  };
 
   useEffect(() => {
-    setSlots(readStoredSaveSlots());
+    refreshSlots();
   }, []);
 
   const hasSlots = useMemo(() => slots.length > 0, [slots]);
 
   const handleLoad = async (slotId: string) => {
+    setFeedback(null);
     try {
       await loadSave(slotId);
     } catch {
@@ -51,13 +89,82 @@ const ArchiveListPage: React.FC = () => {
   };
 
   const handleDelete = (slot: StoredSaveSlot) => {
-    const confirmed = window.confirm(`确认删除本地存档索引“${slot.title || slot.slotId}”吗？`);
+    setFeedback(null);
+    const confirmed = window.confirm(`确认删除本地存档“${slot.title || slot.slotId}”吗？`);
     if (!confirmed) {
       return;
     }
 
     removeStoredSaveSlot(slot.slotId);
-    setSlots(readStoredSaveSlots());
+    refreshSlots();
+  };
+
+  const handleExport = (slot: StoredSaveSlot) => {
+    setFeedback(null);
+    const archive = readStoredSaveArchive(slot.slotId);
+    if (!archive) {
+      setFeedback({
+        type: 'error',
+        message: `未找到存档“${slot.title || slot.slotId}”的本地 JSON 内容。`,
+      });
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(archive, null, 2)], {
+      type: 'application/json;charset=utf-8',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = buildArchiveFileName(slot);
+    anchor.click();
+    window.URL.revokeObjectURL(url);
+    setFeedback({
+      type: 'success',
+      message: `已导出“${slot.title || slot.slotId}”的 JSON 文件。`,
+    });
+  };
+
+  const handleImportButtonClick = () => {
+    setFeedback(null);
+    importInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    try {
+      const rawText = await file.text();
+      const parsed = JSON.parse(rawText) as unknown;
+      if (!isSessionArchivePayload(parsed)) {
+        throw new Error('文件内容不是有效的存档 JSON。');
+      }
+
+      const slotId = `slot-${crypto.randomUUID().split('-').join('')}`;
+      const archivedAt = new Date().toISOString();
+      writeStoredSaveArchive(slotId, parsed);
+      upsertStoredSaveSlot({
+        slotId,
+        sessionId: parsed.session_id,
+        title: parsed.title || file.name.replace(/\.json$/i, ''),
+        createdAt: archivedAt,
+        updatedAt: archivedAt,
+      });
+      refreshSlots();
+      setFeedback({
+        type: 'success',
+        message: `已导入 JSON 文件“${file.name}”。`,
+      });
+    } catch (importError) {
+      setFeedback({
+        type: 'error',
+        message: importError instanceof Error ? importError.message : '导入 JSON 文件失败。',
+      });
+    }
   };
 
   return (
@@ -71,8 +178,15 @@ const ArchiveListPage: React.FC = () => {
           }}
         />
         <div className="relative z-10 space-y-6">
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <StatusPill icon={Library}>本地存档索引</StatusPill>
+            <StatusPill icon={Library}>本地存档</StatusPill>
             <SecondaryButton onClick={() => setGameState('lobby')} disabled={isLoading}>
               <ArrowLeft className="h-4 w-4" />
               返回大厅
@@ -81,8 +195,15 @@ const ArchiveListPage: React.FC = () => {
 
           <PageTitle
             title="存档列表"
-            subtitle="以下槽位索引来自当前浏览器的 localStorage。"
+            subtitle="以下存档来自当前浏览器的 localStorage，可直接导出或导入 JSON 文件。"
           />
+
+          <div className="flex flex-wrap justify-center gap-3">
+            <PrimaryButton type="button" onClick={handleImportButtonClick} disabled={isLoading}>
+              <Upload className="h-4 w-4" />
+              导入 JSON 文件
+            </PrimaryButton>
+          </div>
 
           {error ? (
             <StatusPill
@@ -94,11 +215,25 @@ const ArchiveListPage: React.FC = () => {
             </StatusPill>
           ) : null}
 
+          {feedback ? (
+            <StatusPill
+              icon={feedback.type === 'error' ? TriangleAlert : null}
+              className={
+                feedback.type === 'error'
+                  ? 'border-[#7f3b3b]/50 bg-[#2a1216]/85 text-[#ffd7d7]'
+                  : 'border-[#36593c]/50 bg-[#15251a]/85 text-[#d9ffe0]'
+              }
+              iconClassName={feedback.type === 'error' ? 'text-[#ff9b9b]' : undefined}
+            >
+              {feedback.message}
+            </StatusPill>
+          ) : null}
+
           {!hasSlots ? (
             <SectionCard className="space-y-3">
-              <p className="text-base text-[#e9edf7]">当前浏览器里还没有记录任何存档槽。</p>
+              <p className="text-base text-[#e9edf7]">当前浏览器里还没有记录任何本地存档。</p>
               <p className="text-sm leading-7 text-[#98a3ba]">
-                先进入一局游戏并点击“存档”，创建成功后这里会自动列出对应的槽位。
+                先进入一局游戏并点击“存档”，或直接导入一份 JSON 存档文件。
               </p>
             </SectionCard>
           ) : (
@@ -133,12 +268,21 @@ const ArchiveListPage: React.FC = () => {
                     </PrimaryButton>
                     <SecondaryButton
                       type="button"
+                      onClick={() => handleExport(slot)}
+                      disabled={isLoading}
+                      className="flex-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      导出 JSON
+                    </SecondaryButton>
+                    <SecondaryButton
+                      type="button"
                       onClick={() => handleDelete(slot)}
                       disabled={isLoading}
                       className="flex-1 text-[#ffb6b6] hover:border-[#7f3b3b]/60 hover:bg-[#2a1216]/85 hover:text-[#ffd7d7]"
                     >
                       <Trash2 className="h-4 w-4" />
-                      删除索引
+                      删除存档
                     </SecondaryButton>
                   </div>
                 </SectionCard>

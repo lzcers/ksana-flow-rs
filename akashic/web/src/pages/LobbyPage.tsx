@@ -9,7 +9,7 @@ import {
   StoryFrame,
   StatusPill,
 } from '../components/AkashicUI';
-import { useGameUIStore } from '../store/gameStore';
+import { useGameUIStore } from '../store/gameUIStore';
 
 const LobbyPage: React.FC = () => {
   const setGameState = useGameUIStore((state) => state.setGameState);

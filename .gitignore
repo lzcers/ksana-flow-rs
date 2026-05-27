@@ -10,3 +10,4 @@ nul
 .omx
 node_modules
 *.txt
+/db-data

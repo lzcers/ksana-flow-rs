@@ -1,5 +1,5 @@
 import React from 'react';
-import { useGameUIStore } from './store/gameStore';
+import { useGameUIStore } from './store/gameUIStore';
 import LobbyPage from './pages/LobbyPage';
 import ArchiveListPage from './pages/ArchiveListPage';
 import CreationPage from './pages/CreationPage';

@@ -22,11 +22,7 @@ export interface Choice {
   text: string;
   action: string;
   disabled: boolean;
-  previewText?: string;
-  costHints: {
-    intuition: number;
-    obsession: number;
-  };
+  motivationAndRisk?: string;
 }
 
 export interface RuntimeStateView {
@@ -78,16 +74,37 @@ export interface CreateSaveSlotInput {
   title?: string;
 }
 
-export interface CreateSaveSlotData {
-  slotId: string;
+export interface TurnStateArchive {
+  phase: string;
+  turn_index: number;
+  active_turn_id: number;
+}
+
+export interface ProtagonistDecisionArchive {
+  committed_action: string;
+  choices: PendingProtagonistChoice[];
+}
+
+export interface SessionArchivePayload {
+  session_id: string;
+  title: string;
+  world_profile: string;
+  protagonist_profile: string;
+  turn_state: TurnStateArchive;
+  fate_weaver: unknown;
+  upper_narrator: unknown;
+  protagonist: unknown;
+  world_snapshot: unknown;
+  protagonist_decision: ProtagonistDecisionArchive;
+  history_log: unknown;
+}
+
+export interface SaveExportData {
   sessionId: string;
   title: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface LoadGameSessionInput {
-  slotId: string;
+  archive: SessionArchivePayload;
 }
 
 export interface GeneratedProfiles {
@@ -244,17 +261,17 @@ export function createGameSession(input: CreateGameSessionInput) {
   });
 }
 
-export function loadGameSession(input: LoadGameSessionInput) {
-  return requestJson<GameSessionWorldStateData>('/api/game-sessions/load', {
+export function exportGameSaveArchive(sessionId: string, input: CreateSaveSlotInput) {
+  return requestJson<SaveExportData>(`/api/game-sessions/${sessionId}/save-export`, {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
-export function createGameSaveSlot(sessionId: string, input: CreateSaveSlotInput) {
-  return requestJson<CreateSaveSlotData>(`/api/game-sessions/${sessionId}/save`, {
+export function loadGameSessionFromArchive(archive: SessionArchivePayload) {
+  return requestJson<GameSessionWorldStateData>('/api/game-sessions/load-archive', {
     method: 'POST',
-    body: JSON.stringify(input),
+    body: JSON.stringify(archive),
   });
 }
 

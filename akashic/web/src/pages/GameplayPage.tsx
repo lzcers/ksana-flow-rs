@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useGameInternalStore, useGameUIStore } from '../store/gameStore';
+import { useGameInternalStore } from '../store/gameStore';
+import { useGameUIStore } from '../store/gameUIStore';
+import { useGameValueStore } from '../store/gameValueStore';
 import {
   ScreenShell,
   StoryFrame,
@@ -16,8 +18,6 @@ const EMPTY_BROADCAST_ITEMS: string[] = [];
 
 const GameplayPage: React.FC = () => {
   const {
-    obsessionPoints,
-    intuitionPoints,
     turnIndex,
     currentScene,
     latestBroadcastItems,
@@ -25,8 +25,6 @@ const GameplayPage: React.FC = () => {
     isLoading,
     error,
   } = useGameUIStore(useShallow((state) => ({
-    obsessionPoints: state.obsessionPoints,
-    intuitionPoints: state.intuitionPoints,
     turnIndex: state.stateView?.turnIndex,
     currentScene: state.stateView?.currentScene ?? '',
     latestBroadcastItems: state.stateView?.latestBroadcastItems ?? EMPTY_BROADCAST_ITEMS,
@@ -37,13 +35,20 @@ const GameplayPage: React.FC = () => {
   const {
     createSave,
     submitChoice,
-    previewChoice,
     setGameState,
   } = useGameUIStore(useShallow((state) => ({
     createSave: state.createSave,
     submitChoice: state.submitChoice,
-    previewChoice: state.previewChoice,
     setGameState: state.setGameState,
+  })));
+  const {
+    obsessionPoints,
+    intuitionPoints,
+    consumeIntuition,
+  } = useGameValueStore(useShallow((state) => ({
+    obsessionPoints: state.obsessionPoints,
+    intuitionPoints: state.intuitionPoints,
+    consumeIntuition: state.consumeIntuition,
   })));
   const displayRound = useGameInternalStore((state) => state.displayRound);
   const roundStates = useGameInternalStore((state) => state.roundStates);
@@ -99,18 +104,26 @@ const GameplayPage: React.FC = () => {
     return cause instanceof Error ? cause.message : fallback;
   }, []);
 
-  const handlePreview = async (choiceId: string, e: React.MouseEvent) => {
+  const handlePreview = async (choice: Choice, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    if (previews[choiceId]) return;
+    if (previews[choice.id]) {
+      setFeedback(previews[choice.id]);
+      return;
+    }
 
     try {
-      const previewText = await previewChoice(choiceId);
+      const motivationAndRisk = choice.motivationAndRisk?.trim();
+      if (!motivationAndRisk) {
+        throw new Error('这个选项暂时没有可窥见的命运碎片。');
+      }
+      consumeIntuition();
+
       setPreviews((prev) => ({
         ...prev,
-        [choiceId]: previewText,
+        [choice.id]: motivationAndRisk,
       }));
-      setFeedback('你窥见了一角尚未到来的命运。');
+      setFeedback(motivationAndRisk);
     } catch (previewError) {
       setFeedback(readErrorMessage(previewError, '直觉预览失败。'));
     }
@@ -191,6 +204,7 @@ const GameplayPage: React.FC = () => {
                 hasChoices={hasChoices}
                 choices={currentRoundChoices}
                 previews={previews}
+                remainingIntuitionPoints={intuitionPoints}
                 activeObsession={activeObsession}
                 obsessionInput={obsessionInput}
                 isChoiceInteractionDisabled={isChoiceInteractionDisabled}

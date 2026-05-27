@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronDown, TriangleAlert } from 'lucide-react';
-import { useGameUIStore } from '../store/gameStore';
+import { useGameUIStore } from '../store/gameUIStore';
 import {
   FieldLabel,
   PrimaryButton,

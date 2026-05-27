@@ -1,3 +1,5 @@
+import type { SessionArchivePayload } from './api';
+
 export interface StoredSaveSlot {
   slotId: string;
   sessionId: string;
@@ -7,6 +9,7 @@ export interface StoredSaveSlot {
 }
 
 const SAVE_SLOTS_STORAGE_KEY = 'akashic-save-slots';
+const SAVE_ARCHIVE_STORAGE_KEY_PREFIX = 'akashic-save-archive:';
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -47,6 +50,42 @@ export function upsertStoredSaveSlot(slot: StoredSaveSlot) {
   window.localStorage.setItem(SAVE_SLOTS_STORAGE_KEY, JSON.stringify(nextSlots));
 }
 
+export function writeStoredSaveArchive(slotId: string, archive: SessionArchivePayload) {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(
+    `${SAVE_ARCHIVE_STORAGE_KEY_PREFIX}${slotId}`,
+    JSON.stringify(archive),
+  );
+}
+
+export function readStoredSaveArchive(slotId: string): SessionArchivePayload | null {
+  if (!canUseLocalStorage()) {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(`${SAVE_ARCHIVE_STORAGE_KEY_PREFIX}${slotId}`);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as SessionArchivePayload;
+  } catch {
+    return null;
+  }
+}
+
+export function removeStoredSaveArchive(slotId: string) {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  window.localStorage.removeItem(`${SAVE_ARCHIVE_STORAGE_KEY_PREFIX}${slotId}`);
+}
+
 export function removeStoredSaveSlot(slotId: string) {
   if (!canUseLocalStorage()) {
     return;
@@ -54,4 +93,5 @@ export function removeStoredSaveSlot(slotId: string) {
 
   const nextSlots = readStoredSaveSlots().filter((item) => item.slotId !== slotId);
   window.localStorage.setItem(SAVE_SLOTS_STORAGE_KEY, JSON.stringify(nextSlots));
+  removeStoredSaveArchive(slotId);
 }

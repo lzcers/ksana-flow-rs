@@ -6,7 +6,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
-import { useGameUIStore } from '../store/gameStore';
+import { useGameUIStore } from '../store/gameUIStore';
 import type { StartupStage } from '../store/gameUIStore';
 import {
   PrimaryButton,

@@ -41,12 +41,12 @@ const GameplayToolbar: React.FC<GameplayToolbarProps> = ({
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
             <Flame className="h-3.5 w-3.5" />
-            <span>{`${obsessionPoints}/5`}</span>
+            <span>{obsessionPoints}</span>
           </span>
           <span className="text-[0.72rem] leading-4 text-[#8f98ab] sm:text-xs">|</span>
           <span className="inline-flex items-center gap-1 text-[0.72rem] leading-4 text-[#d9cbb1] sm:text-xs">
             <Eye className="h-3.5 w-3.5" />
-            <span>{intuitionPoints}</span>
+            <span>{`${intuitionPoints}/2`}</span>
           </span>
         </div>
         <div className="relative">

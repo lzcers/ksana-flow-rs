@@ -7,12 +7,13 @@ interface ChoicePanelProps {
   hasChoices: boolean;
   choices: Choice[];
   previews: Record<string, string>;
+  remainingIntuitionPoints: number;
   activeObsession: boolean;
   obsessionInput: string;
   isChoiceInteractionDisabled: boolean;
   isObsessionSubmitDisabled: boolean;
   onChoiceClick: (choice: Choice) => void | Promise<void>;
-  onPreview: (choiceId: string, event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  onPreview: (choice: Choice, event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
   onObsessionInputChange: (value: string) => void;
   onObsessionSubmit: (actionText: string) => void | Promise<void>;
 }
@@ -21,6 +22,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
   hasChoices,
   choices,
   previews,
+  remainingIntuitionPoints,
   activeObsession,
   obsessionInput,
   isChoiceInteractionDisabled,
@@ -67,20 +69,23 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
 
                   <button
                     type="button"
-                    onClick={(event) => void onPreview(choice.id, event)}
-                    disabled={isChoiceInteractionDisabled}
+                    onClick={(event) => void onPreview(choice, event)}
+                    disabled={
+                      isChoiceInteractionDisabled
+                      || (remainingIntuitionPoints <= 0 && !previews[choice.id])
+                    }
                     className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
-                    title="消耗 1 点直觉，窥探命运碎片"
+                    title={
+                      previews[choice.id]
+                        ? '再次查看已窥见的命运碎片'
+                        : remainingIntuitionPoints > 0
+                          ? '消耗 1 点直觉，窥探命运碎片'
+                          : '本轮直觉已耗尽'
+                    }
                   >
                     <Eye className="h-4 w-4" />
                   </button>
                 </div>
-
-                {previews[choice.id] ? (
-                  <div className="rounded-[0.8rem] border border-cyan-400/20 bg-cyan-950/10 px-2 py-2 text-[0.7rem] leading-4.5 text-cyan-100/90 sm:rounded-[0.95rem] sm:px-2 sm:py-2 sm:text-xs">
-                    {previews[choice.id]}
-                  </div>
-                ) : null}
               </div>
             ))}
           </div>

@@ -75,12 +75,8 @@ export function toChoiceFromSession(choice: PendingProtagonistChoice): Choice {
     id: choice.id,
     text: choice.option.title || choice.option.action,
     action: choice.option.action,
-    previewText: choice.option.motivationAndRisk,
+    motivationAndRisk: choice.option.motivationAndRisk,
     disabled: false,
-    costHints: {
-      intuition: 1,
-      obsession: 1,
-    },
   };
 }
 
@@ -184,12 +180,8 @@ function toChoiceFromStreamOption(option: StreamedProtagonistOption, index: numb
     id: `choice-${index + 1}`,
     text: option.title?.trim() || action || `行动 ${index + 1}`,
     action,
-    previewText: option.motivationAndRisk?.trim() || option.motivation_and_risk?.trim(),
+    motivationAndRisk: option.motivationAndRisk?.trim() || option.motivation_and_risk?.trim(),
     disabled: false,
-    costHints: {
-      intuition: 1,
-      obsession: 1,
-    },
   };
 }
 
