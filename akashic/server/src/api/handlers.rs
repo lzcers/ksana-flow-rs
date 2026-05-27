@@ -22,10 +22,9 @@ use crate::{error::AppError, state::AppState};
 use super::dto::{
     ApiResponse, ControlGameSessionData, ControlGameSessionRequest, CreateGameSessionData,
     CreateGameSessionRequest, CreateSaveSlotData, CreateSaveSlotRequest, GameSessionWorldStateData,
-    GenerateProfilesData, GenerateProfilesRequest, LoadGameSessionRequest, SaveExportData,
-    SessionPath,
+    GenerateProfilesData, GenerateProfilesRequest, LoadArchiveRequest, LoadGameSessionRequest,
+    SaveExportData, SessionPath,
 };
-use crate::api::archive::SessionArchivePayload;
 
 type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
 type StorySseResult = Result<Response, AppError>;
@@ -130,9 +129,11 @@ pub async fn load_game_session(
 
 pub async fn load_archive(
     State(state): State<AppState>,
-    Json(payload): Json<SessionArchivePayload>,
+    Json(request): Json<LoadArchiveRequest>,
 ) -> ApiResult<GameSessionWorldStateData> {
-    let session = state.load_game_session_from_archive(payload).await?;
+    let session = state
+        .load_game_session_from_archive(request.compressed_archive)
+        .await?;
     Ok(Json(ApiResponse::ok(session)))
 }
 

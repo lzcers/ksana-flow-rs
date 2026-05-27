@@ -17,7 +17,6 @@ import {
   writeStoredSaveArchive,
   type StoredSaveSlot,
 } from '../lib/saveSlots';
-import type { SessionArchivePayload } from '../lib/api';
 import { useGameUIStore } from '../store/gameUIStore';
 
 function formatTimeLabel(value: string) {
@@ -33,22 +32,21 @@ function formatTimeLabel(value: string) {
   }).format(date);
 }
 
-function isSessionArchivePayload(value: unknown): value is SessionArchivePayload {
+interface SharedArchiveFile {
+  sessionId: string;
+  title: string;
+  compressedArchive: string;
+}
+
+function isSharedArchiveFile(value: unknown): value is SharedArchiveFile {
   if (!value || typeof value !== 'object') {
     return false;
   }
 
-  const archive = value as Record<string, unknown>;
-  return typeof archive.session_id === 'string'
-    && typeof archive.title === 'string'
-    && typeof archive.world_profile === 'string'
-    && typeof archive.protagonist_profile === 'string'
-    && archive.turn_state !== null
-    && typeof archive.turn_state === 'object'
-    && archive.history_log !== null
-    && typeof archive.history_log === 'object'
-    && archive.protagonist_decision !== null
-    && typeof archive.protagonist_decision === 'object';
+  const archiveFile = value as Record<string, unknown>;
+  return typeof archiveFile.sessionId === 'string'
+    && typeof archiveFile.title === 'string'
+    && typeof archiveFile.compressedArchive === 'string';
 }
 
 function buildArchiveFileName(slot: StoredSaveSlot) {
@@ -105,12 +103,17 @@ const ArchiveListPage: React.FC = () => {
     if (!archive) {
       setFeedback({
         type: 'error',
-        message: `未找到存档“${slot.title || slot.slotId}”的本地 JSON 内容。`,
+        message: `未找到存档“${slot.title || slot.slotId}”的本地压缩内容。`,
       });
       return;
     }
 
-    const blob = new Blob([JSON.stringify(archive, null, 2)], {
+    const sharedArchiveFile: SharedArchiveFile = {
+      sessionId: slot.sessionId,
+      title: slot.title,
+      compressedArchive: archive,
+    };
+    const blob = new Blob([JSON.stringify(sharedArchiveFile, null, 2)], {
       type: 'application/json;charset=utf-8',
     });
     const url = window.URL.createObjectURL(blob);
@@ -121,7 +124,7 @@ const ArchiveListPage: React.FC = () => {
     window.URL.revokeObjectURL(url);
     setFeedback({
       type: 'success',
-      message: `已导出“${slot.title || slot.slotId}”的 JSON 文件。`,
+      message: `已导出“${slot.title || slot.slotId}”存档。`,
     });
   };
 
@@ -140,16 +143,16 @@ const ArchiveListPage: React.FC = () => {
     try {
       const rawText = await file.text();
       const parsed = JSON.parse(rawText) as unknown;
-      if (!isSessionArchivePayload(parsed)) {
-        throw new Error('文件内容不是有效的存档 JSON。');
+      if (!isSharedArchiveFile(parsed)) {
+        throw new Error('文件内容不是有效的压缩存档 JSON。');
       }
 
       const slotId = `slot-${crypto.randomUUID().split('-').join('')}`;
       const archivedAt = new Date().toISOString();
-      writeStoredSaveArchive(slotId, parsed);
+      writeStoredSaveArchive(slotId, parsed.compressedArchive);
       upsertStoredSaveSlot({
         slotId,
-        sessionId: parsed.session_id,
+        sessionId: parsed.sessionId,
         title: parsed.title || file.name.replace(/\.json$/i, ''),
         createdAt: archivedAt,
         updatedAt: archivedAt,
@@ -157,12 +160,12 @@ const ArchiveListPage: React.FC = () => {
       refreshSlots();
       setFeedback({
         type: 'success',
-        message: `已导入 JSON 文件“${file.name}”。`,
+        message: `已导入存档“${file.name}”。`,
       });
     } catch (importError) {
       setFeedback({
         type: 'error',
-        message: importError instanceof Error ? importError.message : '导入 JSON 文件失败。',
+        message: importError instanceof Error ? importError.message : '导入存档失败。',
       });
     }
   };
@@ -185,8 +188,7 @@ const ArchiveListPage: React.FC = () => {
             className="hidden"
             onChange={handleImportFile}
           />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <StatusPill icon={Library}>本地存档</StatusPill>
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <SecondaryButton onClick={() => setGameState('lobby')} disabled={isLoading}>
               <ArrowLeft className="h-4 w-4" />
               返回大厅
@@ -195,13 +197,13 @@ const ArchiveListPage: React.FC = () => {
 
           <PageTitle
             title="存档列表"
-            subtitle="以下存档来自当前浏览器的 localStorage，可直接导出或导入 JSON 文件。"
+            subtitle="以下存档来自当前浏览器的 localStorage，可直接导出或导入存档。"
           />
 
           <div className="flex flex-wrap justify-center gap-3">
             <PrimaryButton type="button" onClick={handleImportButtonClick} disabled={isLoading}>
               <Upload className="h-4 w-4" />
-              导入 JSON 文件
+              导入存档
             </PrimaryButton>
           </div>
 
@@ -233,7 +235,7 @@ const ArchiveListPage: React.FC = () => {
             <SectionCard className="space-y-3">
               <p className="text-base text-[#e9edf7]">当前浏览器里还没有记录任何本地存档。</p>
               <p className="text-sm leading-7 text-[#98a3ba]">
-                先进入一局游戏并点击“存档”，或直接导入一份 JSON 存档文件。
+                先进入一局游戏并点击“存档”，或直接导入一份存档。
               </p>
             </SectionCard>
           ) : (
@@ -273,7 +275,7 @@ const ArchiveListPage: React.FC = () => {
                       className="flex-1"
                     >
                       <Download className="h-4 w-4" />
-                      导出 JSON
+                      导出存档
                     </SecondaryButton>
                     <SecondaryButton
                       type="button"

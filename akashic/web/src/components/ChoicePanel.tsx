@@ -104,7 +104,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
                 }
               }}
               disabled={isChoiceInteractionDisabled}
-              placeholder="例如：无视眼前的退路，直接闯入钟楼顶层，当面对质那名持灯人。"
+              placeholder="你可以在此输入你的行动"
               className="min-h-24 w-full resize-none rounded-[0.85rem] border border-red-300/25 bg-[rgba(16,8,14,0.72)] px-3 py-2 text-sm leading-5 text-[#f7efe2] outline-none transition-colors placeholder:text-red-100/35 focus:border-red-300/45 disabled:cursor-not-allowed disabled:opacity-60"
             />
 

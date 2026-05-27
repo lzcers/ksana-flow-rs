@@ -173,7 +173,7 @@ const GameplayPage: React.FC = () => {
   const handleSave = async () => {
     try {
       await createSave();
-      setFeedback('当前旅程已保存到本地演示存档。');
+      setFeedback('存档保存成功');
     } catch (saveError) {
       setFeedback(readErrorMessage(saveError, '存档失败。'));
     }

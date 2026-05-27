@@ -19,3 +19,5 @@ uuid = { version = "1.18.1", features = ["v4"] }
 
 axum = { version = "0.8.8" }
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
+flate2 = "1.1.9"
+base64 = "0.22.1"

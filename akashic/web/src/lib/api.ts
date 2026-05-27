@@ -104,7 +104,11 @@ export interface SaveExportData {
   title: string;
   createdAt: string;
   updatedAt: string;
-  archive: SessionArchivePayload;
+  compressedArchive: string;
+}
+
+export interface LoadArchiveInput {
+  compressedArchive: string;
 }
 
 export interface GeneratedProfiles {
@@ -268,10 +272,10 @@ export function exportGameSaveArchive(sessionId: string, input: CreateSaveSlotIn
   });
 }
 
-export function loadGameSessionFromArchive(archive: SessionArchivePayload) {
+export function loadGameSessionFromArchive(input: LoadArchiveInput) {
   return requestJson<GameSessionWorldStateData>('/api/game-sessions/load-archive', {
     method: 'POST',
-    body: JSON.stringify(archive),
+    body: JSON.stringify(input),
   });
 }
 

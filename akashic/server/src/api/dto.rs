@@ -7,8 +7,6 @@ use akashic_ecs::resources::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::api::archive::SessionArchivePayload;
-
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiResponse<T> {
     pub success: bool,
@@ -77,7 +75,13 @@ pub struct SaveExportData {
     pub title: String,
     pub created_at: String,
     pub updated_at: String,
-    pub archive: SessionArchivePayload,
+    pub compressed_archive: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoadArchiveRequest {
+    pub compressed_archive: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

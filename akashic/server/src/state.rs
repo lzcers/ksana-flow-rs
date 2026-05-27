@@ -149,20 +149,24 @@ impl AppState {
                 .map_err(AppError::bad_request)?
         };
         let exported_at = now_string();
+        let compressed_archive =
+            archive::compress_archive_payload(&archive).map_err(AppError::internal)?;
 
         Ok(SaveExportData {
             session_id: archive.session_id.clone(),
             title: archive.title.clone(),
             created_at: exported_at.clone(),
             updated_at: exported_at,
-            archive,
+            compressed_archive,
         })
     }
 
     pub async fn load_game_session_from_archive(
         &self,
-        payload: archive::SessionArchivePayload,
+        compressed_archive: String,
     ) -> Result<GameSessionWorldStateData, AppError> {
+        let payload = archive::decompress_archive_payload(&compressed_archive)
+            .map_err(AppError::bad_request)?;
         archive::validate_archive_payload(&payload).map_err(AppError::bad_request)?;
         let session_id = payload.session_id.clone();
         let engine = archive::load_archive_payload(payload).map_err(AppError::bad_request)?;
@@ -468,8 +472,9 @@ mod tests {
 
         let mut payload = sample_payload();
         payload.session_id = "session-b".to_string();
+        let compressed = archive::compress_archive_payload(&payload).expect("archive compresses");
         let restored = state
-            .load_game_session_from_archive(payload.clone())
+            .load_game_session_from_archive(compressed)
             .await
             .expect("archive should restore");
 

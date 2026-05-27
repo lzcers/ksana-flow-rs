@@ -818,7 +818,7 @@ const createGameUIActions = (
         title: normalizedTitle || undefined,
       });
       const slotId = `slot-${crypto.randomUUID().split('-').join('')}`;
-      writeStoredSaveArchive(slotId, saved.archive);
+      writeStoredSaveArchive(slotId, saved.compressedArchive);
       upsertStoredSaveSlot({
         slotId,
         sessionId: saved.sessionId,
@@ -860,7 +860,9 @@ const createGameUIActions = (
         throw new Error('未找到本地存档内容。');
       }
 
-      const loaded = await loadGameSessionFromArchive(archive);
+      const loaded = await loadGameSessionFromArchive({
+        compressedArchive: archive,
+      });
       useGameInternalStore.setState(internalStateFromSession(loaded));
       useGameValueStore.getState().resetValues(effectiveDisplayRound(loaded));
       set({

@@ -1,5 +1,3 @@
-import type { SessionArchivePayload } from './api';
-
 export interface StoredSaveSlot {
   slotId: string;
   sessionId: string;
@@ -50,18 +48,18 @@ export function upsertStoredSaveSlot(slot: StoredSaveSlot) {
   window.localStorage.setItem(SAVE_SLOTS_STORAGE_KEY, JSON.stringify(nextSlots));
 }
 
-export function writeStoredSaveArchive(slotId: string, archive: SessionArchivePayload) {
+export function writeStoredSaveArchive(slotId: string, compressedArchive: string) {
   if (!canUseLocalStorage()) {
     return;
   }
 
   window.localStorage.setItem(
     `${SAVE_ARCHIVE_STORAGE_KEY_PREFIX}${slotId}`,
-    JSON.stringify(archive),
+    compressedArchive,
   );
 }
 
-export function readStoredSaveArchive(slotId: string): SessionArchivePayload | null {
+export function readStoredSaveArchive(slotId: string): string | null {
   if (!canUseLocalStorage()) {
     return null;
   }
@@ -72,7 +70,7 @@ export function readStoredSaveArchive(slotId: string): SessionArchivePayload | n
   }
 
   try {
-    return JSON.parse(raw) as SessionArchivePayload;
+    return raw;
   } catch {
     return null;
   }
