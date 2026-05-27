@@ -175,10 +175,6 @@ const ArchiveListPage: React.FC = () => {
       <StoryFrame className="overflow-hidden p-6 md:p-8">
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
-          style={{
-            backgroundImage:
-              'url("https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20quiet%20fantasy%20archive%20hall%20filled%20with%20moonlit%20shelves%2C%20mystical%20save%20records%2C%20dark%20blue%20cinematic%20game%20ui%20background&image_size=landscape_16_9")',
-          }}
         />
         <div className="relative z-10 space-y-6">
           <input
@@ -188,24 +184,21 @@ const ArchiveListPage: React.FC = () => {
             className="hidden"
             onChange={handleImportFile}
           />
-          <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <SecondaryButton onClick={() => setGameState('lobby')} disabled={isLoading}>
               <ArrowLeft className="h-4 w-4" />
               返回大厅
             </SecondaryButton>
+            <PrimaryButton type="button" onClick={handleImportButtonClick} disabled={isLoading}>
+              <Upload className="h-4 w-4" />
+              导入存档
+            </PrimaryButton>
           </div>
 
           <PageTitle
             title="存档列表"
             subtitle="这里保存着你在当前设备上的旅程记录，可随时导入、导出或继续。"
           />
-
-          <div className="flex flex-wrap justify-center gap-3">
-            <PrimaryButton type="button" onClick={handleImportButtonClick} disabled={isLoading}>
-              <Upload className="h-4 w-4" />
-              导入存档
-            </PrimaryButton>
-          </div>
 
           {error ? (
             <StatusPill
@@ -264,7 +257,7 @@ const ArchiveListPage: React.FC = () => {
                       className="flex-1"
                     >
                       <FolderOpen className="h-4 w-4" />
-                      {isLoading ? '读取中...' : '继续这段旅程'}
+                      {isLoading ? '读取中...' : '继续旅程'}
                     </PrimaryButton>
                     <SecondaryButton
                       type="button"

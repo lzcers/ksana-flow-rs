@@ -56,7 +56,7 @@ export const initialCharacter: Character = {
 
 export const initialWorld: World = {
   era: '蒸汽朋克',
-  description: '旧秩序仍在勉强维持，但裂痕已经蔓延到每个人的日常。',
+  description: '',
   specialRules: [],
 };
 

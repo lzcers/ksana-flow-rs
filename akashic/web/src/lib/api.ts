@@ -232,9 +232,8 @@ function formatSpecialRules(specialRules: string[]): string {
 export function buildGenerateProfilesPrompt(
   character: Character,
   world: World,
-  story: StoryPreferences,
 ): string {
-  return `请基于以下三组设定生成“世界设定”和“主角设定”。
+  return `请基于以下两组设定生成“世界设定”和“主角设定”。
 
 这些表单内容都是已确定事实，禁止改写、替换或否定，只能围绕它们做扩写、补完和强化。
 
@@ -243,7 +242,7 @@ export function buildGenerateProfilesPrompt(
 - 性别：${character.gender}
 - 年龄：${character.age}
 - 人物描述：${character.appearance || '未填写'}
-- 命运烙印：${character.background}
+- 命运烙印：${character.background || '未填写'}
 - 属性分配：
   - 智力：${character.traits.intellect}
   - 体力：${character.traits.physique}
@@ -254,29 +253,21 @@ export function buildGenerateProfilesPrompt(
 
 [世界设定]
 - 时代：${world.era}
-- 世界描述：${world.description}
+- 世界描述：${world.description || '未填写'}
 - 额外特殊规则：
 ${formatSpecialRules(world.specialRules)}
 
-[故事设定]
-- 题材 / 主题：${story.theme || '未填写'}
-- 故事氛围：${story.atmosphere || '未填写'}
-- 叙事风格：${story.narrativeStyle || '未填写'}
-- 避雷与禁区：${story.taboos || '无'}
-
 [生成目标]
 - 这是长期互动叙事的设定底稿，不是一次性简介。
-- 世界设定必须严格建立在“世界设定”事实上，并呼应“故事设定”的期待。
+- 世界设定必须严格建立在“世界设定”事实上。
 - 主角设定必须严格建立在“人物设定”事实上，并自然解释主角为何会被卷入这个故事。
 - 世界设定重点写清世界如何运转、现实压力从何而来，以及什么样的秩序正在支配众人。
 - 主角设定重点写清欲望、弱点、行动倾向，以及六项属性如何转化为行为习惯与判断方式。
-- “故事设定”属于强约束，生成结果必须尽量满足题材、氛围与叙事风格要求。
-- “避雷与禁区”必须严格规避，不要以变体、擦边或反讽方式重新引入。
 - 文风偏文学叙事，但内容必须具体、可演绎，能自然推动后续冲突和抉择。`;
 }
 
-export function generateProfiles(character: Character, world: World, story: StoryPreferences) {
-  const prompt = buildGenerateProfilesPrompt(character, world, story);
+export function generateProfiles(character: Character, world: World) {
+  const prompt = buildGenerateProfilesPrompt(character, world);
   return requestJson<GeneratedProfiles>('/api/profiles/generate', {
     method: 'POST',
     body: JSON.stringify({ prompt }),

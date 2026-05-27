@@ -199,7 +199,7 @@ const GameplayPage: React.FC = () => {
               onTypewriterComplete={handleTypewriterComplete}
             />
 
-            <div className="flex flex-col absolute w-full bottom-0">
+            <div className="mt-auto flex touch-pan-y flex-col gap-2">
               <ChoicePanel
                 hasChoices={hasChoices}
                 choices={currentRoundChoices}
@@ -214,7 +214,6 @@ const GameplayPage: React.FC = () => {
                 onObsessionInputChange={setObsessionInput}
                 onObsessionSubmit={handleObsessionSubmit}
               />
-
               <GameplayToolbar
                 activeObsession={activeObsession}
                 isObsessionToggleDisabled={isObsessionToggleDisabled}

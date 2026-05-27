@@ -41,7 +41,7 @@
   }
 
   body {
-    @apply bg-background text-foreground overflow-hidden font-sans;
+    @apply bg-background text-foreground overflow-x-hidden font-sans;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     background-image:
@@ -95,7 +95,7 @@
 
   .akashic-field,
   .akashic-select {
-    @apply h-11 w-full border px-4 text-sm text-[#f5ecdc] outline-none transition-colors md:h-12 md:text-base;
+    @apply h-10 w-full rounded-xl border px-2.5 py-1.5 text-sm text-[#f5ecdc] outline-none transition-colors md:h-11 md:text-[15px];
     border-color: rgba(116, 103, 80, 0.65);
     background-color: rgba(29, 40, 59, 0.88);
   }
@@ -111,7 +111,7 @@
   }
 
   .akashic-select {
-    @apply appearance-none pr-10;
+    @apply appearance-none pr-9;
   }
 
   .akashic-choice {
@@ -166,7 +166,7 @@
   }
 
   .akashic-range {
-    @apply h-1.5 w-full cursor-pointer appearance-none rounded-full sm:h-[0.45rem] md:h-2;
+    @apply h-2.5 w-full cursor-pointer appearance-none rounded-full sm:h-[0.3rem] md:h-1.25;
     background: linear-gradient(90deg, #1273ff 0%, #1c84ff 55%, rgba(255, 255, 255, 0.92) 55%, rgba(255, 255, 255, 0.92) 100%);
   }
 
@@ -188,30 +188,70 @@
     border-radius: 9999px;
     background: rgba(210, 185, 144, 0.3);
   }
+
+  @media (max-width: 639px) {
+
+    /* Keep native select outside mobile blur/clipping layers on the creation page. */
+    .creation-native-select-safe,
+    .creation-native-select-safe .akashic-surface,
+    .creation-native-select-safe .akashic-panel {
+      overflow: visible;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+
+    /* Let iOS render system-native select chrome to avoid popup anchor glitches. */
+    .creation-native-select-safe .akashic-select {
+      -webkit-appearance: menulist;
+      appearance: auto;
+      padding-right: 0.75rem;
+      font-size: 16px;
+    }
+
+    .creation-native-select-safe .akashic-select-icon {
+      display: none;
+    }
+
+    input.akashic-range::-webkit-slider-thumb {
+      width: 0.9rem;
+      height: 0.9rem;
+      border: 2px solid #1273ff;
+      background: #f6eddc;
+      box-shadow: 0 0 0 1px rgba(18, 115, 255, 0.18);
+    }
+
+    input.akashic-range::-moz-range-thumb {
+      width: 0.9rem;
+      height: 0.9rem;
+      border: 2px solid #1273ff;
+      background: #f6eddc;
+      box-shadow: 0 0 0 1px rgba(18, 115, 255, 0.18);
+    }
+  }
 }
 
 input.akashic-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 0.72rem;
+  height: 0.72rem;
   border-radius: 9999px;
   border: 0;
   background: #1273ff;
-  box-shadow: 0 0 0 3px rgba(18, 115, 255, 0.18);
+  box-shadow: 0 0 0 2px rgba(18, 115, 255, 0.18);
 }
 
 input.akashic-range::-moz-range-thumb {
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 0.72rem;
+  height: 0.72rem;
   border-radius: 9999px;
   border: 0;
   background: #1273ff;
-  box-shadow: 0 0 0 3px rgba(18, 115, 255, 0.18);
+  box-shadow: 0 0 0 2px rgba(18, 115, 255, 0.18);
 }
 
 input.akashic-range::-moz-range-track {
-  height: 0.5rem;
+  height: 0.3125rem;
   border-radius: 9999px;
   background: rgba(255, 255, 255, 0.92);
 }

@@ -51,7 +51,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
     <div className="flex w-full">
       <div className="game-choices flex-1 rounded-[1.1rem] border border-[rgba(116,103,80,0.35)] bg-[rgba(5,11,22,0.55)] px-1.5 py-2">
         {!activeObsession ? (
-          <div className="akashic-scroll max-h-[28dvh] space-y-1 overflow-y-auto pr-0.5 py-0.5">
+          <div className="akashic-scroll max-h-[28dvh] touch-pan-y space-y-1 overflow-y-auto pr-0.5 py-0.5">
             {choices.map((choice) => (
               <div key={choice.id} className="space-y-1.5">
                 <div className="grid grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-1.5">
@@ -104,7 +104,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
                 }
               }}
               disabled={isChoiceInteractionDisabled}
-              placeholder="写下你此刻的执念行动"
+              placeholder="写下你此刻的行动"
               className="min-h-24 w-full resize-none rounded-[0.85rem] border border-red-300/25 bg-[rgba(16,8,14,0.72)] px-3 py-2 text-sm leading-5 text-[#f7efe2] outline-none transition-colors placeholder:text-red-100/35 focus:border-red-300/45 disabled:cursor-not-allowed disabled:opacity-60"
             />
 

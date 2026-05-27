@@ -18,7 +18,7 @@ function App() {
         <div className="absolute inset-y-0 right-[8%] w-px bg-white/5" />
       </div>
 
-      <main className="akashic-scroll relative z-10 h-full w-full overflow-y-auto overflow-x-hidden">
+      <main className="akashic-scroll relative z-10 h-full w-full touch-pan-y overflow-y-auto overflow-x-hidden">
         {gameState === 'lobby' && <LobbyPage />}
         {gameState === 'archive_list' && <ArchiveListPage />}
         {gameState === 'creation' && <CreationPage />}

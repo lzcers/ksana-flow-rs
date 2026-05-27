@@ -60,7 +60,7 @@ const NarrationPanel: React.FC<NarrationPanelProps> = ({
   return (
     <section className="akashic-panel flex h-[55dvh] shrink-0 flex-col p-2">
       <div className="flex min-h-0 flex-1 flex-col rounded-2xl bg-[#040912]/90 sm:rounded-[1.2rem] sm:pl-4 md:rounded-[1.3rem] md:pl-5">
-        <div className="akashic-scroll min-h-0 flex-1 overflow-y-auto">
+        <div className="akashic-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto">
           <div className="h-full space-y-5 py-1 pr-2 text-[1rem] font-semibold leading-[1.82] text-[#f6eddc] sm:text-[1rem] md:text-[1.2rem]">
             {narrationHistory.map((entry) => {
               return (

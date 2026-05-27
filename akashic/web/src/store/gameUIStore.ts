@@ -615,7 +615,7 @@ const createGameUIActions = (
 
     try {
       const generatingStartedAt = Date.now();
-      const generatedProfiles = await generateProfiles(character, world, story);
+      const generatedProfiles = await generateProfiles(character, world);
       const generatingElapsed = Date.now() - generatingStartedAt;
       if (generatingElapsed < MIN_GENERATING_PAGE_MS) {
         await sleep(MIN_GENERATING_PAGE_MS - generatingElapsed);
