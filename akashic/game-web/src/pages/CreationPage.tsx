@@ -269,29 +269,28 @@ const CreationPage: React.FC = () => {
                   />
                 </div>
               </div>
-
-              <div>
-                <FieldLabel hint="">人物描述</FieldLabel>
-                <input
-                  type="text"
-                  value={character.appearance}
-                  onChange={(e) => updateCharacter({ appearance: e.target.value })}
-                  className="akashic-field"
-                  placeholder="例子：佩着旧怀表，眉眼带倦意"
-                />
-              </div>
-
               <div>
                 <FieldLabel hint="">命运烙印</FieldLabel>
                 <SearchableSelect
                   value={character.background}
                   options={backgroundOptions}
-                  placeholder="搜索一段既定命途，或写下你的命运烙印"
-                  emptyText="没有找到贴近的命途，你可以直接写下新的烙印。"
+                  placeholder="决定主角人生默认模式，但非绝对牢笼"
+                  emptyText="你可以直接写下新的烙印。"
                   createText="采用你此刻写下的命运烙印"
                   onChange={(nextValue) => updateCharacter({ background: nextValue })}
                 />
               </div>
+              <div>
+                <FieldLabel hint="">人物描述</FieldLabel>
+                <textarea
+                  value={character.appearance}
+                  onChange={(e) => updateCharacter({ appearance: e.target.value })}
+                  className="akashic-field min-h-24 resize-y"
+                  placeholder="你可以在这输入详细的人物设定，诸如人物外貌描述，性格等。"
+                />
+              </div>
+
+
             </SectionCard>
 
             <SectionCard className="space-y-4 p-3.5 md:p-4">
@@ -400,13 +399,13 @@ const CreationPage: React.FC = () => {
 
             <SectionCard className="z-30 space-y-3.5 p-3.5 md:p-4" style={{ overflow: 'visible' }}>
               <div>
-                <FieldLabel>世界观</FieldLabel>
+                <FieldLabel>世界背景</FieldLabel>
                 <SearchableSelect
                   value={world.era}
                   options={eraOptions}
-                  placeholder="搜索一个时代切面，或写下你的世界观"
-                  emptyText="没有找到贴近的时代，你可以直接写下新的世界观。"
-                  createText="采用你此刻写下的世界观"
+                  placeholder="搜索一个世界，或写下你想要的世界"
+                  emptyText="没有找到贴近的世界，你可以直接写下新的世界。"
+                  createText="采用你此刻写下的世界"
                   onChange={(nextValue) => updateWorld({ era: nextValue })}
                 />
               </div>
@@ -417,7 +416,7 @@ const CreationPage: React.FC = () => {
                   value={world.description}
                   onChange={(e) => updateWorld({ description: e.target.value })}
                   className="akashic-field min-h-24 resize-y"
-                  placeholder="例子：旧帝国用记忆税维持城市运转，越靠近中心城区，失去的自我就越多。"
+                  placeholder="你可以在这输入详细的世界描述，诸如世界历史，地理环境等。"
                 />
               </div>
             </SectionCard>

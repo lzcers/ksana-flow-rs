@@ -171,7 +171,7 @@ export default function HomePage() {
                   </h1>
 
                   <p className="text-sm md:text-base text-muted-foreground mb-8 max-w-xl mx-auto lg:mx-0 leading-7">
-                    从一个名字、一段烙印与一道核心矛盾开始，让你在字里行间轻推命运，
+                    从一个名字、一段烙印开始，让你在字里行间轻推命运。
                   </p>
 
                   <div className="mb-6 text-left bg-background/35">
