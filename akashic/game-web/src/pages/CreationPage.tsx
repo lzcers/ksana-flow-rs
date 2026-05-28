@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronDown, TriangleAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useGameUIStore } from '../store/gameUIStore';
 import {
   FieldLabel,
@@ -10,6 +11,7 @@ import {
   StoryFrame,
   StatusPill,
 } from '../components/AkashicUI';
+import { appRoutes } from '../lib/appRoutes';
 
 const backgroundOptions = [
   '背负诅咒的继承者',
@@ -151,12 +153,12 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
 };
 
 const CreationPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
     character,
     world,
     updateCharacter,
     updateWorld,
-    setGameState,
     startGame,
     isLoading,
     error,
@@ -477,7 +479,7 @@ const CreationPage: React.FC = () => {
           */}
 
           <div className="sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 mt-2 flex touch-pan-y flex-col gap-2 rounded-xl border border-[#6f6655]/50 bg-[#0a1222]/94 p-1.5 shadow-[0_12px_28px_rgba(2,8,18,0.44)] backdrop-blur-xl sm:static sm:inset-auto sm:mt-1 sm:flex-row sm:justify-end sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
-            <SecondaryButton onClick={() => setGameState('lobby')} className="min-h-10 w-full px-3.5 py-2 text-sm sm:w-auto md:min-h-11 md:px-4 md:py-2.5">
+            <SecondaryButton onClick={() => navigate(appRoutes.lobby)} className="min-h-10 w-full px-3.5 py-2 text-sm sm:w-auto md:min-h-11 md:px-4 md:py-2.5">
               返回大厅
             </SecondaryButton>
             <PrimaryButton onClick={handleStartGame} disabled={!canStart || isLoading} className="min-h-10 w-full px-3.5 py-2 text-sm sm:w-auto md:min-h-11 md:px-4 md:py-2.5">

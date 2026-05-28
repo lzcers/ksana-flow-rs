@@ -28,9 +28,9 @@ const NarrationHistoryItem: React.FC<NarrationHistoryItemProps> = React.memo(({
 }) => {
   return (
     <div className="space-y-2">
-      <span className="text-xs font-medium tracking-[0.18em] text-[#8f98ab] uppercase">
-        第 {entry.round} 轮
-      </span>
+      <p className="text-sm font-medium text-[#d8c7aa]">
+        第 {entry.round} 轮：{entry.title || ""}
+      </p>
       {entry.isAwaitingNarration && !entry.narrationText ? (
         <p className="text-sm font-medium text-[#8f98ab]">
           {STREAM_PLACEHOLDER_TEXT}

@@ -24,6 +24,8 @@ import {
   upsertStoredSaveSlot,
   writeStoredSaveArchive,
 } from '../lib/saveSlots';
+import { appRoutes } from '../lib/appRoutes';
+import { navigateTo } from '../lib/navigation';
 import { useGameValueStore } from './gameValueStore';
 import {
   createRoundState,
@@ -52,7 +54,6 @@ import {
   toChoiceFromSession,
 } from './gameStoreHelpers';
 
-export type GameState = 'lobby' | 'archive_list' | 'creation' | 'generating' | 'playing';
 export type StartupStage =
   | 'idle'
   | 'generating_world'
@@ -61,8 +62,6 @@ export type StartupStage =
   | 'creating_session';
 
 export interface GameUIState {
-  // 当前页面所处的整体阶段。
-  gameState: GameState;
   // 角色设定表单与存档摘要会读取的人物信息。
   character: Character;
   // 世界设定表单与存档摘要会读取的世界信息。
@@ -84,8 +83,6 @@ export interface GameUIState {
 }
 
 export interface GameUIActions {
-  // 操作：切换整体页面阶段。
-  setGameState: (state: GameState) => void;
   // 操作：更新角色设定。
   updateCharacter: (updates: Partial<Character>) => void;
   // 操作：更新世界设定。
@@ -98,6 +95,8 @@ export interface GameUIActions {
   startGame: () => Promise<void>;
   // 操作：基于已生成设定正式创建会话并进入游戏。
   enterWorld: () => Promise<void>;
+  // 操作：在进入游玩页后触发开场叙事。
+  bootstrapSession: () => Promise<void>;
   // 操作：提交当前选择；执念模式下也可直接提交自定义行动文本。
   submitChoice: (
     submission: { input: PlayerActionInput; displayText: string },
@@ -114,7 +113,6 @@ export interface GameUIActions {
 export type GameUIStoreState = GameUIState & GameUIActions;
 
 const initialUIState: GameUIState = {
-  gameState: 'lobby',
   character: initialCharacter,
   world: initialWorld,
   story: initialStory,
@@ -132,9 +130,11 @@ let lastStreamEventId: string | null = null;
 let activeStreamTasks = new Map<string, TaskView>();
 let activeStreamTaskRounds = new Map<string, number>();
 let startupStageTimer: number | null = null;
+let bootstrappingSessionId: string | null = null;
 
 const MIN_GENERATING_PAGE_MS = 1200;
 const MIN_CREATING_SESSION_STAGE_MS = 450;
+const FIRST_ROUND_READY_TIMEOUT_MS = 45000;
 
 function areChoicesEqual(left: RoundState['choices'], right: RoundState['choices']): boolean {
   if (left.length !== right.length) {
@@ -158,6 +158,7 @@ function closeActiveSessionStream() {
   lastStreamEventId = null;
   activeStreamTasks = new Map();
   activeStreamTaskRounds = new Map();
+  bootstrappingSessionId = null;
 }
 
 function clearStartupStageTimer() {
@@ -171,7 +172,7 @@ function scheduleStartupStageProgress() {
   clearStartupStageTimer();
   startupStageTimer = window.setTimeout(() => {
     const state = useGameUIStore.getState();
-    if (state.gameState === 'generating' && state.startupStage === 'generating_world') {
+    if (state.startupStage === 'generating_world') {
       useGameUIStore.setState({
         startupStage: 'generating_protagonist',
       });
@@ -188,6 +189,49 @@ function sleep(ms: number) {
 function waitForNextPaint() {
   return new Promise<void>((resolve) => {
     window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function titleFromWorldState(
+  worldState: SessionRoundHistoryData['worldState'] | GameSessionWorldStateData['worldState'] | null | undefined,
+  fallback = '命运回响',
+): string {
+  return worldState?.sceneTitle?.trim() || fallback;
+}
+
+function waitForRoundNarrationStarted(sessionId: string, round: number) {
+  return new Promise<void>((resolve, reject) => {
+    const hasStarted = () => {
+      const internalState = useGameInternalStore.getState();
+      if (internalState.sessionId !== sessionId) {
+        return false;
+      }
+
+      const roundState = internalState.roundStates[round];
+      return Boolean(roundState?.narrationText.trim());
+    };
+
+    if (hasStarted()) {
+      resolve();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      unsubscribe();
+      reject(new Error('开场叙事比预想中更慢一些，请再试一次。'));
+    }, FIRST_ROUND_READY_TIMEOUT_MS);
+
+    const unsubscribe = useGameInternalStore.subscribe((state) => {
+      const roundState = state.roundStates[round];
+      if (
+        state.sessionId === sessionId
+        && roundState?.narrationText.trim()
+      ) {
+        window.clearTimeout(timeoutId);
+        unsubscribe();
+        resolve();
+      }
+    });
   });
 }
 
@@ -209,7 +253,6 @@ function createSlotId() {
 
 function resetUIState(): GameUIState {
   return {
-    gameState: 'lobby',
     character: cloneCharacter(initialCharacter),
     world: cloneWorld(initialWorld),
     story: cloneStory(initialStory),
@@ -313,6 +356,7 @@ function roundStateFromHistoryEntry(
     || (isCurrentRound ? latestHistoryFromSession(session) : '');
 
   return createRoundState(entry.round, {
+    title: titleFromWorldState(entry.worldState, titleFromWorldState(session.worldState)),
     narrationText,
     narrationStatus: isCurrentRound && session.currentTask?.kind === 'narration'
       ? session.currentTask.status
@@ -342,6 +386,7 @@ function currentRoundStateFromSession(
 ): RoundState {
   return {
     ...createRoundState(round, {
+      title: titleFromWorldState(session.worldState),
       narrationText: latestHistoryFromSession(session),
       narrationStatus: session.currentTask?.kind === 'narration' ? session.currentTask.status : null,
       choices: session.choices.map(toChoiceFromSession),
@@ -413,6 +458,7 @@ function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
       const nextRoundState = createRoundState(activeRound, {
         ...(previousRoundState ?? {}),
         round: activeRound,
+        title: previousRoundState?.title || stateView?.currentScene || '命运回响',
         narrationText: nextText,
         narrationStatus: task.status,
         isAwaitingNarration: false,
@@ -463,25 +509,29 @@ function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
       const summary = summarizeFatePlanning(parsed);
       const nextRound = Math.max(summary?.round ?? activeRound, 1);
       const hadRoundState = Boolean(internalState.roundStates[nextRound]);
+      const previousRoundState = internalState.roundStates[nextRound];
       const nextTurnIndex = Math.max(internalState.turnIndex, nextRound);
       const nextDisplayRound = internalState.displayRound || nextRound;
+      const nextTitle = summary?.sceneTitle ?? previousRoundState?.title ?? '命运回响';
 
       if (
         internalState.turnIndex !== nextTurnIndex
         || internalState.displayRound !== nextDisplayRound
         || !hadRoundState
+        || previousRoundState?.title !== nextTitle
       ) {
+        const nextRoundState = createRoundState(nextRound, {
+          ...(previousRoundState ?? {}),
+          title: nextTitle,
+          isAwaitingNarration: previousRoundState?.isAwaitingNarration ?? true,
+        });
         nextInternalState = {
           turnIndex: nextTurnIndex,
           displayRound: nextDisplayRound,
-          roundStates: hadRoundState
-            ? internalState.roundStates
-            : {
-              ...internalState.roundStates,
-              [nextRound]: createRoundState(nextRound, {
-                isAwaitingNarration: true,
-              }),
-            },
+          roundStates: {
+            ...internalState.roundStates,
+            [nextRound]: nextRoundState,
+          },
         };
       }
 
@@ -587,20 +637,6 @@ const createGameUIActions = (
   set: StoreApi<GameUIStoreState>['setState'],
   get: StoreApi<GameUIStoreState>['getState'],
 ): GameUIActions => ({
-  setGameState: (state) => {
-    if (state !== 'generating') {
-      clearStartupStageTimer();
-    }
-    if (state !== 'playing') {
-      closeActiveSessionStream();
-    }
-    set({
-      gameState: state,
-      startupStage: state === 'generating' ? get().startupStage : 'idle',
-      preparedProfiles: state === 'generating' ? get().preparedProfiles : null,
-      error: null,
-    });
-  },
   updateCharacter: (updates) =>
     set((state) => ({
       character: {
@@ -626,7 +662,7 @@ const createGameUIActions = (
     })),
   clearError: () => set({ error: null }),
   startGame: async () => {
-    const { character, world, story } = get();
+    const { character, world } = get();
     closeActiveSessionStream();
     clearStartupStageTimer();
     useGameInternalStore.setState({
@@ -634,29 +670,24 @@ const createGameUIActions = (
     });
     useGameValueStore.getState().resetValues();
     set({
-      gameState: 'generating',
       error: null,
       isLoading: true,
       startupStage: 'generating_world',
       preparedProfiles: null,
       stateView: null,
     });
+    navigateTo(appRoutes.generating, { replace: true });
     await waitForNextPaint();
     scheduleStartupStageProgress();
 
+    let generatedProfiles: GeneratedProfiles;
     try {
       const generatingStartedAt = Date.now();
-      const generatedProfiles = await generateProfiles(character, world);
+      generatedProfiles = await generateProfiles(character, world);
       const generatingElapsed = Date.now() - generatingStartedAt;
       if (generatingElapsed < MIN_GENERATING_PAGE_MS) {
         await sleep(MIN_GENERATING_PAGE_MS - generatingElapsed);
       }
-      clearStartupStageTimer();
-      set({
-        startupStage: 'ready_to_enter',
-        preparedProfiles: generatedProfiles,
-        isLoading: false,
-      });
     } catch (error) {
       clearStartupStageTimer();
       closeActiveSessionStream();
@@ -664,17 +695,36 @@ const createGameUIActions = (
         ...initialInternalState,
       });
       set({
-        gameState: 'creation',
         stateView: null,
         isLoading: false,
         startupStage: 'idle',
         error: error instanceof Error ? error.message : '开启旅程失败。',
       });
+      navigateTo(appRoutes.creation, { replace: true });
       throw error;
     }
+
+    clearStartupStageTimer();
+    set({
+      startupStage: 'creating_session',
+      preparedProfiles: generatedProfiles,
+    });
+    await waitForNextPaint();
+    await get().enterWorld();
   },
   enterWorld: async () => {
-    const { character, world, preparedProfiles } = get();
+    const { character, world, preparedProfiles, startupStage, stateView } = get();
+    const { sessionId } = useGameInternalStore.getState();
+
+    if (startupStage === 'ready_to_enter' && sessionId && stateView) {
+      set({
+        startupStage: 'idle',
+        preparedProfiles: null,
+      });
+      navigateTo(appRoutes.gameplay, { replace: true });
+      return;
+    }
+
     if (!preparedProfiles) {
       throw new Error('设定还在准备中，请稍后再进入。');
     }
@@ -700,6 +750,7 @@ const createGameUIActions = (
         displayRound: 1,
         roundStates: {
           1: createRoundState(1, {
+            title: '第一轮',
             isAwaitingNarration: true,
           }),
         },
@@ -721,22 +772,65 @@ const createGameUIActions = (
           latestProtagonistAction: '你还没有做出选择',
         },
         error: null,
-        gameState: 'playing',
         isLoading: true,
-        startupStage: 'idle',
-        preparedProfiles: null,
       });
-
       connectSessionStream(created.sessionId);
-
       await submitGameSessionControl(created.sessionId, {
         control: { type: 'continue' },
       });
+      await waitForRoundNarrationStarted(created.sessionId, 1);
+      set((state) => ({
+        error: null,
+        skipRestoredNarrationAnimation: false,
+        startupStage: 'ready_to_enter',
+        stateView: state.stateView
+          ? {
+            ...state.stateView,
+            phase: 'opening',
+          }
+          : state.stateView,
+      }));
     } catch (error) {
+      closeActiveSessionStream();
+      useGameInternalStore.setState({
+        ...initialInternalState,
+      });
       set({
-        gameState: 'generating',
+        stateView: null,
         isLoading: false,
         startupStage: 'ready_to_enter',
+        skipRestoredNarrationAnimation: false,
+        error: error instanceof Error ? error.message : '进入幻世失败。',
+      });
+      navigateTo(appRoutes.generating, { replace: true });
+      throw error;
+    }
+  },
+  bootstrapSession: async () => {
+    const { stateView } = get();
+    const { sessionId } = useGameInternalStore.getState();
+
+    if (!sessionId || !stateView || stateView.phase !== 'booting') {
+      return;
+    }
+
+    if (bootstrappingSessionId === sessionId) {
+      return;
+    }
+
+    bootstrappingSessionId = sessionId;
+
+    try {
+      connectSessionStream(sessionId);
+      await submitGameSessionControl(sessionId, {
+        control: { type: 'continue' },
+      });
+    } catch (error) {
+      if (bootstrappingSessionId === sessionId) {
+        bootstrappingSessionId = null;
+      }
+      set({
+        isLoading: false,
         error: error instanceof Error ? error.message : '进入幻世失败。',
       });
       throw error;
@@ -914,7 +1008,6 @@ const createGameUIActions = (
       useGameInternalStore.setState(internalStateFromSession(loaded));
       useGameValueStore.getState().resetValues(effectiveDisplayRound(loaded));
       set({
-        gameState: 'playing',
         stateView: stateViewFromSession(loaded),
         isLoading: false,
         startupStage: 'idle',
@@ -923,6 +1016,7 @@ const createGameUIActions = (
         skipRestoredNarrationAnimation: true,
       });
       connectSessionStream(loaded.sessionId);
+      navigateTo(appRoutes.gameplay, { replace: true });
     } catch (error) {
       closeActiveSessionStream();
       useGameInternalStore.setState({
@@ -930,14 +1024,15 @@ const createGameUIActions = (
       });
       set({
         ...resetUIState(),
-        gameState: 'lobby',
         error: error instanceof Error ? error.message : '读取存档失败。',
       });
+      navigateTo(appRoutes.lobby, { replace: true });
       throw error;
     }
   },
   resetGame: () => {
     closeActiveSessionStream();
+    clearStartupStageTimer();
     useGameInternalStore.setState({
       ...initialInternalState,
     });

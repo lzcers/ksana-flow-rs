@@ -1,5 +1,6 @@
 import React from 'react';
-import { Library, Play, Sparkles, TriangleAlert } from 'lucide-react';
+import { Library, Play, TriangleAlert } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   PageTitle,
   PrimaryButton,
@@ -9,17 +10,18 @@ import {
   StoryFrame,
   StatusPill,
 } from '../components/AkashicUI';
+import { appRoutes } from '../lib/appRoutes';
 import { useGameUIStore } from '../store/gameUIStore';
 
 const LobbyPage: React.FC = () => {
-  const setGameState = useGameUIStore((state) => state.setGameState);
+  const navigate = useNavigate();
   const resetGame = useGameUIStore((state) => state.resetGame);
   const isLoading = useGameUIStore((state) => state.isLoading);
   const error = useGameUIStore((state) => state.error);
 
   const handleStart = () => {
     resetGame();
-    setGameState('creation');
+    navigate(appRoutes.creation);
   };
 
   return (
@@ -58,7 +60,7 @@ const LobbyPage: React.FC = () => {
                 开启新人生
               </PrimaryButton>
               <SecondaryButton
-                onClick={() => setGameState('archive_list')}
+                onClick={() => navigate(appRoutes.archives)}
                 disabled={isLoading}
                 className="flex-1"
               >

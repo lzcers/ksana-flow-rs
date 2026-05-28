@@ -18,6 +18,7 @@ const GameplayHeader: React.FC<GameplayHeaderProps> = ({
   const [broadcastIndex, setBroadcastIndex] = useState(0);
   const [isBroadcastDragging, setIsBroadcastDragging] = useState(false);
   const broadcastSwipeStartRef = useRef<{ pointerId: number; clientX: number } | null>(null);
+  const suppressBroadcastClickRef = useRef(false);
 
   const isFatePlanningScene = isLoading && currentScene.includes('命运编织');
   const broadcastKey = broadcastMessages.join('||');
@@ -78,6 +79,7 @@ const GameplayHeader: React.FC<GameplayHeaderProps> = ({
       return;
     }
 
+    suppressBroadcastClickRef.current = true;
     moveBroadcastIndex(deltaX < 0 ? 'next' : 'prev');
   }, [moveBroadcastIndex, releaseBroadcastPointer]);
 
@@ -89,6 +91,28 @@ const GameplayHeader: React.FC<GameplayHeaderProps> = ({
 
     releaseBroadcastPointer(event);
   }, [releaseBroadcastPointer]);
+
+  const handleBroadcastClick = useCallback(() => {
+    if (suppressBroadcastClickRef.current) {
+      suppressBroadcastClickRef.current = false;
+      return;
+    }
+
+    moveBroadcastIndex('next');
+  }, [moveBroadcastIndex]);
+
+  const handleBroadcastKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      moveBroadcastIndex('prev');
+      return;
+    }
+
+    if (event.key === 'ArrowRight' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      moveBroadcastIndex('next');
+    }
+  }, [moveBroadcastIndex]);
 
   return (
     <div className="shrink-0 space-y-2">
@@ -106,9 +130,14 @@ const GameplayHeader: React.FC<GameplayHeaderProps> = ({
         {activeBroadcastMessage ? (
           <div
             className={`akashic-pill absolute inset-y-0 left-0 flex w-full max-w-full items-start border-amber-300/50 bg-[#1d1820]/95 px-2.5 py-1 text-[0.72rem] text-amber-100 select-none touch-pan-y sm:text-xs ${isBroadcastDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+            role={broadcastMessages.length > 1 ? 'button' : undefined}
+            tabIndex={broadcastMessages.length > 1 ? 0 : undefined}
+            aria-label={broadcastMessages.length > 1 ? '切换天命回响' : undefined}
             onPointerDown={handleBroadcastPointerDown}
             onPointerUp={handleBroadcastPointerEnd}
             onPointerCancel={handleBroadcastPointerCancel}
+            onClick={handleBroadcastClick}
+            onKeyDown={handleBroadcastKeyDown}
           >
             <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-200" />
             <span className="line-clamp-2 min-w-0 flex-1 leading-4">{activeBroadcastMessage}</span>

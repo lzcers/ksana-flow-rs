@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { useNavigate } from 'react-router-dom';
 import { useGameInternalStore } from '../store/gameStore';
 import { useGameUIStore } from '../store/gameUIStore';
 import { useGameValueStore } from '../store/gameValueStore';
@@ -12,12 +13,15 @@ import ChoicePanel from '../components/ChoicePanel';
 import GameplayToolbar from '../components/GameplayToolbar';
 import NarrationPanel from '../components/NarrationPanel';
 import type { NarrationRoundEntry } from '../components/gameplayTypes';
+import { appRoutes } from '../lib/appRoutes';
 import type { Choice } from '../lib/api';
 
 const EMPTY_BROADCAST_ITEMS: string[] = [];
 
 const GameplayPage: React.FC = () => {
+  const navigate = useNavigate();
   const {
+    phase,
     turnIndex,
     currentScene,
     latestBroadcastItems,
@@ -26,6 +30,7 @@ const GameplayPage: React.FC = () => {
     error,
     skipRestoredNarrationAnimation,
   } = useGameUIStore(useShallow((state) => ({
+    phase: state.stateView?.phase ?? '',
     turnIndex: state.stateView?.turnIndex,
     currentScene: state.stateView?.currentScene ?? '',
     latestBroadcastItems: state.stateView?.latestBroadcastItems ?? EMPTY_BROADCAST_ITEMS,
@@ -35,13 +40,15 @@ const GameplayPage: React.FC = () => {
     skipRestoredNarrationAnimation: state.skipRestoredNarrationAnimation,
   })));
   const {
+    bootstrapSession,
     createSave,
     submitChoice,
-    setGameState,
+    resetGame,
   } = useGameUIStore(useShallow((state) => ({
+    bootstrapSession: state.bootstrapSession,
     createSave: state.createSave,
     submitChoice: state.submitChoice,
-    setGameState: state.setGameState,
+    resetGame: state.resetGame,
   })));
   const {
     obsessionPoints,
@@ -52,6 +59,7 @@ const GameplayPage: React.FC = () => {
     intuitionPoints: state.intuitionPoints,
     consumeIntuition: state.consumeIntuition,
   })));
+  const sessionId = useGameInternalStore((state) => state.sessionId);
   const displayRound = useGameInternalStore((state) => state.displayRound);
   const roundStates = useGameInternalStore((state) => state.roundStates);
   const [completedTypingKey, setCompletedTypingKey] = useState<string | null>(null);
@@ -105,6 +113,16 @@ const GameplayPage: React.FC = () => {
   const readErrorMessage = useCallback((cause: unknown, fallback: string) => {
     return cause instanceof Error ? cause.message : fallback;
   }, []);
+
+  useEffect(() => {
+    if (!sessionId || phase !== 'booting') {
+      return;
+    }
+
+    void bootstrapSession().catch((bootstrapError) => {
+      setFeedback(readErrorMessage(bootstrapError, '开场叙事启动失败。'));
+    });
+  }, [bootstrapSession, phase, readErrorMessage, sessionId]);
 
   const handlePreview = async (choice: Choice, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -228,7 +246,10 @@ const GameplayPage: React.FC = () => {
                   setActiveObsession((prev) => !prev);
                   setFeedback(null);
                 }}
-                onBackToLobby={() => setGameState('lobby')}
+                onBackToLobby={() => {
+                  resetGame();
+                  navigate(appRoutes.lobby);
+                }}
                 onSave={handleSave}
                 onShare={() => setFeedback('分享功能即将开放，当前可先导出存档保存这段旅程。')}
               />

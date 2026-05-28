@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Download, FolderOpen, Trash2, TriangleAlert, Upload } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   PageTitle,
   PrimaryButton,
@@ -17,6 +18,7 @@ import {
   writeStoredSaveArchive,
   type StoredSaveSlot,
 } from '../lib/saveSlots';
+import { appRoutes } from '../lib/appRoutes';
 import { useGameUIStore } from '../store/gameUIStore';
 
 function formatTimeLabel(value: string) {
@@ -75,7 +77,7 @@ function createSlotId() {
 }
 
 const ArchiveListPage: React.FC = () => {
-  const setGameState = useGameUIStore((state) => state.setGameState);
+  const navigate = useNavigate();
   const loadSave = useGameUIStore((state) => state.loadSave);
   const isLoading = useGameUIStore((state) => state.isLoading);
   const error = useGameUIStore((state) => state.error);
@@ -201,7 +203,7 @@ const ArchiveListPage: React.FC = () => {
             onChange={handleImportFile}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <SecondaryButton onClick={() => setGameState('lobby')} disabled={isLoading}>
+            <SecondaryButton onClick={() => navigate(appRoutes.lobby)} disabled={isLoading}>
               <ArrowLeft className="h-4 w-4" />
               返回大厅
             </SecondaryButton>

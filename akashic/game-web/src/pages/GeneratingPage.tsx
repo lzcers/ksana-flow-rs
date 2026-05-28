@@ -16,6 +16,7 @@ import {
   StatusPill,
   StoryFrame,
 } from '../components/AkashicUI';
+import { useGameInternalStore } from '../store/gameStore';
 
 type StepStatus = 'pending' | 'active' | 'done';
 
@@ -71,9 +72,9 @@ const rotatingMessages: Record<Exclude<StartupStage, 'idle'>, string[]> = {
     '正在让性格倾向落成可演绎的行动方式',
   ],
   ready_to_enter: [
-    '世界设定与人物设定已经就绪',
-    '命运入口已被推开一线',
-    '你可以选择现在步入幻世',
+    '第一轮叙事已经开始显影',
+    '命运入口已经被推开一道缝隙',
+    '你现在可以步入幻世，直接看到故事继续流动',
   ],
   creating_session: [
     '正在注入世界设定',
@@ -94,7 +95,7 @@ function stepStatus(currentStage: StartupStage, targetStage: Exclude<StartupStag
   return 'pending';
 }
 
-function stageHeadline(stage: StartupStage, name: string): StageHeadline {
+function stageHeadline(stage: StartupStage, name: string, hasPlayableSession: boolean): StageHeadline {
   switch (stage) {
     case 'generating_protagonist':
       return {
@@ -107,10 +108,15 @@ function stageHeadline(stage: StartupStage, name: string): StageHeadline {
         subtitle: '世界设定与主角设定已经生成，正在将它们汇入幻世，并点亮第一轮叙事。',
       };
     case 'ready_to_enter':
-      return {
-        title: '设定已经落笔',
-        subtitle: '世界设定与主角设定已经生成完毕。确认之后，它们将正式汇入幻世，展开你的第一轮命运。',
-      };
+      return hasPlayableSession
+        ? {
+          title: '开场已经点亮',
+          subtitle: '第一轮叙事已经开始流动。你现在就可以步入幻世，直接看着它继续展开。',
+        }
+        : {
+          title: '入口稍有震颤',
+          subtitle: '世界设定与主角设定已经完备。再试一次，就能继续唤起你的第一轮命运。',
+        };
     case 'generating_world':
     case 'idle':
     default:
@@ -122,17 +128,36 @@ function stageHeadline(stage: StartupStage, name: string): StageHeadline {
 }
 
 const GeneratingPage: React.FC = () => {
-  const { startupStage, character, world, isLoading, error, enterWorld } = useGameUIStore(useShallow((state) => ({
+  const { startupStage, character, world, isLoading, error, enterWorld, hasPlayableSession } = useGameUIStore(useShallow((state) => ({
     startupStage: state.startupStage,
     character: state.character,
     world: state.world,
     isLoading: state.isLoading,
     error: state.error,
     enterWorld: state.enterWorld,
+    hasPlayableSession: Boolean(state.stateView),
   })));
-  const headline = stageHeadline(startupStage, character.name || '这位主角');
+  const sessionId = useGameInternalStore((state) => state.sessionId);
+  const canEnterWorld = startupStage === 'ready_to_enter' && Boolean(sessionId) && hasPlayableSession;
+  const headline = stageHeadline(startupStage, character.name || '这位主角', canEnterWorld);
   const stageKey = startupStage === 'idle' ? 'generating_world' : startupStage;
-  const currentMessages = useMemo(() => rotatingMessages[stageKey], [stageKey]);
+  const currentMessages = useMemo(() => {
+    if (stageKey !== 'ready_to_enter') {
+      return rotatingMessages[stageKey];
+    }
+
+    return canEnterWorld
+      ? [
+        '第一轮叙事已经开始显影',
+        '命运入口已经被推开一道缝隙',
+        '你现在可以步入幻世，直接看到故事继续流动',
+      ]
+      : [
+        '设定已经落笔，只差把旅程重新续上',
+        '命运入口短暂摇晃，你可以再次尝试',
+        '再推开一次门，幻世会继续向前',
+      ];
+  }, [canEnterWorld, stageKey]);
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
@@ -215,8 +240,8 @@ const GeneratingPage: React.FC = () => {
 
           {startupStage === 'ready_to_enter' ? (
             <div className="flex justify-center">
-              <PrimaryButton onClick={() => void enterWorld()} disabled={isLoading} className="min-w-44">
-                {isLoading ? '步入幻世中...' : '步入幻世'}
+              <PrimaryButton onClick={() => void enterWorld()} disabled={!canEnterWorld && isLoading} className="min-w-44">
+                {canEnterWorld ? '步入幻世' : (isLoading ? '再次步入幻世中...' : '再次步入幻世')}
               </PrimaryButton>
             </div>
           ) : null}
