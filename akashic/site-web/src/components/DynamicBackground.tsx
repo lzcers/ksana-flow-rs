@@ -49,7 +49,7 @@ export default function DynamicBackground() {
       particles = []
       // 增加粒子数量到 150-200
       const count = Math.min(200, Math.max(150, Math.floor((canvas.width * canvas.height) / 8000)))
-      
+
       for (let i = 0; i < count; i++) {
         // 金色: rgb(212, 165, 116) 或 青色: rgb(74, 158, 173)
         const isGold = Math.random() > 0.6
@@ -179,7 +179,7 @@ export default function DynamicBackground() {
 
     const drawLightBeams = () => {
       const time = Date.now() * 0.001
-      
+
       // 从顶部射下的光束
       for (let i = 0; i < 3; i++) {
         const x = canvas.width * (0.2 + i * 0.3) + Math.sin(time + i) * 50

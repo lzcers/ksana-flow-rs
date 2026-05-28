@@ -22,14 +22,19 @@ export default function Layout() {
 
       {/* 导航栏 */}
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <nav className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
+        <nav className="max-w-6xl mx-auto px-6 h-14 lg:h-16 flex items-center justify-between gap-6">
           <Link to="/" className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
               <span className="text-primary font-serif text-sm">幻</span>
             </div>
-            <span className="font-serif text-base tracking-wider text-foreground">
-              幻世
-            </span>
+            <div>
+              <span className="block font-serif text-base tracking-wider text-foreground">
+                幻世
+              </span>
+              <span className="hidden lg:block text-[11px] tracking-[0.28em] text-muted-foreground/70">
+                INTERACTIVE DESTINY
+              </span>
+            </div>
           </Link>
 
           {/* 桌面导航 */}
@@ -109,7 +114,7 @@ export default function Layout() {
       </header>
 
       {/* 主内容 */}
-      <main className="pt-14">
+      <main className="pt-14 lg:pt-16">
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
@@ -125,19 +130,24 @@ export default function Layout() {
 
       {/* 页脚 */}
       <footer className="border-t border-border/50 bg-card/30">
-        <div className="max-w-4xl mx-auto px-6 py-10">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto px-6 py-10 lg:py-12">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center">
                 <span className="text-primary font-serif text-xs">幻</span>
               </div>
-              <span className="font-serif text-sm tracking-wider text-foreground">
-                幻世 · 人生回响
-              </span>
+              <div>
+                <span className="block font-serif text-sm tracking-wider text-foreground">
+                  幻世 · 人生回响
+                </span>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              © 2026 阿卡夏工作室. 保留所有权利.
-            </p>
+            <div className="flex flex-col gap-2 text-xs text-muted-foreground lg:items-end">
+              <p>© 2026 阿卡夏工作室. 保留所有权利.</p>
+              <div className="hidden lg:flex items-center gap-2 text-[11px] tracking-[0.28em] text-muted-foreground/60">
+                <span className="h-px w-10 bg-linear-to-r from-transparent to-border/80" />
+              </div>
+            </div>
           </div>
         </div>
       </footer>
