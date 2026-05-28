@@ -57,7 +57,7 @@ const LobbyPage: React.FC = () => {
             <div className="flex flex-col gap-3 sm:flex-row">
               <PrimaryButton onClick={handleStart} disabled={isLoading} className="flex-1">
                 <Play className="h-4 w-4" />
-                开启新人生
+                进入幻世
               </PrimaryButton>
               <SecondaryButton
                 onClick={() => navigate(appRoutes.archives)}
