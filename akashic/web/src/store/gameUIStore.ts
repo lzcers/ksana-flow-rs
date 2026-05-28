@@ -191,6 +191,22 @@ function waitForNextPaint() {
   });
 }
 
+function createSlotId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    return `slot-${cryptoApi.randomUUID().replace(/-/g, '')}`;
+  }
+
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    const randomBytes = new Uint8Array(16);
+    cryptoApi.getRandomValues(randomBytes);
+    const randomToken = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `slot-${randomToken}`;
+  }
+
+  return `slot-${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
 function resetUIState(): GameUIState {
   return {
     gameState: 'lobby',
@@ -849,7 +865,7 @@ const createGameUIActions = (
       const saved = await exportGameSaveArchive(sessionId, {
         title: normalizedTitle || undefined,
       });
-      const slotId = `slot-${crypto.randomUUID().split('-').join('')}`;
+      const slotId = createSlotId();
       writeStoredSaveArchive(slotId, saved.compressedArchive);
       upsertStoredSaveSlot({
         slotId,

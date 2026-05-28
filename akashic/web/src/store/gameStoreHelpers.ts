@@ -40,7 +40,7 @@ export const STREAM_PLACEHOLDER_TEXT = '命运正在编织中...';
 
 export const initialCharacter: Character = {
   name: '',
-  gender: '保密',
+  gender: '',
   age: 18,
   appearance: '',
   traits: {

@@ -180,7 +180,7 @@ const CreationPage: React.FC = () => {
     return `${x},${y}`;
   }).join(' ');
 
-  const canStart = Boolean(character.name.trim());
+  const canStart = Boolean(character.name.trim()) && (character.gender === '男' || character.gender === '女');
 
   const handleStartGame = async () => {
     try {
@@ -228,7 +228,7 @@ const CreationPage: React.FC = () => {
 
             </div>
 
-            <SectionCard className="space-y-3.5 overflow-visible p-3.5 md:p-4">
+            <SectionCard className="z-40 space-y-3.5 p-3.5 md:p-4" style={{ overflow: 'visible' }}>
               <div className="grid gap-2.5 md:grid-cols-[minmax(0,1.2fr)_132px_132px] md:gap-3">
                 <div>
                   <FieldLabel>姓名</FieldLabel>
@@ -247,9 +247,11 @@ const CreationPage: React.FC = () => {
                     value={character.gender}
                     onChange={(e) => updateCharacter({ gender: e.target.value })}
                     className="akashic-select"
+                    required
                   >
-                    <option>男</option>
-                    <option>女</option>
+                    <option value="" disabled>请选择性别</option>
+                    <option value="男">男</option>
+                    <option value="女">女</option>
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3.5 top-[2.95rem] h-4 w-4 -translate-y-1/2 text-[#c8b392] md:top-[3.1rem]" />
                 </div>
@@ -394,7 +396,7 @@ const CreationPage: React.FC = () => {
               <h2 className="text-lg font-semibold text-[#f6eddc] md:text-xl">勾勒故事舞台</h2>
             </div>
 
-            <SectionCard className="space-y-3.5 overflow-visible p-3.5 md:p-4">
+            <SectionCard className="z-30 space-y-3.5 p-3.5 md:p-4" style={{ overflow: 'visible' }}>
               <div>
                 <FieldLabel>世界观</FieldLabel>
                 <SearchableSelect

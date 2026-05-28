@@ -34,11 +34,13 @@ export function StoryFrame({
 export function SectionCard({
   children,
   className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return <section className={cn('akashic-panel p-4 sm:p-5 md:p-6', className)}>{children}</section>;
+  ...props
+}: ComponentPropsWithoutRef<'section'>) {
+  return (
+    <section className={cn('akashic-panel p-4 sm:p-5 md:p-6', className)} {...props}>
+      {children}
+    </section>
+  );
 }
 
 export function StatusPill({

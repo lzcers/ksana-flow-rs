@@ -58,6 +58,22 @@ function buildArchiveFileName(slot: StoredSaveSlot) {
   return `${baseName || slot.slotId}.json`;
 }
 
+function createSlotId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') {
+    return `slot-${cryptoApi.randomUUID().replace(/-/g, '')}`;
+  }
+
+  if (typeof cryptoApi?.getRandomValues === 'function') {
+    const randomBytes = new Uint8Array(16);
+    cryptoApi.getRandomValues(randomBytes);
+    const randomToken = Array.from(randomBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return `slot-${randomToken}`;
+  }
+
+  return `slot-${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
 const ArchiveListPage: React.FC = () => {
   const setGameState = useGameUIStore((state) => state.setGameState);
   const loadSave = useGameUIStore((state) => state.loadSave);
@@ -147,7 +163,7 @@ const ArchiveListPage: React.FC = () => {
         throw new Error('该文件不是可用的存档文件。');
       }
 
-      const slotId = `slot-${crypto.randomUUID().split('-').join('')}`;
+      const slotId = createSlotId();
       const archivedAt = new Date().toISOString();
       writeStoredSaveArchive(slotId, parsed.compressedArchive);
       upsertStoredSaveSlot({
