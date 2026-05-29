@@ -41,7 +41,6 @@ interface SearchableSelectProps {
   value: string;
   options: readonly string[];
   placeholder: string;
-  emptyText: string;
   createText: string;
   onChange: (value: string) => void;
 }
@@ -50,7 +49,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   value,
   options,
   placeholder,
-  emptyText,
   createText,
   onChange,
 }) => {
@@ -69,13 +67,6 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, []);
 
   const trimmedValue = value.trim();
-  const filteredOptions = React.useMemo(() => {
-    if (!trimmedValue) {
-      return options;
-    }
-
-    return options.filter((option) => option.toLowerCase().includes(trimmedValue.toLowerCase()));
-  }, [options, trimmedValue]);
   const hasExactMatch = options.some((option) => option === trimmedValue);
   const canKeepCustomValue = trimmedValue.length > 0 && !hasExactMatch;
 
@@ -127,25 +118,21 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
             </button>
           ) : null}
 
-          {filteredOptions.length > 0 ? (
-            <div className="max-h-56 overflow-y-auto py-1.5">
-              {filteredOptions.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => {
-                    onChange(option);
-                    setIsOpen(false);
-                  }}
-                  className={`block w-full px-3.5 py-2.5 text-left text-sm transition-colors hover:bg-white/5 ${option === trimmedValue ? 'bg-white/6 text-[#f6eddc]' : 'text-[#d7c7ab]'}`}
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="px-3.5 py-3 text-sm text-[#9ca7be]">{emptyText}</div>
-          )}
+          <div className="max-h-56 overflow-y-auto py-1.5">
+            {options.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  onChange(option);
+                  setIsOpen(false);
+                }}
+                className={`block w-full px-3.5 py-2.5 text-left text-sm transition-colors hover:bg-white/5 ${option === trimmedValue ? 'bg-white/6 text-[#f6eddc]' : 'text-[#d7c7ab]'}`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
@@ -163,6 +150,11 @@ const CreationPage: React.FC = () => {
     isLoading,
     error,
   } = useGameUIStore();
+  const [ageInput, setAgeInput] = React.useState(() => String(character.age));
+
+  React.useEffect(() => {
+    setAgeInput(String(character.age));
+  }, [character.age]);
 
   const traitRows = traitConfigs.map((trait) => ({
     ...trait,
@@ -263,8 +255,25 @@ const CreationPage: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    value={character.age}
-                    onChange={(e) => updateCharacter({ age: parseInt(e.target.value, 10) || 18 })}
+                    value={ageInput}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setAgeInput(nextValue);
+
+                      if (nextValue === '') {
+                        return;
+                      }
+
+                      const parsedAge = Number.parseInt(nextValue, 10);
+                      if (Number.isNaN(parsedAge)) {
+                        return;
+                      }
+
+                      updateCharacter({ age: Math.max(0, parsedAge) });
+                    }}
+                    onBlur={() => {
+                      setAgeInput(String(character.age));
+                    }}
                     className="akashic-field"
                   />
                 </div>
@@ -275,7 +284,6 @@ const CreationPage: React.FC = () => {
                   value={character.background}
                   options={backgroundOptions}
                   placeholder="决定主角人生默认模式，但非绝对牢笼"
-                  emptyText="你可以直接写下新的烙印。"
                   createText="采用你此刻写下的命运烙印"
                   onChange={(nextValue) => updateCharacter({ background: nextValue })}
                 />
@@ -404,7 +412,6 @@ const CreationPage: React.FC = () => {
                   value={world.era}
                   options={eraOptions}
                   placeholder="搜索一个世界，或写下你想要的世界"
-                  emptyText="没有找到贴近的世界，你可以直接写下新的世界。"
                   createText="采用你此刻写下的世界"
                   onChange={(nextValue) => updateWorld({ era: nextValue })}
                 />
