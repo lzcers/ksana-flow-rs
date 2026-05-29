@@ -800,7 +800,7 @@ const createGameUIActions = (
         isLoading: false,
         startupStage: 'ready_to_enter',
         skipRestoredNarrationAnimation: false,
-        error: error instanceof Error ? error.message : '进入幻世失败。',
+        error: error instanceof Error ? error.message : '进入回响失败。',
       });
       navigateTo(appRoutes.generating, { replace: true });
       throw error;
@@ -831,7 +831,7 @@ const createGameUIActions = (
       }
       set({
         isLoading: false,
-        error: error instanceof Error ? error.message : '进入幻世失败。',
+        error: error instanceof Error ? error.message : '进入回响失败。',
       });
       throw error;
     }

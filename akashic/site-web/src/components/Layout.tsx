@@ -24,12 +24,14 @@ export default function Layout() {
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <nav className="max-w-6xl mx-auto px-6 h-14 lg:h-16 flex items-center justify-between gap-6">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary/20 flex items-center justify-center">
-              <span className="text-primary font-serif text-sm">幻</span>
-            </div>
+            <img
+              src="/logo.svg"
+              alt="阿卡夏笔记图标"
+              className="w-7 h-7 shrink-0"
+            />
             <div>
               <span className="block font-serif text-base tracking-wider text-foreground">
-                幻世
+                阿卡夏·回响
               </span>
               <span className="hidden lg:block text-[11px] tracking-[0.28em] text-muted-foreground/70">
                 INTERACTIVE DESTINY
@@ -133,12 +135,14 @@ export default function Layout() {
         <div className="max-w-6xl mx-auto px-6 py-10 lg:py-12">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-primary/20 flex items-center justify-center">
-                <span className="text-primary font-serif text-xs">幻</span>
-              </div>
+              <img
+                src="/logo.svg"
+                alt="阿卡夏笔记图标"
+                className="w-6 h-6 shrink-0"
+              />
               <div>
                 <span className="block font-serif text-sm tracking-wider text-foreground">
-                  幻世 · 人生回响
+                  阿卡夏·回响
                 </span>
               </div>
             </div>

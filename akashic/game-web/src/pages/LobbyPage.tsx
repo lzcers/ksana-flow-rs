@@ -37,7 +37,7 @@ const LobbyPage: React.FC = () => {
         <div className="relative z-10">
           <div className="space-y-6">
             <PageTitle
-              title="幻世 · 人生回响"
+              title="阿卡夏·回响"
               subtitle="命运将从此刻展开"
             />
             {error ? (
@@ -57,7 +57,7 @@ const LobbyPage: React.FC = () => {
             <div className="flex flex-col gap-3 sm:flex-row">
               <PrimaryButton onClick={handleStart} disabled={isLoading} className="flex-1">
                 <Play className="h-4 w-4" />
-                进入幻世
+                进入回响
               </PrimaryButton>
               <SecondaryButton
                 onClick={() => navigate(appRoutes.archives)}

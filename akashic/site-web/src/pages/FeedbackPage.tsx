@@ -80,7 +80,7 @@ export default function FeedbackPage() {
                 </h2>
                 <p className="text-sm text-muted-foreground leading-7">
                   我们已收到你的消息，会尽快处理。
-                  你的每一条建议，都会成为这片幻世继续生长的线索。
+                  你的每一条建议，都会成为这片回响继续生长的线索。
                 </p>
               </div>
 
@@ -123,7 +123,7 @@ export default function FeedbackPage() {
                 意见反馈
               </h1>
               <p className="text-muted-foreground text-sm leading-7 max-w-md mx-auto xl:mx-0">
-                你的声音会直接影响幻世接下来的生长方向。
+                你的声音会直接影响回响接下来的生长方向。
                 在手机上它像一封轻巧回信，在桌面端则像一张可慢慢填写的观察札记。
               </p>
             </div>

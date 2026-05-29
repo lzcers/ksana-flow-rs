@@ -37,7 +37,7 @@ const startupSteps: StartupStep[] = [
     key: 'generating_world',
     label: '世界生成中',
     title: '编织世界脉络',
-    description: '正在收束时代纹理、核心矛盾与规则压力，让幻世拥有可持续展开的张力。',
+    description: '正在收束时代纹理、核心矛盾与规则压力，让回响拥有可持续展开的张力。',
   },
   {
     key: 'generating_protagonist',
@@ -47,7 +47,7 @@ const startupSteps: StartupStep[] = [
   },
   {
     key: 'creating_session',
-    label: '注入幻世中',
+    label: '注入回响中',
     title: '唤起第一轮命运',
     description: '世界与主角设定已经落笔，正在将它们汇入故事，并唤起开场叙事。',
   },
@@ -74,7 +74,7 @@ const rotatingMessages: Record<Exclude<StartupStage, 'idle'>, string[]> = {
   ready_to_enter: [
     '第一轮叙事已经开始显影',
     '命运入口已经被推开一道缝隙',
-    '你现在可以步入幻世，直接看到故事继续流动',
+    '你现在可以步入回响，直接看到故事继续流动',
   ],
   creating_session: [
     '正在注入世界设定',
@@ -104,14 +104,14 @@ function stageHeadline(stage: StartupStage, name: string, hasPlayableSession: bo
       };
     case 'creating_session':
       return {
-        title: '幻世入口正在开启',
-        subtitle: '世界设定与主角设定已经生成，正在将它们汇入幻世，并点亮第一轮叙事。',
+        title: '回响入口正在开启',
+        subtitle: '世界设定与主角设定已经生成，正在将它们汇入回响，并点亮第一轮叙事。',
       };
     case 'ready_to_enter':
       return hasPlayableSession
         ? {
           title: '开场已经点亮',
-          subtitle: '第一轮叙事已经开始流动。你现在就可以步入幻世，直接看着它继续展开。',
+          subtitle: '第一轮叙事已经开始流动。你现在就可以步入回响，直接看着它继续展开。',
         }
         : {
           title: '入口稍有震颤',
@@ -122,7 +122,7 @@ function stageHeadline(stage: StartupStage, name: string, hasPlayableSession: bo
     default:
       return {
         title: '世界纹理正在编织',
-        subtitle: '幻世会先推演世界压力，再收束主角命运，让开场更像一个真正会继续生长的故事。',
+        subtitle: '回响会先推演世界压力，再收束主角命运，让开场更像一个真正会继续生长的故事。',
       };
   }
 }
@@ -150,12 +150,12 @@ const GeneratingPage: React.FC = () => {
       ? [
         '第一轮叙事已经开始显影',
         '命运入口已经被推开一道缝隙',
-        '你现在可以步入幻世，直接看到故事继续流动',
+        '你现在可以步入回响，直接看到故事继续流动',
       ]
       : [
         '设定已经落笔，只差把旅程重新续上',
         '命运入口短暂摇晃，你可以再次尝试',
-        '再推开一次门，幻世会继续向前',
+        '再推开一次门，回响会继续向前',
       ];
   }, [canEnterWorld, stageKey]);
   const [messageIndex, setMessageIndex] = useState(0);
@@ -241,7 +241,7 @@ const GeneratingPage: React.FC = () => {
           {startupStage === 'ready_to_enter' ? (
             <div className="flex justify-center">
               <PrimaryButton onClick={() => void enterWorld()} disabled={!canEnterWorld && isLoading} className="min-w-44">
-                {canEnterWorld ? '步入幻世' : (isLoading ? '再次步入幻世中...' : '再次步入幻世')}
+                {canEnterWorld ? '步入回响' : (isLoading ? '再次步入回响中...' : '再次步入回响')}
               </PrimaryButton>
             </div>
           ) : null}

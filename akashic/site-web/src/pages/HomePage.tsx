@@ -12,7 +12,7 @@ const features = [
       </svg>
     ),
     title: '自由设定',
-    description: '你可以设定任何你想要的世界观、角色让幻世更符合你的想象',
+    description: '你可以设定任何你想要的世界观、角色，让回响更符合你的想象',
   },
   {
     icon: (
@@ -51,7 +51,7 @@ const storySteps = [
   {
     phase: '世界生成中',
     title: '编织世界脉络',
-    description: '正在收束时代纹理、核心矛盾与规则压力，让幻世拥有可持续展开的张力。',
+    description: '正在收束时代纹理、核心矛盾与规则压力，让回响拥有可持续展开的张力。',
     headerTitle: '世界正在苏醒',
     headerDesc: '时代的齿轮开始转动，规则与矛盾在虚空中编织成形。',
     statusText: '正在构建世界观',
@@ -77,7 +77,7 @@ const storySteps = [
     ],
   },
   {
-    phase: '注入幻世中',
+    phase: '注入回响中',
     title: '唤起第一轮命运',
     description: '世界与主角设定已经落笔，正在将它们汇入故事，并唤起开场叙事。',
     headerTitle: '命运即将展开',
@@ -167,7 +167,7 @@ export default function HomePage() {
                     INTERACTIVE DESTINY SIMULATION
                   </p>
                   <h1 className="font-serif text-4xl md:text-5xl lg:text-5xl tracking-[0.08em] mb-4 text-glow">
-                    <span className="text-primary">幻世 · 人生回响</span>
+                    <span className="text-primary">阿卡夏·回响</span>
                   </h1>
 
                   <p className="text-sm md:text-base text-muted-foreground mb-8 max-w-xl mx-auto lg:mx-0 leading-7">
@@ -200,7 +200,7 @@ export default function HomePage() {
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polygon points="5 3 19 12 5 21 5 3" />
                     </svg>
-                    进入幻世
+                    进入回响
                   </motion.button>
                 </div>
               </div>

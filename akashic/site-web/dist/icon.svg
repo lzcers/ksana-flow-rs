@@ -1,26 +1,48 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <style>
-    @media (prefers-color-scheme: light) {
-      .background { fill: black; }
-      .foreground { fill: white; }
-    }
-    @media (prefers-color-scheme: dark) {
-      .background { fill: white; }
-      .foreground { fill: black; }
-    }
-  </style>
-  <g clip-path="url(#clip0_7960_43945)">
-    <rect class="background" width="180" height="180" rx="37" />
-    <g style="transform: scale(95%); transform-origin: center">
-      <path class="foreground"
-        d="M101.141 53H136.632C151.023 53 162.689 64.6662 162.689 79.0573V112.904H148.112V79.0573C148.112 78.7105 148.098 78.3662 148.072 78.0251L112.581 112.898C112.701 112.902 112.821 112.904 112.941 112.904H148.112V126.672H112.941C98.5504 126.672 86.5638 114.891 86.5638 100.5V66.7434H101.141V100.5C101.141 101.15 101.191 101.792 101.289 102.422L137.56 66.7816C137.255 66.7563 136.945 66.7434 136.632 66.7434H101.141V53Z" />
-      <path class="foreground"
-        d="M65.2926 124.136L14 66.7372H34.6355L64.7495 100.436V66.7372H80.1365V118.47C80.1365 126.278 70.4953 129.958 65.2926 124.136Z" />
-    </g>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">阿卡夏笔记图标</title>
+  <desc id="desc">A minimal infinity mark built from intersecting circular loops for Akasha Notes.</desc>
   <defs>
-    <clipPath id="clip0_7960_43945">
-      <rect width="180" height="180" fill="white" />
-    </clipPath>
+    <linearGradient id="ringInk" x1="96" y1="116" x2="414" y2="388" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E8D7A5"/>
+      <stop offset="0.5" stop-color="#9FBF8F"/>
+      <stop offset="1" stop-color="#436B5C"/>
+    </linearGradient>
+    <radialGradient id="quietGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(256 256) rotate(90) scale(188 188)">
+      <stop offset="0" stop-color="#A6C5A0" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#F7F1E3" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softAura" x="-26%" y="-26%" width="152%" height="152%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
   </defs>
+
+  <rect width="512" height="512" rx="96" fill="#F7F1E3"/>
+  <circle cx="256" cy="256" r="208" fill="url(#quietGlow)"/>
+
+  <circle cx="182" cy="256" r="88" fill="none" stroke="#B8A26B" stroke-opacity="0.22" stroke-width="36" filter="url(#softAura)"/>
+  <circle cx="330" cy="256" r="88" fill="none" stroke="#B8A26B" stroke-opacity="0.22" stroke-width="36" filter="url(#softAura)"/>
+
+  <circle cx="182" cy="256" r="88" fill="none" stroke="url(#ringInk)" stroke-width="18"/>
+  <circle cx="330" cy="256" r="88" fill="none" stroke="url(#ringInk)" stroke-width="18"/>
+
+  <path d="M142 210C171 229 209 250 256 256C303 262 341 283 370 302" fill="none" stroke="#F7F1E3" stroke-width="20" stroke-linecap="round"/>
+  <path d="M142 302C171 283 209 262 256 256C303 250 341 229 370 210" fill="none" stroke="#F7F1E3" stroke-width="20" stroke-linecap="round"/>
+
+  <path d="M142 210C171 229 209 250 256 256C303 262 341 283 370 302" fill="none" stroke="url(#ringInk)" stroke-width="9" stroke-linecap="round"/>
+  <path d="M142 302C171 283 209 262 256 256C303 250 341 229 370 210" fill="none" stroke="url(#ringInk)" stroke-width="9" stroke-linecap="round"/>
+
+  <circle cx="256" cy="256" r="8" fill="#8B6B3E"/>
+  <path d="M256 224L264 246L288 256L264 266L256 288L248 266L224 256L248 246Z" fill="#8B6B3E"/>
+  <text x="256" y="256"
+    text-anchor="middle"
+    dominant-baseline="central"
+    font-family="'Palatino Linotype', 'Times New Roman', Georgia, serif"
+    font-size="26"
+    font-weight="700"
+    fill="#F7F1E3">α</text>
+
+  <circle cx="182" cy="168" r="5" fill="#C0A36A" stroke="#F7F1E3" stroke-width="1.5"/>
+  <circle cx="330" cy="168" r="5" fill="#C0A36A" stroke="#F7F1E3" stroke-width="1.5"/>
+  <circle cx="182" cy="344" r="5" fill="#6E8C78" stroke="#F7F1E3" stroke-width="1.5"/>
+  <circle cx="330" cy="344" r="5" fill="#6E8C78" stroke="#F7F1E3" stroke-width="1.5"/>
 </svg>
