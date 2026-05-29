@@ -199,6 +199,12 @@ export interface TaskUpdatedEvent {
   error?: string | null;
 }
 
+const API_ORIGIN = import.meta.env.PROD ? 'https://game.akasa.fun' : '';
+
+function withApiOrigin(path: string) {
+  return `${API_ORIGIN}${path}`;
+}
+
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     headers: {
@@ -268,28 +274,28 @@ ${formatSpecialRules(world.specialRules)}
 
 export function generateProfiles(character: Character, world: World) {
   const prompt = buildGenerateProfilesPrompt(character, world);
-  return requestJson<GeneratedProfiles>('/api/profiles/generate', {
+  return requestJson<GeneratedProfiles>(withApiOrigin('/api/profiles/generate'), {
     method: 'POST',
     body: JSON.stringify({ prompt }),
   });
 }
 
 export function createGameSession(input: CreateGameSessionInput) {
-  return requestJson<CreateGameSessionData>('/api/game-sessions/create', {
+  return requestJson<CreateGameSessionData>(withApiOrigin('/api/game-sessions/create'), {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
 export function exportGameSaveArchive(sessionId: string, input: CreateSaveSlotInput) {
-  return requestJson<SaveExportData>(`/api/game-sessions/${sessionId}/save-export`, {
+  return requestJson<SaveExportData>(withApiOrigin(`/api/game-sessions/${sessionId}/save-export`), {
     method: 'POST',
     body: JSON.stringify(input),
   });
 }
 
 export function loadGameSessionFromArchive(input: LoadArchiveInput) {
-  return requestJson<GameSessionWorldStateData>('/api/game-sessions/load-archive', {
+  return requestJson<GameSessionWorldStateData>(withApiOrigin('/api/game-sessions/load-archive'), {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -299,7 +305,7 @@ export function submitGameSessionControl(
   sessionId: string,
   input: GameSessionControlInput,
 ) {
-  return requestJson<{ action: string }>(`/api/game-sessions/${sessionId}/control`, {
+  return requestJson<{ action: string }>(withApiOrigin(`/api/game-sessions/${sessionId}/control`), {
     method: 'POST',
     body: JSON.stringify(input),
   });
@@ -314,7 +320,9 @@ export function openGameSessionStream(
   since?: string | null,
 ) {
   const search = since ? `?since=${encodeURIComponent(since)}` : '';
-  const eventSource = new EventSource(`/api/game-sessions/${sessionId}/stream${search}`);
+  const eventSource = new EventSource(
+    withApiOrigin(`/api/game-sessions/${sessionId}/stream${search}`),
+  );
 
   eventSource.addEventListener('task.updated', (rawEvent) => {
     const event = rawEvent as MessageEvent<string>;

@@ -191,6 +191,10 @@ export default function HomePage() {
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    type="button"
+                    onClick={() => {
+                      window.location.href = 'https://game.akasa.fun'
+                    }}
                     className="w-full sm:w-auto min-w-52 game-btn-primary px-8 py-4 flex items-center justify-center gap-2 mx-auto lg:mx-0"
                   >
                     <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
