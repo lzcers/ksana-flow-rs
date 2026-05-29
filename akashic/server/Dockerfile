@@ -20,7 +20,7 @@ RUN --mount=type=secret,id=cargo_config,target=/run/secrets/cargo_config,require
     mkdir -p /usr/local/cargo && \
     cp /run/secrets/cargo_config /usr/local/cargo/config.toml; \
     fi && \
-    cargo build --locked --release -p akashic-server && \
+    cargo build --release -p akashic-server && \
     rm -f /usr/local/cargo/config.toml
 
 FROM debian:bookworm-slim
