@@ -22,7 +22,7 @@ RUN pnpm install --frozen-lockfile
 COPY ./game-web ./
 RUN pnpm build
 
-FROM caddy:2.8-alpine
+FROM caddy:2.11.3-alpine
 
 COPY ./Caddyfile /etc/caddy/Caddyfile
 COPY --from=site_builder /build/site-web/dist /srv/site-web
