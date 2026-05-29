@@ -254,8 +254,8 @@ export function buildGenerateProfilesPrompt(
 - 姓名：${character.name}
 - 性别：${character.gender}
 - 年龄：${character.age}
+- 人物设定：${character.background || '未填写'}
 - 人物描述：${character.appearance || '未填写'}
-- 命运烙印：${character.background || '未填写'}
 - 属性分配：
   - 智力：${character.traits.intellect}
   - 体力：${character.traits.physique}
@@ -276,7 +276,7 @@ ${formatSpecialRules(world.specialRules)}
 - 主角设定必须严格建立在“人物设定”事实上，并自然解释主角为何会被卷入这个故事。
 - 世界设定重点写清世界如何运转、现实压力从何而来，以及什么样的秩序正在支配众人。
 - 主角设定重点写清欲望、弱点、行动倾向，以及六项属性如何转化为行为习惯与判断方式。
-- 文风偏文学叙事，但内容必须具体、可演绎，能自然推动后续冲突和抉择。`;
+`;
 }
 
 export function generateProfiles(character: Character, world: World) {
