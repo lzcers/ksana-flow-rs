@@ -10,6 +10,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY agent ./agent
 COPY akashic/ecs ./akashic/ecs
 COPY akashic/server ./akashic/server
+COPY ksana/flow ./ksana/flow
+COPY ksana/nodes ./ksana/nodes
+COPY ksana/server ./ksana/server
 
 RUN cargo build --locked --release -p akashic-server
 
