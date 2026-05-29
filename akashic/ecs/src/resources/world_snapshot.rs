@@ -239,6 +239,18 @@ impl WorldSnapshot {
             }
         }
 
+        if self.is_ending {
+            writeln!(out, "结局要求：本轮已到达故事结局，必须完成叙事收束。").unwrap();
+            if let Some(ref ending_type) = self.ending_type {
+                writeln!(out, "结局基调：{}", ending_type).unwrap();
+            }
+            writeln!(
+                out,
+                "写作要求：优先回收当前冲突、未解线索与情绪张力，给出明确的终局落点，不再展开新的主线悬念。"
+            )
+            .unwrap();
+        }
+
         writeln!(
             out,
             "风格参考：节奏——{}，氛围——{}",
@@ -295,7 +307,15 @@ impl WorldSnapshot {
             }
         }
 
-        writeln!(out, "请根据以上信息续写故事，保持与前面段落的连贯性。").unwrap();
+        if self.is_ending {
+            writeln!(
+                out,
+                "请根据以上信息写出本轮结局，保持与前文连贯，并完成情绪与事件的收束。"
+            )
+            .unwrap();
+        } else {
+            writeln!(out, "请根据以上信息续写故事，保持与前面段落的连贯性。").unwrap();
+        }
 
         out
     }

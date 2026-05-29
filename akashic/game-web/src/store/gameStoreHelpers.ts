@@ -33,6 +33,8 @@ interface FatePlanningSummary {
   description: string | null;
   currentEvent: string | null;
   newInfo: string[];
+  isEnding: boolean | null;
+  endingType: string | null;
   protagonistCondition: string | null;
 }
 
@@ -170,6 +172,10 @@ function readJsonNumber(value: JsonValue | undefined): number | null {
   return null;
 }
 
+function readJsonBoolean(value: JsonValue | undefined): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
 function readJsonStringArray(value: JsonValue | undefined): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
@@ -187,6 +193,8 @@ export function summarizeFatePlanning(value: JsonValue | null): FatePlanningSumm
     description: readJsonString(value.description),
     currentEvent: readJsonString(value.current_event),
     newInfo: readJsonStringArray(value.new_info),
+    isEnding: readJsonBoolean(value.is_ending),
+    endingType: readJsonString(value.ending_type),
     protagonistCondition: readJsonString(value.protagonist_condition),
   };
 }

@@ -48,6 +48,8 @@ export interface RuntimeStateView {
   latestBroadcastSummary: string;
   latestBroadcastItems?: string[];
   latestProtagonistAction: string;
+  isEnding: boolean;
+  endingType?: string | null;
 }
 
 export interface SessionWorldState {
@@ -66,6 +68,8 @@ export interface SessionWorldState {
   pace: string;
   atmosphere: string;
   focalPoint: string;
+  isEnding: boolean;
+  endingType?: string | null;
   protagonistCondition: string;
   protagonistKnownSecrets: string[];
 }

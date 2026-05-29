@@ -309,6 +309,8 @@ function stateViewFromSession(session: GameSessionWorldStateData): GameUIState['
       || '旅程已续上',
     latestBroadcastItems,
     latestProtagonistAction: session.currentProtagonistAction || '你还没有做出选择',
+    isEnding: session.worldState.isEnding,
+    endingType: session.worldState.endingType ?? null,
   };
 }
 
@@ -553,6 +555,8 @@ function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
             ?? summary?.description
             ?? stateView.latestBroadcastSummary,
           latestBroadcastItems: nextBroadcastItems,
+          isEnding: summary?.isEnding ?? stateView.isEnding,
+          endingType: summary?.endingType ?? stateView.endingType,
         };
 
         if (
@@ -563,6 +567,8 @@ function applyStreamTaskToStores(task: TaskView, boundRound?: number | null) {
           || stateView.protagonistState !== nextStateView.protagonistState
           || stateView.latestBroadcastSummary !== nextStateView.latestBroadcastSummary
           || stateView.latestBroadcastItems !== nextStateView.latestBroadcastItems
+          || stateView.isEnding !== nextStateView.isEnding
+          || stateView.endingType !== nextStateView.endingType
         ) {
           nextUIState = {
             stateView: nextStateView,
@@ -770,6 +776,8 @@ const createGameUIActions = (
           latestBroadcastSummary: '旅程已开始，正在展开开场内容...',
           latestBroadcastItems: ['旅程已开始，正在展开开场内容...'],
           latestProtagonistAction: '你还没有做出选择',
+          isEnding: false,
+          endingType: null,
         },
         error: null,
         isLoading: true,
