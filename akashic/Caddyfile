@@ -3,7 +3,7 @@
     email zack@ksana.net
 }
 
-www.akasa.fun {
+akasa.fun, www.akasa.fun {
     encode zstd gzip
     root * /srv/site-web
     try_files {path} /index.html
