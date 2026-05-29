@@ -1,7 +1,7 @@
 use bevy_ecs::{
     entity::Entity,
     message::MessageReader,
-    system::{Query, ResMut},
+    system::{Query, Res, ResMut},
 };
 
 use crate::{
@@ -9,6 +9,7 @@ use crate::{
     resources::{
         protagonist_action::ProtagonistDecisionState,
         turn_state::{TurnPhase, TurnState},
+        world_snapshot::WorldSnapshot,
     },
     turn_messages::{TurnControl, TurnEvent},
 };
@@ -19,6 +20,7 @@ pub fn turn_orchestrator_system(
     mut event_reader: MessageReader<TurnEvent>,
     mut decision_state: ResMut<ProtagonistDecisionState>,
     mut turn_state: ResMut<TurnState>,
+    world_snapshot: Res<WorldSnapshot>,
     mut query: Query<(Entity, &mut FateWeaver)>,
 ) {
     for control in control_reader.read() {
@@ -26,7 +28,13 @@ pub fn turn_orchestrator_system(
     }
 
     for event in event_reader.read() {
-        handle_event(event, &mut turn_state, &mut query);
+        handle_event(
+            event,
+            &mut turn_state,
+            &world_snapshot,
+            &mut decision_state,
+            &mut query,
+        );
     }
 }
 
@@ -50,6 +58,8 @@ fn handle_control(
 fn handle_event(
     event: &TurnEvent,
     turn_state: &mut TurnState,
+    world_snapshot: &WorldSnapshot,
+    decision_state: &mut ProtagonistDecisionState,
     query: &mut Query<(Entity, &mut FateWeaver)>,
 ) {
     match event {
@@ -63,7 +73,12 @@ fn handle_event(
             turn_state.phase = TurnPhase::NarrationRunning;
         }
         TurnEvent::NarrationCompleted => {
-            turn_state.phase = TurnPhase::ProtagonistReady;
+            if world_snapshot.is_ending {
+                decision_state.clear_choices();
+                turn_state.finish_story();
+            } else {
+                turn_state.phase = TurnPhase::ProtagonistReady;
+            }
         }
         TurnEvent::ProtagonistStarted => {
             turn_state.phase = TurnPhase::ProtagonistRunning;

@@ -124,6 +124,9 @@ impl AkashicSessionEngine {
 
     // 同步提交下一轮启动命令，实际推进由后台 runtime 处理。
     pub fn start_next_turn(&self) -> Result<(), String> {
+        if self.get_game_session().phase == TurnPhase::StoryEnded {
+            return Err("故事已结束，无法继续推进".to_string());
+        }
         self.command_tx
             .send(EngineCommand::StartNextTurn)
             .map_err(|_| "会话运行时已停止，无法继续推进".to_string())
@@ -417,14 +420,17 @@ fn build_schedule() -> Schedule {
 fn is_stable_stop_point(snapshot: &Session) -> bool {
     matches!(
         snapshot.phase,
-        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete
+        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete | TurnPhase::StoryEnded
     ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
 }
 
 fn validate_archive_state(state: &SessionArchiveState) -> Result<(), String> {
     let stable_phase = matches!(
         state.phase,
-        TurnPhase::Idle | TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete
+        TurnPhase::Idle
+            | TurnPhase::AwaitingPlayerChoice
+            | TurnPhase::TurnComplete
+            | TurnPhase::StoryEnded
     );
     if !stable_phase {
         return Err("归档会话不在可恢复的稳定态".to_string());

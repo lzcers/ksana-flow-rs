@@ -30,6 +30,12 @@ pub struct WorldSnapshot {
     pub pace: String,
     pub atmosphere: String,
     pub focal_point: String,
+    /// 当前轮次是否已到达故事结局
+    #[serde(default)]
+    pub is_ending: bool,
+    /// 结局的情绪基调或主题；非结局时为空
+    #[serde(default)]
+    pub ending_type: Option<String>,
     /// 主角当前身心状态的文学化描述
     pub protagonist_condition: String,
     /// 主角已确切知晓的剧情秘密

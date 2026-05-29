@@ -133,6 +133,14 @@ async fn main() {
                 .write(TurnControl::StartNextTurn);
             last_reported_completed_turn = Some(turn_index);
         }
+        if phase == TurnPhase::StoryEnded {
+            println!("");
+            print_frame_status(&world, frame);
+            println!("");
+            print_result(&mut world);
+            println!("[api] story ended: turn_id={} phase={:?}", turn_index, phase);
+            return;
+        }
         schedule.run(&mut world);
         frame += 1;
     }

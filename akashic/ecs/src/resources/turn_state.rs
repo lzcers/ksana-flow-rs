@@ -13,6 +13,7 @@ pub enum TurnPhase {
     ProtagonistRunning,   // 主角任务执行中
     AwaitingPlayerChoice, // 等待外部玩家提交选择
     TurnComplete,         // 轮次完成，等待继续控制
+    StoryEnded,           // 故事终局已写完，停在稳定态
     Failed,
 }
 
@@ -49,6 +50,12 @@ impl TurnState {
         self.turn_index = self.active_turn_id.max(self.turn_index + 1);
         self.active_turn_id = self.turn_index;
         self.phase = TurnPhase::TurnComplete;
+    }
+
+    pub fn finish_story(&mut self) {
+        self.turn_index = self.active_turn_id.max(self.turn_index + 1);
+        self.active_turn_id = self.turn_index;
+        self.phase = TurnPhase::StoryEnded;
     }
 
     pub fn advance(&mut self) {
