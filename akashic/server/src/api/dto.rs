@@ -32,7 +32,7 @@ pub struct GenerateProfilesRequest {
     pub prompt: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateProfilesData {
     pub world: String,

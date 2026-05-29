@@ -131,6 +131,7 @@ let activeStreamTasks = new Map<string, TaskView>();
 let activeStreamTaskRounds = new Map<string, number>();
 let startupStageTimer: number | null = null;
 let bootstrappingSessionId: string | null = null;
+let startupFlowRunId = 0;
 
 const MIN_GENERATING_PAGE_MS = 1200;
 const MIN_CREATING_SESSION_STAGE_MS = 450;
@@ -668,6 +669,7 @@ const createGameUIActions = (
     })),
   clearError: () => set({ error: null }),
   startGame: async () => {
+    const runId = ++startupFlowRunId;
     const { character, world } = get();
     closeActiveSessionStream();
     clearStartupStageTimer();
@@ -694,7 +696,13 @@ const createGameUIActions = (
       if (generatingElapsed < MIN_GENERATING_PAGE_MS) {
         await sleep(MIN_GENERATING_PAGE_MS - generatingElapsed);
       }
+      if (runId !== startupFlowRunId) {
+        return;
+      }
     } catch (error) {
+      if (runId !== startupFlowRunId) {
+        return;
+      }
       clearStartupStageTimer();
       closeActiveSessionStream();
       useGameInternalStore.setState({
@@ -716,13 +724,20 @@ const createGameUIActions = (
       preparedProfiles: generatedProfiles,
     });
     await waitForNextPaint();
+    if (runId !== startupFlowRunId) {
+      return;
+    }
     await get().enterWorld();
   },
   enterWorld: async () => {
+    const runId = startupFlowRunId;
     const { character, world, preparedProfiles, startupStage, stateView } = get();
     const { sessionId } = useGameInternalStore.getState();
 
     if (startupStage === 'ready_to_enter' && sessionId && stateView) {
+      if (runId !== startupFlowRunId) {
+        return;
+      }
       set({
         startupStage: 'idle',
         preparedProfiles: null,
@@ -750,6 +765,9 @@ const createGameUIActions = (
         }),
         sleep(MIN_CREATING_SESSION_STAGE_MS),
       ]);
+      if (runId !== startupFlowRunId) {
+        return;
+      }
 
       useGameInternalStore.setState({
         ...initialInternalState,
@@ -788,8 +806,12 @@ const createGameUIActions = (
         control: { type: 'continue' },
       });
       await waitForRoundNarrationStarted(created.sessionId, 1);
+      if (runId !== startupFlowRunId) {
+        return;
+      }
       set((state) => ({
         error: null,
+        isLoading: false,
         skipRestoredNarrationAnimation: false,
         startupStage: 'ready_to_enter',
         stateView: state.stateView
@@ -800,6 +822,9 @@ const createGameUIActions = (
           : state.stateView,
       }));
     } catch (error) {
+      if (runId !== startupFlowRunId) {
+        return;
+      }
       closeActiveSessionStream();
       useGameInternalStore.setState({
         ...initialInternalState,

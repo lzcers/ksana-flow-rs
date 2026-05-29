@@ -5,7 +5,7 @@ use agent::{
     core::Message,
 };
 use akashic_ecs::resources::task_manager::{TaskKind, TaskStatus, TaskUpdate};
-use akashic_ecs::utils::build_chat_model;
+use akashic_ecs::utils::{build_chat_model, parse_json_response};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -145,7 +145,7 @@ pub async fn generate_profiles(
     }
 
     let mut model = build_chat_model();
-    model.set_output_json(false);
+    model.set_output_json(true);
 
     let messages = vec![
         Message::system(
@@ -162,9 +162,15 @@ pub async fn generate_profiles(
 6. 设定必须有利于长期演绎。要让后续故事中自然存在：阻力、代价、欲望、误判空间、势力压迫、道德撕扯或命运反噬。
 7. 不要生成万能、无敌、没有代价的主角设定；不要生成过于封闭、没有可持续冲突的世界设定；不要写成百科、总结提纲、游戏数值说明或策划备注。
 
-请按以下要求生成：
+请按以下 JSON 结构生成，字段名必须完全一致：
+{
+  "world": "世界设定正文",
+  "protagonist": "主角设定正文",
+  "keyStoryBeats": "关键节点骨架，多行字符串，每行一个节点"
+}
 
-[世界设定]
+字段要求：
+1. `world`：
 - 用一段完整、连贯的中文正文书写。
 - 必须包含并自然融合以下内容：
   - 时代气质与整体氛围。
@@ -173,7 +179,7 @@ pub async fn generate_profiles(
   - 让故事得以持续展开的现实张力，例如代价、风险、失衡、猜疑、资源争夺、身份压力等。
 - 重点不是堆设定，而是建立一个能不断逼迫人物做选择的世界。
 
-[主角设定]
+2. `protagonist`：
 - 用一段完整、连贯的中文正文书写。
 - 必须包含并自然融合以下内容：
   - 用户给定身份、外貌、人生烙印在这个世界中的意义。
@@ -183,8 +189,8 @@ pub async fn generate_profiles(
   - 主角为何会被卷入世界主冲突，以及其处境为何适合长期演绎。
 - 重点不是称赞主角，而是让主角既有魅力，也有会在剧情中不断出问题的地方。
 
-[关键节点骨架]
-- 用 4 到 6 条短句书写，每条单独一行，不要编号。
+3. `keyStoryBeats`：
+- 写成 4 到 6 行的多行字符串，每行一个关键节点，不要编号。
 - 每一条都应是故事未来必须抵达、对角色与世界都具有决定性影响的关键场景、真相揭示、关系断裂、代价兑现或终局瞬间。
 - 这些节点不是详细剧情梗概，而是“结局引力场”的骨架，要足够具体，能为后续 FateWeaver 提供持续牵引。
 - 节点之间应体现递进关系：前期埋入牵引，中期扩大代价，后期逼近不可回避的抉择与收束。
@@ -194,16 +200,11 @@ pub async fn generate_profiles(
   - 一个具有明确终局气息的收束节点。
 
 输出要求：
-1. 输出格式必须严格如下：
-[世界设定]
-这里写世界设定正文
-[主角设定]
-这里写主角设定正文
- [关键节点骨架]
- 这里逐行写关键节点骨架
-2. 只输出以上三段内容。
-3. 不要输出 JSON，不要输出代码块，不要输出额外标题、解释、分析、项目符号或注释。
-4. 两段正文都要具体、克制、可演绎，避免空话、套话和泛泛而谈。"#,
+1. 只输出一个合法 JSON 对象。
+2. 不要输出代码块，不要输出额外标题、解释、分析、注释或对象外文本。
+3. 三个字段都必须是非空字符串。
+4. `keyStoryBeats` 必须是多行字符串，且每行都是一个独立节点。
+5. 两段正文都要具体、克制、可演绎，避免空话、套话和泛泛而谈。"#,
         ),
         Message::user(request.prompt),
     ];
@@ -213,8 +214,9 @@ pub async fn generate_profiles(
     while let Some(event) = stream.next().await {
         match event {
             CallModelEvent::Completed { content, .. } => {
-                let data = parse_generated_profiles(&content)
-                    .ok_or_else(|| AppError::internal("模型返回格式不符合预期。"))?;
+                let data = parse_generated_profiles(&content).map_err(|message| {
+                    AppError::internal(format!("模型返回格式不符合预期：{message}"))
+                })?;
                 return Ok(Json(ApiResponse::ok(data)));
             }
             CallModelEvent::Error(message) => {
@@ -327,52 +329,34 @@ fn task_update_from_delta(event_id: Option<u64>, update: TaskUpdate) -> TaskUpda
     }
 }
 
-fn parse_generated_profiles(content: &str) -> Option<GenerateProfilesData> {
-    let world_marker = "[世界设定]";
-    let protagonist_marker = "[主角设定]";
-    let beats_marker = "[关键节点骨架]";
-    let world_start = content.find(world_marker)?;
-    let protagonist_start = content.find(protagonist_marker)?;
-    let beats_start = content.find(beats_marker)?;
-    if protagonist_start <= world_start || beats_start <= protagonist_start {
-        return None;
-    }
-
-    let world = content[world_start + world_marker.len()..protagonist_start].trim();
-    let protagonist = content[protagonist_start + protagonist_marker.len()..beats_start].trim();
-    let key_story_beats = content[beats_start + beats_marker.len()..].trim();
-    if world.is_empty() || protagonist.is_empty() || key_story_beats.is_empty() {
-        return None;
-    }
-
-    Some(GenerateProfilesData {
-        world: world.to_string(),
-        protagonist: protagonist.to_string(),
-        key_story_beats: key_story_beats.to_string(),
-    })
+fn parse_generated_profiles(content: &str) -> Result<GenerateProfilesData, String> {
+    let parsed = parse_json_response::<GenerateProfilesData>(content)?;
+    validate_generated_profiles(parsed)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::parse_generated_profiles;
-
-    #[test]
-    fn parse_generated_profiles_extracts_three_sections() {
-        let result = parse_generated_profiles(
-            "[世界设定]\n蒸汽与神谕并存的海上帝国。\n\n[主角设定]\n一名背负禁忌地图的年轻领航员。\n\n[关键节点骨架]\n他第一次发现地图会吞噬持有者的记忆。\n帝国与教会同时确认他是预言中的缺口。\n他必须在打开归航之门与保全同伴之间二选一。",
-        )
-        .expect("should parse");
-
-        assert_eq!(result.world, "蒸汽与神谕并存的海上帝国。");
-        assert_eq!(result.protagonist, "一名背负禁忌地图的年轻领航员。");
-        assert_eq!(
-            result.key_story_beats,
-            "他第一次发现地图会吞噬持有者的记忆。\n帝国与教会同时确认他是预言中的缺口。\n他必须在打开归航之门与保全同伴之间二选一。"
-        );
+fn validate_generated_profiles(data: GenerateProfilesData) -> Result<GenerateProfilesData, String> {
+    let world = data.world.trim();
+    if world.is_empty() {
+        return Err("`world` 不能为空。".to_string());
     }
 
-    #[test]
-    fn parse_generated_profiles_rejects_missing_sections() {
-        assert!(parse_generated_profiles("只有一段内容").is_none());
+    let protagonist = data.protagonist.trim();
+    if protagonist.is_empty() {
+        return Err("`protagonist` 不能为空。".to_string());
     }
+
+    let beats = data.key_story_beats.trim();
+    if beats.is_empty() {
+        return Err("`keyStoryBeats` 不能为空。".to_string());
+    }
+
+    if beats.lines().filter(|line| !line.trim().is_empty()).count() < 4 {
+        return Err("`keyStoryBeats` 至少需要 4 行关键节点。".to_string());
+    }
+
+    Ok(GenerateProfilesData {
+        world: world.to_string(),
+        protagonist: protagonist.to_string(),
+        key_story_beats: beats.to_string(),
+    })
 }

@@ -12,6 +12,7 @@ import {
   PrimaryButton,
   PageTitle,
   ScreenShell,
+  SecondaryButton,
   SectionCard,
   StatusPill,
   StoryFrame,
@@ -21,7 +22,7 @@ import { useGameInternalStore } from '../store/gameStore';
 type StepStatus = 'pending' | 'active' | 'done';
 
 interface StartupStep {
-  key: Exclude<StartupStage, 'idle'>;
+  key: ProfileStepKey;
   label: string;
   title: string;
   description: string;
@@ -31,6 +32,8 @@ interface StageHeadline {
   title: string;
   subtitle: string;
 }
+
+type ProfileStepKey = 'generating_world' | 'generating_protagonist' | 'creating_session';
 
 const startupSteps: StartupStep[] = [
   {
@@ -58,6 +61,12 @@ const stageOrder: Exclude<StartupStage, 'idle'>[] = [
   'generating_protagonist',
   'creating_session',
   'ready_to_enter',
+];
+
+const profileStepOrder: ProfileStepKey[] = [
+  'generating_world',
+  'generating_protagonist',
+  'creating_session',
 ];
 
 const rotatingMessages: Record<Exclude<StartupStage, 'idle'>, string[]> = {
@@ -128,12 +137,14 @@ function stageHeadline(stage: StartupStage, name: string, hasPlayableSession: bo
 }
 
 const GeneratingPage: React.FC = () => {
-  const { startupStage, character, world, isLoading, error, enterWorld, hasPlayableSession } = useGameUIStore(useShallow((state) => ({
+  const { startupStage, character, world, preparedProfiles, isLoading, error, startGame, enterWorld, hasPlayableSession } = useGameUIStore(useShallow((state) => ({
     startupStage: state.startupStage,
     character: state.character,
     world: state.world,
+    preparedProfiles: state.preparedProfiles,
     isLoading: state.isLoading,
     error: state.error,
+    startGame: state.startGame,
     enterWorld: state.enterWorld,
     hasPlayableSession: Boolean(state.stateView),
   })));
@@ -159,10 +170,54 @@ const GeneratingPage: React.FC = () => {
       ];
   }, [canEnterWorld, stageKey]);
   const [messageIndex, setMessageIndex] = useState(0);
+  const [selectedProfileStep, setSelectedProfileStep] = useState<ProfileStepKey>('generating_world');
+  const profilePanels = useMemo(() => {
+    if (!preparedProfiles) {
+      return null;
+    }
+
+    return {
+      generating_world: {
+        eyebrow: '世界设定',
+        title: '这一次回响所落下的世界纹理',
+        text: preparedProfiles.world,
+        className: 'border-[#5b6f96]/30 bg-[#0f1624]/80 text-[#c7d5f2]',
+      },
+      generating_protagonist: {
+        eyebrow: '人物设定',
+        title: '主角被命运收束后的轮廓',
+        text: preparedProfiles.protagonist,
+        className: 'border-[#6f5f96]/30 bg-[#151325]/80 text-[#d8d0f2]',
+      },
+      creating_session: {
+        eyebrow: '命运引线',
+        title: '故事即将被点亮的第一束牵引',
+        text: preparedProfiles.keyStoryBeats,
+        className: 'border-[#8a7755]/30 bg-[#17120f]/80 text-[#efe4cd]/88',
+      },
+    } satisfies Record<ProfileStepKey, {
+      eyebrow: string;
+      title: string;
+      text: string;
+      className: string;
+    }>;
+  }, [preparedProfiles]);
 
   useEffect(() => {
     setMessageIndex(0);
   }, [stageKey]);
+
+  useEffect(() => {
+    if (!preparedProfiles) {
+      return;
+    }
+
+    setSelectedProfileStep(
+      stageKey === 'generating_world' || stageKey === 'generating_protagonist'
+        ? stageKey
+        : 'creating_session',
+    );
+  }, [preparedProfiles, stageKey]);
 
   useEffect(() => {
     if (currentMessages.length <= 1) {
@@ -175,6 +230,8 @@ const GeneratingPage: React.FC = () => {
 
     return () => window.clearInterval(timer);
   }, [currentMessages]);
+
+  const activeProfilePanel = profilePanels?.[selectedProfileStep];
 
   return (
     <ScreenShell className="items-center">
@@ -200,14 +257,12 @@ const GeneratingPage: React.FC = () => {
               <StatusPill icon={Sparkles} className="border-[#8b5cf6]/30 bg-[#1b1733]/80 text-[#e3d8ff]">
                 {character.background || '命运烙印待揭晓'}
               </StatusPill>
-              <StatusPill icon={BookOpenText} className="border-[#7c6b55]/40 bg-[#171311]/80 text-[#efe4cd]">
-                核心矛盾已经明确
-              </StatusPill>
             </div>
 
             <div className="space-y-3">
               {startupSteps.map((step) => {
                 const status = stepStatus(startupStage, step.key);
+                const isSelected = profilePanels ? selectedProfileStep === step.key : false;
                 const iconClassName = status === 'active'
                   ? 'text-[#7dd3fc] animate-spin'
                   : status === 'done'
@@ -215,14 +270,16 @@ const GeneratingPage: React.FC = () => {
                     : 'text-[#5f6c86]';
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={step.key}
+                    onClick={profilePanels ? () => setSelectedProfileStep(step.key) : undefined}
                     className={`rounded-[1.1rem] border px-4 py-4 transition-colors md:px-5 ${status === 'active'
                       ? 'border-[#60a5fa]/40 bg-[#101a2c]/92'
                       : status === 'done'
                         ? 'border-[#8a7755]/35 bg-[#14110f]/85'
                         : 'border-white/8 bg-[#0f1420]/70'
-                      }`}
+                      } ${profilePanels ? 'w-full cursor-pointer text-left hover:border-[#8fa4ca]/45' : 'w-full text-left'} ${isSelected ? 'ring-1 ring-[#c7d5f2]/45' : ''}`}
                   >
                     <div className="flex items-start gap-3">
                       <LoaderCircle className={`mt-0.5 h-5 w-5 shrink-0 ${iconClassName}`} />
@@ -232,14 +289,44 @@ const GeneratingPage: React.FC = () => {
                         <p className="text-sm leading-6 text-[#9ca7be]">{step.description}</p>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </SectionCard>
 
-          {startupStage === 'ready_to_enter' ? (
-            <div className="flex justify-center">
+          {activeProfilePanel ? (
+            <SectionCard className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-xs font-medium tracking-[0.24em] text-[#8fa4ca]"></p>
+                <div className="flex gap-2">
+                  {profileStepOrder.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-label={`切换到${profilePanels[key].eyebrow}`}
+                      onClick={() => setSelectedProfileStep(key)}
+                      className={`h-2.5 w-2.5 rounded-full transition-colors ${selectedProfileStep === key ? 'bg-[#d8c58a]' : 'bg-white/18 hover:bg-white/35'}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className={`rounded-[1.1rem] border p-4 md:p-5 ${activeProfilePanel.className}`}>
+                <p className="text-sm font-semibold tracking-wide text-[#efe4cd]">{activeProfilePanel.eyebrow}</p>
+                <p className="mt-2 text-base font-medium text-[#f8f1e3] md:text-lg">{activeProfilePanel.title}</p>
+                <p className="mt-4 whitespace-pre-wrap text-sm leading-7">
+                  {activeProfilePanel.text}
+                </p>
+              </div>
+            </SectionCard>
+          ) : null}
+
+          {preparedProfiles ? (
+            <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <SecondaryButton onClick={() => void startGame()} className="min-w-44">
+                重新编织
+              </SecondaryButton>
               <PrimaryButton onClick={() => void enterWorld()} disabled={!canEnterWorld && isLoading} className="min-w-44">
                 {canEnterWorld ? '步入回响' : (isLoading ? '再次步入回响中...' : '再次步入回响')}
               </PrimaryButton>
