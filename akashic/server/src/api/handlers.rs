@@ -183,13 +183,25 @@ pub async fn generate_profiles(
   - 主角为何会被卷入世界主冲突，以及其处境为何适合长期演绎。
 - 重点不是称赞主角，而是让主角既有魅力，也有会在剧情中不断出问题的地方。
 
+[关键节点骨架]
+- 用 4 到 6 条短句书写，每条单独一行，不要编号。
+- 每一条都应是故事未来必须抵达、对角色与世界都具有决定性影响的关键场景、真相揭示、关系断裂、代价兑现或终局瞬间。
+- 这些节点不是详细剧情梗概，而是“结局引力场”的骨架，要足够具体，能为后续 FateWeaver 提供持续牵引。
+- 节点之间应体现递进关系：前期埋入牵引，中期扩大代价，后期逼近不可回避的抉择与收束。
+- 至少包含：
+  - 一个会重新定义主角自我认知或身份位置的节点。
+  - 一个让世界主冲突彻底升级、无法继续回避的节点。
+  - 一个具有明确终局气息的收束节点。
+
 输出要求：
 1. 输出格式必须严格如下：
 [世界设定]
 这里写世界设定正文
 [主角设定]
 这里写主角设定正文
-2. 只输出以上两段内容。
+ [关键节点骨架]
+ 这里逐行写关键节点骨架
+2. 只输出以上三段内容。
 3. 不要输出 JSON，不要输出代码块，不要输出额外标题、解释、分析、项目符号或注释。
 4. 两段正文都要具体、克制、可演绎，避免空话、套话和泛泛而谈。"#,
         ),
@@ -318,21 +330,25 @@ fn task_update_from_delta(event_id: Option<u64>, update: TaskUpdate) -> TaskUpda
 fn parse_generated_profiles(content: &str) -> Option<GenerateProfilesData> {
     let world_marker = "[世界设定]";
     let protagonist_marker = "[主角设定]";
+    let beats_marker = "[关键节点骨架]";
     let world_start = content.find(world_marker)?;
     let protagonist_start = content.find(protagonist_marker)?;
-    if protagonist_start <= world_start {
+    let beats_start = content.find(beats_marker)?;
+    if protagonist_start <= world_start || beats_start <= protagonist_start {
         return None;
     }
 
     let world = content[world_start + world_marker.len()..protagonist_start].trim();
-    let protagonist = content[protagonist_start + protagonist_marker.len()..].trim();
-    if world.is_empty() || protagonist.is_empty() {
+    let protagonist = content[protagonist_start + protagonist_marker.len()..beats_start].trim();
+    let key_story_beats = content[beats_start + beats_marker.len()..].trim();
+    if world.is_empty() || protagonist.is_empty() || key_story_beats.is_empty() {
         return None;
     }
 
     Some(GenerateProfilesData {
         world: world.to_string(),
         protagonist: protagonist.to_string(),
+        key_story_beats: key_story_beats.to_string(),
     })
 }
 
@@ -341,14 +357,18 @@ mod tests {
     use super::parse_generated_profiles;
 
     #[test]
-    fn parse_generated_profiles_extracts_two_sections() {
+    fn parse_generated_profiles_extracts_three_sections() {
         let result = parse_generated_profiles(
-            "[世界设定]\n蒸汽与神谕并存的海上帝国。\n\n[主角设定]\n一名背负禁忌地图的年轻领航员。",
+            "[世界设定]\n蒸汽与神谕并存的海上帝国。\n\n[主角设定]\n一名背负禁忌地图的年轻领航员。\n\n[关键节点骨架]\n他第一次发现地图会吞噬持有者的记忆。\n帝国与教会同时确认他是预言中的缺口。\n他必须在打开归航之门与保全同伴之间二选一。",
         )
         .expect("should parse");
 
         assert_eq!(result.world, "蒸汽与神谕并存的海上帝国。");
         assert_eq!(result.protagonist, "一名背负禁忌地图的年轻领航员。");
+        assert_eq!(
+            result.key_story_beats,
+            "他第一次发现地图会吞噬持有者的记忆。\n帝国与教会同时确认他是预言中的缺口。\n他必须在打开归航之门与保全同伴之间二选一。"
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use akashic_ecs::{
     engine::{AkashicSessionEngine, Session},
+    profile::DEFAULT_KEY_STORY_BEATS,
     resources::{
         export::TaskEvent, protagonist_action::PlayerActionType, task_manager::TaskUpdate,
         turn_state::TurnPhase,
@@ -62,12 +63,21 @@ impl AppState {
         let created_at = now_string();
         let world_profile = request.world_profile.trim();
         let protagonist_profile = request.protagonist_profile.trim();
+        let key_story_beats = request.key_story_beats.trim();
         if world_profile.is_empty() || protagonist_profile.is_empty() {
             return Err(AppError::bad_request(
                 "`worldProfile` 与 `protagonistProfile` 不能为空。",
             ));
         }
-        let engine = AkashicSessionEngine::new_with_profiles(world_profile, protagonist_profile);
+        let engine = AkashicSessionEngine::new_with_profiles(
+            world_profile,
+            protagonist_profile,
+            if key_story_beats.is_empty() {
+                DEFAULT_KEY_STORY_BEATS
+            } else {
+                key_story_beats
+            },
+        );
         let session = build_session_record(session_id.clone(), engine);
 
         self.sessions
@@ -434,6 +444,7 @@ mod tests {
             .create_game_session(crate::api::dto::CreateGameSessionRequest {
                 world_profile: "archive world".to_string(),
                 protagonist_profile: "archive protagonist".to_string(),
+                key_story_beats: "archive beats".to_string(),
             })
             .await
             .expect("session should create");
@@ -466,6 +477,7 @@ mod tests {
             .create_game_session(crate::api::dto::CreateGameSessionRequest {
                 world_profile: "old world".to_string(),
                 protagonist_profile: "old protagonist".to_string(),
+                key_story_beats: "old beats".to_string(),
             })
             .await
             .expect("session should create");
@@ -550,6 +562,7 @@ mod tests {
             title: "第7轮：钟楼阴影".to_string(),
             world_profile: "world".to_string(),
             protagonist_profile: "protagonist".to_string(),
+            key_story_beats: "beats".to_string(),
             turn_state: TurnStateArchive {
                 phase: TurnPhase::AwaitingPlayerChoice,
                 turn_index: 7,

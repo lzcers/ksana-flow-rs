@@ -14,10 +14,11 @@ pub struct FateWeaver {
 }
 
 impl FateWeaver {
-    pub fn new(world_profile: &str, protagonist_profile: &str) -> Self {
+    pub fn new(world_profile: &str, protagonist_profile: &str, key_story_beats: &str) -> Self {
         let system_prompt = FATE_BASE_SYSTEM_PROMPT
             .replace("{world_profile}", world_profile)
             .replace("{protagonist_profile}", protagonist_profile)
+            .replace("{key_story_beats}", key_story_beats)
             .replace("{output_schema}", OUTPUT_SCHEMA);
 
         let context = Context::new()

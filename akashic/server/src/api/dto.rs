@@ -33,9 +33,11 @@ pub struct GenerateProfilesRequest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateProfilesData {
     pub world: String,
     pub protagonist: String,
+    pub key_story_beats: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +45,8 @@ pub struct GenerateProfilesData {
 pub struct CreateGameSessionRequest {
     pub world_profile: String,
     pub protagonist_profile: String,
+    #[serde(default)]
+    pub key_story_beats: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

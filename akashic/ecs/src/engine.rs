@@ -14,7 +14,7 @@ use crate::{
     components::{
         fate_weaver::FateWeaver, protagonist::Protagonist, upper_narrator::UpperNarrator,
     },
-    profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
+    profile::{DEFAULT_KEY_STORY_BEATS, DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
         export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
         history::{RoundHistoryEntry, SessionHistoryLog},
@@ -61,6 +61,7 @@ pub struct Session {
 pub struct SessionArchiveState {
     pub world_profile: String,
     pub protagonist_profile: String,
+    pub key_story_beats: String,
     pub phase: TurnPhase,
     pub turn_index: u64,
     pub active_turn_id: u64,
@@ -77,6 +78,7 @@ pub struct SessionArchiveState {
 struct SessionProfiles {
     world_profile: String,
     protagonist_profile: String,
+    key_story_beats: String,
 }
 
 pub struct AkashicSessionEngine {
@@ -87,11 +89,20 @@ pub struct AkashicSessionEngine {
 impl AkashicSessionEngine {
     // 创建实例
     pub fn new() -> Self {
-        Self::new_with_profiles(DEFAULT_WORLD_PROFILE, DEFAULT_PROTAGONIST_PROFILE)
+        Self::new_with_profiles(
+            DEFAULT_WORLD_PROFILE,
+            DEFAULT_PROTAGONIST_PROFILE,
+            DEFAULT_KEY_STORY_BEATS,
+        )
     }
 
-    pub fn new_with_profiles(world_profile: &str, protagonist_profile: &str) -> Self {
-        let (world, export_handle) = build_world(world_profile, protagonist_profile);
+    pub fn new_with_profiles(
+        world_profile: &str,
+        protagonist_profile: &str,
+        key_story_beats: &str,
+    ) -> Self {
+        let (world, export_handle) =
+            build_world(world_profile, protagonist_profile, key_story_beats);
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         SessionRuntime::spawn(world, build_schedule(), command_rx);
         Self {
@@ -316,6 +327,7 @@ impl SessionRuntime {
         Ok(SessionArchiveState {
             world_profile: profiles.world_profile,
             protagonist_profile: profiles.protagonist_profile,
+            key_story_beats: profiles.key_story_beats,
             phase,
             turn_index,
             active_turn_id,
@@ -336,7 +348,11 @@ impl SessionRuntime {
     }
 }
 
-fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, ExportHandle) {
+fn build_world(
+    world_profile: &str,
+    protagonist_profile: &str,
+    key_story_beats: &str,
+) -> (World, ExportHandle) {
     let mut world = World::new();
 
     world.init_resource::<WorldSnapshot>();
@@ -345,6 +361,7 @@ fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, Export
     world.insert_resource(SessionProfiles {
         world_profile: world_profile.to_string(),
         protagonist_profile: protagonist_profile.to_string(),
+        key_story_beats: key_story_beats.to_string(),
     });
     world.init_resource::<PlayerInbox>();
     world.insert_resource(PlayerInputConfig::wait_for_user());
@@ -355,7 +372,11 @@ fn build_world(world_profile: &str, protagonist_profile: &str) -> (World, Export
     let (export_state, export_handle) = ExportState::new_with_handle();
     world.insert_resource(export_state);
 
-    world.spawn(FateWeaver::new(world_profile, protagonist_profile));
+    world.spawn(FateWeaver::new(
+        world_profile,
+        protagonist_profile,
+        key_story_beats,
+    ));
     world.spawn(UpperNarrator::new(world_profile, protagonist_profile));
     world.spawn(Protagonist::new(world_profile, protagonist_profile));
 
@@ -374,6 +395,7 @@ fn build_world_from_archive(state: SessionArchiveState) -> (World, ExportHandle)
     world.insert_resource(SessionProfiles {
         world_profile: state.world_profile,
         protagonist_profile: state.protagonist_profile,
+        key_story_beats: state.key_story_beats,
     });
     world.init_resource::<PlayerInbox>();
     world.insert_resource(PlayerInputConfig::wait_for_user());

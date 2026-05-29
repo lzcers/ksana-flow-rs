@@ -746,6 +746,7 @@ const createGameUIActions = (
         createGameSession({
           worldProfile: preparedProfiles.world,
           protagonistProfile: preparedProfiles.protagonist,
+          keyStoryBeats: preparedProfiles.keyStoryBeats,
         }),
         sleep(MIN_CREATING_SESSION_STAGE_MS),
       ]);

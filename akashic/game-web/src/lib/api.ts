@@ -104,6 +104,7 @@ export interface SessionArchivePayload {
   title: string;
   world_profile: string;
   protagonist_profile: string;
+  key_story_beats?: string;
   turn_state: TurnStateArchive;
   fate_weaver: unknown;
   upper_narrator: unknown;
@@ -128,11 +129,13 @@ export interface LoadArchiveInput {
 export interface GeneratedProfiles {
   world: string;
   protagonist: string;
+  keyStoryBeats: string;
 }
 
 export interface CreateGameSessionInput {
   worldProfile: string;
   protagonistProfile: string;
+  keyStoryBeats?: string;
 }
 
 export interface ProtagonistOption {

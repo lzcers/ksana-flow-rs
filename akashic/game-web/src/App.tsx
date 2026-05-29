@@ -7,6 +7,7 @@ import ArchiveListPage from './pages/ArchiveListPage';
 import CreationPage from './pages/CreationPage';
 import GeneratingPage from './pages/GeneratingPage';
 import GameplayPage from './pages/GameplayPage';
+import EndingPage from './pages/EndingPage';
 import { useGameInternalStore } from './store/gameStore';
 import { useGameUIStore } from './store/gameUIStore';
 
@@ -46,7 +47,26 @@ function GameplayRoute() {
     return <Navigate to={appRoutes.lobby} replace />;
   }
 
+  if (stateView.isEnding) {
+    return <Navigate to={appRoutes.ending} replace />;
+  }
+
   return <GameplayPage />;
+}
+
+function EndingRoute() {
+  const sessionId = useGameInternalStore((state) => state.sessionId);
+  const stateView = useGameUIStore((state) => state.stateView);
+
+  if (!sessionId || !stateView) {
+    return <Navigate to={appRoutes.lobby} replace />;
+  }
+
+  if (!stateView.isEnding) {
+    return <Navigate to={appRoutes.gameplay} replace />;
+  }
+
+  return <EndingPage />;
 }
 
 function App() {
@@ -67,6 +87,7 @@ function App() {
           <Route path={appRoutes.creation} element={<CreationPage />} />
           <Route path={appRoutes.generating} element={<GeneratingRoute />} />
           <Route path={appRoutes.gameplay} element={<GameplayRoute />} />
+          <Route path={appRoutes.ending} element={<EndingRoute />} />
           <Route path="*" element={<Navigate to={appRoutes.lobby} replace />} />
         </Routes>
       </main>

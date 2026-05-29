@@ -2,7 +2,7 @@ use akashic_ecs::{
     components::{
         fate_weaver::FateWeaver, protagonist::Protagonist, upper_narrator::UpperNarrator,
     },
-    profile::{DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
+    profile::{DEFAULT_KEY_STORY_BEATS, DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
         export::ExportState,
         player_input::{PlayerInbox, PlayerInputConfig},
@@ -62,6 +62,7 @@ async fn main() {
     world.spawn(FateWeaver::new(
         DEFAULT_WORLD_PROFILE,
         DEFAULT_PROTAGONIST_PROFILE,
+        DEFAULT_KEY_STORY_BEATS,
     ));
     // 上层叙事者，负责故事世界的文学化描述
     world.spawn(UpperNarrator::new(

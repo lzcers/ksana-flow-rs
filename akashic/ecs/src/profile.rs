@@ -1,3 +1,8 @@
+pub static DEFAULT_KEY_STORY_BEATS: &str = r#"
+- 暂无额外指定的关键节点骨架。
+- 请依据世界设定、主角设定与故事进程，自然收束出具有因果与情感闭环的结局。
+"#;
+
 pub static DEFAULT_PROTAGONIST_PROFILE: &str = r#"
 ## 人物设定
 

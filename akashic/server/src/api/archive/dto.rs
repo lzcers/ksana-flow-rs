@@ -38,6 +38,8 @@ pub struct SessionArchivePayload {
     /// 原始文本资料，按你的要求只存文本
     pub world_profile: String,
     pub protagonist_profile: String,
+    #[serde(default)]
+    pub key_story_beats: String,
 
     /// 当前回合状态
     pub turn_state: TurnStateArchive,

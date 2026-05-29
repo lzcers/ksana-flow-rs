@@ -24,6 +24,7 @@ pub async fn gen_archive_payload(
         ),
         world_profile: archive_state.world_profile,
         protagonist_profile: archive_state.protagonist_profile,
+        key_story_beats: archive_state.key_story_beats,
         turn_state: TurnStateArchive {
             phase: archive_state.phase,
             turn_index: archive_state.turn_index,
@@ -51,6 +52,7 @@ pub fn load_archive_payload(
     AkashicSessionEngine::from_archive_state(SessionArchiveState {
         world_profile: payload.world_profile,
         protagonist_profile: payload.protagonist_profile,
+        key_story_beats: payload.key_story_beats,
         phase: payload.turn_state.phase,
         turn_index: payload.turn_state.turn_index,
         active_turn_id: payload.turn_state.active_turn_id,
@@ -134,6 +136,7 @@ mod tests {
             title: "第3轮：塔楼回响".to_string(),
             world_profile: "world".to_string(),
             protagonist_profile: "protagonist".to_string(),
+            key_story_beats: "beats".to_string(),
             turn_state: TurnStateArchive {
                 phase: TurnPhase::AwaitingPlayerChoice,
                 turn_index: 3,
@@ -186,6 +189,7 @@ mod tests {
             title: "第4轮：潮声之门".to_string(),
             world_profile: "world".to_string(),
             protagonist_profile: "protagonist".to_string(),
+            key_story_beats: "beats".to_string(),
             turn_state: TurnStateArchive {
                 phase: TurnPhase::AwaitingPlayerChoice,
                 turn_index: 4,

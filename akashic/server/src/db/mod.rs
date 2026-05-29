@@ -269,6 +269,7 @@ mod tests {
             title: "第3轮：雨夜档案馆".to_string(),
             world_profile: "world profile".to_string(),
             protagonist_profile: "protagonist profile".to_string(),
+            key_story_beats: "beats".to_string(),
             turn_state: TurnStateArchive {
                 phase: TurnPhase::AwaitingPlayerChoice,
                 turn_index: 3,

@@ -4,4 +4,5 @@ export const appRoutes = {
   creation: '/creation',
   generating: '/generating',
   gameplay: '/play',
+  ending: '/ending',
 } as const;

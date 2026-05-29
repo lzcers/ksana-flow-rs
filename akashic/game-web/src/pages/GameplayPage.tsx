@@ -18,38 +18,6 @@ import type { Choice } from '../lib/api';
 
 const EMPTY_BROADCAST_ITEMS: string[] = [];
 
-function formatEndingTypeLabel(endingType: string | null): string {
-  const normalized = endingType?.trim();
-  if (!normalized) {
-    return '终局已定';
-  }
-
-  return normalized
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((segment) => segment[0]?.toUpperCase() + segment.slice(1))
-    .join(' ');
-}
-
-function endingDescription(endingType: string | null, isLoading: boolean): string {
-  if (isLoading) {
-    return '回响已抵达落幕，这一段终章仍在你的眼前徐徐显现。';
-  }
-
-  switch (endingType) {
-    case 'triumph':
-      return '旅程在抵达所愿之处后落幕，余下的是一段仍会回响的胜利。';
-    case 'tragedy':
-      return '故事走到了无法挽回的尽头，余音里只剩代价与沉默。';
-    case 'bittersweet':
-      return '你得到了某些答案，也永远失去了一部分自己。';
-    case 'open':
-      return '这一段旅程已告一段落，世界仍在更远处轻轻翻涌。';
-    default:
-      return '这段旅程已经抵达自然的终点，你可以停留片刻，读完最后的余韵。';
-  }
-}
-
 const GameplayPage: React.FC = () => {
   const navigate = useNavigate();
   const {
@@ -61,8 +29,6 @@ const GameplayPage: React.FC = () => {
     isLoading,
     error,
     skipRestoredNarrationAnimation,
-    isEnding,
-    endingType,
   } = useGameUIStore(useShallow((state) => ({
     phase: state.stateView?.phase ?? '',
     turnIndex: state.stateView?.turnIndex,
@@ -72,8 +38,6 @@ const GameplayPage: React.FC = () => {
     isLoading: state.isLoading,
     error: state.error,
     skipRestoredNarrationAnimation: state.skipRestoredNarrationAnimation,
-    isEnding: state.stateView?.isEnding ?? false,
-    endingType: state.stateView?.endingType ?? null,
   })));
   const {
     bootstrapSession,
@@ -112,13 +76,13 @@ const GameplayPage: React.FC = () => {
   ), [roundStates]);
   const activeRoundState = roundStates[currentRound];
   const currentRoundChoices = activeRoundState?.choices ?? [];
-  const hasChoices = currentRoundChoices.length > 0 && !isEnding;
+  const hasChoices = currentRoundChoices.length > 0;
   const isNarrationStreaming = activeRoundState?.narrationStatus === 'pending'
     || activeRoundState?.narrationStatus === 'running';
   const shouldType = Boolean(activeRoundState?.isAwaitingNarration) || isNarrationStreaming;
   const typingKey = `${currentRound}:${activeRoundState?.isAwaitingNarration ? '1' : '0'}:${activeRoundState?.narrationText ?? ''}`;
   const isTyping = shouldType && completedTypingKey !== typingKey;
-  const isChoiceInteractionDisabled = isTyping || isLoading || isEnding;
+  const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices || obsessionPoints <= 0;
   const isObsessionSubmitDisabled = isChoiceInteractionDisabled || obsessionInput.trim().length === 0;
   const statusMessage = feedback ?? error;
@@ -128,8 +92,6 @@ const GameplayPage: React.FC = () => {
   const broadcastMessages = broadcastItems.length > 0
     ? broadcastItems
     : (latestBroadcastSummary.trim() ? [latestBroadcastSummary.trim()] : []);
-  const endingTitle = formatEndingTypeLabel(endingType);
-  const endingBody = endingDescription(endingType, isTyping || isNarrationStreaming || isLoading);
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -261,21 +223,6 @@ const GameplayPage: React.FC = () => {
               {statusMessage ? <p className="text-xs text-[#d9cbb1] sm:text-sm">{statusMessage}</p> : null}
             </div>
             <div className="mt-auto flex touch-pan-y flex-col gap-2">
-              {isEnding ? (
-                <section className="rounded-[1.1rem] border border-amber-300/35 bg-[rgba(40,25,16,0.6)] px-4 py-3 text-[#f6eddc] shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold tracking-[0.18em] text-amber-200/90">
-                      故事已落幕
-                    </p>
-                    <span className="rounded-full border border-amber-200/20 bg-black/15 px-2.5 py-1 text-[0.7rem] uppercase tracking-[0.18em] text-amber-100/85">
-                      {endingTitle}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[#e7d9c2]">
-                    {endingBody}
-                  </p>
-                </section>
-              ) : null}
               <ChoicePanel
                 hasChoices={hasChoices}
                 choices={currentRoundChoices}
