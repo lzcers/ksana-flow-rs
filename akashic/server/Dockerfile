@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM rust:1.96.0 AS builder
 
 RUN apt-get update \
@@ -14,7 +15,13 @@ COPY ksana/flow ./ksana/flow
 COPY ksana/nodes ./ksana/nodes
 COPY ksana/server ./ksana/server
 
-RUN cargo build --locked --release -p akashic-server
+RUN --mount=type=secret,id=cargo_config,target=/run/secrets/cargo_config,required=false \
+    if [ -f /run/secrets/cargo_config ]; then \
+    mkdir -p /usr/local/cargo && \
+    cp /run/secrets/cargo_config /usr/local/cargo/config.toml; \
+    fi && \
+    cargo build --locked --release -p akashic-server && \
+    rm -f /usr/local/cargo/config.toml
 
 FROM debian:bookworm-slim
 

@@ -18,6 +18,8 @@ services:
     build:
       context: ..
       dockerfile: ./akashic/server/Dockerfile
+      secrets:
+        - cargo_config
     restart: unless-stopped
     expose:
       - "3001"
@@ -29,3 +31,7 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+
+secrets:
+  cargo_config:
+    file: ${HOME}/.cargo/config.toml
