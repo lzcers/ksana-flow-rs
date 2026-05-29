@@ -1,0 +1,31 @@
+services:
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+  server:
+    build:
+      context: ..
+      dockerfile: ./akashic/server/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3001"
+    environment:
+      RUST_LOG: info
+    volumes:
+      - ./server/db-data:/app/db-data
+
+volumes:
+  caddy_data:
+  caddy_config:

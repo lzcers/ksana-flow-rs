@@ -1,0 +1,28 @@
+{
+    # Replace with your real ACME contact email before going live.
+    email zack@ksana.net
+}
+
+www.akasa.fun {
+    encode zstd gzip
+    root * /srv/site-web
+    try_files {path} /index.html
+    file_server
+}
+
+game.akasa.fun {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy server:3001 {
+            # Keep API streams responsive for EventSource/SSE updates.
+            flush_interval -1
+        }
+    }
+
+    handle {
+        root * /srv/game-web
+        try_files {path} /index.html
+        file_server
+    }
+}
