@@ -206,6 +206,19 @@ impl AppState {
         Ok(world_state_from_session(session, &snapshot))
     }
 
+    pub async fn get_game_session_narrations(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<String>, AppError> {
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AppError::not_found(format!("未找到会话 `{session_id}`")))?;
+        let snapshot = session.engine.get_game_session();
+
+        Ok(collect_story_narrations(&snapshot))
+    }
+
     pub async fn control_game_session(
         &self,
         session_id: &str,
@@ -363,6 +376,28 @@ fn visible_turn_index(snapshot: &Session) -> u64 {
     } else {
         snapshot.active_turn_id.max(snapshot.turn_index + 1)
     }
+}
+
+fn collect_story_narrations(snapshot: &Session) -> Vec<String> {
+    let mut narrations: Vec<String> = snapshot
+        .history
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .narration_text
+                .as_deref()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string)
+        })
+        .collect();
+
+    let latest = snapshot.latest_narration.trim();
+    if !latest.is_empty() && narrations.last().is_none_or(|item| item != latest) {
+        narrations.push(latest.to_string());
+    }
+
+    narrations
 }
 
 fn status_from_phase(phase: TurnPhase) -> &'static str {
@@ -556,6 +591,39 @@ mod tests {
         assert!(world_state.get("new_info").is_none());
     }
 
+    #[test]
+    fn collect_story_narrations_uses_all_history_and_current_latest_output() {
+        let snapshot = sample_session_from_archive();
+
+        let narrations = collect_story_narrations(&snapshot);
+
+        assert_eq!(narrations, vec!["钟声掠过雾墙。", "回廊尽头亮起一盏迟到的灯。"]);
+    }
+
+    #[test]
+    fn collect_story_narrations_skips_empty_and_duplicate_latest_output() {
+        let mut snapshot = sample_session_from_archive();
+        snapshot.history.push(RoundHistoryEntry {
+            round: 8,
+            world_snapshot: None,
+            narration_text: Some("回廊尽头亮起一盏迟到的灯。".to_string()),
+            choices: Vec::new(),
+            committed_action: None,
+        });
+        snapshot.latest_narration = "回廊尽头亮起一盏迟到的灯。".to_string();
+        snapshot.history.push(RoundHistoryEntry {
+            round: 9,
+            world_snapshot: None,
+            narration_text: Some("   ".to_string()),
+            choices: Vec::new(),
+            committed_action: None,
+        });
+
+        let narrations = collect_story_narrations(&snapshot);
+
+        assert_eq!(narrations, vec!["钟声掠过雾墙。", "回廊尽头亮起一盏迟到的灯。"]);
+    }
+
     fn sample_payload() -> SessionArchivePayload {
         SessionArchivePayload {
             session_id: "session-from-slot".to_string(),
@@ -609,6 +677,23 @@ mod tests {
                     committed_action: Some("绕到钟楼背面".to_string()),
                 }],
             },
+        }
+    }
+
+    fn sample_session_from_archive() -> Session {
+        let payload = sample_payload();
+
+        Session {
+            phase: payload.turn_state.phase,
+            turn_index: payload.turn_state.turn_index,
+            active_turn_id: payload.turn_state.active_turn_id + 1,
+            history: payload.history_log.rounds,
+            current_task: None,
+            tasks: Vec::new(),
+            world_snapshot: payload.world_snapshot,
+            latest_narration: "回廊尽头亮起一盏迟到的灯。".to_string(),
+            current_protagonist_action: payload.protagonist_decision.committed_action,
+            choices: payload.protagonist_decision.choices,
         }
     }
 }

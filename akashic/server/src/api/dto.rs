@@ -40,6 +40,13 @@ pub struct GenerateProfilesData {
     pub key_story_beats: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorySummaryData {
+    pub summary: String,
+    pub narration_count: usize,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateGameSessionRequest {

@@ -36,6 +36,10 @@ pub fn build_router(state: AppState) -> Router {
             post(handlers::save_export),
         )
         .route(
+            "/api/game-sessions/{session_id}/summary",
+            post(handlers::generate_story_summary),
+        )
+        .route(
             "/api/game-sessions/load-archive",
             post(handlers::load_archive),
         )
