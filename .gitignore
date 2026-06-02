@@ -11,3 +11,4 @@ nul
 node_modules
 *.txt
 /db-data
+.DS_Store

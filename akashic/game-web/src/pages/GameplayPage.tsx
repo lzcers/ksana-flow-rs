@@ -92,6 +92,31 @@ const GameplayPage: React.FC = () => {
   const broadcastMessages = broadcastItems.length > 0
     ? broadcastItems
     : (latestBroadcastSummary.trim() ? [latestBroadcastSummary.trim()] : []);
+  const shareSummaryFallback = useMemo(() => {
+    const latestNarration = [...narrationHistory]
+      .reverse()
+      .find((entry) => entry.narrationText.trim())
+      ?.narrationText
+      .trim();
+    const broadcastSummary = latestBroadcastSummary.trim();
+
+    if (latestNarration && broadcastSummary && !latestNarration.includes(broadcastSummary)) {
+      return `${broadcastSummary} ${latestNarration}`;
+    }
+
+    if (latestNarration) {
+      return latestNarration;
+    }
+
+    if (broadcastSummary) {
+      return broadcastSummary;
+    }
+
+    return `${currentScene} 的命运仍在推进，下一轮选择正在逼近。`;
+  }, [currentScene, latestBroadcastSummary, narrationHistory]);
+  const shareGameUrl = useMemo(() => (
+    new URL(appRoutes.lobby, window.location.origin).toString()
+  ), []);
 
   useEffect(() => {
     if (!feedback) return undefined;
@@ -242,6 +267,9 @@ const GameplayPage: React.FC = () => {
                 isObsessionToggleDisabled={isObsessionToggleDisabled}
                 obsessionPoints={obsessionPoints}
                 intuitionPoints={intuitionPoints}
+                sessionId={sessionId}
+                shareSummaryFallback={shareSummaryFallback}
+                shareGameUrl={shareGameUrl}
                 onToggleObsession={() => {
                   setActiveObsession((prev) => !prev);
                   setFeedback(null);
@@ -251,7 +279,6 @@ const GameplayPage: React.FC = () => {
                   navigate(appRoutes.lobby);
                 }}
                 onSave={handleSave}
-                onShare={() => setFeedback('分享功能即将开放，当前可先导出存档保存这段旅程。')}
               />
             </div>
           </div>

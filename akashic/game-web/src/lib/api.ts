@@ -132,6 +132,11 @@ export interface GeneratedProfiles {
   keyStoryBeats: string;
 }
 
+export interface StorySummaryData {
+  summary: string;
+  narrationCount: number;
+}
+
 export interface CreateGameSessionInput {
   worldProfile: string;
   protagonistProfile: string;
@@ -298,6 +303,12 @@ export function exportGameSaveArchive(sessionId: string, input: CreateSaveSlotIn
   return requestJson<SaveExportData>(withApiOrigin(`/api/game-sessions/${sessionId}/save-export`), {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export function generateGameSessionStorySummary(sessionId: string) {
+  return requestJson<StorySummaryData>(withApiOrigin(`/api/game-sessions/${sessionId}/summary`), {
+    method: 'POST',
   });
 }
 

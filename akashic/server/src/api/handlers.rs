@@ -419,10 +419,6 @@ fn validate_generated_profiles(data: GenerateProfilesData) -> Result<GeneratePro
         return Err("`keyStoryBeats` 不能为空。".to_string());
     }
 
-    if beats.lines().filter(|line| !line.trim().is_empty()).count() < 4 {
-        return Err("`keyStoryBeats` 至少需要 4 行关键节点。".to_string());
-    }
-
     Ok(GenerateProfilesData {
         world: world.to_string(),
         protagonist: protagonist.to_string(),
