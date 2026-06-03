@@ -10,12 +10,22 @@ pub struct TurnFlow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnStage {
     Idle,
-    AwaitingPlayerInput,
     SimulatingWorld,
     CollectingOutcomes,
-    NarrationReady,
     Narrating,
-    AwaitingNextTurn,
     Ended,
     Failed,
+}
+
+impl TurnStage {
+    pub fn next(&mut self) {
+        match *self {
+            TurnStage::Idle => *self = TurnStage::SimulatingWorld,
+            TurnStage::SimulatingWorld => *self = TurnStage::CollectingOutcomes,
+            TurnStage::CollectingOutcomes => *self = TurnStage::Narrating,
+            TurnStage::Narrating => *self = TurnStage::Ended,
+            TurnStage::Ended => *self = TurnStage::Failed,
+            TurnStage::Failed => *self = TurnStage::Idle,
+        }
+    }
 }
