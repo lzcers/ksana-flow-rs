@@ -3,6 +3,7 @@ members = [
     "agent",
     "akashic/ecs",
     "akashic/server",
+    "akashic/story_engine",
     "ksana/flow",
     "ksana/nodes",
     "ksana/server",
