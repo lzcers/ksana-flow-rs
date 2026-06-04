@@ -16,7 +16,7 @@ pub fn agent_scheduler_system(
     mut task_manager: ResMut<TaskManager>,
 ) {
     for (entity, agent) in query.iter() {
-        // task_manager.spawn_task(entity, agent);
+        task_manager.spawn_task(entity, &agent.context);
         commands
             .entity(entity)
             .remove::<PendingReasoning>()

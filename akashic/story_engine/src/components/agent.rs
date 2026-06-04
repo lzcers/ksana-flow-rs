@@ -24,3 +24,15 @@ pub struct PendingReasoning;
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct RunningReasoning;
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct SimulationOutcome {
+    pub turn_id: u64,
+    pub content: String,
+}
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct NarrationOutcome {
+    pub turn_id: u64,
+    pub content: String,
+}
