@@ -15,6 +15,14 @@ use tokio::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
+pub enum TaskKind {
+    FatePlanning,
+    ProtagonistAction,
+    Narration,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Pending,
     Running,
@@ -24,8 +32,27 @@ pub enum TaskStatus {
 
 #[derive(Clone, Debug)]
 pub struct TaskResult {
+    pub kind: TaskKind,
     pub status: TaskStatus,
+    pub attempts: usize,
+    pub max_attempts: usize,
+    pub last_error: Option<String>,
+    pub chunks: Vec<String>,
     pub output: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskUpdate {
+    pub entity: String,
+    pub kind: TaskKind,
+    pub status: TaskStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
@@ -34,6 +61,7 @@ pub struct TaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, RunningTask>,
     pub results: HashMap<Entity, TaskResult>,
+    pub emitted_updates: Vec<TaskUpdate>,
 }
 
 struct RunningTask {
@@ -57,15 +85,24 @@ impl TaskManager {
             model,
             tasks: HashMap::new(),
             results: HashMap::new(),
+            emitted_updates: Vec::new(),
         }
     }
 
-    pub fn spawn_task(&mut self, entity: Entity, ctx: &Context) {
+    pub fn spawn_task(&mut self, entity: Entity, kind: TaskKind, ctx: &Context) {
         if let Some(existing_task) = self.tasks.remove(&entity) {
             existing_task.runtime.handle.abort();
         }
 
-        self.results.insert(entity, TaskResult::pending());
+        self.results.insert(entity, TaskResult::pending(kind));
+        self.emitted_updates.push(TaskUpdate {
+            entity: task_entity_label(entity),
+            kind,
+            status: TaskStatus::Pending,
+            chunk: None,
+            output: None,
+            error: None,
+        });
         self.tasks.insert(
             entity,
             RunningTask {
@@ -91,25 +128,69 @@ impl TaskManager {
         }
 
         let Some(task) = self.tasks.get_mut(&entity) else {
-            result.mark_failed("task handle missing".to_string());
+            let error = "task handle missing".to_string();
+            result.mark_failed(error.clone());
+            self.emitted_updates.push(TaskUpdate {
+                entity: task_entity_label(entity),
+                kind: result.kind,
+                status: TaskStatus::Error,
+                chunk: None,
+                output: None,
+                error: Some(error),
+            });
             return TaskStatus::Error;
         };
 
-        result.mark_running();
+        if result.status != TaskStatus::Running {
+            result.mark_running();
+            self.emitted_updates.push(TaskUpdate {
+                entity: task_entity_label(entity),
+                kind: result.kind,
+                status: TaskStatus::Running,
+                chunk: None,
+                output: None,
+                error: None,
+            });
+        }
         match task.runtime.rx.try_recv() {
             Ok(TaskRuntimeEvent::Completed(content)) => {
-                result.mark_done(content);
+                result.mark_done(content.clone());
+                self.emitted_updates.push(TaskUpdate {
+                    entity: task_entity_label(entity),
+                    kind: result.kind,
+                    status: TaskStatus::Done,
+                    chunk: None,
+                    output: Some(content),
+                    error: None,
+                });
                 self.tasks.remove(&entity);
                 TaskStatus::Done
             }
             Ok(TaskRuntimeEvent::Failed(error)) => {
-                result.mark_failed(error);
+                result.mark_failed(error.clone());
+                self.emitted_updates.push(TaskUpdate {
+                    entity: task_entity_label(entity),
+                    kind: result.kind,
+                    status: TaskStatus::Error,
+                    chunk: None,
+                    output: None,
+                    error: Some(error),
+                });
                 self.tasks.remove(&entity);
                 TaskStatus::Error
             }
             Err(TryRecvError::Empty) => TaskStatus::Running,
             Err(TryRecvError::Disconnected) => {
-                result.mark_failed("task runtime ended without completion".to_string());
+                let error = "task runtime ended without completion".to_string();
+                result.mark_failed(error.clone());
+                self.emitted_updates.push(TaskUpdate {
+                    entity: task_entity_label(entity),
+                    kind: result.kind,
+                    status: TaskStatus::Error,
+                    chunk: None,
+                    output: None,
+                    error: Some(error),
+                });
                 self.tasks.remove(&entity);
                 TaskStatus::Error
             }
@@ -129,6 +210,10 @@ impl TaskManager {
             task.runtime.handle.abort();
         }
         self.results.remove(&entity);
+    }
+
+    pub fn take_updates(&mut self) -> Vec<TaskUpdate> {
+        std::mem::take(&mut self.emitted_updates)
     }
 
     fn spawn_runtime_task(model: ChatModel, msgs: Vec<Message>) -> TaskRuntime {
@@ -159,9 +244,14 @@ impl TaskManager {
 }
 
 impl TaskResult {
-    fn pending() -> Self {
+    fn pending(kind: TaskKind) -> Self {
         Self {
+            kind,
             status: TaskStatus::Pending,
+            attempts: 1,
+            max_attempts: 1,
+            last_error: None,
+            chunks: Vec::new(),
             output: None,
             error: None,
         }
@@ -173,13 +263,19 @@ impl TaskResult {
 
     fn mark_done(&mut self, content: String) {
         self.status = TaskStatus::Done;
+        self.last_error = None;
         self.output = Some(content);
         self.error = None;
     }
 
     fn mark_failed(&mut self, message: String) {
         self.status = TaskStatus::Error;
+        self.last_error = Some(message.clone());
         self.output = None;
         self.error = Some(message);
     }
+}
+
+fn task_entity_label(entity: Entity) -> String {
+    format!("{entity:?}")
 }

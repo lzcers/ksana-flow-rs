@@ -1,6 +1,6 @@
 use crate::{
-    components::agent::{Agent, PendingReasoning, RunningReasoning},
-    resources::llm_task_manager::TaskManager,
+    components::agent::{Agent, AgentKind, PendingReasoning, RunningReasoning},
+    resources::llm_task_manager::{TaskKind, TaskManager},
 };
 use bevy_ecs::{
     entity::Entity,
@@ -16,7 +16,12 @@ pub fn agent_scheduler_system(
     mut task_manager: ResMut<TaskManager>,
 ) {
     for (entity, agent) in query.iter() {
-        task_manager.spawn_task(entity, &agent.context);
+        let kind = match agent.kind {
+            AgentKind::FateWeaver => TaskKind::FatePlanning,
+            AgentKind::UpperNarrator => TaskKind::Narration,
+            AgentKind::Protagonist => TaskKind::ProtagonistAction,
+        };
+        task_manager.spawn_task(entity, kind, &agent.context);
         commands
             .entity(entity)
             .remove::<PendingReasoning>()

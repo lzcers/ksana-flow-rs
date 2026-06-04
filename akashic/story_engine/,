@@ -1,0 +1,958 @@
+    world_snapshot: Res<WorldSnapshot>,
+) {
+    for (flow_entity, flow) in query_flows.iter() {
+        if flow.stage != TurnStage::TurnReady {
+            continue;
+        }
+
+        for (agent_entity, owner, simulation_outcome, narration_outcome) in query_        for ( {        for (agent_entity, f        for (agent_ent          for (agent_entity, owner, simulation_outcome, narration_outcome) in query_        for ( {        for (agent_entity, f   cti        for          for (age          for (agent_entity, owner, simulation_outcome, narrationom        for (agent_entity, owner, simulaSo     tc        for (agent_entity, owner, simulationou com        for (agent_entity, owner, simulation_outcome, narration_outcome) init        for (agent_entity, owner, simulation_outcome, narration_outcome) in query_        for ( {        for (agent_esn        for (agent_entiti        for (agent_entity, owner, simulation_outcome�        for (agent_entity, owner, simu�         for (agent_entity, owner, sim }        f'"     '"''"'"',
+'"'"'systems/scheduler.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::{entity::Entity, query::With, system::{Commands, Query, ResMut}};
+
+use crate::{
+    components::agent::{Agent, PendingReasoning, RunningReasoning},
+    resources::llm_task_manager::TaskManager,
+};
+
+pub fn agent_scheduler_system(
+    mut commands: Commands,
+    query: Query<(Entity, &Agent), (With<PendingReasoning>,)>,
+    mut task_manager: ResMut<TaskManager>,
+) {
+    for (entity, agent) in query.iter() {
+        task_manager.spawn_task(entity, &agent.context);
+        commands
+            .entity(entity)
+            .remove::<PendingReasoning>()
+            .insert(RunningReasoning);
+    }
+}
+'"'"''"'"''"'"',
+'"'"'systems/task_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::system::ResMut;
+
+use crate::resources::llm_task_manager::TaskManager;
+
+pub fn task_poll_system(mut task_manager: ResMut<TaskManager>) {
+    task_manager.poll_all_tasks();
+}
+'"'"''"'"''"'"',
+'"'"'systems/fate_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::{
+    entity::Entity,
+    query::Without,
+    system::{Commands, Query, Res, ResMut},
+};
+use serde_json::json;
+
+use crate::{
+    components::{
+        agent::{Agent, AgentKind, FlowOwner, PendingReasoning, RunningReasoning},
+        turn_flow::{TurnFlow, TurnStage},
+    },
+    resources::{
+        llm_task_manager::{TaskManager, TaskStatus},
+        protagonist_action::ProtagonistDecisionState,
+        world_snapshot::WorldSnapshot,
+    },
+    utils::parse_json_response,
+};
+
+pub fn fate_dispatch_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    decision_state: Res<ProtagonistDecisionState>,
+    mut query_agents: Query<
+        (Entity, &mut Agent, &FlowOwner),
+        (Without<PendingReasoning>, Without<RunningReasoning>),
+    >,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::TurnReady {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::FateWeaver {
+                continue;
+            }
+
+            let round = flow.active_turn_id.max(flow.turn_index + 1);
+            let action = decision_state.committed_action().to_string();
+            agent.append_user_message(&json!({"round": round, "protagonist_action": action}).to_string());
+            commands.entity(agent_entity).insert(PendingReasoning);
+            flow.stage = TurnStage::FateRunning;
+        }
+    }
+}
+
+pub fn fate_apply_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    mut query_agents: Query<(Entity, &mut Agent, &FlowOwner), Without<PendingReasoning>>,
+    mut world_snapshot: ResMut<WorldSnapshot>,
+    mut task_manager: ResMut<TaskManager>,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::FateRunning {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::FateWeaver {
+                continue;
+            }
+            if !commands.get_entity(agent_entity).is_ok() {
+            }
+            let Some(task_result) = task_manager.task_result(agent_entity).cloned() else {
+                continue;
+            };
+
+            match task_result.status {
+                TaskStatus::Done => {
+                    let Some(raw_output) = task_manager.take_result(agent_entity).and_then(|r| r.output) else {
+                        continue;
+                    };
+
+                    match parse_json_response::<WorldSnapshot>(&raw_output) {
+                        Ok(snapshot) => {
+                            *world_snapshot = snapshot;
+                            agent.append_assistant_message(&raw_output);
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::NarrationReady;
+                        }
+                        Err(message) => {
+                            agent.revert();
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = if message.contains("无法解析 JSON 响应") {
+                                TurnStage::TurnReady
+                            } else {
+                                TurnStage::Failed
+                            };
+                        }
+                    }
+                }
+                TaskStatus::Error => {
+                    task_manager.clear_task(agent_entity);
+                    commands.entity(agent_entity).remove::<RunningReasoning>();
+                    flow.stage = TurnStage::Failed;
+                }
+                TaskStatus::Pending | TaskStatus::Running => {}
+            }
+        }
+    }
+}
+'"'"''"'"''"'"',
+'"'"'systems/narration_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::{
+    entity::Entity,
+    query::Without,
+    system::{Commands, Query, Res, ResMut},
+};
+
+use crate::{
+    components::{
+        agent::{
+            Agent, AgentKind, FlowOwner, NarrationOutcome, PendingReasoning, RunningReasoning,
+        },
+        turn_flow::{TurnFlow, TurnStage},
+    },
+    resources::{
+        llm_task_manager::{TaskManager, TaskStatus},
+        protagonist_action::ProtagonistDecisionState,
+        world_snapshot::WorldSnapshot,
+    },
+};
+
+pub fn narration_dispatch_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    decision_state: Res<ProtagonistDecisionState>,
+    world_snapshot: Res<WorldSnapshot>,
+    mut query_agents: Query<
+        (Entity, &mut Agent, &FlowOwner),
+        (Without<PendingReasoning>, Without<RunningReasoning>),
+    >,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::NarrationReady {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::UpperNarrator {
+                continue;
+            }
+
+            let protagonist_action = decision_state.committed_action();
+            agent.append_user_message(&world_snapshot.to_story_prompt(Some(protagonist_action)));
+            commands.entity(agent_entity).insert(PendingReasoning);
+            flow.stage = TurnStage::NarrationRunning;
+        }
+    }
+}
+
+pub fn narration_apply_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    mut query_agents: Query<(Entity, &mut Agent, &FlowOwner), Without<PendingReasoning>>,
+    world_snapshot: Res<WorldSnapshot>,
+    mut task_manager: ResMut<TaskManager>,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::NarrationRunning {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::UpperNarrator {
+                continue;
+            }
+
+            let Some(task_result) = task_manager.task_result(agent_entity).cloned() else {
+                continue;
+            };
+
+            match task_result.status {
+                TaskStatus::Done => {
+                    let Some(story_content) = task_manager.take_result(agent_entity).and_then(|r| r.output) else {
+                        continue;
+                    };
+                    agent.append_assistant_message(&story_content);
+                    commands
+                        .entity(agent_entity)
+                        .remove::<RunningReasoning>()
+                        .insert(NarrationOutcome {
+                            turn_id: flow.active_turn_id,
+                            content: story_content,
+                        });
+
+                    if world_snapshot.is_ending {
+                        flow.finish_story();
+                    } else {
+                        flow.stage = TurnStage::ProtagonistReady;
+                    }
+                }
+                TaskStatus::Error => {
+                    task_manager.clear_task(agent_entity);
+                    commands.entity(agent_entity).remove::<RunningReasoning>();
+                    flow.stage = TurnStage::Failed;
+                }
+                TaskStatus::Pending | TaskStatus::Running => {}
+            }
+        }
+    }
+}
+'"'"''"'"''"'"',
+'"'"'systems/protagonist_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::{
+    entity::Entity,
+    query::Without,
+    system::{Commands, Query, Res, ResMut},
+};
+
+use crate::{
+    components::{
+        agent::{Agent, AgentKind, FlowOwner, PendingReasoning, RunningReasoning},
+        turn_flow::{TurnFlow, TurnStage},
+    },
+    resources::{
+        llm_task_manager::{TaskManager, TaskStatus},
+        protagonist_action::{ProtagonistDecisionState, ProtagonistOptions},
+        world_snapshot::WorldSnapshot,
+    },
+    utils::parse_json_response,
+};
+
+pub fn protagonist_dispatch_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    decision_state: Res<ProtagonistDecisionState>,
+    world_snapshot: Res<WorldSnapshot>,
+    mut query_agents: Query<
+        (Entity, &mut Agent, &FlowOwner),
+        (Without<PendingReasoning>, Without<RunningReasoning>),
+    >,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::ProtagonistReady {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::Protagonist {
+                continue;
+            }
+
+            let protagonist_action = decision_state.committed_action();
+            agent.append_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
+            commands.entity(agent_entity).insert(PendingReasoning);
+            flow.stage = TurnStage::ProtagonistRunning;
+        }
+    }
+}
+
+pub fn protagonist_apply_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    mut query_agents: Query<(Entity, &mut Agent, &FlowOwner), Without<PendingReasoning>>,
+    mut decision_state: ResMut<ProtagonistDecisionState>,
+    mut task_manager: ResMut<TaskManager>,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::ProtagonistRunning {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::Protagonist {
+                continue;
+            }
+
+            let Some(task_result) = task_manager.task_result(agent_entity).cloned() else {
+                continue;
+            };
+
+            match task_result.status {
+                TaskStatus::Done => {
+                    let Some(raw_output) = task_manager.take_result(agent_entity).and_then(|r| r.output) else {
+                        continue;
+                    };
+                    match parse_json_response::<ProtagonistOptions>(&raw_output) {
+                        Ok(action_list) if !action_list.is_empty() => {
+                            agent.append_assistant_message(&raw_output);
+                            decision_state.replace_with_options(action_list);
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::AwaitingPlayerChoice;
+                        }
+                        Ok(_) => {
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::Failed;
+                        }
+                        Err(_) => {
+                            agent.revert();
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::ProtagonistReady;
+                        }
+                    }
+                }
+                TaskStatus::Error => {
+                    task_manager.clear_task(agent_entity);
+                    commands.entity(agent_entity).remove::<RunningReasoning>();
+                    flow.stage = TurnStage::Failed;
+                }
+                TaskStatus::Pending | TaskStatus::Running => {}
+            }
+        }
+    }
+}
+'"'"''"'"''"'"',
+'"'"'systems/player_input_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::system::{Query, Res, ResMut};
+
+use crate::{
+    components::turn_flow::{TurnFlow, TurnStage},
+    resources::{
+        player_input::{PlayerInbox, PlayerInputConfig},
+        protagonist_action::{PlayerActionType, ProtagonistDecisionState},
+    },
+    turn_messages::PlayerCommand,
+};
+
+pub fn player_input_system(
+    mut query_flows: Query<&mut TurnFlow>,
+    input_config: Res<PlayerInputConfig>,
+    mut decision_state: ResMut<ProtagonistDecisionState>,
+    mut player_inbox: ResMut<PlayerInbox>,
+) {
+    let Ok(mut flow) = query_flows.single_mut() else {
+        return;
+    };
+    if flow.stage != TurnStage::AwaitingPlayerChoice {
+        return;
+    }
+
+    if input_config.auto_select_first {
+        let Some(action) = decision_state.first_choice_action().map(str::to_string) else {
+            return;
+        };
+        decision_state.commit_action(&action);
+        flow.finish_turn();
+        return;
+    }
+
+    while let Some(command) = player_inbox.pop() {
+        match command {
+            PlayerCommand::SubmitPlayerAction { turn_id, input } => {
+                if turn_id != flow.active_turn_id {
+                    continue;
+                }
+                let action = input.action.trim();
+                if action.is_empty() {
+                    continue;
+                }
+                if input.r#type == PlayerActionType::SelectedOption
+                    && !decision_state.has_action(action)
+                {
+                    continue;
+                }
+                decision_state.commit_action(action);
+                flow.finish_turn();
+                break;
+            }
+        }
+    }
+}
+'"'"''"'"''"'"',
+'"'"'systems/history_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::{query::With, system::{Query, Res, ResMut}};
+
+use crate::{
+    components::{agent::{Agent, AgentKind, NarrationOutcome}, turn_flow::TurnFlow},
+    resources::{
+        history::SessionHistoryLog,
+        protagonist_action::ProtagonistDecisionState,
+        world_snapshot::WorldSnapshot,
+    },
+};
+
+pub fn history_sys(
+    query_flow: Query<&TurnFlow>,
+    query_agents: Query<(&Agent, Option<&NarrationOutcome>), With<Agent>>,
+    world_snapshot: Res<WorldSnapshot>,
+    decision_state: Res<ProtagonistDecisionState>,
+    mut history_log: ResMut<SessionHistoryLog>,
+) {
+    let Ok(flow) = query_flow.single() else {
+        return;
+    };
+    if flow.active_turn_id == 0 {
+        return;
+    }
+
+    history_log.set_world_snapshot(flow.active_turn_id, world_snapshot.clone());
+
+    for (agent, outcome) in query_agents.iter() {
+        if agent.kind == AgentKind::UpperNarrator
+            && let Some(outcome) = outcome
+            && outcome.turn_id == flow.active_turn_id
+        {
+            history_log.set_narration(flow.active_turn_id, outcome.content.clone());
+        }
+    }
+
+    if !decision_state.choices().is_empty() {
+        history_log.set_choices(flow.active_turn_id, decision_state.choices().to_vec());
+    }
+
+    if matches!(flow.stage, crate::components::turn_flow::TurnStage::TurnComplete | crate::components::turn_flow::TurnStage::StoryEnded) {
+        history_log.set_committed_action(flow.active_turn_id, decision_state.committed_action().to_string());
+    }
+}
+'"'"''"'"''"'"',
+'"'"'systems/export_sys.rs'"'"': '"'"''"'"''"'"'use bevy_ecs::{query::With, system::{Query, Res, ResMut}};
+
+use crate::{
+    components::{
+        agent::{Agent, AgentKind, NarrationOutcome},
+        turn_flow::TurnFlow,
+    },
+    resources::{
+        export::{ExportState, SessionSnapshot, TaskView},
+        history::SessionHistoryLog,
+        llm_task_manager::{TaskManager, TaskStatus},
+        protagonist_action::ProtagonistDecisionState,
+        world_snapshot::WorldSnapshot,
+    },
+};
+
+pub fn export_system(
+    query_flow: Query<&TurnFlow>,
+    query_agents: Query<(&Agent, Option<&NarrationOutcome>), With<Agent>>,
+    world_snapshot: Res<WorldSnapshot>,
+    history_log: Res<SessionHistoryLog>,
+    decision_state: Res<ProtagonistDecisionState>,
+    task_manager: Res<TaskManager>,
+    export_state: Res<ExportState>,
+) {
+    let Ok(flow) = query_flow.single() else {
+        return;
+    };
+
+    let latest_narration = query_agents
+        .iter()
+        .find_map(|(agent, outcome)| {
+            if agent.kind != AgentKind::UpperNarrator {
+                return None;
+            }
+            outcome
+                .filter(|outcome| outcome.turn_id == flow.active_turn_id)
+                .map(|outcome| outcome.content.clone())
+        })
+        .unwrap_or_default();
+
+    let mut tasks: Vec<TaskView> = task_manager
+        .results
+        .iter()
+        .map(|(entity, result)| TaskView {
+            entity: format!("{:?}", entity),
+            status: match result.status {
+                TaskStatus::Pending => "pending".to_string(),
+                TaskStatus::Running => "running".to_string(),
+                TaskStatus::Done => "done".to_string(),
+                TaskStatus::Error => "error".to_string(),
+            },
+            output: result.output.clone(),
+            error: result.error.clone(),
+        })
+        .collect();
+    tasks.sort_by(|a, b| a.entity.cmp(&b.entity));
+
+    let current_task = tasks
+        .iter()
+        .find(|task| task.status == "pending" || task.status == "running")
+        .cloned();
+
+    export_state.publish_snapshot(SessionSnapshot {
+        phase: flow.stage,
+        turn_index: flow.turn_index,
+        active_turn_id: flow.active_turn_id,
+        world: world_snapshot.clone(),
+        history: history_log.rounds.clone(),
+        current_task,
+        tasks,
+        latest_narration,
+        current_protagonist_action: decision_state.committed_action().to_string(),
+        choices: decision_state.choices().to_vec(),
+    });
+}
+'"'"''"'"''"'"',
+'"'"'systems/mod.rs'"'"': '"'"''"'"''"'"'pub mod cleanup_sys;
+pub mod export_sys;
+pub mod fate_sys;
+pub mod history_sys;
+pub mod narration_sys;
+pub mod player_input_sys;
+pub mod protagonist_sys;
+pub mod scheduler;
+pub mod task_sys;
+'"'"''"'"''"'"',
+'"'"'utils.rs'"'"': '"'"''"'"''"'"'use jsonrepair_rs::jsonrepair;
+use std::{env, sync::Arc, time::Duration};
+
+use agent::{models::ChatModel, providers::deepseek_provider};
+use serde::de::DeserializeOwned;
+
+pub fn build_chat_model() -> ChatModel {
+    dotenv::dotenv().ok();
+
+    let model_name = env::var("AKASHIC_MODEL").unwrap_or_else(|_| "deepseek-v4-flash".to_string());
+    let http_timeout_secs = env::var("AKASHIC_HTTP_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(660);
+    let mut model = ChatModel::new();
+
+    if let Ok(api_key) = env::var("DEEPSEEK_API_KEY") {
+        let provider = deepseek_provider(api_key).with_timeout(Duration::from_secs(http_timeout_secs));
+        model.add_models_for_provider(
+            &["deepseek-v4-flash", "deepseek-v4-pro"],
+            Arc::new(provider),
+        );
+    }
+    model
+        .set_active_model(&model_name)
+        .expect("设置 Akashic 模型失败");
+    model.set_output_json(true);
+    model.set_thinking_enabled(false);
+    model
+}
+
+pub fn parse_json_response<T>(raw: &str) -> Result<T, String>
+where
+    T: DeserializeOwned,
+{
+    let cleaned = raw.trim();
+
+    if let Ok(parsed) = serde_json::from_str::<T>(cleaned) {
+        return Ok(parsed);
+    }
+
+    let repaired = jsonrepair(cleaned).map_err(|err| format!("无法解析 JSON 响应: {}", err))?;
+    serde_json::from_str::<T>(&repaired).map_err(|_| format!("无法解析 JSON 响应: {}", cleaned))
+}
+'"'"''"'"''"'"',
+'"'"'turn_messages.rs'"'"': '"'"''"'"''"'"'use crate::resources::protagonist_action::PlayerActionInput;
+
+#[derive(Debug, Clone)]
+pub enum PlayerCommand {
+    SubmitPlayerAction { turn_id: u64, input: PlayerActionInput },
+}
+'"'"''"'"''"'"',
+'"'"'engine.rs'"'"': '"'"''"'"''"'"'use agent::agent::Context;
+use bevy_ecs::{prelude::*, schedule::Schedule};
+use serde::Serialize;
+use tokio::{
+    sync::{broadcast, mpsc, oneshot},
+    time::{Duration, sleep},
+};
+
+use crate::{
+    components::{
+        agent::{Agent, AgentKind, FlowOwner},
+        turn_flow::{TurnFlow, TurnStage},
+    },
+    resources::{
+        export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
+        history::{RoundHistoryEntry, SessionHistoryLog},
+        llm_task_manager::TaskManager,
+        player_input::{PlayerInbox, PlayerInputConfig},
+        protagonist_action::{PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState},
+        world_snapshot::WorldSnapshot,
+    },
+    systems::{
+        cleanup_sys::cleanup_previous_turn_outcomes_system,
+        export_sys::export_system,
+        fate_sys::{fate_apply_system, fate_dispatch_system},
+        history_sys::history_sys,
+        narration_sys::{narration_apply_system, narration_dispatch_system},
+        player_input_sys::player_input_system,
+        protagonist_sys::{protagonist_apply_system, protagonist_dispatch_system},
+        scheduler::agent_scheduler_system,
+        task_sys::task_poll_system,
+    },
+    turn_messages::PlayerCommand,
+    utils::build_chat_model,
+};
+
+const DEFAULT_RUNTIME_TICK_INTERVAL: Duration = Duration::from_millis(20);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub phase: TurnStage,
+    pub turn_index: u64,
+    pub active_turn_id: u64,
+    pub history: Vec<RoundHistoryEntry>,
+    pub current_task: Option<TaskView>,
+    pub tasks: Vec<TaskView>,
+    pub world_snapshot: WorldSnapshot,
+    pub latest_narration: String,
+    pub current_protagonist_action: String,
+    pub choices: Vec<PendingProtagonistChoice>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionArchiveState {
+    pub world_profile: String,
+    pub protagonist_profile: String,
+    pub key_story_beats: String,
+    pub phase: TurnStage,
+    pub turn_index: u64,
+    pub active_turn_id: u64,
+    pub world_snapshot: WorldSnapshot,
+    pub committed_action: String,
+    pub choices: Vec<PendingProtagonistChoice>,
+    pub history_log: SessionHistoryLog,
+    pub fate_weaver_context: Context,
+    pub upper_narrator_context: Context,
+    pub protagonist_context: Context,
+}
+
+#[derive(Resource, Debug, Clone)]
+struct SessionProfiles {
+    world_profile: String,
+    protagonist_profile: String,
+    key_story_beats: String,
+}
+
+pub struct AkashicSessionEngine {
+    command_tx: mpsc::UnboundedSender<EngineCommand>,
+    export_handle: ExportHandle,
+}
+
+impl AkashicSessionEngine {
+    pub fn new_with_profiles(
+        world_profile: &str,
+        protagonist_profile: &str,
+        key_story_beats: &str,
+    ) -> Self {
+        let (world, export_handle) = build_world(world_profile, protagonist_profile, key_story_beats);
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        SessionRuntime::spawn(world, build_schedule(), command_rx);
+        Self { command_tx, export_handle }
+    }
+
+    pub fn get_game_session(&self) -> Session {
+        Session::from_snapshot(self.export_handle.current_snapshot())
+    }
+
+    pub fn subscribe_events(&self) -> broadcast::Receiver<TaskEvent> {
+        self.export_handle.subscribe_events()
+    }
+
+    pub fn start_next_turn(&self) -> Result<(), String> {
+        if self.get_game_session().phase == TurnStage::StoryEnded {
+            return Err("故事已结束，无法继续推进".to_string());
+        }
+        self.command_tx
+            .send(EngineCommand::StartNextTurn)
+            .map_err(|_| "会话运行时已停止，无法继续推进".to_string())
+    }
+
+    pub fn submit_player_action(&self, input: PlayerActionInput) -> Result<(), String> {
+        self.command_tx
+            .send(EngineCommand::SubmitPlayerAction { input })
+            .map_err(|_| "会话运行时已停止，无法提交行动".to_string())
+    }
+
+    pub async fn export_archive_state(&self) -> Result<SessionArchiveState, String> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx
+            .send(EngineCommand::ExportArchiveState { tx })
+            .map_err(|_| "会话运行时已停止，无法导出存档".to_string())?;
+        rx.await
+            .map_err(|_| "会话运行时已停止，无法接收存档导出结果".to_string())?
+    }
+
+    pub async fn wait_until_ready(&self) -> Result<(), String> {
+        let mut snapshot_rx = self.export_handle.snapshot_receiver();
+        snapshot_rx
+            .changed()
+            .await
+            .map_err(|_| "会话运行时已停止，无法等待初始化完成".to_string())
+    }
+}
+
+impl Session {
+    fn from_snapshot(snapshot: SessionSnapshot) -> Self {
+        Self {
+            phase: snapshot.phase,
+            turn_index: snapshot.turn_index,
+            active_turn_id: snapshot.active_turn_id,
+            history: snapshot.history,
+            current_task: snapshot.current_task,
+            tasks: snapshot.tasks,
+            world_snapshot: snapshot.world,
+            latest_narration: snapshot.latest_narration,
+            current_protagonist_action: snapshot.current_protagonist_action,
+            choices: snapshot.choices,
+        }
+    }
+}
+
+enum EngineCommand {
+    StartNextTurn,
+    SubmitPlayerAction { input: PlayerActionInput },
+    ExportArchiveState { tx: oneshot::Sender<Result<SessionArchiveState, String>> },
+}
+
+struct SessionRuntime {
+    world: World,
+    schedule: Schedule,
+    command_rx: mpsc::UnboundedReceiver<EngineCommand>,
+}
+
+impl SessionRuntime {
+    fn spawn(world: World, schedule: Schedule, command_rx: mpsc::UnboundedReceiver<EngineCommand>) {
+        tokio::spawn(async move {
+            let mut runtime = Self { world, schedule, command_rx };
+            if let Err(err) = runtime.run_one_frame() {
+                eprintln!("[story-engine-runtime] 初始导出失败: {err}");
+                return;
+            }
+
+            while let Some(command) = runtime.command_rx.recv().await {
+                match command {
+                    EngineCommand::ExportArchiveState { tx } => {
+                        let _ = tx.send(runtime.export_archive_state());
+                    }
+                    EngineCommand::StartNextTurn => {
+                        runtime.advance_turn();
+                        if let Err(err) = runtime.drive_until_stable().await {
+                            eprintln!("[story-engine-runtime] 会话推进失败: {err}");
+                            break;
+                        }
+                    }
+                    EngineCommand::SubmitPlayerAction { input } => {
+                        let turn_id = runtime.current_flow().map(|f| f.active_turn_id).unwrap_or_default();
+                        runtime
+                            .world
+                            .resource_mut::<PlayerInbox>()
+                            .push(PlayerCommand::SubmitPlayerAction { turn_id, input });
+                        if let Err(err) = runtime.drive_until_stable().await {
+                            eprintln!("[story-engine-runtime] 会话推进失败: {err}");
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    fn advance_turn(&mut self) {
+        let mut query = self.world.query::<&mut TurnFlow>();
+        if let Ok(mut flow) = query.single_mut(&mut self.world) {
+            flow.advance();
+        }
+    }
+
+    fn current_flow(&mut self) -> Option<TurnFlow> {
+        let mut query = self.world.query::<&TurnFlow>();
+        query.single(&self.world).ok().copied()
+    }
+
+    async fn drive_until_stable(&mut self) -> Result<(), String> {
+        loop {
+            self.run_one_frame()?;
+            let snapshot = Session::from_snapshot(self.export_snapshot());
+            if is_stable_stop_point(&snapshot) {
+                return Ok(());
+            }
+            sleep(DEFAULT_RUNTIME_TICK_INTERVAL).await;
+        }
+    }
+
+    fn run_one_frame(&mut self) -> Result<(), String> {
+        self.schedule.run(&mut self.world);
+        self.ensure_not_failed()
+    }
+
+    fn export_snapshot(&self) -> SessionSnapshot {
+        self.world.resource::<ExportState>().current_snapshot()
+    }
+
+    fn ensure_not_failed(&self) -> Result<(), String> {
+        let mut query = self.world.query::<&TurnFlow>();
+        let Ok(flow) = query.single(&self.world) else {
+            return Ok(());
+        };
+        if flow.stage == TurnStage::Failed {
+            return Err("会话运行失败".to_string());
+        }
+        Ok(())
+    }
+
+    fn export_archive_state(&mut self) -> Result<SessionArchiveState, String> {
+        let snapshot = {
+            let export_state = self.world.resource::<ExportState>();
+            Session::from_snapshot(export_state.current_snapshot())
+        };
+        if !is_stable_stop_point(&snapshot) {
+            return Err("当前会话不在稳定态，无法创建存档".to_string());
+        }
+
+        let profiles = self.world.resource::<SessionProfiles>().clone();
+        let world_snapshot = self.world.resource::<WorldSnapshot>().clone();
+        let history_log = self.world.resource::<SessionHistoryLog>().clone();
+        let decision_state = self.world.resource::<ProtagonistDecisionState>().clone();
+        let flow = self.current_flow().ok_or_else(|| "缺少流程实体".to_string())?;
+
+        let mut query = self.world.query::<(&Agent, &FlowOwner)>();
+        let mut fate_weaver_context = None;
+        let mut upper_narrator_context = None;
+        let mut protagonist_context = None;
+        for (agent, _) in query.iter(&self.world) {
+            match agent.kind {
+                AgentKind::FateWeaver => fate_weaver_context = Some(agent.context.clone()),
+                AgentKind::UpperNarrator => upper_narrator_context = Some(agent.context.clone()),
+                AgentKind::Protagonist => protagonist_context = Some(agent.context.clone()),
+            }
+        }
+
+        Ok(SessionArchiveState {
+            world_profile: profiles.world_profile,
+            protagonist_profile: profiles.protagonist_profile,
+            key_story_beats: profiles.key_story_beats,
+            phase: flow.stage,
+            turn_index: flow.turn_index,
+            active_turn_id: flow.active_turn_id,
+            world_snapshot,
+            committed_action: decision_state.committed_action().to_string(),
+            choices: decision_state.choices().to_vec(),
+            history_log,
+            fate_weaver_context: fate_weaver_context.ok_or_else(|| "缺少 FateWeaver 上下文".to_string())?,
+            upper_narrator_context: upper_narrator_context.ok_or_else(|| "缺少 UpperNarrator 上下文".to_string())?,
+            protagonist_context: protagonist_context.ok_or_else(|| "缺少 Protagonist 上下文".to_string())?,
+        })
+    }
+}
+
+fn build_world(
+    world_profile: &str,
+    protagonist_profile: &str,
+    key_story_beats: &str,
+) -> (World, ExportHandle) {
+    let mut world = World::new();
+    world.init_resource::<WorldSnapshot>();
+    world.init_resource::<SessionHistoryLog>();
+    world.init_resource::<PlayerInbox>();
+    world.insert_resource(PlayerInputConfig::wait_for_user());
+    world.init_resource::<ProtagonistDecisionState>();
+    world.insert_resource(TaskManager::new(build_chat_model()));
+    world.insert_resource(SessionProfiles {
+        world_profile: world_profile.to_string(),
+        protagonist_profile: protagonist_profile.to_string(),
+        key_story_beats: key_story_beats.to_string(),
+    });
+    let (export_state, export_handle) = ExportState::new_with_handle();
+    world.insert_resource(export_state);
+
+    let flow_entity = world.spawn(TurnFlow::default()).id();
+    world.spawn((
+        Agent::new_fate_weaver(world_profile, protagonist_profile, key_story_beats),
+        FlowOwner(flow_entity),
+    ));
+    world.spawn((
+        Agent::new_upper_narrator(world_profile, protagonist_profile),
+        FlowOwner(flow_entity),
+    ));
+    world.spawn((
+        Agent::new_protagonist(world_profile, protagonist_profile),
+        FlowOwner(flow_entity),
+    ));
+
+    (world, export_handle)
+}
+
+fn build_schedule() -> Schedule {
+    let mut schedule = Schedule::default();
+    schedule.add_systems(
+        (
+            cleanup_previous_turn_outcomes_system,
+            fate_dispatch_system,
+            narration_dispatch_system,
+            protagonist_dispatch_system,
+            agent_scheduler_system,
+            task_poll_system,
+            fate_apply_system,
+            narration_apply_system,
+            protagonist_apply_system,
+            player_input_system,
+            history_sys,
+            export_system,
+        )
+            .chain(),
+    );
+    schedule
+}
+
+fn is_stable_stop_point(snapshot: &Session) -> bool {
+    matches!(
+        snapshot.phase,
+        TurnStage::AwaitingPlayerChoice | TurnStage::TurnComplete | TurnStage::StoryEnded
+    ) || (snapshot.phase == TurnStage::Idle && snapshot.current_task.is_none())
+}
+'"'"''"'"''"'"',
+'"'"'lib.rs'"'"': '"'"''"'"''"'"'pub mod components;
+pub mod engine;
+pub mod prompts;
+pub mod resources;
+pub mod systems;
+pub mod turn_messages;
+pub mod utils;
+
+pub use engine::{AkashicSessionEngine, Session, SessionArchiveState};
+'"'"''"'"''"'"',
+'"'"'main.rs'"'"': '"'"''"'"''"'"'fn main() {}
+'"'"''"'"''"'"'
+}
+
+for rel, content in files.items():
+    path = root/rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+PY'

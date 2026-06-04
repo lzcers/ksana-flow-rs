@@ -6,63 +6,59 @@ use bevy_ecs::{
 
 use crate::{
     components::{
-        agent::{Agent, AgentKind, FlowOwner, NarrationOutcome, PendingReasoning, RunningReasoning},
+        agent::{Agent, AgentKind, FlowOwner, PendingReasoning, RunningReasoning},
         turn_flow::{TurnFlow, TurnStage},
     },
     resources::{
         llm_task_manager::{TaskManager, TaskStatus},
-        protagonist_action::ProtagonistDecisionState,
+        protagonist_action::{ProtagonistDecisionState, ProtagonistOptions},
         world_snapshot::WorldSnapshot,
     },
+    utils::parse_json_response,
 };
 
-pub fn narration_dispatch_system(
+pub fn protagonist_dispatch_system(
     mut commands: Commands,
     mut query_flows: Query<(Entity, &mut TurnFlow)>,
     decision_state: Res<ProtagonistDecisionState>,
     world_snapshot: Res<WorldSnapshot>,
-    mut query_narrators: Query<
+    mut query_agents: Query<
         (Entity, &mut Agent, &FlowOwner),
         (Without<PendingReasoning>, Without<RunningReasoning>),
     >,
 ) {
-    for (flow_entity, mut turn_flow) in query_flows.iter_mut() {
-        if turn_flow.stage != TurnStage::NarrationReady {
-            continue;
-        }
-
-        let mut dispatched_any = false;
-        for (agent_entity, mut agent, owner) in query_narrators.iter_mut() {
-            if owner.0 != flow_entity || agent.kind != AgentKind::UpperNarrator {
-                continue;
-            }
-
-            let protagonist_action = decision_state.committed_action();
-            agent.append_user_message(&world_snapshot.to_story_prompt(Some(protagonist_action)));
-            commands.entity(agent_entity).insert(PendingReasoning);
-            dispatched_any = true;
-        }
-
-        if dispatched_any {
-            turn_flow.stage = TurnStage::NarrationRunning;
-        }
-    }
-}
-
-pub fn narration_apply_system(
-    mut commands: Commands,
-    mut query_flows: Query<(Entity, &mut TurnFlow)>,
-    mut task_manager: ResMut<TaskManager>,
-    mut query_agents: Query<(Entity, &mut Agent, &FlowOwner), Without<PendingReasoning>>,
-    world_snapshot: Res<WorldSnapshot>,
-) {
     for (flow_entity, mut flow) in query_flows.iter_mut() {
-        if flow.stage != TurnStage::NarrationRunning {
+        if flow.stage != TurnStage::ProtagonistReady {
             continue;
         }
 
         for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
-            if owner.0 != flow_entity || agent.kind != AgentKind::UpperNarrator {
+            if owner.0 != flow_entity || agent.kind != AgentKind::Protagonist {
+                continue;
+            }
+
+            let protagonist_action = decision_state.committed_action();
+            agent.append_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
+            commands.entity(agent_entity).insert(PendingReasoning);
+            flow.stage = TurnStage::ProtagonistRunning;
+        }
+    }
+}
+
+pub fn protagonist_apply_system(
+    mut commands: Commands,
+    mut query_flows: Query<(Entity, &mut TurnFlow)>,
+    mut query_agents: Query<(Entity, &mut Agent, &FlowOwner), Without<PendingReasoning>>,
+    mut decision_state: ResMut<ProtagonistDecisionState>,
+    mut task_manager: ResMut<TaskManager>,
+) {
+    for (flow_entity, mut flow) in query_flows.iter_mut() {
+        if flow.stage != TurnStage::ProtagonistRunning {
+            continue;
+        }
+
+        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
+            if owner.0 != flow_entity || agent.kind != AgentKind::Protagonist {
                 continue;
             }
 
@@ -72,25 +68,28 @@ pub fn narration_apply_system(
 
             match task_result.status {
                 TaskStatus::Done => {
-                    let Some(output) =
+                    let Some(raw_output) =
                         task_manager.take_result(agent_entity).and_then(|result| result.output)
                     else {
                         continue;
                     };
 
-                    agent.append_assistant_message(&output);
-                    commands
-                        .entity(agent_entity)
-                        .remove::<RunningReasoning>()
-                        .insert(NarrationOutcome {
-                            turn_id: flow.active_turn_id,
-                            content: output,
-                        });
-
-                    if world_snapshot.is_ending {
-                        flow.finish_story();
-                    } else {
-                        flow.stage = TurnStage::ProtagonistReady;
+                    match parse_json_response::<ProtagonistOptions>(&raw_output) {
+                        Ok(action_list) if !action_list.is_empty() => {
+                            agent.append_assistant_message(&raw_output);
+                            decision_state.replace_with_options(action_list);
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::AwaitingPlayerChoice;
+                        }
+                        Ok(_) => {
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::Failed;
+                        }
+                        Err(_) => {
+                            agent.revert();
+                            commands.entity(agent_entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::ProtagonistReady;
+                        }
                     }
                 }
                 TaskStatus::Error => {

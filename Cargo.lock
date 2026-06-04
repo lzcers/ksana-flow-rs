@@ -79,7 +79,6 @@ name = "akashic-server"
 version = "0.1.0"
 dependencies = [
  "agent",
- "akashic-ecs",
  "anyhow",
  "axum",
  "base64",
@@ -89,6 +88,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "story_engine",
  "tokio",
  "tower-http",
  "tracing",

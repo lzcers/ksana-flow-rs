@@ -8,7 +8,7 @@ use crate::components::{
     turn_flow::{TurnFlow, TurnStage},
 };
 
-// 在新一轮开始前，清理上一轮残留在实体上的结果组件。
+// 在新一轮开始时，清理上一轮残留在实体上的结果组件。
 pub fn cleanup_previous_turn_outcomes_system(
     mut commands: Commands,
     query_flows: Query<(Entity, &TurnFlow)>,
@@ -22,7 +22,7 @@ pub fn cleanup_previous_turn_outcomes_system(
     >,
 ) {
     for (flow_entity, turn_flow) in query_flows.iter() {
-        if turn_flow.stage != TurnStage::Idle {
+        if turn_flow.stage != TurnStage::TurnReady {
             continue;
         }
 
