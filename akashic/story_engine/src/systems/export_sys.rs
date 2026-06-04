@@ -1,8 +1,12 @@
-use bevy_ecs::system::{Query, Res};
+use bevy_ecs::{
+    change_detection::{DetectChanges, Ref},
+    entity::Entity,
+    system::{Query, Res},
+};
 
 use crate::{
     components::{
-        agent::{Agent, AgentKind, NarrationOutcome},
+        agent::{NarrationOutcome, SessionOwner},
         turn_flow::TurnFlow,
     },
     resources::{
@@ -14,53 +18,75 @@ use crate::{
     },
 };
 
+#[allow(clippy::type_complexity)]
 pub fn export_system(
-    query_flow: Query<&TurnFlow>,
-    query_agents: Query<(&Agent, Option<&NarrationOutcome>)>,
-    world_snapshot: Res<WorldSnapshot>,
-    history_log: Res<SessionHistoryLog>,
-    decision_state: Res<ProtagonistDecisionState>,
+    sessions: Query<(
+        Entity,
+        Ref<TurnFlow>,
+        Ref<WorldSnapshot>,
+        Ref<SessionHistoryLog>,
+        Ref<ProtagonistDecisionState>,
+        &ExportState,
+    )>,
+    agents: Query<(Entity, &SessionOwner, Option<&NarrationOutcome>)>,
     task_manager: Res<TaskManager>,
-    export_state: Res<ExportState>,
 ) {
-    let Ok(flow) = query_flow.single() else {
-        return;
-    };
+    for (session_entity, flow, world_snapshot, history_log, decision_state, export_state) in
+        sessions.iter()
+    {
+        let is_active = !matches!(
+            flow.stage,
+            crate::components::turn_flow::TurnStage::Idle
+                | crate::components::turn_flow::TurnStage::AwaitingPlayerChoice
+                | crate::components::turn_flow::TurnStage::TurnComplete
+                | crate::components::turn_flow::TurnStage::StoryEnded
+                | crate::components::turn_flow::TurnStage::Failed
+        );
+        if !is_active
+            && !flow.is_changed()
+            && !world_snapshot.is_changed()
+            && !history_log.is_changed()
+            && !decision_state.is_changed()
+        {
+            continue;
+        }
 
-    let latest_narration = query_agents
-        .iter()
-        .find_map(|(agent, outcome)| {
-            if agent.kind != AgentKind::UpperNarrator {
-                return None;
-            }
-            outcome
-                .filter(|outcome| outcome.turn_id == flow.active_turn_id)
-                .map(|outcome| outcome.content.clone())
-        })
-        .unwrap_or_default();
+        let latest_narration = agents
+            .iter()
+            .filter(|(_, owner, _)| owner.0 == session_entity)
+            .filter_map(|(_, _, narration)| narration)
+            .find(|outcome| outcome.turn_id == flow.active_turn_id)
+            .map(|outcome| outcome.content.clone())
+            .unwrap_or_default();
 
-    let mut tasks: Vec<TaskView> = task_manager
-        .results
-        .iter()
-        .map(|(entity, result)| TaskView::from_task_result(format!("{:?}", entity), result))
-        .collect();
-    tasks.sort_by(|a, b| a.entity.cmp(&b.entity));
+        let mut tasks: Vec<TaskView> = agents
+            .iter()
+            .filter(|(_, owner, _)| owner.0 == session_entity)
+            .filter_map(|(entity, _, _)| {
+                task_manager
+                    .results
+                    .get(&entity)
+                    .map(|result| TaskView::from_task_result(format!("{entity:?}"), result))
+            })
+            .collect();
+        tasks.sort_by(|a, b| a.entity.cmp(&b.entity));
 
-    let current_task = tasks
-        .iter()
-        .find(|task| matches!(task.status, TaskStatus::Pending | TaskStatus::Running))
-        .cloned();
+        let current_task = tasks
+            .iter()
+            .find(|task| matches!(task.status, TaskStatus::Pending | TaskStatus::Running))
+            .cloned();
 
-    export_state.publish_snapshot(SessionSnapshot {
-        phase: flow.stage,
-        turn_index: flow.turn_index,
-        active_turn_id: flow.active_turn_id,
-        world: world_snapshot.clone(),
-        history: history_log.rounds.clone(),
-        current_task,
-        tasks,
-        latest_narration,
-        current_protagonist_action: decision_state.committed_action().to_string(),
-        choices: decision_state.choices().to_vec(),
-    });
+        export_state.publish_snapshot(SessionSnapshot {
+            phase: flow.stage,
+            turn_index: flow.turn_index,
+            active_turn_id: flow.active_turn_id,
+            world: world_snapshot.clone(),
+            history: history_log.rounds.clone(),
+            current_task,
+            tasks,
+            latest_narration,
+            current_protagonist_action: decision_state.committed_action().to_string(),
+            choices: decision_state.choices().to_vec(),
+        });
+    }
 }

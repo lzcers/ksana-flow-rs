@@ -15,7 +15,8 @@ pub fn build_chat_model() -> ChatModel {
     let mut model = ChatModel::new();
 
     if let Ok(api_key) = env::var("DEEPSEEK_API_KEY") {
-        let provider = deepseek_provider(api_key).with_timeout(Duration::from_secs(http_timeout_secs));
+        let provider =
+            deepseek_provider(api_key).with_timeout(Duration::from_secs(http_timeout_secs));
         model.add_models_for_provider(
             &["deepseek-v4-flash", "deepseek-v4-pro"],
             Arc::new(provider),

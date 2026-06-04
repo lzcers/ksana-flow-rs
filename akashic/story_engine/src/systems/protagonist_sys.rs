@@ -1,12 +1,14 @@
 use bevy_ecs::{
     entity::Entity,
     query::Without,
-    system::{Commands, Query, Res, ResMut},
+    system::{Commands, Query, ResMut},
 };
 
 use crate::{
     components::{
-        agent::{Agent, AgentKind, FlowOwner, PendingReasoning, RunningReasoning},
+        agent::{
+            AgentOutputKind, OwnedAgentMut, PendingReasoning, ReadyAgentFilter, RunningReasoning,
+        },
         turn_flow::{TurnFlow, TurnStage},
     },
     resources::{
@@ -19,86 +21,95 @@ use crate::{
 
 pub fn protagonist_dispatch_system(
     mut commands: Commands,
-    mut query_flows: Query<(Entity, &mut TurnFlow)>,
-    decision_state: Res<ProtagonistDecisionState>,
-    world_snapshot: Res<WorldSnapshot>,
-    mut query_agents: Query<
-        (Entity, &mut Agent, &FlowOwner),
-        (Without<PendingReasoning>, Without<RunningReasoning>),
-    >,
+    mut sessions: Query<(
+        Entity,
+        &mut TurnFlow,
+        &ProtagonistDecisionState,
+        &WorldSnapshot,
+    )>,
+    mut protagonists: Query<OwnedAgentMut, ReadyAgentFilter>,
 ) {
-    for (flow_entity, mut flow) in query_flows.iter_mut() {
+    for (session_entity, mut flow, decision_state, world_snapshot) in sessions.iter_mut() {
         if flow.stage != TurnStage::ProtagonistReady {
             continue;
         }
-
-        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
-            if owner.0 != flow_entity || agent.kind != AgentKind::Protagonist {
-                continue;
-            }
-
-            let protagonist_action = decision_state.committed_action();
-            agent.append_user_message(&world_snapshot.to_protagonist_prompt(Some(protagonist_action)));
-            commands.entity(agent_entity).insert(PendingReasoning);
-            flow.stage = TurnStage::ProtagonistRunning;
-        }
+        let Some((protagonist_entity, mut protagonist, _)) =
+            protagonists.iter_mut().find(|(_, agent, owner)| {
+                owner.0 == session_entity
+                    && agent.output_kind == AgentOutputKind::ProtagonistOptions
+            })
+        else {
+            flow.stage = TurnStage::Failed;
+            continue;
+        };
+        protagonist.append_user_message(
+            &world_snapshot.to_protagonist_prompt(Some(decision_state.committed_action())),
+        );
+        commands.entity(protagonist_entity).insert(PendingReasoning);
+        flow.stage = TurnStage::ProtagonistRunning;
     }
 }
 
 pub fn protagonist_apply_system(
     mut commands: Commands,
-    mut query_flows: Query<(Entity, &mut TurnFlow)>,
-    mut query_agents: Query<(Entity, &mut Agent, &FlowOwner), Without<PendingReasoning>>,
-    mut decision_state: ResMut<ProtagonistDecisionState>,
+    mut sessions: Query<(Entity, &mut TurnFlow, &mut ProtagonistDecisionState)>,
+    mut protagonists: Query<OwnedAgentMut, Without<PendingReasoning>>,
     mut task_manager: ResMut<TaskManager>,
 ) {
-    for (flow_entity, mut flow) in query_flows.iter_mut() {
+    for (session_entity, mut flow, mut decision_state) in sessions.iter_mut() {
         if flow.stage != TurnStage::ProtagonistRunning {
             continue;
         }
-
-        for (agent_entity, mut agent, owner) in query_agents.iter_mut() {
-            if owner.0 != flow_entity || agent.kind != AgentKind::Protagonist {
-                continue;
-            }
-
-            let Some(task_result) = task_manager.task_result(agent_entity).cloned() else {
-                continue;
-            };
-
-            match task_result.status {
-                TaskStatus::Done => {
-                    let Some(raw_output) =
-                        task_manager.take_result(agent_entity).and_then(|result| result.output)
-                    else {
-                        continue;
-                    };
-
-                    match parse_json_response::<ProtagonistOptions>(&raw_output) {
-                        Ok(action_list) if !action_list.is_empty() => {
-                            agent.append_assistant_message(&raw_output);
-                            decision_state.replace_with_options(action_list);
-                            commands.entity(agent_entity).remove::<RunningReasoning>();
-                            flow.stage = TurnStage::AwaitingPlayerChoice;
-                        }
-                        Ok(_) => {
-                            commands.entity(agent_entity).remove::<RunningReasoning>();
-                            flow.stage = TurnStage::Failed;
-                        }
-                        Err(_) => {
-                            agent.revert();
-                            commands.entity(agent_entity).remove::<RunningReasoning>();
-                            flow.stage = TurnStage::ProtagonistReady;
-                        }
-                    }
-                }
-                TaskStatus::Error => {
-                    task_manager.clear_task(agent_entity);
-                    commands.entity(agent_entity).remove::<RunningReasoning>();
+        let Some((protagonist_entity, mut protagonist, _)) =
+            protagonists.iter_mut().find(|(_, agent, owner)| {
+                owner.0 == session_entity
+                    && agent.output_kind == AgentOutputKind::ProtagonistOptions
+            })
+        else {
+            flow.stage = TurnStage::Failed;
+            continue;
+        };
+        let Some(result) = task_manager.task_result(protagonist_entity).cloned() else {
+            continue;
+        };
+        match result.status {
+            TaskStatus::Done => {
+                let Some(output) = task_manager
+                    .take_result(protagonist_entity)
+                    .and_then(|result| result.output)
+                else {
+                    continue;
+                };
+                let Ok(options) = parse_json_response::<ProtagonistOptions>(&output) else {
+                    protagonist.revert();
+                    commands
+                        .entity(protagonist_entity)
+                        .remove::<RunningReasoning>();
                     flow.stage = TurnStage::Failed;
+                    continue;
+                };
+                if options.is_empty() {
+                    commands
+                        .entity(protagonist_entity)
+                        .remove::<RunningReasoning>();
+                    flow.stage = TurnStage::Failed;
+                    continue;
                 }
-                TaskStatus::Pending | TaskStatus::Running => {}
+                protagonist.append_assistant_message(&output);
+                commands
+                    .entity(protagonist_entity)
+                    .remove::<RunningReasoning>();
+                decision_state.replace_with_options(options);
+                flow.stage = TurnStage::AwaitingPlayerChoice;
             }
+            TaskStatus::Error => {
+                task_manager.clear_task(protagonist_entity);
+                commands
+                    .entity(protagonist_entity)
+                    .remove::<RunningReasoning>();
+                flow.stage = TurnStage::Failed;
+            }
+            TaskStatus::Pending | TaskStatus::Running => {}
         }
     }
 }

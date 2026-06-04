@@ -16,7 +16,7 @@ use tokio::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
-    FatePlanning,
+    Simulation,
     ProtagonistAction,
     Narration,
 }
@@ -61,7 +61,7 @@ pub struct TaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, RunningTask>,
     pub results: HashMap<Entity, TaskResult>,
-    pub emitted_updates: Vec<TaskUpdate>,
+    emitted_updates: Vec<(Entity, TaskUpdate)>,
 }
 
 struct RunningTask {
@@ -95,14 +95,17 @@ impl TaskManager {
         }
 
         self.results.insert(entity, TaskResult::pending(kind));
-        self.emitted_updates.push(TaskUpdate {
-            entity: task_entity_label(entity),
-            kind,
-            status: TaskStatus::Pending,
-            chunk: None,
-            output: None,
-            error: None,
-        });
+        self.emitted_updates.push((
+            entity,
+            TaskUpdate {
+                entity: task_entity_label(entity),
+                kind,
+                status: TaskStatus::Pending,
+                chunk: None,
+                output: None,
+                error: None,
+            },
+        ));
         self.tasks.insert(
             entity,
             RunningTask {
@@ -130,52 +133,64 @@ impl TaskManager {
         let Some(task) = self.tasks.get_mut(&entity) else {
             let error = "task handle missing".to_string();
             result.mark_failed(error.clone());
-            self.emitted_updates.push(TaskUpdate {
-                entity: task_entity_label(entity),
-                kind: result.kind,
-                status: TaskStatus::Error,
-                chunk: None,
-                output: None,
-                error: Some(error),
-            });
-            return TaskStatus::Error;
-        };
-
-        if result.status != TaskStatus::Running {
-            result.mark_running();
-            self.emitted_updates.push(TaskUpdate {
-                entity: task_entity_label(entity),
-                kind: result.kind,
-                status: TaskStatus::Running,
-                chunk: None,
-                output: None,
-                error: None,
-            });
-        }
-        match task.runtime.rx.try_recv() {
-            Ok(TaskRuntimeEvent::Completed(content)) => {
-                result.mark_done(content.clone());
-                self.emitted_updates.push(TaskUpdate {
-                    entity: task_entity_label(entity),
-                    kind: result.kind,
-                    status: TaskStatus::Done,
-                    chunk: None,
-                    output: Some(content),
-                    error: None,
-                });
-                self.tasks.remove(&entity);
-                TaskStatus::Done
-            }
-            Ok(TaskRuntimeEvent::Failed(error)) => {
-                result.mark_failed(error.clone());
-                self.emitted_updates.push(TaskUpdate {
+            self.emitted_updates.push((
+                entity,
+                TaskUpdate {
                     entity: task_entity_label(entity),
                     kind: result.kind,
                     status: TaskStatus::Error,
                     chunk: None,
                     output: None,
                     error: Some(error),
-                });
+                },
+            ));
+            return TaskStatus::Error;
+        };
+
+        if result.status != TaskStatus::Running {
+            result.mark_running();
+            self.emitted_updates.push((
+                entity,
+                TaskUpdate {
+                    entity: task_entity_label(entity),
+                    kind: result.kind,
+                    status: TaskStatus::Running,
+                    chunk: None,
+                    output: None,
+                    error: None,
+                },
+            ));
+        }
+        match task.runtime.rx.try_recv() {
+            Ok(TaskRuntimeEvent::Completed(content)) => {
+                result.mark_done(content.clone());
+                self.emitted_updates.push((
+                    entity,
+                    TaskUpdate {
+                        entity: task_entity_label(entity),
+                        kind: result.kind,
+                        status: TaskStatus::Done,
+                        chunk: None,
+                        output: Some(content),
+                        error: None,
+                    },
+                ));
+                self.tasks.remove(&entity);
+                TaskStatus::Done
+            }
+            Ok(TaskRuntimeEvent::Failed(error)) => {
+                result.mark_failed(error.clone());
+                self.emitted_updates.push((
+                    entity,
+                    TaskUpdate {
+                        entity: task_entity_label(entity),
+                        kind: result.kind,
+                        status: TaskStatus::Error,
+                        chunk: None,
+                        output: None,
+                        error: Some(error),
+                    },
+                ));
                 self.tasks.remove(&entity);
                 TaskStatus::Error
             }
@@ -183,14 +198,17 @@ impl TaskManager {
             Err(TryRecvError::Disconnected) => {
                 let error = "task runtime ended without completion".to_string();
                 result.mark_failed(error.clone());
-                self.emitted_updates.push(TaskUpdate {
-                    entity: task_entity_label(entity),
-                    kind: result.kind,
-                    status: TaskStatus::Error,
-                    chunk: None,
-                    output: None,
-                    error: Some(error),
-                });
+                self.emitted_updates.push((
+                    entity,
+                    TaskUpdate {
+                        entity: task_entity_label(entity),
+                        kind: result.kind,
+                        status: TaskStatus::Error,
+                        chunk: None,
+                        output: None,
+                        error: Some(error),
+                    },
+                ));
                 self.tasks.remove(&entity);
                 TaskStatus::Error
             }
@@ -212,7 +230,7 @@ impl TaskManager {
         self.results.remove(&entity);
     }
 
-    pub fn take_updates(&mut self) -> Vec<TaskUpdate> {
+    pub fn take_updates(&mut self) -> Vec<(Entity, TaskUpdate)> {
         std::mem::take(&mut self.emitted_updates)
     }
 

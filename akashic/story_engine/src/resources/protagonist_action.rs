@@ -1,8 +1,8 @@
-use bevy_ecs::resource::Resource;
+use bevy_ecs::component::Component;
 use serde::{Deserialize, Serialize};
 
 /// 主角决策状态：既保存已确认动作，也保存当前等待外部确认的候选项。
-#[derive(Resource, Debug, Clone)]
+#[derive(Component, Debug, Clone)]
 pub struct ProtagonistDecisionState {
     committed_action: String,
     choices: Vec<PendingProtagonistChoice>,
@@ -25,7 +25,9 @@ impl ProtagonistDecisionState {
     }
 
     pub fn first_choice_action(&self) -> Option<&str> {
-        self.choices.first().map(|choice| choice.option.action.as_str())
+        self.choices
+            .first()
+            .map(|choice| choice.option.action.as_str())
     }
 
     pub fn replace_with_options(&mut self, options: ProtagonistOptions) {

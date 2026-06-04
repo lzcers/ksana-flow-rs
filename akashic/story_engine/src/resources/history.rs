@@ -1,11 +1,11 @@
-use bevy_ecs::resource::Resource;
+use bevy_ecs::component::Component;
 use serde::{Deserialize, Serialize};
 
 use crate::resources::{
     protagonist_action::PendingProtagonistChoice, world_snapshot::WorldSnapshot,
 };
 
-#[derive(Resource, Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SessionHistoryLog {
     pub rounds: Vec<RoundHistoryEntry>,
 }
@@ -50,5 +50,34 @@ impl SessionHistoryLog {
 
     pub fn set_committed_action(&mut self, round: u64, action: String) {
         self.ensure_round_mut(round).committed_action = Some(action);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_round_updates_isolated_and_sorted() {
+        let mut history = SessionHistoryLog::default();
+
+        history.set_narration(2, "second".to_string());
+        history.set_narration(1, "first".to_string());
+        history.set_committed_action(2, "continue".to_string());
+
+        assert_eq!(
+            history
+                .rounds
+                .iter()
+                .map(|round| round.round)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(history.rounds[0].narration_text.as_deref(), Some("first"));
+        assert_eq!(history.rounds[1].narration_text.as_deref(), Some("second"));
+        assert_eq!(
+            history.rounds[1].committed_action.as_deref(),
+            Some("continue")
+        );
     }
 }

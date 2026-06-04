@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use akashic_ecs::{
-    engine::{AkashicSessionEngine, Session},
+    engine::{AkashicEngine, AkashicSessionEngine, Session},
     profile::DEFAULT_KEY_STORY_BEATS,
     resources::{
         export::TaskEvent, protagonist_action::PlayerActionType, task_manager::TaskUpdate,
@@ -28,6 +28,7 @@ use crate::{
 pub struct AppState {
     sessions: Arc<Mutex<HashMap<String, SessionRecord>>>,
     archive_repo: ArchiveRepository,
+    engine: AkashicEngine,
 }
 
 struct SessionRecord {
@@ -51,6 +52,7 @@ impl AppState {
         Ok(Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             archive_repo,
+            engine: AkashicEngine::new(),
         })
     }
 
@@ -69,15 +71,20 @@ impl AppState {
                 "`worldProfile` 与 `protagonistProfile` 不能为空。",
             ));
         }
-        let engine = AkashicSessionEngine::new_with_profiles(
-            world_profile,
-            protagonist_profile,
-            if key_story_beats.is_empty() {
-                DEFAULT_KEY_STORY_BEATS
-            } else {
-                key_story_beats
-            },
-        );
+        let engine = self
+            .engine
+            .create_session(
+                &session_id,
+                world_profile,
+                protagonist_profile,
+                if key_story_beats.is_empty() {
+                    DEFAULT_KEY_STORY_BEATS
+                } else {
+                    key_story_beats
+                },
+            )
+            .await
+            .map_err(AppError::internal)?;
         let session = build_session_record(session_id.clone(), engine);
 
         self.sessions
@@ -100,7 +107,9 @@ impl AppState {
             .map_err(|err| AppError::internal(format!("读取存档 `{slot_id}` 失败：{err:#}")))?
             .ok_or_else(|| AppError::not_found(format!("未找到存档槽 `{slot_id}`")))?;
         let session_id = payload.session_id.clone();
-        let engine = archive::load_archive_payload(payload).map_err(AppError::internal)?;
+        let engine = archive::load_archive_payload(&self.engine, payload)
+            .await
+            .map_err(AppError::internal)?;
         engine
             .wait_until_ready()
             .await
@@ -179,7 +188,9 @@ impl AppState {
             .map_err(AppError::bad_request)?;
         archive::validate_archive_payload(&payload).map_err(AppError::bad_request)?;
         let session_id = payload.session_id.clone();
-        let engine = archive::load_archive_payload(payload).map_err(AppError::bad_request)?;
+        let engine = archive::load_archive_payload(&self.engine, payload)
+            .await
+            .map_err(AppError::bad_request)?;
         engine
             .wait_until_ready()
             .await
@@ -639,6 +650,7 @@ mod tests {
             fate_weaver: Context::default(),
             upper_narrator: Context::default(),
             protagonist: Context::default(),
+            simulators: vec![],
             world_snapshot: WorldSnapshot {
                 round: 7,
                 scene_title: "钟楼阴影".to_string(),

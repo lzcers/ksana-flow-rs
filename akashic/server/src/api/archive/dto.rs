@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use agent::agent::context::Context;
+use akashic_ecs::engine::SimulatorArchiveState;
 use akashic_ecs::resources::{
-    history::SessionHistoryLog,
-    protagonist_action::PendingProtagonistChoice, turn_state::TurnPhase,
-    world_snapshot::WorldSnapshot,
+    history::SessionHistoryLog, protagonist_action::PendingProtagonistChoice,
+    turn_state::TurnPhase, world_snapshot::WorldSnapshot,
 };
 
 /// 内部恢复用：TurnState 的可序列化快照
@@ -44,10 +44,14 @@ pub struct SessionArchivePayload {
     /// 当前回合状态
     pub turn_state: TurnStateArchive,
 
-    /// 三个 Entity 的完整 Context，保证 LLM 对话连续性
+    /// 旧格式的 FateWeaver Context，保留用于恢复不含 simulators 的存档
     pub fate_weaver: Context,
+    /// 唯一 Narrator 与 Protagonist 的完整 Context
     pub upper_narrator: Context,
     pub protagonist: Context,
+    /// 可变数量的 Simulator Context
+    #[serde(default)]
+    pub simulators: Vec<SimulatorArchiveState>,
     /// 当前世界状态
     pub world_snapshot: WorldSnapshot,
 

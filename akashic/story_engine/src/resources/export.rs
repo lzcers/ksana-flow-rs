@@ -1,15 +1,13 @@
-use bevy_ecs::resource::Resource;
+use bevy_ecs::component::Component;
 use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 
-use crate::{
-    resources::{
-        history::RoundHistoryEntry,
-        llm_task_manager::{TaskResult, TaskStatus, TaskUpdate},
-        protagonist_action::PendingProtagonistChoice,
-        turn_state::TurnPhase,
-        world_snapshot::WorldSnapshot,
-    },
+use crate::resources::{
+    history::RoundHistoryEntry,
+    llm_task_manager::{TaskResult, TaskStatus, TaskUpdate},
+    protagonist_action::PendingProtagonistChoice,
+    turn_state::TurnPhase,
+    world_snapshot::WorldSnapshot,
 };
 
 const DEFAULT_EXPORT_EVENT_BUFFER: usize = 256;
@@ -49,7 +47,7 @@ pub enum TaskEvent {
     TaskUpdated { update: TaskUpdate },
 }
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct ExportState {
     snapshot_tx: watch::Sender<SessionSnapshot>,
     event_tx: broadcast::Sender<TaskEvent>,

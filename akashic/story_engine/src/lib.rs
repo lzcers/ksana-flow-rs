@@ -7,4 +7,6 @@ pub mod systems;
 pub mod turn_messages;
 pub mod utils;
 
-pub use engine::{AkashicSessionEngine, Session, SessionArchiveState};
+pub use engine::{
+    AkashicEngine, AkashicSessionEngine, Session, SessionArchiveState, SimulatorArchiveState,
+};

@@ -4,7 +4,7 @@ pub use dto::*;
 
 use std::io::Write;
 
-use akashic_ecs::engine::{AkashicSessionEngine, SessionArchiveState};
+use akashic_ecs::engine::{AkashicEngine, AkashicSessionEngine, SessionArchiveState};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 
@@ -33,6 +33,7 @@ pub async fn gen_archive_payload(
         fate_weaver: archive_state.fate_weaver_context,
         upper_narrator: archive_state.upper_narrator_context,
         protagonist: archive_state.protagonist_context,
+        simulators: archive_state.simulators,
         world_snapshot: archive_state.world_snapshot,
         protagonist_decision: ProtagonistDecisionArchive {
             committed_action: archive_state.committed_action,
@@ -42,28 +43,36 @@ pub async fn gen_archive_payload(
     })
 }
 
-pub fn load_archive_payload(
+pub async fn load_archive_payload(
+    engine: &AkashicEngine,
     payload: SessionArchivePayload,
 ) -> Result<AkashicSessionEngine, String> {
     if payload.history_log.rounds.is_empty() {
         return Err("存档缺少 history_log，当前只接受包含完整时间线的新格式存档".to_string());
     }
 
-    AkashicSessionEngine::from_archive_state(SessionArchiveState {
-        world_profile: payload.world_profile,
-        protagonist_profile: payload.protagonist_profile,
-        key_story_beats: payload.key_story_beats,
-        phase: payload.turn_state.phase,
-        turn_index: payload.turn_state.turn_index,
-        active_turn_id: payload.turn_state.active_turn_id,
-        world_snapshot: payload.world_snapshot,
-        committed_action: payload.protagonist_decision.committed_action,
-        choices: payload.protagonist_decision.choices,
-        history_log: payload.history_log,
-        fate_weaver_context: payload.fate_weaver,
-        upper_narrator_context: payload.upper_narrator,
-        protagonist_context: payload.protagonist,
-    })
+    let session_id = payload.session_id.clone();
+    engine
+        .create_session_from_archive(
+            session_id,
+            SessionArchiveState {
+                world_profile: payload.world_profile,
+                protagonist_profile: payload.protagonist_profile,
+                key_story_beats: payload.key_story_beats,
+                phase: payload.turn_state.phase,
+                turn_index: payload.turn_state.turn_index,
+                active_turn_id: payload.turn_state.active_turn_id,
+                world_snapshot: payload.world_snapshot,
+                committed_action: payload.protagonist_decision.committed_action,
+                choices: payload.protagonist_decision.choices,
+                history_log: payload.history_log,
+                fate_weaver_context: payload.fate_weaver,
+                upper_narrator_context: payload.upper_narrator,
+                protagonist_context: payload.protagonist,
+                simulators: payload.simulators,
+            },
+        )
+        .await
 }
 
 pub fn validate_archive_payload(payload: &SessionArchivePayload) -> Result<(), String> {
@@ -145,6 +154,7 @@ mod tests {
             fate_weaver: Context::default(),
             upper_narrator: Context::default(),
             protagonist: Context::default(),
+            simulators: vec![],
             world_snapshot: WorldSnapshot {
                 round: 3,
                 scene_title: "塔楼回响".to_string(),
@@ -198,6 +208,7 @@ mod tests {
             fate_weaver: Context::default(),
             upper_narrator: Context::default(),
             protagonist: Context::default(),
+            simulators: vec![],
             world_snapshot: WorldSnapshot {
                 round: 4,
                 scene_title: "潮声之门".to_string(),

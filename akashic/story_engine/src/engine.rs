@@ -1,15 +1,18 @@
-use agent::agent::Context;
+use std::collections::HashMap;
+
+use agent::{agent::Context, models::ChatModel};
 use bevy_ecs::{prelude::*, schedule::Schedule};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
-    time::{sleep, Duration},
+    time::{Duration, MissedTickBehavior, interval},
 };
 
 use crate::{
     components::{
-        agent::{Agent, AgentKind, FlowOwner},
-        turn_flow::TurnFlow,
+        agent::{Agent, AgentOutputKind, SessionOwner},
+        session::{SessionProfiles, StorySession},
+        turn_flow::{TurnFlow, TurnStage},
     },
     profile::{DEFAULT_KEY_STORY_BEATS, DEFAULT_PROTAGONIST_PROFILE, DEFAULT_WORLD_PROFILE},
     resources::{
@@ -17,19 +20,23 @@ use crate::{
         history::{RoundHistoryEntry, SessionHistoryLog},
         llm_task_manager::TaskManager,
         player_input::{PlayerInbox, PlayerInputConfig},
-        protagonist_action::{PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState},
+        protagonist_action::{
+            PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState,
+        },
         turn_state::TurnPhase,
         world_snapshot::WorldSnapshot,
     },
     systems::{
         cleanup_sys::cleanup_previous_turn_outcomes_system,
         export_sys::export_system,
-        fate_sys::{fate_apply_system, fate_dispatch_system},
         history_sys::history_sys,
         narration_sys::{narration_apply_system, narration_dispatch_system},
         player_input_sys::player_input_system,
         protagonist_sys::{protagonist_apply_system, protagonist_dispatch_system},
         scheduler::agent_scheduler_system,
+        simulator_sys::{
+            simulator_apply_system, simulator_dispatch_system, simulator_progress_system,
+        },
         task_sys::task_poll_system,
     },
     turn_messages::PlayerCommand,
@@ -68,52 +75,115 @@ pub struct SessionArchiveState {
     pub fate_weaver_context: Context,
     pub upper_narrator_context: Context,
     pub protagonist_context: Context,
+    pub simulators: Vec<SimulatorArchiveState>,
 }
 
-#[derive(Resource, Debug, Clone)]
-struct SessionProfiles {
-    world_profile: String,
-    protagonist_profile: String,
-    key_story_beats: String,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimulatorArchiveState {
+    pub output_kind: AgentOutputKind,
+    pub name: String,
+    pub context: Context,
 }
 
+#[derive(Resource, Default)]
+struct SessionRegistry {
+    entities: HashMap<String, Entity>,
+}
+
+#[derive(Clone)]
+pub struct AkashicEngine {
+    command_tx: mpsc::UnboundedSender<EngineCommand>,
+}
+
+#[derive(Clone)]
 pub struct AkashicSessionEngine {
+    session_id: String,
     command_tx: mpsc::UnboundedSender<EngineCommand>,
     export_handle: ExportHandle,
 }
 
-impl AkashicSessionEngine {
+impl Default for AkashicEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AkashicEngine {
     pub fn new() -> Self {
-        Self::new_with_profiles(
+        Self::with_model(build_chat_model())
+    }
+
+    pub fn with_model(model: ChatModel) -> Self {
+        let mut world = World::new();
+        world.insert_resource(TaskManager::new(model));
+        world.init_resource::<SessionRegistry>();
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        SessionRuntime::spawn(world, build_schedule(), command_tx.clone(), command_rx);
+        Self { command_tx }
+    }
+
+    pub async fn create_session(
+        &self,
+        session_id: impl Into<String>,
+        world_profile: &str,
+        protagonist_profile: &str,
+        key_story_beats: &str,
+    ) -> Result<AkashicSessionEngine, String> {
+        self.create_session_from_state(
+            session_id.into(),
+            NewSessionState::Profiles {
+                world_profile: world_profile.to_string(),
+                protagonist_profile: protagonist_profile.to_string(),
+                key_story_beats: key_story_beats.to_string(),
+            },
+        )
+        .await
+    }
+
+    pub async fn create_default_session(
+        &self,
+        session_id: impl Into<String>,
+    ) -> Result<AkashicSessionEngine, String> {
+        self.create_session(
+            session_id,
             DEFAULT_WORLD_PROFILE,
             DEFAULT_PROTAGONIST_PROFILE,
             DEFAULT_KEY_STORY_BEATS,
         )
+        .await
     }
 
-    pub fn new_with_profiles(
-        world_profile: &str,
-        protagonist_profile: &str,
-        key_story_beats: &str,
-    ) -> Self {
-        let (world, export_handle) = build_world(world_profile, protagonist_profile, key_story_beats);
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        SessionRuntime::spawn(world, build_schedule(), command_rx);
-        Self {
-            command_tx,
-            export_handle,
-        }
-    }
-
-    pub fn from_archive_state(state: SessionArchiveState) -> Result<Self, String> {
+    pub async fn create_session_from_archive(
+        &self,
+        session_id: impl Into<String>,
+        state: SessionArchiveState,
+    ) -> Result<AkashicSessionEngine, String> {
         validate_archive_state(&state)?;
-        let (world, export_handle) = build_world_from_archive(state);
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        SessionRuntime::spawn(world, build_schedule(), command_rx);
-        Ok(Self {
-            command_tx,
-            export_handle,
-        })
+        self.create_session_from_state(session_id.into(), NewSessionState::Archive(Box::new(state)))
+            .await
+    }
+
+    async fn create_session_from_state(
+        &self,
+        session_id: String,
+        state: NewSessionState,
+    ) -> Result<AkashicSessionEngine, String> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx
+            .send(EngineCommand::CreateSession {
+                session_id,
+                state,
+                tx,
+            })
+            .map_err(|_| "故事引擎运行时已停止，无法创建会话".to_string())?;
+        rx.await
+            .map_err(|_| "故事引擎运行时已停止，无法接收会话创建结果".to_string())?
+    }
+}
+
+impl AkashicSessionEngine {
+    pub fn session_id(&self) -> &str {
+        &self.session_id
     }
 
     pub fn get_game_session(&self) -> Session {
@@ -129,31 +199,48 @@ impl AkashicSessionEngine {
             return Err("故事已结束，无法继续推进".to_string());
         }
         self.command_tx
-            .send(EngineCommand::StartNextTurn)
-            .map_err(|_| "会话运行时已停止，无法继续推进".to_string())
+            .send(EngineCommand::StartNextTurn {
+                session_id: self.session_id.clone(),
+            })
+            .map_err(|_| "故事引擎运行时已停止，无法继续推进".to_string())
     }
 
     pub fn submit_player_action(&self, input: PlayerActionInput) -> Result<(), String> {
         self.command_tx
-            .send(EngineCommand::SubmitPlayerAction { input })
-            .map_err(|_| "会话运行时已停止，无法提交行动".to_string())
+            .send(EngineCommand::SubmitPlayerAction {
+                session_id: self.session_id.clone(),
+                input,
+            })
+            .map_err(|_| "故事引擎运行时已停止，无法提交行动".to_string())
     }
 
     pub async fn export_archive_state(&self) -> Result<SessionArchiveState, String> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
-            .send(EngineCommand::ExportArchiveState { tx })
-            .map_err(|_| "会话运行时已停止，无法导出存档".to_string())?;
+            .send(EngineCommand::ExportArchiveState {
+                session_id: self.session_id.clone(),
+                tx,
+            })
+            .map_err(|_| "故事引擎运行时已停止，无法导出存档".to_string())?;
         rx.await
-            .map_err(|_| "会话运行时已停止，无法接收存档导出结果".to_string())?
+            .map_err(|_| "故事引擎运行时已停止，无法接收存档导出结果".to_string())?
+    }
+
+    pub async fn add_simulator(&self, simulator: Agent) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        self.command_tx
+            .send(EngineCommand::AddSimulator {
+                session_id: self.session_id.clone(),
+                simulator,
+                tx,
+            })
+            .map_err(|_| "故事引擎运行时已停止，无法添加 Simulator".to_string())?;
+        rx.await
+            .map_err(|_| "故事引擎运行时已停止，无法接收 Simulator 添加结果".to_string())?
     }
 
     pub async fn wait_until_ready(&self) -> Result<(), String> {
-        let mut snapshot_rx = self.export_handle.snapshot_receiver();
-        snapshot_rx
-            .changed()
-            .await
-            .map_err(|_| "会话运行时已停止，无法等待初始化完成".to_string())
+        Ok(())
     }
 }
 
@@ -174,10 +261,35 @@ impl Session {
     }
 }
 
+enum NewSessionState {
+    Profiles {
+        world_profile: String,
+        protagonist_profile: String,
+        key_story_beats: String,
+    },
+    Archive(Box<SessionArchiveState>),
+}
+
 enum EngineCommand {
-    StartNextTurn,
-    SubmitPlayerAction { input: PlayerActionInput },
+    CreateSession {
+        session_id: String,
+        state: NewSessionState,
+        tx: oneshot::Sender<Result<AkashicSessionEngine, String>>,
+    },
+    StartNextTurn {
+        session_id: String,
+    },
+    SubmitPlayerAction {
+        session_id: String,
+        input: PlayerActionInput,
+    },
+    AddSimulator {
+        session_id: String,
+        simulator: Agent,
+        tx: oneshot::Sender<Result<(), String>>,
+    },
     ExportArchiveState {
+        session_id: String,
         tx: oneshot::Sender<Result<SessionArchiveState, String>>,
     },
 }
@@ -185,120 +297,334 @@ enum EngineCommand {
 struct SessionRuntime {
     world: World,
     schedule: Schedule,
+    command_tx: mpsc::UnboundedSender<EngineCommand>,
     command_rx: mpsc::UnboundedReceiver<EngineCommand>,
 }
 
 impl SessionRuntime {
-    fn spawn(world: World, schedule: Schedule, command_rx: mpsc::UnboundedReceiver<EngineCommand>) {
+    fn spawn(
+        world: World,
+        schedule: Schedule,
+        command_tx: mpsc::UnboundedSender<EngineCommand>,
+        command_rx: mpsc::UnboundedReceiver<EngineCommand>,
+    ) {
         tokio::spawn(async move {
             let mut runtime = Self {
                 world,
                 schedule,
+                command_tx,
                 command_rx,
             };
+            let mut ticker = interval(DEFAULT_RUNTIME_TICK_INTERVAL);
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-            if let Err(err) = runtime.run_one_frame() {
-                eprintln!("[story-engine-runtime] 初始导出失败: {err}");
-                return;
-            }
-
-            while let Some(command) = runtime.command_rx.recv().await {
-                match command {
-                    EngineCommand::ExportArchiveState { tx } => {
-                        let _ = tx.send(runtime.export_archive_state());
-                    }
-                    EngineCommand::StartNextTurn => {
-                        runtime.advance_turn();
-                        if let Err(err) = runtime.drive_until_stable().await {
-                            eprintln!("[story-engine-runtime] 会话推进失败: {err}");
+            loop {
+                tokio::select! {
+                    command = runtime.command_rx.recv() => {
+                        let Some(command) = command else {
                             break;
-                        }
+                        };
+                        runtime.handle_command(command);
                     }
-                    EngineCommand::SubmitPlayerAction { input } => {
-                        let turn_id = runtime.current_flow().map(|flow| flow.active_turn_id).unwrap_or_default();
-                        runtime
-                            .world
-                            .resource_mut::<PlayerInbox>()
-                            .push(PlayerCommand::SubmitPlayerAction { turn_id, input });
-                        if let Err(err) = runtime.drive_until_stable().await {
-                            eprintln!("[story-engine-runtime] 会话推进失败: {err}");
-                            break;
-                        }
+                    _ = ticker.tick(), if runtime.has_active_work() => {
+                        runtime.run_one_frame();
                     }
                 }
             }
         });
     }
 
-    fn advance_turn(&mut self) {
-        let mut query = self.world.query::<&mut TurnFlow>();
-        if let Ok(mut flow) = query.single_mut(&mut self.world) {
-            flow.advance();
-        }
-    }
-
-    fn current_flow(&mut self) -> Option<TurnFlow> {
-        let mut query = self.world.query::<&TurnFlow>();
-        query.single(&self.world).ok().copied()
-    }
-
-    async fn drive_until_stable(&mut self) -> Result<(), String> {
-        loop {
-            self.run_one_frame()?;
-            let snapshot = Session::from_snapshot(self.export_snapshot());
-            if is_stable_stop_point(&snapshot) {
-                return Ok(());
+    fn handle_command(&mut self, command: EngineCommand) {
+        match command {
+            EngineCommand::CreateSession {
+                session_id,
+                state,
+                tx,
+            } => {
+                let result = self.create_session(session_id, state);
+                self.run_one_frame();
+                let _ = tx.send(result);
             }
-            sleep(DEFAULT_RUNTIME_TICK_INTERVAL).await;
+            EngineCommand::StartNextTurn { session_id } => {
+                if let Some(entity) = self.session_entity(&session_id)
+                    && let Some(mut flow) = self.world.get_mut::<TurnFlow>(entity)
+                {
+                    flow.advance();
+                    self.run_one_frame();
+                }
+            }
+            EngineCommand::SubmitPlayerAction { session_id, input } => {
+                if let Some(entity) = self.session_entity(&session_id) {
+                    let turn_id = self
+                        .world
+                        .get::<TurnFlow>(entity)
+                        .map(|flow| flow.active_turn_id)
+                        .unwrap_or_default();
+                    if let Some(mut inbox) = self.world.get_mut::<PlayerInbox>(entity) {
+                        inbox.push(PlayerCommand::SubmitPlayerAction { turn_id, input });
+                    }
+                    self.run_one_frame();
+                }
+            }
+            EngineCommand::AddSimulator {
+                session_id,
+                simulator,
+                tx,
+            } => {
+                let _ = tx.send(self.add_simulator(&session_id, simulator));
+            }
+            EngineCommand::ExportArchiveState { session_id, tx } => {
+                let _ = tx.send(self.export_archive_state(&session_id));
+            }
         }
     }
 
-    fn run_one_frame(&mut self) -> Result<(), String> {
-        self.schedule.run(&mut self.world);
-        self.ensure_not_failed()
+    fn create_session(
+        &mut self,
+        session_id: String,
+        state: NewSessionState,
+    ) -> Result<AkashicSessionEngine, String> {
+        self.remove_session(&session_id);
+
+        let (export_state, export_handle) = ExportState::new_with_handle();
+        let session_entity = match state {
+            NewSessionState::Profiles {
+                world_profile,
+                protagonist_profile,
+                key_story_beats,
+            } => self.spawn_session_from_profiles(
+                &session_id,
+                world_profile,
+                protagonist_profile,
+                key_story_beats,
+                export_state,
+            ),
+            NewSessionState::Archive(state) => {
+                self.spawn_session_from_archive(&session_id, *state, export_state)
+            }
+        }?;
+        self.world
+            .resource_mut::<SessionRegistry>()
+            .entities
+            .insert(session_id.clone(), session_entity);
+
+        Ok(AkashicSessionEngine {
+            session_id,
+            command_tx: self.command_tx.clone(),
+            export_handle,
+        })
     }
 
-    fn export_snapshot(&self) -> SessionSnapshot {
-        self.world.resource::<ExportState>().current_snapshot()
-    }
-
-    fn ensure_not_failed(&mut self) -> Result<(), String> {
-        let mut query = self.world.query::<&TurnFlow>();
-        let Ok(flow) = query.single(&self.world) else {
-            return Ok(());
+    fn remove_session(&mut self, session_id: &str) {
+        let Some(session_entity) = self
+            .world
+            .resource_mut::<SessionRegistry>()
+            .entities
+            .remove(session_id)
+        else {
+            return;
         };
-        if flow.stage == TurnPhase::Failed {
-            return Err("会话运行失败".to_string());
+        for agent_entity in self.owned_agent_entities(session_entity) {
+            self.world
+                .resource_mut::<TaskManager>()
+                .clear_task(agent_entity);
+            self.world.despawn(agent_entity);
         }
+        self.world.despawn(session_entity);
+    }
+
+    fn add_simulator(&mut self, session_id: &str, simulator: Agent) -> Result<(), String> {
+        let session_entity = self
+            .session_entity(session_id)
+            .ok_or_else(|| format!("未找到会话 `{session_id}`"))?;
+        let flow = self
+            .world
+            .get::<TurnFlow>(session_entity)
+            .ok_or_else(|| "会话缺少流程状态".to_string())?;
+        if !is_stable_phase(flow.stage) {
+            return Err("只能在会话稳定阶段添加 Agent".to_string());
+        }
+        if !simulator.output_kind.is_simulation() {
+            return Err("只能动态添加 Simulator".to_string());
+        }
+        if simulator.output_kind == AgentOutputKind::WorldSnapshot
+            && self
+                .owned_agents(session_entity)
+                .iter()
+                .any(|agent| agent.output_kind == AgentOutputKind::WorldSnapshot)
+        {
+            return Err("每个会话只能存在一个 WorldSnapshot Simulator".to_string());
+        }
+        self.world.spawn((simulator, SessionOwner(session_entity)));
         Ok(())
     }
 
-    fn export_archive_state(&mut self) -> Result<SessionArchiveState, String> {
-        let snapshot = {
-            let export_state = self.world.resource::<ExportState>();
-            Session::from_snapshot(export_state.current_snapshot())
+    fn spawn_session_from_profiles(
+        &mut self,
+        session_id: &str,
+        world_profile: String,
+        protagonist_profile: String,
+        key_story_beats: String,
+        export_state: ExportState,
+    ) -> Result<Entity, String> {
+        let session_entity = self
+            .world
+            .spawn((
+                StorySession {
+                    id: session_id.to_string(),
+                },
+                SessionProfiles {
+                    world_profile: world_profile.clone(),
+                    protagonist_profile: protagonist_profile.clone(),
+                    key_story_beats: key_story_beats.clone(),
+                },
+                TurnFlow::default(),
+                WorldSnapshot::default(),
+                SessionHistoryLog::default(),
+                PlayerInbox::default(),
+                PlayerInputConfig::wait_for_user(),
+                ProtagonistDecisionState::default(),
+                export_state,
+            ))
+            .id();
+        self.spawn_agents(
+            session_entity,
+            vec![Agent::new_fate_weaver(
+                &world_profile,
+                &protagonist_profile,
+                &key_story_beats,
+            )],
+            Agent::new_upper_narrator(&world_profile, &protagonist_profile),
+            Agent::new_protagonist(&world_profile, &protagonist_profile),
+        );
+        Ok(session_entity)
+    }
+
+    fn spawn_session_from_archive(
+        &mut self,
+        session_id: &str,
+        state: SessionArchiveState,
+        export_state: ExportState,
+    ) -> Result<Entity, String> {
+        let session_entity = self
+            .world
+            .spawn((
+                StorySession {
+                    id: session_id.to_string(),
+                },
+                SessionProfiles {
+                    world_profile: state.world_profile,
+                    protagonist_profile: state.protagonist_profile,
+                    key_story_beats: state.key_story_beats,
+                },
+                TurnFlow {
+                    turn_index: state.turn_index,
+                    active_turn_id: state.active_turn_id,
+                    stage: state.phase,
+                },
+                state.world_snapshot,
+                state.history_log,
+                PlayerInbox::default(),
+                PlayerInputConfig::wait_for_user(),
+                ProtagonistDecisionState::from_archive(state.committed_action, state.choices),
+                export_state,
+            ))
+            .id();
+        let simulators = if state.simulators.is_empty() {
+            vec![Agent::from_context(
+                AgentOutputKind::WorldSnapshot,
+                "FateWeaver",
+                state.fate_weaver_context,
+            )]
+        } else {
+            state
+                .simulators
+                .into_iter()
+                .map(|simulator| {
+                    Agent::from_context(simulator.output_kind, simulator.name, simulator.context)
+                })
+                .collect()
         };
-        if !is_stable_stop_point(&snapshot) {
+        self.spawn_agents(
+            session_entity,
+            simulators,
+            Agent::from_context(
+                AgentOutputKind::Narration,
+                "UpperNarrator",
+                state.upper_narrator_context,
+            ),
+            Agent::from_context(
+                AgentOutputKind::ProtagonistOptions,
+                "Protagonist",
+                state.protagonist_context,
+            ),
+        );
+        Ok(session_entity)
+    }
+
+    fn spawn_agents(
+        &mut self,
+        session_entity: Entity,
+        simulators: Vec<Agent>,
+        narrator: Agent,
+        protagonist: Agent,
+    ) {
+        for agent in simulators.into_iter().chain([narrator, protagonist]) {
+            self.world.spawn((agent, SessionOwner(session_entity)));
+        }
+    }
+
+    fn session_entity(&self, session_id: &str) -> Option<Entity> {
+        self.world
+            .resource::<SessionRegistry>()
+            .entities
+            .get(session_id)
+            .copied()
+    }
+
+    fn run_one_frame(&mut self) {
+        self.schedule.run(&mut self.world);
+    }
+
+    fn has_active_work(&mut self) -> bool {
+        let mut query = self.world.query::<&TurnFlow>();
+        query
+            .iter(&self.world)
+            .any(|flow| !is_stable_phase(flow.stage))
+    }
+
+    fn export_archive_state(&mut self, session_id: &str) -> Result<SessionArchiveState, String> {
+        let entity = self
+            .session_entity(session_id)
+            .ok_or_else(|| format!("未找到会话 `{session_id}`"))?;
+        let flow = *self
+            .world
+            .get::<TurnFlow>(entity)
+            .ok_or_else(|| "会话缺少流程状态".to_string())?;
+        if !is_stable_phase(flow.stage) {
             return Err("当前会话不在稳定态，无法创建存档".to_string());
         }
-
-        let profiles = self.world.resource::<SessionProfiles>().clone();
-        let world_snapshot = self.world.resource::<WorldSnapshot>().clone();
-        let history_log = self.world.resource::<SessionHistoryLog>().clone();
-        let decision_state = self.world.resource::<ProtagonistDecisionState>().clone();
-        let flow = self.current_flow().ok_or_else(|| "缺少流程实体".to_string())?;
-
-        let mut fate_weaver_context = None;
-        let mut upper_narrator_context = None;
-        let mut protagonist_context = None;
-        let mut query = self.world.query::<&Agent>();
-        for agent in query.iter(&self.world) {
-            match agent.kind {
-                AgentKind::FateWeaver => fate_weaver_context = Some(agent.context.clone()),
-                AgentKind::UpperNarrator => upper_narrator_context = Some(agent.context.clone()),
-                AgentKind::Protagonist => protagonist_context = Some(agent.context.clone()),
-            }
-        }
+        let profiles = self
+            .world
+            .get::<SessionProfiles>(entity)
+            .ok_or_else(|| "会话缺少配置资料".to_string())?
+            .clone();
+        let world_snapshot = self
+            .world
+            .get::<WorldSnapshot>(entity)
+            .ok_or_else(|| "会话缺少世界快照".to_string())?
+            .clone();
+        let history_log = self
+            .world
+            .get::<SessionHistoryLog>(entity)
+            .ok_or_else(|| "会话缺少历史记录".to_string())?
+            .clone();
+        let decision_state = self
+            .world
+            .get::<ProtagonistDecisionState>(entity)
+            .ok_or_else(|| "会话缺少主角决策状态".to_string())?
+            .clone();
+        let agents = self.owned_agents(entity);
 
         Ok(SessionArchiveState {
             world_profile: profiles.world_profile,
@@ -311,110 +637,58 @@ impl SessionRuntime {
             committed_action: decision_state.committed_action().to_string(),
             choices: decision_state.choices().to_vec(),
             history_log,
-            fate_weaver_context: fate_weaver_context
-                .ok_or_else(|| "缺少 FateWeaver 上下文".to_string())?,
-            upper_narrator_context: upper_narrator_context
-                .ok_or_else(|| "缺少 UpperNarrator 上下文".to_string())?,
-            protagonist_context: protagonist_context
-                .ok_or_else(|| "缺少 Protagonist 上下文".to_string())?,
+            fate_weaver_context: agents
+                .iter()
+                .find(|agent| agent.output_kind == AgentOutputKind::WorldSnapshot)
+                .map(|agent| agent.context.clone())
+                .ok_or_else(|| "缺少 WorldSnapshot Simulator".to_string())?,
+            upper_narrator_context: unique_agent_context(&agents, AgentOutputKind::Narration)?,
+            protagonist_context: unique_agent_context(
+                &agents,
+                AgentOutputKind::ProtagonistOptions,
+            )?,
+            simulators: agents
+                .iter()
+                .filter(|agent| agent.output_kind.is_simulation())
+                .map(|agent| SimulatorArchiveState {
+                    output_kind: agent.output_kind,
+                    name: agent.name.clone(),
+                    context: agent.context.clone(),
+                })
+                .collect(),
         })
+    }
+
+    fn owned_agent_entities(&mut self, session_entity: Entity) -> Vec<Entity> {
+        let mut agents = self.world.query::<(Entity, &SessionOwner)>();
+        agents
+            .iter(&self.world)
+            .filter_map(|(entity, owner)| (owner.0 == session_entity).then_some(entity))
+            .collect()
+    }
+
+    fn owned_agents(&mut self, session_entity: Entity) -> Vec<Agent> {
+        let mut agents = self.world.query::<(&Agent, &SessionOwner)>();
+        agents
+            .iter(&self.world)
+            .filter(move |(_, owner)| owner.0 == session_entity)
+            .map(|(agent, _)| agent.clone())
+            .collect()
     }
 }
 
-fn build_world(
-    world_profile: &str,
-    protagonist_profile: &str,
-    key_story_beats: &str,
-) -> (World, ExportHandle) {
-    let mut world = World::new();
-
-    world.init_resource::<WorldSnapshot>();
-    world.init_resource::<SessionHistoryLog>();
-    world.init_resource::<PlayerInbox>();
-    world.insert_resource(PlayerInputConfig::wait_for_user());
-    world.init_resource::<ProtagonistDecisionState>();
-    world.insert_resource(SessionProfiles {
-        world_profile: world_profile.to_string(),
-        protagonist_profile: protagonist_profile.to_string(),
-        key_story_beats: key_story_beats.to_string(),
-    });
-    world.insert_resource(TaskManager::new(build_chat_model()));
-    let (export_state, export_handle) = ExportState::new_with_handle();
-    world.insert_resource(export_state);
-
-    let flow_entity = world.spawn(TurnFlow::default()).id();
-    world.spawn((
-        Agent::new_fate_weaver(world_profile, protagonist_profile, key_story_beats),
-        FlowOwner(flow_entity),
-    ));
-    world.spawn((
-        Agent::new_upper_narrator(world_profile, protagonist_profile),
-        FlowOwner(flow_entity),
-    ));
-    world.spawn((
-        Agent::new_protagonist(world_profile, protagonist_profile),
-        FlowOwner(flow_entity),
-    ));
-
-    (world, export_handle)
-}
-
-fn build_world_from_archive(state: SessionArchiveState) -> (World, ExportHandle) {
-    let mut world = World::new();
-
-    world.insert_resource(state.world_snapshot);
-    world.insert_resource(state.history_log);
-    world.init_resource::<PlayerInbox>();
-    world.insert_resource(PlayerInputConfig::wait_for_user());
-    world.insert_resource(ProtagonistDecisionState::from_archive(
-        state.committed_action,
-        state.choices,
-    ));
-    world.insert_resource(SessionProfiles {
-        world_profile: state.world_profile,
-        protagonist_profile: state.protagonist_profile,
-        key_story_beats: state.key_story_beats,
-    });
-    world.insert_resource(TaskManager::new(build_chat_model()));
-    let (export_state, export_handle) = ExportState::new_with_handle();
-    world.insert_resource(export_state);
-
-    let flow_entity = world
-        .spawn(TurnFlow {
-            turn_index: state.turn_index,
-            active_turn_id: state.active_turn_id,
-            stage: state.phase,
-        })
-        .id();
-    world.spawn((
-        Agent::from_context(
-            AgentKind::FateWeaver,
-            "FateWeaver",
-            String::new(),
-            state.fate_weaver_context,
-        ),
-        FlowOwner(flow_entity),
-    ));
-    world.spawn((
-        Agent::from_context(
-            AgentKind::UpperNarrator,
-            "UpperNarrator",
-            String::new(),
-            state.upper_narrator_context,
-        ),
-        FlowOwner(flow_entity),
-    ));
-    world.spawn((
-        Agent::from_context(
-            AgentKind::Protagonist,
-            "Protagonist",
-            String::new(),
-            state.protagonist_context,
-        ),
-        FlowOwner(flow_entity),
-    ));
-
-    (world, export_handle)
+fn unique_agent_context(agents: &[Agent], output_kind: AgentOutputKind) -> Result<Context, String> {
+    let mut matches = agents
+        .iter()
+        .filter(|agent| agent.output_kind == output_kind);
+    let context = matches
+        .next()
+        .map(|agent| agent.context.clone())
+        .ok_or_else(|| format!("缺少 {output_kind:?} Agent"))?;
+    if matches.next().is_some() {
+        return Err(format!("存在多个 {output_kind:?} Agent"));
+    }
+    Ok(context)
 }
 
 fn build_schedule() -> Schedule {
@@ -423,7 +697,7 @@ fn build_schedule() -> Schedule {
         (
             (
                 cleanup_previous_turn_outcomes_system,
-                fate_dispatch_system,
+                simulator_dispatch_system,
                 narration_dispatch_system,
                 protagonist_dispatch_system,
             )
@@ -431,39 +705,162 @@ fn build_schedule() -> Schedule {
             (
                 agent_scheduler_system,
                 task_poll_system,
-                fate_apply_system,
+                simulator_apply_system,
+                simulator_progress_system,
                 narration_apply_system,
+                protagonist_apply_system,
+                player_input_system,
+                history_sys,
+                export_system,
             )
                 .chain(),
-            (protagonist_apply_system, player_input_system, history_sys, export_system).chain(),
         )
             .chain(),
     );
     schedule
 }
 
-fn is_stable_stop_point(snapshot: &Session) -> bool {
+fn is_stable_phase(phase: TurnStage) -> bool {
     matches!(
-        snapshot.phase,
-        TurnPhase::AwaitingPlayerChoice | TurnPhase::TurnComplete | TurnPhase::StoryEnded
-    ) || (snapshot.phase == TurnPhase::Idle && snapshot.current_task.is_none())
+        phase,
+        TurnStage::Idle
+            | TurnStage::AwaitingPlayerChoice
+            | TurnStage::TurnComplete
+            | TurnStage::StoryEnded
+            | TurnStage::Failed
+    )
 }
 
 fn validate_archive_state(state: &SessionArchiveState) -> Result<(), String> {
-    let stable_phase = matches!(
-        state.phase,
-        TurnPhase::Idle
-            | TurnPhase::AwaitingPlayerChoice
-            | TurnPhase::TurnComplete
-            | TurnPhase::StoryEnded
-    );
-    if !stable_phase {
+    if !is_stable_phase(state.phase) || state.phase == TurnStage::Failed {
         return Err("归档会话不在可恢复的稳定态".to_string());
     }
-
     if state.active_turn_id < state.turn_index {
         return Err("归档会话的 active_turn_id 不能小于 turn_index".to_string());
     }
-
+    if state
+        .simulators
+        .iter()
+        .any(|simulator| !simulator.output_kind.is_simulation())
+    {
+        return Err("归档的 simulators 只能包含 Simulator".to_string());
+    }
+    if !state.simulators.is_empty()
+        && state
+            .simulators
+            .iter()
+            .filter(|simulator| simulator.output_kind == AgentOutputKind::WorldSnapshot)
+            .count()
+            != 1
+    {
+        return Err("归档必须包含且只能包含一个 WorldSnapshot Simulator".to_string());
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn keeps_profiles_isolated_across_sessions_in_one_world() {
+        let engine = AkashicEngine::with_model(ChatModel::new());
+        let first = engine
+            .create_session("first", "world-a", "hero-a", "beats-a")
+            .await
+            .unwrap();
+        let second = engine
+            .create_session("second", "world-b", "hero-b", "beats-b")
+            .await
+            .unwrap();
+        first
+            .add_simulator(Agent::new_custom(
+                AgentOutputKind::SimulationText,
+                "FirstSessionOnly",
+                "simulate first session".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let first_archive = first.export_archive_state().await.unwrap();
+        let second_archive = second.export_archive_state().await.unwrap();
+
+        assert_eq!(first_archive.world_profile, "world-a");
+        assert_eq!(second_archive.world_profile, "world-b");
+        assert_eq!(first_archive.simulators.len(), 2);
+        assert_eq!(second_archive.simulators.len(), 1);
+        assert_eq!(first.session_id(), "first");
+        assert_eq!(second.session_id(), "second");
+    }
+
+    #[tokio::test]
+    async fn archives_dynamically_added_simulators() {
+        let engine = AkashicEngine::with_model(ChatModel::new());
+        let session = engine.create_default_session("session").await.unwrap();
+        session
+            .add_simulator(Agent::new_custom(
+                AgentOutputKind::SimulationText,
+                "WeatherSimulator",
+                "simulate weather".to_string(),
+            ))
+            .await
+            .unwrap();
+
+        let archive = session.export_archive_state().await.unwrap();
+
+        assert_eq!(archive.simulators.len(), 2);
+        assert!(archive.simulators.iter().any(|simulator| {
+            simulator.name == "WeatherSimulator" && simulator.output_kind.is_simulation()
+        }));
+
+        let restored = engine
+            .create_session_from_archive("restored", archive)
+            .await
+            .unwrap();
+        let restored_archive = restored.export_archive_state().await.unwrap();
+        assert_eq!(restored_archive.simulators.len(), 2);
+        assert!(
+            restored_archive
+                .simulators
+                .iter()
+                .any(|simulator| simulator.name == "WeatherSimulator")
+        );
+    }
+
+    #[tokio::test]
+    async fn add_simulator_rejects_non_simulation_output() {
+        let engine = AkashicEngine::with_model(ChatModel::new());
+        let session = engine.create_default_session("session").await.unwrap();
+
+        let result = session
+            .add_simulator(Agent::new_custom(
+                AgentOutputKind::Narration,
+                "AnotherNarrator",
+                "narrate".to_string(),
+            ))
+            .await;
+
+        assert_eq!(result.unwrap_err(), "只能动态添加 Simulator");
+    }
+
+    #[tokio::test]
+    async fn archive_rejects_narrator_in_simulators() {
+        let engine = AkashicEngine::with_model(ChatModel::new());
+        let session = engine.create_default_session("session").await.unwrap();
+        let mut archive = session.export_archive_state().await.unwrap();
+        archive.simulators.push(SimulatorArchiveState {
+            output_kind: AgentOutputKind::Narration,
+            name: "AnotherNarrator".to_string(),
+            context: Context::default(),
+        });
+
+        let result = engine
+            .create_session_from_archive("restored", archive)
+            .await;
+
+        assert_eq!(
+            result.err().unwrap(),
+            "归档的 simulators 只能包含 Simulator"
+        );
+    }
 }

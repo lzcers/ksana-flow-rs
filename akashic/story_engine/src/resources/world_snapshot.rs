@@ -1,9 +1,9 @@
-use bevy_ecs::resource::Resource;
+use bevy_ecs::component::Component;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
 /// 世界 Agent 单轮完整输出
-#[derive(Resource, Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct WorldSnapshot {
     pub round: u64,

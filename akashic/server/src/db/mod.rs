@@ -278,6 +278,7 @@ mod tests {
             fate_weaver: Context::default(),
             upper_narrator: Context::default(),
             protagonist: Context::default(),
+            simulators: vec![],
             world_snapshot: WorldSnapshot {
                 round: 3,
                 scene_title: "雨夜档案馆".to_string(),

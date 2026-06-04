@@ -1,5 +1,5 @@
 use crate::{
-    components::agent::{Agent, AgentKind, PendingReasoning, RunningReasoning},
+    components::agent::{Agent, AgentOutputKind, PendingReasoning, RunningReasoning},
     resources::llm_task_manager::{TaskKind, TaskManager},
 };
 use bevy_ecs::{
@@ -16,10 +16,12 @@ pub fn agent_scheduler_system(
     mut task_manager: ResMut<TaskManager>,
 ) {
     for (entity, agent) in query.iter() {
-        let kind = match agent.kind {
-            AgentKind::FateWeaver => TaskKind::FatePlanning,
-            AgentKind::UpperNarrator => TaskKind::Narration,
-            AgentKind::Protagonist => TaskKind::ProtagonistAction,
+        let kind = match agent.output_kind {
+            AgentOutputKind::WorldSnapshot | AgentOutputKind::SimulationText => {
+                TaskKind::Simulation
+            }
+            AgentOutputKind::Narration => TaskKind::Narration,
+            AgentOutputKind::ProtagonistOptions => TaskKind::ProtagonistAction,
         };
         task_manager.spawn_task(entity, kind, &agent.context);
         commands

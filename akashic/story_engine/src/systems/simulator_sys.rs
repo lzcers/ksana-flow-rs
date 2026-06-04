@@ -1,139 +1,214 @@
 use bevy_ecs::{
     entity::Entity,
-    query::{With, Without},
+    query::Without,
     system::{Commands, Query, ResMut},
 };
+use serde_json::json;
 
 use crate::{
     components::{
         agent::{
-            Agent, AgentKind, FlowOwner, PendingReasoning, RunningReasoning, SimulationOutcome,
+            Agent, AgentOutputKind, OwnedAgentMut, PendingReasoning, ReadyAgentFilter,
+            RunningReasoning, SessionOwner, SimulationOutcome,
         },
         turn_flow::{TurnFlow, TurnStage},
     },
-    resources::llm_task_manager::{TaskManager, TaskStatus},
+    resources::{
+        llm_task_manager::{TaskManager, TaskStatus},
+        protagonist_action::ProtagonistDecisionState,
+        world_snapshot::WorldSnapshot,
+    },
+    utils::parse_json_response,
 };
 
-// 遍历 turn_flow IDLE 下的所有 WorldSimulator Agent 实体，
-// 为其打上待调度标记并推进到模拟阶段。
 pub fn simulator_dispatch_system(
     mut commands: Commands,
-    mut query_flows: Query<(Entity, &mut TurnFlow)>,
-    query_agents: Query<
-        (Entity, &AgentKind, &FlowOwner),
-        (Without<PendingReasoning>, Without<RunningReasoning>),
-    >,
+    mut sessions: Query<(
+        Entity,
+        &mut TurnFlow,
+        &ProtagonistDecisionState,
+        &WorldSnapshot,
+    )>,
+    mut agents: Query<OwnedAgentMut, ReadyAgentFilter>,
 ) {
-    for (flow_entity, mut turn_flow) in query_flows.iter_mut() {
-        if turn_flow.stage != TurnStage::Idle {
-            continue;
+    // 检索所有 session 中处于 SimulationReady
+    for (session_entity, mut flow, decision_state, world_snapshot) in sessions
+        .iter_mut()
+        .filter(|(_, flow, ..)| flow.stage == TurnStage::SimulationReady)
+    {
+        let mut dispatched = 0;
+        for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
+            owner.0 == session_entity && agent.output_kind.is_simulation()
+        }) {
+            agent.append_user_message(
+                &json!({
+                    "round": flow.active_turn_id.max(flow.turn_index + 1),
+                    "protagonist_action": decision_state.committed_action(),
+                    "previous_world_snapshot": world_snapshot,
+                })
+                .to_string(),
+            );
+            commands.entity(entity).insert(PendingReasoning);
+            dispatched += 1;
         }
-
-        let mut dispatched_any = false;
-
-        for (agent_entity, agent_kind, owner) in query_agents.iter() {
-            if owner.0 != flow_entity || *agent_kind != AgentKind::WorldSimulator {
-                continue;
-            }
-
-            commands.entity(agent_entity).insert(PendingReasoning);
-            dispatched_any = true;
-        }
-
-        if dispatched_any {
-            turn_flow.stage = TurnStage::SimulatingWorld;
-        }
+        // 当至少有一个 Entity 触发推理时，推动 flow 进入下一阶段
+        flow.stage = if dispatched > 0 {
+            TurnStage::SimulationRunning
+        } else {
+            TurnStage::Failed
+        };
     }
 }
 
-// 轮询已经进入运行中的模拟任务，并将完成结果写回实体。
 pub fn simulator_apply_system(
     mut commands: Commands,
+    mut sessions: Query<(Entity, &mut TurnFlow, &mut WorldSnapshot)>,
+    mut agents: Query<OwnedAgentMut, Without<PendingReasoning>>,
     mut task_manager: ResMut<TaskManager>,
-    query_agents: Query<(Entity, &AgentKind, &FlowOwner), (With<Agent>, With<RunningReasoning>)>,
-    query_flows: Query<&TurnFlow>,
 ) {
-    task_manager.poll_all_tasks();
+    for (session_entity, mut flow, mut world_snapshot) in sessions
+        .iter_mut()
+        .filter(|(_, flow, _)| flow.stage == TurnStage::SimulationRunning)
+    {
+        for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
+            owner.0 == session_entity && agent.output_kind.is_simulation()
+        }) {
+            let Some(result) = task_manager.task_result(entity).cloned() else {
+                continue;
+            };
+            match result.status {
+                TaskStatus::Done => {
+                    let Some(output) = task_manager
+                        .take_result(entity)
+                        .and_then(|result| result.output)
+                    else {
+                        continue;
+                    };
 
-    for (agent_entity, agent_kind, owner) in query_agents.iter() {
-        if *agent_kind != AgentKind::WorldSimulator {
-            continue;
-        }
-
-        let Ok(flow) = query_flows.get(owner.0) else {
-            continue;
-        };
-
-        match task_manager.poll_task(agent_entity) {
-            TaskStatus::Done => {
-                let Some(result) = task_manager.take_result(agent_entity) else {
-                    continue;
-                };
-
-                let Some(output) = result.output else {
-                    continue;
-                };
-
-                commands
-                    .entity(agent_entity)
-                    .remove::<RunningReasoning>()
-                    .insert(SimulationOutcome {
-                        turn_id: flow.active_turn_id,
-                        content: output,
-                    });
+                    // 解析 Entity 输出的结果
+                    if agent.output_kind == AgentOutputKind::WorldSnapshot {
+                        let Ok(snapshot) = parse_json_response::<WorldSnapshot>(&output) else {
+                            agent.revert();
+                            commands.entity(entity).remove::<RunningReasoning>();
+                            flow.stage = TurnStage::Failed;
+                            break;
+                        };
+                        *world_snapshot = snapshot;
+                    }
+                    agent.append_assistant_message(&output);
+                    commands.entity(entity).remove::<RunningReasoning>().insert(
+                        SimulationOutcome {
+                            turn_id: flow.active_turn_id,
+                            content: output,
+                        },
+                    );
+                }
+                TaskStatus::Error => {
+                    task_manager.clear_task(entity);
+                    commands.entity(entity).remove::<RunningReasoning>();
+                    flow.stage = TurnStage::Failed;
+                    break;
+                }
+                TaskStatus::Pending | TaskStatus::Running => {}
             }
-            TaskStatus::Error => {
-                commands.entity(agent_entity).remove::<RunningReasoning>();
-                task_manager.clear_task(agent_entity);
-            }
-            TaskStatus::Pending | TaskStatus::Running => {}
         }
     }
 }
 
-// 当前 flow 下的模拟实体都完成后，再推进到结果汇总阶段。
+#[allow(clippy::type_complexity)]
 pub fn simulator_progress_system(
-    mut query_flows: Query<(Entity, &mut TurnFlow)>,
-    query_agents: Query<
-        (
-            &AgentKind,
-            &FlowOwner,
-            Option<&PendingReasoning>,
-            Option<&RunningReasoning>,
-            Option<&SimulationOutcome>,
-        ),
-        With<Agent>,
-    >,
+    mut sessions: Query<(Entity, &mut TurnFlow)>,
+    agents: Query<(
+        &Agent,
+        &SessionOwner,
+        Option<&PendingReasoning>,
+        Option<&RunningReasoning>,
+        Option<&SimulationOutcome>,
+    )>,
 ) {
-    for (flow_entity, mut turn_flow) in query_flows.iter_mut() {
-        if turn_flow.stage != TurnStage::SimulatingWorld {
-            continue;
-        }
-
-        let mut total = 0usize;
-        let mut completed = 0usize;
+    for (session_entity, mut flow) in sessions
+        .iter_mut()
+        .filter(|(_, flow)| flow.stage == TurnStage::SimulationRunning)
+    {
+        let mut simulator_count = 0;
+        let mut completed_count = 0;
         let mut has_inflight = false;
-
-        for (agent_kind, owner, pending, running, outcome) in query_agents.iter() {
-            if owner.0 != flow_entity || *agent_kind != AgentKind::WorldSimulator {
-                continue;
-            }
-
-            total += 1;
-
-            if pending.is_some() || running.is_some() {
-                has_inflight = true;
-            }
-
-            if let Some(outcome) = outcome
-                && outcome.turn_id == turn_flow.active_turn_id
-            {
-                completed += 1;
-            }
+        for (_, _, pending, running, outcome) in agents.iter().filter(|(agent, owner, ..)| {
+            owner.0 == session_entity && agent.output_kind.is_simulation()
+        }) {
+            simulator_count += 1;
+            has_inflight |= pending.is_some() || running.is_some();
+            completed_count +=
+                usize::from(outcome.is_some_and(|outcome| outcome.turn_id == flow.active_turn_id));
         }
 
-        if total > 0 && !has_inflight && completed == total {
-            turn_flow.stage = TurnStage::CollectingOutcomes;
+        if flow.stage != TurnStage::Failed
+            && simulator_count > 0
+            && !has_inflight
+            && completed_count == simulator_count
+        {
+            flow.stage = TurnStage::NarrationReady;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use agent::agent::Context;
+    use bevy_ecs::{schedule::Schedule, world::World};
+
+    use super::*;
+    use crate::components::agent::AgentOutputKind;
+
+    fn simulator(name: &str) -> Agent {
+        Agent::from_context(AgentOutputKind::SimulationText, name, Context::default())
+    }
+
+    #[test]
+    fn advances_only_after_all_simulators_finish() {
+        let mut world = World::new();
+        let session = world
+            .spawn(TurnFlow {
+                active_turn_id: 1,
+                stage: TurnStage::SimulationRunning,
+                ..TurnFlow::default()
+            })
+            .id();
+        world.spawn((
+            simulator("fate"),
+            SessionOwner(session),
+            SimulationOutcome {
+                turn_id: 1,
+                content: "done".to_string(),
+            },
+        ));
+        let second = world
+            .spawn((
+                simulator("weather"),
+                SessionOwner(session),
+                RunningReasoning,
+            ))
+            .id();
+        let mut schedule = Schedule::default();
+        schedule.add_systems(simulator_progress_system);
+
+        schedule.run(&mut world);
+        assert_eq!(
+            world.get::<TurnFlow>(session).unwrap().stage,
+            TurnStage::SimulationRunning
+        );
+
+        world
+            .entity_mut(second)
+            .remove::<RunningReasoning>()
+            .insert(SimulationOutcome {
+                turn_id: 1,
+                content: "done".to_string(),
+            });
+        schedule.run(&mut world);
+        assert_eq!(
+            world.get::<TurnFlow>(session).unwrap().stage,
+            TurnStage::NarrationReady
+        );
     }
 }
