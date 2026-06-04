@@ -5,14 +5,21 @@ use crate::{
 use bevy_ecs::{
     entity::Entity,
     query::With,
-    system::{Query, ResMut},
+    system::{Commands, Query, ResMut},
 };
 
 // 调度系统
 // 主要工作是扫描所有的 Agent Entity，根据当前阶段和 Agent 状态，将需要调度的 Agent 加入到任务队列中
 pub fn agent_scheduler_system(
+    mut commands: Commands,
     query: Query<(Entity, &Agent), With<PendingReasoning>>,
     mut task_manager: ResMut<TaskManager>,
 ) {
-    for (entity, agent) in query.iter() {}
+    for (entity, agent) in query.iter() {
+        // task_manager.spawn_task(entity, agent);
+        commands
+            .entity(entity)
+            .remove::<PendingReasoning>()
+            .insert(RunningReasoning);
+    }
 }
