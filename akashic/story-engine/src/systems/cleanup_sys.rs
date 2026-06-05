@@ -4,26 +4,29 @@ use bevy_ecs::{
 };
 
 use crate::components::{
-    agent::{NarrationOutcome, SessionOwner, SimulationOutcome},
+    agent::{ApplyOutcome, NarrationOutcome, SessionOwner, SimulationOutcome},
     turn_flow::{TurnFlow, TurnStage},
 };
+
+type AgentOutcomes<'a> = (
+    Entity,
+    &'a SessionOwner,
+    Option<&'a SimulationOutcome>,
+    Option<&'a NarrationOutcome>,
+    Option<&'a ApplyOutcome>,
+);
 
 // 在新一轮开始时，清理上一轮残留在实体上的结果组件。
 pub fn cleanup_previous_turn_outcomes_system(
     mut commands: Commands,
     sessions: Query<(Entity, &TurnFlow)>,
-    outcomes: Query<(
-        Entity,
-        &SessionOwner,
-        Option<&SimulationOutcome>,
-        Option<&NarrationOutcome>,
-    )>,
+    outcomes: Query<AgentOutcomes>,
 ) {
     for (session_entity, turn_flow) in sessions
         .iter()
         .filter(|(_, flow)| flow.stage == TurnStage::SimulationReady)
     {
-        for (agent_entity, _, simulation, narration) in outcomes
+        for (agent_entity, _, simulation, narration, apply_outcome) in outcomes
             .iter()
             .filter(|(_, owner, ..)| owner.0 == session_entity)
         {
@@ -32,6 +35,9 @@ pub fn cleanup_previous_turn_outcomes_system(
             }
             if narration.is_some_and(|outcome| outcome.turn_id != turn_flow.active_turn_id) {
                 commands.entity(agent_entity).remove::<NarrationOutcome>();
+            }
+            if apply_outcome.is_some_and(|outcome| outcome.turn_id != turn_flow.active_turn_id) {
+                commands.entity(agent_entity).remove::<ApplyOutcome>();
             }
         }
     }

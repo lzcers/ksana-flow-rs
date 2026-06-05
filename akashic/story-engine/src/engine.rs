@@ -31,7 +31,7 @@ use crate::{
         export_sys::export_system,
         flow::{
             agent_task_sys::agent_task_system,
-            application_sys::application_progress_system,
+            apply_sys::apply_progress_system,
             player_input_sys::player_input_system,
             simulator_sys::{
                 simulator_apply_system, simulator_dispatch_system, simulator_progress_system,
@@ -743,7 +743,7 @@ fn build_schedule() -> Schedule {
                 simulator_progress_system,
                 narration_apply_system,
                 protagonist_apply_system,
-                application_progress_system,
+                apply_progress_system,
                 player_input_system,
                 history_sys,
                 export_system,

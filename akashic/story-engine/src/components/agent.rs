@@ -1,5 +1,5 @@
 use agent::{agent::Context, core::Message};
-use bevy_ecs::{component::Component, entity::Entity, query::Without};
+use bevy_ecs::{component::Component, entity::Entity};
 use serde::{Deserialize, Serialize};
 
 use crate::prompts::{
@@ -18,9 +18,6 @@ pub struct Agent {
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct SessionOwner(pub Entity);
-
-pub type OwnedAgentMut<'a> = (Entity, &'a mut Agent, &'a SessionOwner);
-pub type ReadyAgentFilter = (Without<PendingReasoning>, Without<RunningReasoning>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -56,6 +53,11 @@ pub struct RunningReasoning;
 pub struct NarrationOutcome {
     pub turn_id: u64,
     pub content: String,
+}
+
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub struct ApplyOutcome {
+    pub turn_id: u64,
 }
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]

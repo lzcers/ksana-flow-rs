@@ -1,5 +1,5 @@
 [package]
-name = "story_engine"
+name = "story-engine"
 version = "0.1.0"
 edition = "2024"
 

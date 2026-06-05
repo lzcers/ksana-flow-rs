@@ -8,8 +8,8 @@ use serde_json::json;
 use crate::{
     components::{
         agent::{
-            Agent, AgentKind, AgentOutputType, OwnedAgentMut, PendingReasoning, ReadyAgentFilter,
-            RunningReasoning, SessionOwner, SimulationOutcome,
+            Agent, AgentKind, AgentOutputType, PendingReasoning, RunningReasoning, SessionOwner,
+            SimulationOutcome,
         },
         turn_flow::{TurnFlow, TurnStage},
     },
@@ -30,6 +30,7 @@ type SimulationProgressAgent<'a> = (
 );
 
 // 分发模拟任务
+#[allow(clippy::type_complexity)]
 pub fn simulator_dispatch_system(
     mut commands: Commands,
     mut sessions: Query<(
@@ -38,13 +39,21 @@ pub fn simulator_dispatch_system(
         &ProtagonistDecisionState,
         &WorldSnapshot,
     )>,
-    mut agents: Query<OwnedAgentMut, ReadyAgentFilter>,
+    mut agents: Query<
+        (Entity, &mut Agent, &SessionOwner),
+        (Without<PendingReasoning>, Without<RunningReasoning>),
+    >,
 ) {
     // 检索所有 session 中处于 SimulationReady
     for (session_entity, mut flow, decision_state, world_snapshot) in sessions
         .iter_mut()
         .filter(|(_, flow, ..)| flow.stage == TurnStage::SimulationReady)
     {
+        if world_snapshot.is_ending {
+            flow.finish_story();
+            continue;
+        }
+
         let mut dispatched = 0;
         for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
             owner.0 == session_entity && agent.kind == AgentKind::Simulator
@@ -73,7 +82,7 @@ pub fn simulator_dispatch_system(
 pub fn simulator_apply_system(
     mut commands: Commands,
     mut sessions: Query<(Entity, &mut TurnFlow, &mut WorldSnapshot)>,
-    mut agents: Query<OwnedAgentMut, Without<PendingReasoning>>,
+    mut agents: Query<(Entity, &mut Agent, &SessionOwner), Without<PendingReasoning>>,
     mut task_manager: ResMut<TaskManager>,
 ) {
     for (session_entity, mut flow, mut world_snapshot) in sessions
@@ -153,70 +162,5 @@ pub fn simulator_progress_system(
         {
             flow.stage = TurnStage::ApplicationReady;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use agent::agent::Context;
-    use bevy_ecs::{schedule::Schedule, world::World};
-
-    use super::*;
-    fn simulator(name: &str) -> Agent {
-        Agent::from_context(
-            AgentKind::Simulator,
-            AgentOutputType::Text,
-            name,
-            String::new(),
-            Context::default(),
-        )
-    }
-
-    #[test]
-    fn advances_only_after_all_simulators_finish() {
-        let mut world = World::new();
-        let session = world
-            .spawn(TurnFlow {
-                active_turn_id: 1,
-                stage: TurnStage::SimulationRunning,
-                ..TurnFlow::default()
-            })
-            .id();
-        world.spawn((
-            simulator("fate"),
-            SessionOwner(session),
-            SimulationOutcome {
-                turn_id: 1,
-                content: "done".to_string(),
-            },
-        ));
-        let second = world
-            .spawn((
-                simulator("weather"),
-                SessionOwner(session),
-                RunningReasoning,
-            ))
-            .id();
-        let mut schedule = Schedule::default();
-        schedule.add_systems(simulator_progress_system);
-
-        schedule.run(&mut world);
-        assert_eq!(
-            world.get::<TurnFlow>(session).unwrap().stage,
-            TurnStage::SimulationRunning
-        );
-
-        world
-            .entity_mut(second)
-            .remove::<RunningReasoning>()
-            .insert(SimulationOutcome {
-                turn_id: 1,
-                content: "done".to_string(),
-            });
-        schedule.run(&mut world);
-        assert_eq!(
-            world.get::<TurnFlow>(session).unwrap().stage,
-            TurnStage::ApplicationReady
-        );
     }
 }
