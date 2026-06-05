@@ -19,15 +19,14 @@ pub fn cleanup_previous_turn_outcomes_system(
         Option<&NarrationOutcome>,
     )>,
 ) {
-    for (session_entity, turn_flow) in sessions.iter() {
-        if turn_flow.stage != TurnStage::SimulationReady {
-            continue;
-        }
-
-        for (agent_entity, owner, simulation, narration) in outcomes.iter() {
-            if owner.0 != session_entity {
-                continue;
-            }
+    for (session_entity, turn_flow) in sessions
+        .iter()
+        .filter(|(_, flow)| flow.stage == TurnStage::SimulationReady)
+    {
+        for (agent_entity, _, simulation, narration) in outcomes
+            .iter()
+            .filter(|(_, owner, ..)| owner.0 == session_entity)
+        {
             if simulation.is_some_and(|outcome| outcome.turn_id != turn_flow.active_turn_id) {
                 commands.entity(agent_entity).remove::<SimulationOutcome>();
             }

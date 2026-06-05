@@ -29,15 +29,17 @@ use crate::{
     systems::{
         cleanup_sys::cleanup_previous_turn_outcomes_system,
         export_sys::export_system,
-        history_sys::history_sys,
-        narration_sys::{narration_apply_system, narration_dispatch_system},
-        player_input_sys::player_input_system,
-        protagonist_sys::{protagonist_apply_system, protagonist_dispatch_system},
-        scheduler::agent_scheduler_system,
-        simulator_sys::{
-            simulator_apply_system, simulator_dispatch_system, simulator_progress_system,
+        flow::{
+            agent_task_sys::agent_task_system,
+            application_sys::{
+                application_apply_system, application_dispatch_system, application_progress_system,
+            },
+            player_input_sys::player_input_system,
+            simulator_sys::{
+                simulator_apply_system, simulator_dispatch_system, simulator_progress_system,
+            },
         },
-        task_sys::task_poll_system,
+        history_sys::history_sys,
     },
     turn_messages::PlayerCommand,
     utils::build_chat_model,
@@ -698,17 +700,15 @@ fn build_schedule() -> Schedule {
             (
                 cleanup_previous_turn_outcomes_system,
                 simulator_dispatch_system,
-                narration_dispatch_system,
-                protagonist_dispatch_system,
+                application_dispatch_system,
             )
                 .chain(),
             (
-                agent_scheduler_system,
-                task_poll_system,
+                agent_task_system,
                 simulator_apply_system,
                 simulator_progress_system,
-                narration_apply_system,
-                protagonist_apply_system,
+                application_apply_system,
+                application_progress_system,
                 player_input_system,
                 history_sys,
                 export_system,

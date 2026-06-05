@@ -32,25 +32,24 @@ pub fn export_system(
     task_manager: Res<TaskManager>,
 ) {
     for (session_entity, flow, world_snapshot, history_log, decision_state, export_state) in
-        sessions.iter()
+        sessions.iter().filter(
+            |(_, flow, world_snapshot, history_log, decision_state, _)| {
+                let is_active = !matches!(
+                    flow.stage,
+                    crate::components::turn_flow::TurnStage::Idle
+                        | crate::components::turn_flow::TurnStage::AwaitingPlayerChoice
+                        | crate::components::turn_flow::TurnStage::TurnComplete
+                        | crate::components::turn_flow::TurnStage::StoryEnded
+                        | crate::components::turn_flow::TurnStage::Failed
+                );
+                is_active
+                    || flow.is_changed()
+                    || world_snapshot.is_changed()
+                    || history_log.is_changed()
+                    || decision_state.is_changed()
+            },
+        )
     {
-        let is_active = !matches!(
-            flow.stage,
-            crate::components::turn_flow::TurnStage::Idle
-                | crate::components::turn_flow::TurnStage::AwaitingPlayerChoice
-                | crate::components::turn_flow::TurnStage::TurnComplete
-                | crate::components::turn_flow::TurnStage::StoryEnded
-                | crate::components::turn_flow::TurnStage::Failed
-        );
-        if !is_active
-            && !flow.is_changed()
-            && !world_snapshot.is_changed()
-            && !history_log.is_changed()
-            && !decision_state.is_changed()
-        {
-            continue;
-        }
-
         let latest_narration = agents
             .iter()
             .filter(|(_, owner, _)| owner.0 == session_entity)

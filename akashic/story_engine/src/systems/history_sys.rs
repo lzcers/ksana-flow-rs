@@ -26,12 +26,10 @@ pub fn history_sys(
     )>,
     narrations: Query<(&SessionOwner, Ref<NarrationOutcome>)>,
 ) {
-    for (session_entity, flow, world_snapshot, decision_state, mut history_log) in
-        sessions.iter_mut()
+    for (session_entity, flow, world_snapshot, decision_state, mut history_log) in sessions
+        .iter_mut()
+        .filter(|(_, flow, ..)| flow.active_turn_id != 0)
     {
-        if flow.active_turn_id == 0 {
-            continue;
-        }
         let narration_changed = narrations
             .iter()
             .filter(|(owner, _)| owner.0 == session_entity)

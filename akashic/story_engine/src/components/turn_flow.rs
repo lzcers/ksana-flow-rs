@@ -17,10 +17,10 @@ pub enum TurnStage {
     SimulationReady,
     #[serde(alias = "fate_running")]
     SimulationRunning,
-    NarrationReady,
-    NarrationRunning,
-    ProtagonistReady,
-    ProtagonistRunning,
+    #[serde(alias = "narration_ready", alias = "protagonist_ready")]
+    ApplicationReady,
+    #[serde(alias = "narration_running", alias = "protagonist_running")]
+    ApplicationRunning,
     AwaitingPlayerChoice,
     TurnComplete,
     StoryEnded,

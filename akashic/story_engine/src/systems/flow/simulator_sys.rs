@@ -21,6 +21,15 @@ use crate::{
     utils::parse_json_response,
 };
 
+type SimulationProgressAgent<'a> = (
+    &'a Agent,
+    &'a SessionOwner,
+    Option<&'a PendingReasoning>,
+    Option<&'a RunningReasoning>,
+    Option<&'a SimulationOutcome>,
+);
+
+// 分发模拟任务
 pub fn simulator_dispatch_system(
     mut commands: Commands,
     mut sessions: Query<(
@@ -60,6 +69,7 @@ pub fn simulator_dispatch_system(
     }
 }
 
+// 轮询模拟的结果
 pub fn simulator_apply_system(
     mut commands: Commands,
     mut sessions: Query<(Entity, &mut TurnFlow, &mut WorldSnapshot)>,
@@ -115,16 +125,10 @@ pub fn simulator_apply_system(
     }
 }
 
-#[allow(clippy::type_complexity)]
+// 收集模拟的结果
 pub fn simulator_progress_system(
     mut sessions: Query<(Entity, &mut TurnFlow)>,
-    agents: Query<(
-        &Agent,
-        &SessionOwner,
-        Option<&PendingReasoning>,
-        Option<&RunningReasoning>,
-        Option<&SimulationOutcome>,
-    )>,
+    agents: Query<SimulationProgressAgent>,
 ) {
     for (session_entity, mut flow) in sessions
         .iter_mut()
@@ -147,7 +151,7 @@ pub fn simulator_progress_system(
             && !has_inflight
             && completed_count == simulator_count
         {
-            flow.stage = TurnStage::NarrationReady;
+            flow.stage = TurnStage::ApplicationReady;
         }
     }
 }
@@ -208,7 +212,7 @@ mod tests {
         schedule.run(&mut world);
         assert_eq!(
             world.get::<TurnFlow>(session).unwrap().stage,
-            TurnStage::NarrationReady
+            TurnStage::ApplicationReady
         );
     }
 }

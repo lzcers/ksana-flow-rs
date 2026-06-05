@@ -29,6 +29,12 @@ pub enum AgentOutputKind {
     ProtagonistOptions,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PipelinePhase {
+    Simulation,
+    Application,
+}
+
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct PendingReasoning;
 
@@ -121,5 +127,12 @@ impl Agent {
 impl AgentOutputKind {
     pub fn is_simulation(self) -> bool {
         matches!(self, Self::WorldSnapshot | Self::SimulationText)
+    }
+
+    pub fn pipeline_phase(self) -> PipelinePhase {
+        match self {
+            Self::WorldSnapshot | Self::SimulationText => PipelinePhase::Simulation,
+            Self::Narration | Self::ProtagonistOptions => PipelinePhase::Application,
+        }
     }
 }
