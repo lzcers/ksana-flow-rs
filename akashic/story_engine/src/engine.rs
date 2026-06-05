@@ -32,14 +32,14 @@ use crate::{
         flow::{
             agent_task_sys::agent_task_system,
             application_sys::application_progress_system,
-            narration_sys::{narration_apply_system, narration_dispatch_system},
             player_input_sys::player_input_system,
-            protagonist_sys::{protagonist_apply_system, protagonist_dispatch_system},
             simulator_sys::{
                 simulator_apply_system, simulator_dispatch_system, simulator_progress_system,
             },
         },
         history_sys::history_sys,
+        narration_sys::{narration_apply_system, narration_dispatch_system},
+        protagonist_sys::{protagonist_apply_system, protagonist_dispatch_system},
     },
     turn_messages::PlayerCommand,
     utils::build_chat_model,
