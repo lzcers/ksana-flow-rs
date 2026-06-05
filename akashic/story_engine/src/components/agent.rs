@@ -9,8 +9,10 @@ use crate::prompts::{
 };
 #[derive(Component, Debug, Clone)]
 pub struct Agent {
-    pub output_kind: AgentOutputKind,
     pub name: String,
+    pub sys_prompt: String,
+    pub output_type: AgentOutputType,
+    pub kind: AgentKind,
     pub context: Context,
 }
 
@@ -22,17 +24,26 @@ pub type ReadyAgentFilter = (Without<PendingReasoning>, Without<RunningReasoning
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AgentOutputKind {
-    WorldSnapshot,
-    SimulationText,
-    Narration,
-    ProtagonistOptions,
+pub enum AgentKind {
+    Simulator,
+    Applicator,
+    Player,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentOutputType {
+    #[serde(alias = "world_snapshot", alias = "protagonist_options")]
+    Json,
+    #[serde(alias = "simulation_text", alias = "narration")]
+    Text,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelinePhase {
     Simulation,
     Application,
+    ExternalInput,
 }
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
@@ -64,49 +75,67 @@ impl Agent {
             .replace("{protagonist_profile}", protagonist_profile)
             .replace("{key_story_beats}", key_story_beats)
             .replace("{output_schema}", OUTPUT_SCHEMA);
-        Self::new_custom(AgentOutputKind::WorldSnapshot, "FateWeaver", system_prompt)
+        Self::new(
+            AgentKind::Simulator,
+            AgentOutputType::Json,
+            "FateWeaver",
+            system_prompt,
+        )
     }
 
     pub fn new_upper_narrator(world_profile: &str, protagonist_profile: &str) -> Self {
         let system_prompt = UPPER_NARRATOR_PROMPT
             .replace("{world_profile}", world_profile)
             .replace("{protagonist_profile}", protagonist_profile);
-        Self::new_custom(AgentOutputKind::Narration, "UpperNarrator", system_prompt)
+        Self::new(
+            AgentKind::Applicator,
+            AgentOutputType::Text,
+            "UpperNarrator",
+            system_prompt,
+        )
     }
 
     pub fn new_protagonist(world_profile: &str, protagonist_profile: &str) -> Self {
         let system_prompt = PROTAGONIST_PROMPT
             .replace("{world_profile}", world_profile)
             .replace("{protagonist_profile}", protagonist_profile);
-        Self::new_custom(
-            AgentOutputKind::ProtagonistOptions,
+        Self::new(
+            AgentKind::Applicator,
+            AgentOutputType::Json,
             "Protagonist",
             system_prompt,
         )
     }
 
     pub fn from_context(
-        output_kind: AgentOutputKind,
+        kind: AgentKind,
+        output_type: AgentOutputType,
         name: impl Into<String>,
+        sys_prompt: impl Into<String>,
         context: Context,
     ) -> Self {
         Self {
-            output_kind,
+            kind,
+            output_type,
             name: name.into(),
+            sys_prompt: sys_prompt.into(),
             context,
         }
     }
 
-    pub fn new_custom(
-        output_kind: AgentOutputKind,
+    pub fn new(
+        kind: AgentKind,
+        output_type: AgentOutputType,
         name: impl Into<String>,
         system_prompt: String,
     ) -> Self {
         let mut context = Context::new();
         context.add_message(Message::system(&system_prompt));
         Self {
-            output_kind,
+            kind,
+            output_type,
             name: name.into(),
+            sys_prompt: system_prompt,
             context,
         }
     }
@@ -124,15 +153,12 @@ impl Agent {
     }
 }
 
-impl AgentOutputKind {
-    pub fn is_simulation(self) -> bool {
-        matches!(self, Self::WorldSnapshot | Self::SimulationText)
-    }
-
+impl AgentKind {
     pub fn pipeline_phase(self) -> PipelinePhase {
         match self {
-            Self::WorldSnapshot | Self::SimulationText => PipelinePhase::Simulation,
-            Self::Narration | Self::ProtagonistOptions => PipelinePhase::Application,
+            Self::Simulator => PipelinePhase::Simulation,
+            Self::Applicator => PipelinePhase::Application,
+            Self::Player => PipelinePhase::ExternalInput,
         }
     }
 }

@@ -5,7 +5,9 @@ use bevy_ecs::{
 };
 
 use crate::{
-    components::agent::{Agent, AgentOutputKind, PendingReasoning, RunningReasoning, SessionOwner},
+    components::agent::{
+        Agent, AgentKind, AgentOutputType, PendingReasoning, RunningReasoning, SessionOwner,
+    },
     resources::{
         export::ExportState,
         llm_task_manager::{TaskKind, TaskManager},
@@ -20,11 +22,15 @@ pub fn agent_task_system(
     export_states: Query<&ExportState>,
 ) {
     for (entity, agent) in pending_agents.iter() {
-        task_manager.spawn_task(entity, task_kind_for(agent.output_kind), &agent.context);
-        commands
-            .entity(entity)
-            .remove::<PendingReasoning>()
-            .insert(RunningReasoning);
+        if let Some(task_kind) = task_kind_for(agent.kind, agent.output_type) {
+            task_manager.spawn_task(entity, task_kind, &agent.context);
+            commands
+                .entity(entity)
+                .remove::<PendingReasoning>()
+                .insert(RunningReasoning);
+        } else {
+            commands.entity(entity).remove::<PendingReasoning>();
+        }
     }
 
     task_manager.poll_all_tasks();
@@ -39,10 +45,11 @@ pub fn agent_task_system(
     }
 }
 
-fn task_kind_for(output_kind: AgentOutputKind) -> TaskKind {
-    match output_kind {
-        AgentOutputKind::WorldSnapshot | AgentOutputKind::SimulationText => TaskKind::Simulation,
-        AgentOutputKind::Narration => TaskKind::Narration,
-        AgentOutputKind::ProtagonistOptions => TaskKind::ProtagonistAction,
+fn task_kind_for(kind: AgentKind, output_type: AgentOutputType) -> Option<TaskKind> {
+    match (kind, output_type) {
+        (AgentKind::Simulator, _) => Some(TaskKind::Simulation),
+        (AgentKind::Applicator, AgentOutputType::Text) => Some(TaskKind::Narration),
+        (AgentKind::Applicator, AgentOutputType::Json) => Some(TaskKind::ProtagonistAction),
+        (AgentKind::Player, _) => None,
     }
 }

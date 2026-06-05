@@ -8,7 +8,7 @@ use serde_json::json;
 use crate::{
     components::{
         agent::{
-            Agent, AgentOutputKind, OwnedAgentMut, PendingReasoning, ReadyAgentFilter,
+            Agent, AgentKind, AgentOutputType, OwnedAgentMut, PendingReasoning, ReadyAgentFilter,
             RunningReasoning, SessionOwner, SimulationOutcome,
         },
         turn_flow::{TurnFlow, TurnStage},
@@ -47,7 +47,7 @@ pub fn simulator_dispatch_system(
     {
         let mut dispatched = 0;
         for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
-            owner.0 == session_entity && agent.output_kind.is_simulation()
+            owner.0 == session_entity && agent.kind == AgentKind::Simulator
         }) {
             agent.append_user_message(
                 &json!({
@@ -81,7 +81,7 @@ pub fn simulator_apply_system(
         .filter(|(_, flow, _)| flow.stage == TurnStage::SimulationRunning)
     {
         for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
-            owner.0 == session_entity && agent.output_kind.is_simulation()
+            owner.0 == session_entity && agent.kind == AgentKind::Simulator
         }) {
             let Some(result) = task_manager.task_result(entity).cloned() else {
                 continue;
@@ -96,7 +96,7 @@ pub fn simulator_apply_system(
                     };
 
                     // 解析 Entity 输出的结果
-                    if agent.output_kind == AgentOutputKind::WorldSnapshot {
+                    if agent.output_type == AgentOutputType::Json {
                         let Ok(snapshot) = parse_json_response::<WorldSnapshot>(&output) else {
                             agent.revert();
                             commands.entity(entity).remove::<RunningReasoning>();
@@ -138,7 +138,7 @@ pub fn simulator_progress_system(
         let mut completed_count = 0;
         let mut has_inflight = false;
         for (_, _, pending, running, outcome) in agents.iter().filter(|(agent, owner, ..)| {
-            owner.0 == session_entity && agent.output_kind.is_simulation()
+            owner.0 == session_entity && agent.kind == AgentKind::Simulator
         }) {
             simulator_count += 1;
             has_inflight |= pending.is_some() || running.is_some();
@@ -162,10 +162,14 @@ mod tests {
     use bevy_ecs::{schedule::Schedule, world::World};
 
     use super::*;
-    use crate::components::agent::AgentOutputKind;
-
     fn simulator(name: &str) -> Agent {
-        Agent::from_context(AgentOutputKind::SimulationText, name, Context::default())
+        Agent::from_context(
+            AgentKind::Simulator,
+            AgentOutputType::Text,
+            name,
+            String::new(),
+            Context::default(),
+        )
     }
 
     #[test]
