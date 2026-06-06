@@ -5,14 +5,11 @@ use bevy_ecs::{
 };
 
 use crate::{
-    components::{
-        agent::{NarrationOutcome, SessionOwner},
-        turn_flow::TurnFlow,
-    },
+    components::{agent::SessionOwner, outcome::NarrationOutcome, turn_flow::TurnFlow},
     resources::{
+        agent_task::{AgentTaskManager, TaskStatus},
         export::{ExportState, SessionSnapshot, TaskView},
         history::SessionHistoryLog,
-        llm_task_manager::{TaskManager, TaskStatus},
         protagonist_action::ProtagonistDecisionState,
         world_snapshot::WorldSnapshot,
     },
@@ -29,7 +26,7 @@ pub fn export_system(
         &ExportState,
     )>,
     agents: Query<(Entity, &SessionOwner, Option<&NarrationOutcome>)>,
-    task_manager: Res<TaskManager>,
+    agent_tasks: Res<AgentTaskManager>,
 ) {
     for (session_entity, flow, world_snapshot, history_log, decision_state, export_state) in
         sessions.iter().filter(
@@ -37,9 +34,9 @@ pub fn export_system(
                 let is_active = !matches!(
                     flow.stage,
                     crate::components::turn_flow::TurnStage::Idle
-                        | crate::components::turn_flow::TurnStage::AwaitingPlayerChoice
-                        | crate::components::turn_flow::TurnStage::TurnComplete
-                        | crate::components::turn_flow::TurnStage::StoryEnded
+                        | crate::components::turn_flow::TurnStage::AwaitingPlayer
+                        | crate::components::turn_flow::TurnStage::TurnCompleted
+                        | crate::components::turn_flow::TurnStage::Ended
                         | crate::components::turn_flow::TurnStage::Failed
                 );
                 is_active
@@ -62,9 +59,8 @@ pub fn export_system(
             .iter()
             .filter(|(_, owner, _)| owner.0 == session_entity)
             .filter_map(|(entity, _, _)| {
-                task_manager
-                    .results
-                    .get(&entity)
+                agent_tasks
+                    .task_result(entity)
                     .map(|result| TaskView::from_task_result(format!("{entity:?}"), result))
             })
             .collect();

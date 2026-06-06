@@ -271,7 +271,7 @@ mod tests {
             protagonist_profile: "protagonist profile".to_string(),
             key_story_beats: "beats".to_string(),
             turn_state: TurnStateArchive {
-                phase: TurnPhase::AwaitingPlayerChoice,
+                phase: TurnPhase::AwaitingPlayer,
                 turn_index: 3,
                 active_turn_id: 3,
             },

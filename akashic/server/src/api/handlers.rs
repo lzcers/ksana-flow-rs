@@ -4,7 +4,7 @@ use agent::{
     agent::{CallModelEvent, call_model},
     core::Message,
 };
-use akashic_ecs::resources::task_manager::{TaskKind, TaskStatus, TaskUpdate};
+use akashic_ecs::resources::agent_task::{TaskKind, TaskStatus, TaskUpdate};
 use akashic_ecs::utils::{build_chat_model, parse_json_response};
 use axum::{
     Json,

@@ -6,35 +6,51 @@ use bevy_ecs::{
 
 use crate::{
     components::agent::{
-        Agent, AgentKind, AgentOutputType, PendingReasoning, RunningReasoning, SessionOwner,
+        Agent, AgentOutputType, Applicator, PendingReasoning, Player, RunningReasoning,
+        SessionOwner, Simulator,
     },
     resources::{
+        agent_task::{AgentTaskManager, TaskKind},
         export::ExportState,
-        llm_task_manager::{TaskKind, TaskManager},
     },
 };
 
+#[allow(clippy::type_complexity)]
 pub fn agent_task_system(
     mut commands: Commands,
-    mut task_manager: ResMut<TaskManager>,
-    pending_agents: Query<(Entity, &Agent), With<PendingReasoning>>,
+    mut agent_tasks: ResMut<AgentTaskManager>,
+    pending_simulators: Query<(Entity, &Agent), (With<PendingReasoning>, With<Simulator>)>,
+    pending_applicators: Query<(Entity, &Agent), (With<PendingReasoning>, With<Applicator>)>,
+    pending_players: Query<Entity, (With<PendingReasoning>, With<Player>)>,
     agent_owners: Query<&SessionOwner>,
     export_states: Query<&ExportState>,
 ) {
-    for (entity, agent) in pending_agents.iter() {
-        if let Some(task_kind) = task_kind_for(agent.kind, agent.output_type) {
-            task_manager.spawn_task(entity, task_kind, &agent.context);
-            commands
-                .entity(entity)
-                .remove::<PendingReasoning>()
-                .insert(RunningReasoning);
-        } else {
-            commands.entity(entity).remove::<PendingReasoning>();
-        }
+    for (entity, agent) in pending_simulators.iter() {
+        agent_tasks.spawn_task(entity, TaskKind::Simulation, &agent.context);
+        commands
+            .entity(entity)
+            .remove::<PendingReasoning>()
+            .insert(RunningReasoning);
     }
 
-    task_manager.poll_all_tasks();
-    for (agent_entity, update) in task_manager.take_updates() {
+    for (entity, agent) in pending_applicators.iter() {
+        let task_kind = match agent.output_type {
+            AgentOutputType::Text => TaskKind::Narration,
+            AgentOutputType::Json => TaskKind::ProtagonistAction,
+        };
+        agent_tasks.spawn_task(entity, task_kind, &agent.context);
+        commands
+            .entity(entity)
+            .remove::<PendingReasoning>()
+            .insert(RunningReasoning);
+    }
+
+    for entity in pending_players.iter() {
+        commands.entity(entity).remove::<PendingReasoning>();
+    }
+
+    agent_tasks.poll_all_tasks();
+    for (agent_entity, update) in agent_tasks.take_updates() {
         let Ok(owner) = agent_owners.get(agent_entity) else {
             continue;
         };
@@ -42,14 +58,5 @@ pub fn agent_task_system(
             continue;
         };
         export_state.publish_task_update(update);
-    }
-}
-
-fn task_kind_for(kind: AgentKind, output_type: AgentOutputType) -> Option<TaskKind> {
-    match (kind, output_type) {
-        (AgentKind::Simulator, _) => Some(TaskKind::Simulation),
-        (AgentKind::Applicator, AgentOutputType::Text) => Some(TaskKind::Narration),
-        (AgentKind::Applicator, AgentOutputType::Json) => Some(TaskKind::ProtagonistAction),
-        (AgentKind::Player, _) => None,
     }
 }

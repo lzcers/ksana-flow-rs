@@ -8,5 +8,6 @@ pub mod turn_messages;
 pub mod utils;
 
 pub use engine::{
-    AkashicEngine, AkashicSessionEngine, Session, SessionArchiveState, SimulatorArchiveState,
+    AgentArchiveKind, AkashicEngine, AkashicSessionEngine, Session, SessionArchiveState,
+    SimulatorArchiveState,
 };

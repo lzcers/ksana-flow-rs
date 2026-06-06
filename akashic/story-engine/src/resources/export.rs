@@ -3,8 +3,8 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 
 use crate::resources::{
+    agent_task::{TaskKind, TaskResult, TaskStatus, TaskUpdate},
     history::RoundHistoryEntry,
-    llm_task_manager::{TaskResult, TaskStatus, TaskUpdate},
     protagonist_action::PendingProtagonistChoice,
     turn_state::TurnPhase,
     world_snapshot::WorldSnapshot,
@@ -31,7 +31,7 @@ pub struct SessionSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct TaskView {
     pub entity: String,
-    pub kind: crate::resources::llm_task_manager::TaskKind,
+    pub kind: TaskKind,
     pub status: TaskStatus,
     pub attempts: usize,
     pub max_attempts: usize,

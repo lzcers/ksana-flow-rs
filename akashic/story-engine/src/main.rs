@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 print_frame_status(frame, &snapshot);
                 return Err(format!("故事引擎在第 {} 轮失败", snapshot.active_turn_id).into());
             }
-            TurnPhase::StoryEnded => {
+            TurnPhase::Ended => {
                 print_frame_status(frame, &snapshot);
                 print_result(&session.export_archive_state().await?);
                 println!(
@@ -61,10 +61,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 );
                 return Ok(());
             }
-            TurnPhase::AwaitingPlayerChoice => {
+            TurnPhase::AwaitingPlayer => {
                 print_result(&session.export_archive_state().await?);
                 let Some(choice) = snapshot.choices.first() else {
-                    return Err("故事引擎进入 AwaitingPlayerChoice，但没有可选行动".into());
+                    return Err("故事引擎进入 AwaitingPlayer，但没有可选行动".into());
                 };
                 println!(
                     "[api] auto selected choice: {} -> {}",
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     action: choice.option.action.clone(),
                 })?;
             }
-            TurnPhase::TurnComplete if last_completed_turn != Some(snapshot.turn_index) => {
+            TurnPhase::TurnCompleted if last_completed_turn != Some(snapshot.turn_index) => {
                 completed_turns += 1;
                 last_completed_turn = Some(snapshot.turn_index);
                 print_result(&session.export_archive_state().await?);

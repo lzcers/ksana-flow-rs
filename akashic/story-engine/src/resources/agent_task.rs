@@ -57,10 +57,10 @@ pub struct TaskUpdate {
 }
 
 #[derive(Resource)]
-pub struct TaskManager {
+pub struct AgentTaskManager {
     model: ChatModel,
     tasks: HashMap<Entity, RunningTask>,
-    pub results: HashMap<Entity, TaskResult>,
+    results: HashMap<Entity, TaskResult>,
     emitted_updates: Vec<(Entity, TaskUpdate)>,
 }
 
@@ -79,7 +79,7 @@ enum TaskRuntimeEvent {
     Failed(String),
 }
 
-impl TaskManager {
+impl AgentTaskManager {
     pub fn new(model: ChatModel) -> Self {
         Self {
             model,

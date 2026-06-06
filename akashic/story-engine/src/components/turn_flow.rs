@@ -12,18 +12,31 @@ pub struct TurnFlow {
 #[serde(rename_all = "snake_case")]
 pub enum TurnStage {
     #[default]
+    #[serde(alias = "IDLE")]
     Idle,
-    #[serde(alias = "turn_ready")]
-    SimulationReady,
-    #[serde(alias = "fate_running")]
-    SimulationRunning,
-    #[serde(alias = "narration_ready", alias = "protagonist_ready")]
-    ApplicationReady,
-    #[serde(alias = "narration_running", alias = "protagonist_running")]
-    ApplicationRunning,
-    AwaitingPlayerChoice,
-    TurnComplete,
-    StoryEnded,
+    #[serde(
+        alias = "turn_ready",
+        alias = "simulation_ready",
+        alias = "simulation_running",
+        alias = "fate_running"
+    )]
+    Simulation,
+    #[serde(
+        alias = "application",
+        alias = "application_ready",
+        alias = "application_running",
+        alias = "narration_ready",
+        alias = "narration_running",
+        alias = "protagonist_ready",
+        alias = "protagonist_running"
+    )]
+    Application,
+    #[serde(alias = "awaiting_player_choice")]
+    AwaitingPlayer,
+    #[serde(alias = "turn_complete")]
+    TurnCompleted,
+    #[serde(alias = "story_ended")]
+    Ended,
     Failed,
 }
 
@@ -46,13 +59,13 @@ impl TurnFlow {
     pub fn finish_turn(&mut self) {
         self.turn_index = self.active_turn_id.max(self.turn_index + 1);
         self.active_turn_id = self.turn_index;
-        self.stage = TurnStage::TurnComplete;
+        self.stage = TurnStage::TurnCompleted;
     }
 
-    pub fn finish_story(&mut self) {
+    pub fn end(&mut self) {
         self.turn_index = self.active_turn_id.max(self.turn_index + 1);
         self.active_turn_id = self.turn_index;
-        self.stage = TurnStage::StoryEnded;
+        self.stage = TurnStage::Ended;
     }
 
     pub fn advance(&mut self) {
@@ -61,11 +74,11 @@ impl TurnFlow {
                 if self.active_turn_id <= self.turn_index {
                     self.active_turn_id = self.turn_index + 1;
                 }
-                self.stage = TurnStage::SimulationReady;
+                self.stage = TurnStage::Simulation;
             }
-            TurnStage::TurnComplete => {
+            TurnStage::TurnCompleted => {
                 self.active_turn_id = self.turn_index + 1;
-                self.stage = TurnStage::SimulationReady;
+                self.stage = TurnStage::Simulation;
             }
             _ => {}
         }
@@ -82,15 +95,15 @@ mod tests {
 
         flow.advance();
         assert_eq!(flow.active_turn_id, 1);
-        assert_eq!(flow.stage, TurnStage::SimulationReady);
+        assert_eq!(flow.stage, TurnStage::Simulation);
 
         flow.finish_turn();
         assert_eq!(flow.turn_index, 1);
         assert_eq!(flow.active_turn_id, 1);
-        assert_eq!(flow.stage, TurnStage::TurnComplete);
+        assert_eq!(flow.stage, TurnStage::TurnCompleted);
 
         flow.advance();
         assert_eq!(flow.active_turn_id, 2);
-        assert_eq!(flow.stage, TurnStage::SimulationReady);
+        assert_eq!(flow.stage, TurnStage::Simulation);
     }
 }

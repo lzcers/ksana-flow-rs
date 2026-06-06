@@ -6,7 +6,8 @@ use bevy_ecs::{
 
 use crate::{
     components::{
-        agent::{NarrationOutcome, SessionOwner},
+        agent::SessionOwner,
+        outcome::NarrationOutcome,
         turn_flow::{TurnFlow, TurnStage},
     },
     resources::{
@@ -54,7 +55,7 @@ pub fn history_sys(
             history_log.set_choices(flow.active_turn_id, decision_state.choices().to_vec());
         }
 
-        if matches!(flow.stage, TurnStage::TurnComplete | TurnStage::StoryEnded) {
+        if matches!(flow.stage, TurnStage::TurnCompleted | TurnStage::Ended) {
             history_log.set_committed_action(
                 flow.active_turn_id,
                 decision_state.committed_action().to_string(),

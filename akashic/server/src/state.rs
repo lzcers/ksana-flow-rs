@@ -4,7 +4,7 @@ use akashic_ecs::{
     engine::{AkashicEngine, AkashicSessionEngine, Session},
     profile::DEFAULT_KEY_STORY_BEATS,
     resources::{
-        export::TaskEvent, protagonist_action::PlayerActionType, task_manager::TaskUpdate,
+        agent_task::TaskUpdate, export::TaskEvent, protagonist_action::PlayerActionType,
         turn_state::TurnPhase,
     },
 };
@@ -382,7 +382,7 @@ fn current_protagonist_action(snapshot: &Session) -> String {
 }
 
 fn visible_turn_index(snapshot: &Session) -> u64 {
-    if snapshot.phase == TurnPhase::TurnComplete {
+    if snapshot.phase == TurnPhase::TurnCompleted {
         snapshot.turn_index.max(1)
     } else {
         snapshot.active_turn_id.max(snapshot.turn_index + 1)
@@ -414,8 +414,9 @@ fn collect_story_narrations(snapshot: &Session) -> Vec<String> {
 fn status_from_phase(phase: TurnPhase) -> &'static str {
     match phase {
         TurnPhase::Idle => "pending",
-        TurnPhase::AwaitingPlayerChoice => "awaiting_player_choice",
-        TurnPhase::TurnComplete => "waiting_control",
+        TurnPhase::AwaitingPlayer => "awaiting_player_choice",
+        TurnPhase::TurnCompleted => "waiting_control",
+        TurnPhase::Ended => "ended",
         TurnPhase::Failed => "failed",
         _ => "running",
     }
@@ -459,7 +460,7 @@ mod tests {
             .expect("slot should restore");
 
         assert_eq!(restored.session_id, "session-from-slot");
-        assert_eq!(restored.phase, TurnPhase::AwaitingPlayerChoice);
+        assert_eq!(restored.phase, TurnPhase::AwaitingPlayer);
         assert_eq!(restored.turn_index, 8);
         assert_eq!(restored.active_turn_id, 7);
         assert_eq!(restored.current_protagonist_action, "绕到钟楼背面");
@@ -553,7 +554,7 @@ mod tests {
         let dto = GameSessionWorldStateData {
             session_id: "session-test".to_string(),
             status: "awaiting_player_choice".to_string(),
-            phase: TurnPhase::AwaitingPlayerChoice,
+            phase: TurnPhase::AwaitingPlayer,
             turn_index: 2,
             active_turn_id: 2,
             world_state: WorldStateData::from(WorldSnapshot {
@@ -608,7 +609,10 @@ mod tests {
 
         let narrations = collect_story_narrations(&snapshot);
 
-        assert_eq!(narrations, vec!["钟声掠过雾墙。", "回廊尽头亮起一盏迟到的灯。"]);
+        assert_eq!(
+            narrations,
+            vec!["钟声掠过雾墙。", "回廊尽头亮起一盏迟到的灯。"]
+        );
     }
 
     #[test]
@@ -632,7 +636,10 @@ mod tests {
 
         let narrations = collect_story_narrations(&snapshot);
 
-        assert_eq!(narrations, vec!["钟声掠过雾墙。", "回廊尽头亮起一盏迟到的灯。"]);
+        assert_eq!(
+            narrations,
+            vec!["钟声掠过雾墙。", "回廊尽头亮起一盏迟到的灯。"]
+        );
     }
 
     fn sample_payload() -> SessionArchivePayload {
@@ -643,7 +650,7 @@ mod tests {
             protagonist_profile: "protagonist".to_string(),
             key_story_beats: "beats".to_string(),
             turn_state: TurnStateArchive {
-                phase: TurnPhase::AwaitingPlayerChoice,
+                phase: TurnPhase::AwaitingPlayer,
                 turn_index: 7,
                 active_turn_id: 7,
             },
