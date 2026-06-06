@@ -10,18 +10,18 @@ use crate::{
             Agent, AgentOutputType, Applicator, PendingReasoning, RunningReasoning, SessionOwner,
         },
         flow::ApplicationCompleted,
+        outcome::NarrationOutcome,
         turn_flow::{TurnFlow, TurnStage},
     },
     resources::{
         agent_task::{AgentTaskManager, TaskStatus},
-        protagonist_action::{ProtagonistDecisionState, ProtagonistOptions},
+        protagonist_action::ProtagonistDecisionState,
         world_snapshot::WorldSnapshot,
     },
-    utils::parse_json_response,
 };
 
 #[allow(clippy::type_complexity)]
-pub fn protagonist_dispatch_system(
+pub fn narration_dispatch_system(
     mut commands: Commands,
     sessions: Query<(Entity, &TurnFlow, &ProtagonistDecisionState, &WorldSnapshot)>,
     mut agents: Query<
@@ -42,11 +42,14 @@ pub fn protagonist_dispatch_system(
         .iter()
         .filter(|(_, flow, ..)| flow.stage == TurnStage::Application)
     {
-        let prompt = world_snapshot.to_protagonist_prompt(Some(decision_state.committed_action()));
+        let prompt = format!(
+            "{}\n",
+            world_snapshot.to_story_prompt(Some(decision_state.committed_action())),
+        );
 
         for (entity, mut agent, _, _) in agents.iter_mut().filter(|(_, agent, owner, outcome)| {
             owner.0 == session_entity
-                && agent.output_type == AgentOutputType::Json
+                && agent.output_type == AgentOutputType::Text
                 && !outcome.is_some_and(|outcome| outcome.turn_id == flow.active_turn_id)
         }) {
             agent.append_user_message(&prompt);
@@ -56,21 +59,21 @@ pub fn protagonist_dispatch_system(
 }
 
 #[allow(clippy::type_complexity)]
-pub fn protagonist_apply_system(
+pub fn narration_apply_system(
     mut commands: Commands,
-    mut sessions: Query<(Entity, &mut TurnFlow, &mut ProtagonistDecisionState)>,
+    mut sessions: Query<(Entity, &mut TurnFlow)>,
     mut agents: Query<
         (Entity, &mut Agent, &SessionOwner),
-        (With<Applicator>, Without<PendingReasoning>),
+        (With<Applicator>, With<RunningReasoning>),
     >,
     mut agent_tasks: ResMut<AgentTaskManager>,
 ) {
-    for (session_entity, mut flow, mut decision_state) in sessions
+    for (session_entity, mut flow) in sessions
         .iter_mut()
-        .filter(|(_, flow, _)| flow.stage == TurnStage::Application)
+        .filter(|(_, flow)| flow.stage == TurnStage::Application)
     {
         for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
-            owner.0 == session_entity && agent.output_type == AgentOutputType::Json
+            owner.0 == session_entity && agent.output_type == AgentOutputType::Text
         }) {
             let Some(result) = agent_tasks.task_result(entity).cloned() else {
                 continue;
@@ -83,24 +86,17 @@ pub fn protagonist_apply_system(
                     else {
                         continue;
                     };
-                    let Ok(options) = parse_json_response::<ProtagonistOptions>(&output) else {
-                        agent.revert();
-                        commands.entity(entity).remove::<RunningReasoning>();
-                        flow.stage = TurnStage::Failed;
-                        break;
-                    };
-                    if options.is_empty() {
-                        commands.entity(entity).remove::<RunningReasoning>();
-                        flow.stage = TurnStage::Failed;
-                        break;
-                    }
                     agent.append_assistant_message(&output);
-                    decision_state.replace_with_options(options);
-                    commands.entity(entity).remove::<RunningReasoning>().insert(
-                        ApplicationCompleted {
+                    commands
+                        .entity(entity)
+                        .remove::<RunningReasoning>()
+                        .insert(NarrationOutcome {
                             turn_id: flow.active_turn_id,
-                        },
-                    );
+                            content: output,
+                        })
+                        .insert(ApplicationCompleted {
+                            turn_id: flow.active_turn_id,
+                        });
                 }
                 TaskStatus::Error => {
                     agent_tasks.clear_task(entity);
