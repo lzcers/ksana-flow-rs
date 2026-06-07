@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import { Eye } from 'lucide-react';
-import type { Choice } from '../lib/api';
-import { SecondaryButton } from './AkashicUI';
+import React, { useEffect, useRef } from "react";
+import { Eye } from "lucide-react";
+import type { Choice } from "../lib/api";
+import { SecondaryButton } from "./AkashicUI";
 
 interface ChoicePanelProps {
   hasChoices: boolean;
@@ -13,12 +13,15 @@ interface ChoicePanelProps {
   isChoiceInteractionDisabled: boolean;
   isObsessionSubmitDisabled: boolean;
   onChoiceClick: (choice: Choice) => void | Promise<void>;
-  onPreview: (choice: Choice, event: React.MouseEvent<HTMLButtonElement>) => void | Promise<void>;
+  onPreview: (
+    choice: Choice,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) => void | Promise<void>;
   onObsessionInputChange: (value: string) => void;
   onObsessionSubmit: (actionText: string) => void | Promise<void>;
 }
 
-const AUTO_CHOOSE_FOR_TEST = true;
+const AUTO_CHOOSE_FOR_TEST = false;
 
 const ChoicePanel: React.FC<ChoicePanelProps> = ({
   hasChoices,
@@ -58,19 +61,19 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
       : undefined;
 
     if (
-      !AUTO_CHOOSE_FOR_TEST
-      || !hasChoices
-      || activeObsession
-      || isChoiceInteractionDisabled
-      || !firstEnabledChoice
+      !AUTO_CHOOSE_FOR_TEST ||
+      !hasChoices ||
+      activeObsession ||
+      isChoiceInteractionDisabled ||
+      !firstEnabledChoice
     ) {
       autoChoiceKeyRef.current = null;
       return undefined;
     }
 
     const nextAutoChoiceKey = choices
-      .map((choice) => `${choice.id}:${choice.disabled ? '1' : '0'}`)
-      .join('|');
+      .map((choice) => `${choice.id}:${choice.disabled ? "1" : "0"}`)
+      .join("|");
 
     if (autoChoiceKeyRef.current === nextAutoChoiceKey) {
       return undefined;
@@ -87,7 +90,13 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
         autoChoiceTimerRef.current = null;
       }
     };
-  }, [activeObsession, choices, hasChoices, isChoiceInteractionDisabled, onChoiceClick]);
+  }, [
+    activeObsession,
+    choices,
+    hasChoices,
+    isChoiceInteractionDisabled,
+    onChoiceClick,
+  ]);
 
   if (!hasChoices) {
     return null;
@@ -117,16 +126,16 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
                     type="button"
                     onClick={(event) => void onPreview(choice, event)}
                     disabled={
-                      isChoiceInteractionDisabled
-                      || (remainingIntuitionPoints <= 0 && !previews[choice.id])
+                      isChoiceInteractionDisabled ||
+                      (remainingIntuitionPoints <= 0 && !previews[choice.id])
                     }
                     className="akashic-icon-btn h-10 min-h-10 w-10 self-auto disabled:cursor-not-allowed disabled:opacity-50"
                     title={
                       previews[choice.id]
-                        ? '再次查看命运碎片'
+                        ? "再次查看命运碎片"
                         : remainingIntuitionPoints > 0
-                          ? '消耗 1 点直觉，查看命运碎片'
-                          : '本轮直觉已用尽'
+                          ? "消耗 1 点直觉，查看命运碎片"
+                          : "本轮直觉已用尽"
                     }
                   >
                     <Eye className="h-4 w-4" />
@@ -144,7 +153,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
               value={obsessionInput}
               onChange={(event) => onObsessionInputChange(event.target.value)}
               onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                   event.preventDefault();
                   void submitObsessionAction();
                 }
@@ -155,8 +164,7 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
             />
 
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[0.68rem] leading-4 text-red-100/65 sm:text-[0.72rem]">
-              </p>
+              <p className="text-[0.68rem] leading-4 text-red-100/65 sm:text-[0.72rem]"></p>
               <SecondaryButton
                 type="button"
                 onClick={() => void submitObsessionAction()}
