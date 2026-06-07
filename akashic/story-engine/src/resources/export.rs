@@ -10,7 +10,7 @@ use crate::resources::{
     world_snapshot::WorldSnapshot,
 };
 
-const DEFAULT_EXPORT_EVENT_BUFFER: usize = 256;
+const DEFAULT_EXPORT_EVENT_BUFFER: usize = 4096;
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

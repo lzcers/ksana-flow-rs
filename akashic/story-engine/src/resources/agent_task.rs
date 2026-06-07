@@ -30,6 +30,13 @@ pub enum TaskStatus {
     Error,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskChunkKind {
+    Text,
+    Reasoning,
+}
+
 #[derive(Clone, Debug)]
 pub struct TaskResult {
     pub kind: TaskKind,
@@ -48,6 +55,8 @@ pub struct TaskUpdate {
     pub entity: String,
     pub kind: TaskKind,
     pub status: TaskStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_kind: Option<TaskChunkKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chunk: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -75,6 +84,10 @@ struct TaskRuntime {
 
 #[derive(Clone, Debug)]
 enum TaskRuntimeEvent {
+    Chunk {
+        kind: TaskChunkKind,
+        content: String,
+    },
     Completed(String),
     Failed(String),
 }
@@ -94,6 +107,7 @@ impl AgentTaskManager {
             existing_task.runtime.handle.abort();
         }
 
+        let model = self.model_for_kind(kind);
         self.results.insert(entity, TaskResult::pending(kind));
         self.emitted_updates.push((
             entity,
@@ -101,6 +115,7 @@ impl AgentTaskManager {
                 entity: task_entity_label(entity),
                 kind,
                 status: TaskStatus::Pending,
+                chunk_kind: None,
                 chunk: None,
                 output: None,
                 error: None,
@@ -109,9 +124,18 @@ impl AgentTaskManager {
         self.tasks.insert(
             entity,
             RunningTask {
-                runtime: Self::spawn_runtime_task(self.model.clone(), ctx.to_messages()),
+                runtime: Self::spawn_runtime_task(model, ctx.to_messages()),
             },
         );
+    }
+
+    fn model_for_kind(&self, kind: TaskKind) -> ChatModel {
+        let mut model = self.model.clone();
+        model.set_output_json(matches!(
+            kind,
+            TaskKind::Simulation | TaskKind::ProtagonistAction
+        ));
+        model
     }
 
     pub fn poll_all_tasks(&mut self) {
@@ -139,6 +163,7 @@ impl AgentTaskManager {
                     entity: task_entity_label(entity),
                     kind: result.kind,
                     status: TaskStatus::Error,
+                    chunk_kind: None,
                     chunk: None,
                     output: None,
                     error: Some(error),
@@ -155,64 +180,87 @@ impl AgentTaskManager {
                     entity: task_entity_label(entity),
                     kind: result.kind,
                     status: TaskStatus::Running,
+                    chunk_kind: None,
                     chunk: None,
                     output: None,
                     error: None,
                 },
             ));
         }
-        match task.runtime.rx.try_recv() {
-            Ok(TaskRuntimeEvent::Completed(content)) => {
-                result.mark_done(content.clone());
-                self.emitted_updates.push((
-                    entity,
-                    TaskUpdate {
-                        entity: task_entity_label(entity),
-                        kind: result.kind,
-                        status: TaskStatus::Done,
-                        chunk: None,
-                        output: Some(content),
-                        error: None,
-                    },
-                ));
-                self.tasks.remove(&entity);
-                TaskStatus::Done
+        let status = loop {
+            match task.runtime.rx.try_recv() {
+                Ok(TaskRuntimeEvent::Chunk { kind, content }) => {
+                    result.chunks.push(content.clone());
+                    self.emitted_updates.push((
+                        entity,
+                        TaskUpdate {
+                            entity: task_entity_label(entity),
+                            kind: result.kind,
+                            status: TaskStatus::Running,
+                            chunk_kind: Some(kind),
+                            chunk: Some(content),
+                            output: None,
+                            error: None,
+                        },
+                    ));
+                }
+                Ok(TaskRuntimeEvent::Completed(content)) => {
+                    result.mark_done(content.clone());
+                    self.emitted_updates.push((
+                        entity,
+                        TaskUpdate {
+                            entity: task_entity_label(entity),
+                            kind: result.kind,
+                            status: TaskStatus::Done,
+                            chunk_kind: None,
+                            chunk: None,
+                            output: Some(content),
+                            error: None,
+                        },
+                    ));
+                    break TaskStatus::Done;
+                }
+                Ok(TaskRuntimeEvent::Failed(error)) => {
+                    result.mark_failed(error.clone());
+                    self.emitted_updates.push((
+                        entity,
+                        TaskUpdate {
+                            entity: task_entity_label(entity),
+                            kind: result.kind,
+                            status: TaskStatus::Error,
+                            chunk_kind: None,
+                            chunk: None,
+                            output: None,
+                            error: Some(error),
+                        },
+                    ));
+                    break TaskStatus::Error;
+                }
+                Err(TryRecvError::Empty) => break TaskStatus::Running,
+                Err(TryRecvError::Disconnected) => {
+                    let error = "task runtime ended without completion".to_string();
+                    result.mark_failed(error.clone());
+                    self.emitted_updates.push((
+                        entity,
+                        TaskUpdate {
+                            entity: task_entity_label(entity),
+                            kind: result.kind,
+                            status: TaskStatus::Error,
+                            chunk_kind: None,
+                            chunk: None,
+                            output: None,
+                            error: Some(error),
+                        },
+                    ));
+                    break TaskStatus::Error;
+                }
             }
-            Ok(TaskRuntimeEvent::Failed(error)) => {
-                result.mark_failed(error.clone());
-                self.emitted_updates.push((
-                    entity,
-                    TaskUpdate {
-                        entity: task_entity_label(entity),
-                        kind: result.kind,
-                        status: TaskStatus::Error,
-                        chunk: None,
-                        output: None,
-                        error: Some(error),
-                    },
-                ));
-                self.tasks.remove(&entity);
-                TaskStatus::Error
-            }
-            Err(TryRecvError::Empty) => TaskStatus::Running,
-            Err(TryRecvError::Disconnected) => {
-                let error = "task runtime ended without completion".to_string();
-                result.mark_failed(error.clone());
-                self.emitted_updates.push((
-                    entity,
-                    TaskUpdate {
-                        entity: task_entity_label(entity),
-                        kind: result.kind,
-                        status: TaskStatus::Error,
-                        chunk: None,
-                        output: None,
-                        error: Some(error),
-                    },
-                ));
-                self.tasks.remove(&entity);
-                TaskStatus::Error
-            }
+        };
+
+        if matches!(status, TaskStatus::Done | TaskStatus::Error) {
+            self.tasks.remove(&entity);
         }
+        status
     }
 
     pub fn task_result(&self, entity: Entity) -> Option<&TaskResult> {
@@ -240,7 +288,18 @@ impl AgentTaskManager {
             let mut stream = Box::pin(call_model(&model, &msgs, None));
             while let Some(event) = stream.next().await {
                 match event {
-                    CallModelEvent::TextChunk(_) | CallModelEvent::ReasoningChunk(_) => {}
+                    CallModelEvent::TextChunk(content) => {
+                        let _ = tx.send(TaskRuntimeEvent::Chunk {
+                            kind: TaskChunkKind::Text,
+                            content,
+                        });
+                    }
+                    CallModelEvent::ReasoningChunk(content) => {
+                        let _ = tx.send(TaskRuntimeEvent::Chunk {
+                            kind: TaskChunkKind::Reasoning,
+                            content,
+                        });
+                    }
                     CallModelEvent::Completed { content, .. } => {
                         let _ = tx.send(TaskRuntimeEvent::Completed(content));
                         return;

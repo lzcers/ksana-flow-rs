@@ -414,7 +414,7 @@ fn collect_story_narrations(snapshot: &Session) -> Vec<String> {
 fn status_from_phase(phase: TurnPhase) -> &'static str {
     match phase {
         TurnPhase::Idle => "pending",
-        TurnPhase::AwaitingPlayer => "awaiting_player_choice",
+        TurnPhase::AwaitingPlayer => "awaiting_player",
         TurnPhase::TurnCompleted => "waiting_control",
         TurnPhase::Ended => "ended",
         TurnPhase::Failed => "failed",
@@ -553,7 +553,7 @@ mod tests {
     fn game_session_world_state_serializes_world_state_as_camel_case() {
         let dto = GameSessionWorldStateData {
             session_id: "session-test".to_string(),
-            status: "awaiting_player_choice".to_string(),
+            status: "awaiting_player".to_string(),
             phase: TurnPhase::AwaitingPlayer,
             turn_index: 2,
             active_turn_id: 2,

@@ -33,13 +33,8 @@ use crate::{
             player_sys::player_input_consume_system,
             protagonist_sys::{protagonist_apply_system, protagonist_dispatch_system},
         },
-        cleanup_sys::cleanup_previous_turn_outcomes_system,
         export_sys::export_system,
-        flow::{
-            agent_task_sys::agent_task_system, apply_sys::apply_progress_system,
-            player_input_sys::player_input_progress_system,
-            simulator_sys::simulator_progress_system,
-        },
+        flow::{agent_task_system, cleanup_previous_turn_outcomes_system, flow_progress_system},
         history_sys::history_sys,
     },
     turn_messages::PlayerCommand,
@@ -743,12 +738,10 @@ fn build_schedule() -> Schedule {
             (
                 agent_task_system,
                 fate_weaver_apply_system,
-                simulator_progress_system,
                 narration_apply_system,
                 protagonist_apply_system,
-                apply_progress_system,
                 player_input_consume_system,
-                player_input_progress_system,
+                flow_progress_system,
                 history_sys,
                 export_system,
             )

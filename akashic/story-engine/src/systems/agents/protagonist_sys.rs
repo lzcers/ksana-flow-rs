@@ -103,7 +103,6 @@ pub fn protagonist_apply_system(
                     );
                 }
                 TaskStatus::Error => {
-                    agent_tasks.clear_task(entity);
                     commands.entity(entity).remove::<RunningReasoning>();
                     flow.stage = TurnStage::Failed;
                     break;

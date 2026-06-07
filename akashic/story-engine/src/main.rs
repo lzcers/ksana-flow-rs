@@ -1,16 +1,20 @@
-use std::{env, error::Error, fs::OpenOptions, io::Write, time::Duration};
+use std::{
+    collections::{HashMap, VecDeque},
+    env,
+    error::Error,
+    io::{self, Write},
+    time::Duration,
+};
 
 use story_engine::{
-    AkashicEngine, SessionArchiveState,
+    AkashicEngine,
     resources::{
+        agent_task::{TaskChunkKind, TaskKind, TaskStatus, TaskUpdate},
+        export::TaskEvent,
         protagonist_action::{PlayerActionInput, PlayerActionType},
         turn_state::TurnPhase,
     },
 };
-
-const FATE_CONTEXT_OUTPUT_FILE_PATH: &str = "story_engine_fate_weaver_context.txt";
-const NARRATOR_CONTEXT_OUTPUT_FILE_PATH: &str = "story_engine_upper_narrator_context.txt";
-const PROTAGONIST_CONTEXT_OUTPUT_FILE_PATH: &str = "story_engine_protagonist_context.txt";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -21,11 +25,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let max_turns = env_usize("AKASHIC_STORY_ENGINE_MAX_TURNS", 1);
+    let max_turns = env_usize("AKASHIC_STORY_ENGINE_MAX_TURNS", 200);
     let poll_interval = Duration::from_millis(env_u64("AKASHIC_STORY_ENGINE_POLL_MS", 100));
 
     let engine = AkashicEngine::new();
     let session = engine.create_default_session("story-engine-main").await?;
+    let mut task_events = session.subscribe_events();
+    tokio::spawn(async move {
+        let mut streams = OrderedTaskStreams::default();
+
+        while let Ok(TaskEvent::TaskUpdated { update }) = task_events.recv().await {
+            streams.handle(update);
+        }
+    });
     session.start_next_turn()?;
 
     println!("== Akashic Story Engine ==");
@@ -49,12 +61,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         match snapshot.phase {
             TurnPhase::Failed => {
-                print_frame_status(frame, &snapshot);
+                print_failure(&snapshot);
                 return Err(format!("故事引擎在第 {} 轮失败", snapshot.active_turn_id).into());
             }
             TurnPhase::Ended => {
-                print_frame_status(frame, &snapshot);
-                print_result(&session.export_archive_state().await?);
                 println!(
                     "[api] story ended: turn_index={} active_turn_id={}",
                     snapshot.turn_index, snapshot.active_turn_id
@@ -62,7 +72,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 return Ok(());
             }
             TurnPhase::AwaitingPlayer => {
-                print_result(&session.export_archive_state().await?);
                 let Some(choice) = snapshot.choices.first() else {
                     return Err("故事引擎进入 AwaitingPlayer，但没有可选行动".into());
                 };
@@ -78,7 +87,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             TurnPhase::TurnCompleted if last_completed_turn != Some(snapshot.turn_index) => {
                 completed_turns += 1;
                 last_completed_turn = Some(snapshot.turn_index);
-                print_result(&session.export_archive_state().await?);
                 println!(
                     "[api] turn complete: turn_index={} completed_turns={}/{}",
                     snapshot.turn_index, completed_turns, max_turns
@@ -100,66 +108,101 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct TaskStreamKey {
+    entity: String,
+    kind: TaskKind,
+}
+
+#[derive(Default)]
+struct BufferedTaskStream {
+    chunks: VecDeque<(TaskChunkKind, String)>,
+    printed_kind: Option<TaskChunkKind>,
+    completed: bool,
+}
+
+#[derive(Default)]
+struct OrderedTaskStreams {
+    order: VecDeque<TaskStreamKey>,
+    streams: HashMap<TaskStreamKey, BufferedTaskStream>,
+}
+
+impl OrderedTaskStreams {
+    fn handle(&mut self, update: TaskUpdate) {
+        let key = TaskStreamKey {
+            entity: update.entity,
+            kind: update.kind,
+        };
+
+        if !self.streams.contains_key(&key) {
+            self.order.push_back(key.clone());
+            self.streams
+                .insert(key.clone(), BufferedTaskStream::default());
+        }
+
+        let stream = self
+            .streams
+            .get_mut(&key)
+            .expect("task stream must exist after insertion");
+        if let (Some(kind), Some(chunk)) = (update.chunk_kind, update.chunk) {
+            stream.chunks.push_back((kind, chunk));
+        }
+        stream.completed = matches!(update.status, TaskStatus::Done | TaskStatus::Error);
+
+        self.flush();
+    }
+
+    fn flush(&mut self) {
+        while let Some(key) = self.order.front().cloned() {
+            let Some(stream) = self.streams.get_mut(&key) else {
+                self.order.pop_front();
+                continue;
+            };
+
+            while let Some((chunk_kind, chunk)) = stream.chunks.pop_front() {
+                if stream.printed_kind != Some(chunk_kind) {
+                    if stream.printed_kind.is_some() {
+                        println!();
+                    }
+                    println!("\n[stream {:?} {} {:?}]", key.kind, key.entity, chunk_kind);
+                    stream.printed_kind = Some(chunk_kind);
+                }
+                print!("{chunk}");
+                let _ = io::stdout().flush();
+            }
+
+            if !stream.completed {
+                break;
+            }
+
+            if stream.printed_kind.is_some() {
+                println!();
+            }
+            self.streams.remove(&key);
+            self.order.pop_front();
+        }
+    }
+}
+
 fn print_frame_status(frame: usize, snapshot: &story_engine::Session) {
     println!(
-        "[frame {frame:03}] phase={:?} turn_index={} active_turn_id={} narration_chars={} choices={}",
-        snapshot.phase,
-        snapshot.turn_index,
-        snapshot.active_turn_id,
-        snapshot.latest_narration.chars().count(),
-        snapshot.choices.len()
+        "[frame {frame:03}] phase={:?} turn_index={} active_turn_id={}",
+        snapshot.phase, snapshot.turn_index, snapshot.active_turn_id
     );
 }
 
-fn print_result(archive: &SessionArchiveState) {
-    println!(
-        "[api] output result: turn_index={} phase={:?} narrator_context_chars={} protagonist_action_chars={}",
-        archive.turn_index,
-        archive.phase,
-        archive.upper_narrator_context.print().chars().count(),
-        archive.committed_action.chars().count()
-    );
-
-    output_context_to_file(archive);
-}
-
-fn output_context_to_file(archive: &SessionArchiveState) {
-    write_to_file(
-        FATE_CONTEXT_OUTPUT_FILE_PATH,
-        &format!(
-            "===== turn {} =====\n{}\n",
-            archive.turn_index,
-            archive.fate_weaver_context.print()
-        ),
-    );
-    write_to_file(
-        NARRATOR_CONTEXT_OUTPUT_FILE_PATH,
-        &format!(
-            "===== turn {} =====\n{}\n",
-            archive.turn_index,
-            archive.upper_narrator_context.print()
-        ),
-    );
-    write_to_file(
-        PROTAGONIST_CONTEXT_OUTPUT_FILE_PATH,
-        &format!(
-            "===== turn {} =====\n{}\n",
-            archive.turn_index,
-            archive.protagonist_context.print()
-        ),
-    );
-}
-
-fn write_to_file(path: &str, content: &str) {
-    let write_result = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .and_then(|mut file| file.write_all(content.as_bytes()));
-
-    if let Err(err) = write_result {
-        eprintln!("写入输出文件失败 ({}): {err}", path);
+fn print_failure(snapshot: &story_engine::Session) {
+    for task in snapshot
+        .tasks
+        .iter()
+        .filter(|task| task.status == story_engine::resources::agent_task::TaskStatus::Error)
+    {
+        eprintln!(
+            "[error] agent task {:?} ({}) failed: {}",
+            task.kind,
+            task.entity,
+            task.error.as_deref().unwrap_or("unknown error")
+        );
     }
 }
 

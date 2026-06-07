@@ -267,7 +267,7 @@ function resetUIState(): GameUIState {
 }
 
 function effectiveDisplayRound(session: GameSessionWorldStateData): number {
-  if (session.phase === 'awaiting_player_choice') {
+  if (session.phase === 'awaiting_player') {
     return Math.max(session.activeTurnId, 1);
   }
 

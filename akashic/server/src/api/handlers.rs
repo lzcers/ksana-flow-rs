@@ -4,7 +4,7 @@ use agent::{
     agent::{CallModelEvent, call_model},
     core::Message,
 };
-use akashic_ecs::resources::agent_task::{TaskKind, TaskStatus, TaskUpdate};
+use akashic_ecs::resources::agent_task::{TaskChunkKind, TaskKind, TaskStatus, TaskUpdate};
 use akashic_ecs::utils::{build_chat_model, parse_json_response};
 use axum::{
     Json,
@@ -65,6 +65,7 @@ struct TaskUpdateData {
     entity: String,
     kind: TaskKind,
     status: TaskStatus,
+    chunk_kind: Option<TaskChunkKind>,
     chunk: Option<String>,
     output: Option<String>,
     error: Option<String>,
@@ -392,6 +393,7 @@ fn task_update_from_delta(event_id: Option<u64>, update: TaskUpdate) -> TaskUpda
         entity: update.entity,
         kind: update.kind,
         status: update.status,
+        chunk_kind: update.chunk_kind,
         chunk: update.chunk,
         output: update.output,
         error: update.error,

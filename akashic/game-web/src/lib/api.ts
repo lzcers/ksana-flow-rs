@@ -27,6 +27,17 @@ export interface StoryPreferences {
   taboos: string;
 }
 
+export type TurnPhase =
+  | 'idle'
+  | 'simulation'
+  | 'application'
+  | 'awaiting_player'
+  | 'turn_completed'
+  | 'ended'
+  | 'failed';
+
+export type RuntimePhase = TurnPhase | 'booting' | 'opening';
+
 export interface Choice {
   id: string;
   text: string;
@@ -37,7 +48,7 @@ export interface Choice {
 
 export interface RuntimeStateView {
   gameState: string;
-  phase: string;
+  phase: RuntimePhase;
   turnIndex: number;
   activeTurnId: number;
   currentLocation: string;
@@ -89,7 +100,7 @@ export interface CreateSaveSlotInput {
 }
 
 export interface TurnStateArchive {
-  phase: string;
+  phase: TurnPhase;
   turn_index: number;
   active_turn_id: number;
 }
@@ -176,7 +187,7 @@ export interface TaskView {
 export interface GameSessionWorldStateData {
   sessionId: string;
   status: string;
-  phase: string;
+  phase: TurnPhase;
   turnIndex: number;
   activeTurnId: number;
   worldState: SessionWorldState;

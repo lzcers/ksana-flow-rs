@@ -12,30 +12,11 @@ pub struct TurnFlow {
 #[serde(rename_all = "snake_case")]
 pub enum TurnStage {
     #[default]
-    #[serde(alias = "IDLE")]
     Idle,
-    #[serde(
-        alias = "turn_ready",
-        alias = "simulation_ready",
-        alias = "simulation_running",
-        alias = "fate_running"
-    )]
     Simulation,
-    #[serde(
-        alias = "application",
-        alias = "application_ready",
-        alias = "application_running",
-        alias = "narration_ready",
-        alias = "narration_running",
-        alias = "protagonist_ready",
-        alias = "protagonist_running"
-    )]
     Application,
-    #[serde(alias = "awaiting_player_choice")]
     AwaitingPlayer,
-    #[serde(alias = "turn_complete")]
     TurnCompleted,
-    #[serde(alias = "story_ended")]
     Ended,
     Failed,
 }
@@ -105,5 +86,16 @@ mod tests {
         flow.advance();
         assert_eq!(flow.active_turn_id, 2);
         assert_eq!(flow.stage, TurnStage::Simulation);
+    }
+
+    #[test]
+    fn accepts_only_current_stage_names() {
+        assert_eq!(
+            serde_json::from_str::<TurnStage>("\"awaiting_player\"").unwrap(),
+            TurnStage::AwaitingPlayer
+        );
+        assert!(serde_json::from_str::<TurnStage>("\"simulation_ready\"").is_err());
+        assert!(serde_json::from_str::<TurnStage>("\"awaiting_player_choice\"").is_err());
+        assert!(serde_json::from_str::<TurnStage>("\"story_ended\"").is_err());
     }
 }
