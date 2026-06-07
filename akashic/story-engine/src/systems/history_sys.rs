@@ -1,12 +1,12 @@
 use bevy_ecs::{
     change_detection::{DetectChanges, Mut, Ref},
     entity::Entity,
+    hierarchy::ChildOf,
     system::Query,
 };
 
 use crate::{
     components::{
-        agent::SessionOwner,
         outcome::NarrationOutcome,
         turn_flow::{TurnFlow, TurnStage},
     },
@@ -25,7 +25,7 @@ pub fn history_sys(
         Ref<ProtagonistDecisionState>,
         Mut<SessionHistoryLog>,
     )>,
-    narrations: Query<(&SessionOwner, Ref<NarrationOutcome>)>,
+    narrations: Query<(&ChildOf, Ref<NarrationOutcome>)>,
 ) {
     for (session_entity, flow, world_snapshot, decision_state, mut history_log) in sessions
         .iter_mut()
@@ -33,7 +33,7 @@ pub fn history_sys(
     {
         let narration_changed = narrations
             .iter()
-            .filter(|(owner, _)| owner.0 == session_entity)
+            .filter(|(owner, _)| owner.parent() == session_entity)
             .any(|(_, outcome)| outcome.is_changed());
         if !flow.is_changed()
             && !world_snapshot.is_changed()
@@ -46,7 +46,7 @@ pub fn history_sys(
         history_log.set_world_snapshot(flow.active_turn_id, world_snapshot.clone());
 
         if let Some((_, outcome)) = narrations.iter().find(|(owner, outcome)| {
-            owner.0 == session_entity && outcome.turn_id == flow.active_turn_id
+            owner.parent() == session_entity && outcome.turn_id == flow.active_turn_id
         }) {
             history_log.set_narration(flow.active_turn_id, outcome.content.clone());
         }

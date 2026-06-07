@@ -1,14 +1,13 @@
 use bevy_ecs::{
     entity::Entity,
+    hierarchy::ChildOf,
     query::{With, Without},
-    system::{Commands, Query, ResMut},
+    system::{Commands, Query, Res, ResMut},
 };
 
 use crate::{
     components::{
-        agent::{
-            Agent, AgentOutputType, Applicator, PendingReasoning, RunningReasoning, SessionOwner,
-        },
+        agent::{Agent, AgentOutputType, Applicator, PendingReasoning},
         flow::ApplicationCompleted,
         outcome::NarrationOutcome,
         turn_flow::{TurnFlow, TurnStage},
@@ -24,18 +23,10 @@ use crate::{
 pub fn narration_dispatch_system(
     mut commands: Commands,
     sessions: Query<(Entity, &TurnFlow, &ProtagonistDecisionState, &WorldSnapshot)>,
+    agent_tasks: Res<AgentTaskManager>,
     mut agents: Query<
-        (
-            Entity,
-            &mut Agent,
-            &SessionOwner,
-            Option<&ApplicationCompleted>,
-        ),
-        (
-            With<Applicator>,
-            Without<PendingReasoning>,
-            Without<RunningReasoning>,
-        ),
+        (Entity, &mut Agent, &ChildOf, Option<&ApplicationCompleted>),
+        (With<Applicator>, Without<PendingReasoning>),
     >,
 ) {
     for (session_entity, flow, decision_state, world_snapshot) in sessions
@@ -47,11 +38,14 @@ pub fn narration_dispatch_system(
             world_snapshot.to_story_prompt(Some(decision_state.committed_action())),
         );
 
-        for (entity, mut agent, _, _) in agents.iter_mut().filter(|(_, agent, owner, outcome)| {
-            owner.0 == session_entity
-                && agent.output_type == AgentOutputType::Text
-                && !outcome.is_some_and(|outcome| outcome.turn_id == flow.active_turn_id)
-        }) {
+        for (entity, mut agent, _, _) in
+            agents.iter_mut().filter(|(entity, agent, owner, outcome)| {
+                owner.parent() == session_entity
+                    && agent.output_type == AgentOutputType::Text
+                    && agent_tasks.task_result(*entity).is_none()
+                    && !outcome.is_some_and(|outcome| outcome.turn_id == flow.active_turn_id)
+            })
+        {
             agent.append_user_message(&prompt);
             commands.entity(entity).insert(PendingReasoning);
         }
@@ -62,10 +56,7 @@ pub fn narration_dispatch_system(
 pub fn narration_apply_system(
     mut commands: Commands,
     mut sessions: Query<(Entity, &mut TurnFlow)>,
-    mut agents: Query<
-        (Entity, &mut Agent, &SessionOwner),
-        (With<Applicator>, With<RunningReasoning>),
-    >,
+    mut agents: Query<(Entity, &mut Agent, &ChildOf), With<Applicator>>,
     mut agent_tasks: ResMut<AgentTaskManager>,
 ) {
     for (session_entity, mut flow) in sessions
@@ -73,7 +64,7 @@ pub fn narration_apply_system(
         .filter(|(_, flow)| flow.stage == TurnStage::Application)
     {
         for (entity, mut agent, _) in agents.iter_mut().filter(|(_, agent, owner)| {
-            owner.0 == session_entity && agent.output_type == AgentOutputType::Text
+            owner.parent() == session_entity && agent.output_type == AgentOutputType::Text
         }) {
             let Some(result) = agent_tasks.task_result(entity).cloned() else {
                 continue;
@@ -89,7 +80,6 @@ pub fn narration_apply_system(
                     agent.append_assistant_message(&output);
                     commands
                         .entity(entity)
-                        .remove::<RunningReasoning>()
                         .insert(NarrationOutcome {
                             turn_id: flow.active_turn_id,
                             content: output,
@@ -99,7 +89,6 @@ pub fn narration_apply_system(
                         });
                 }
                 TaskStatus::Error => {
-                    commands.entity(entity).remove::<RunningReasoning>();
                     flow.stage = TurnStage::Failed;
                     break;
                 }

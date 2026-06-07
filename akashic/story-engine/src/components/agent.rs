@@ -1,5 +1,5 @@
 use agent::{agent::Context, core::Message};
-use bevy_ecs::{component::Component, entity::Entity};
+use bevy_ecs::component::Component;
 use serde::{Deserialize, Serialize};
 
 use crate::prompts::{
@@ -14,9 +14,6 @@ pub struct Agent {
     pub output_type: AgentOutputType,
     pub context: Context,
 }
-
-#[derive(Component, Debug, Clone, PartialEq, Eq)]
-pub struct SessionOwner(pub Entity);
 
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Simulator;
@@ -38,9 +35,6 @@ pub enum AgentOutputType {
 
 #[derive(Component, Debug, Clone, PartialEq, Eq)]
 pub struct PendingReasoning;
-
-#[derive(Component, Debug, Clone, PartialEq, Eq)]
-pub struct RunningReasoning;
 
 impl Agent {
     pub fn new_fate_weaver(

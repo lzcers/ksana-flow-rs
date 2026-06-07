@@ -1,15 +1,14 @@
 use bevy_ecs::{
     entity::Entity,
+    hierarchy::ChildOf,
     query::{With, Without},
-    system::{Commands, Query, ResMut},
+    system::{Commands, Query, Res, ResMut},
 };
 use serde_json::json;
 
 use crate::{
     components::{
-        agent::{
-            Agent, AgentOutputType, PendingReasoning, RunningReasoning, SessionOwner, Simulator,
-        },
+        agent::{Agent, AgentOutputType, PendingReasoning, Simulator},
         flow::{FlowEnd, SimulationCompleted},
         outcome::SimulationOutcome,
         turn_flow::{TurnFlow, TurnStage},
@@ -26,12 +25,12 @@ use crate::{
 pub fn fate_weaver_dispatch_system(
     mut commands: Commands,
     sessions: Query<(Entity, &TurnFlow, &ProtagonistDecisionState, &WorldSnapshot)>,
+    agent_tasks: Res<AgentTaskManager>,
     mut agents: Query<
-        (Entity, &mut Agent, &SessionOwner),
+        (Entity, &mut Agent, &ChildOf),
         (
             With<Simulator>,
             Without<PendingReasoning>,
-            Without<RunningReasoning>,
             Without<SimulationOutcome>,
         ),
     >,
@@ -45,10 +44,9 @@ pub fn fate_weaver_dispatch_system(
             continue;
         }
 
-        for (entity, mut agent, _) in agents
-            .iter_mut()
-            .filter(|(_, _, owner)| owner.0 == session_entity)
-        {
+        for (entity, mut agent, _) in agents.iter_mut().filter(|(entity, _, owner)| {
+            owner.parent() == session_entity && agent_tasks.task_result(*entity).is_none()
+        }) {
             agent.append_user_message(
                 &json!({
                     "round": flow.active_turn_id.max(flow.turn_index + 1),
@@ -66,10 +64,7 @@ pub fn fate_weaver_dispatch_system(
 pub fn fate_weaver_apply_system(
     mut commands: Commands,
     mut sessions: Query<(Entity, &mut TurnFlow, &mut WorldSnapshot)>,
-    mut agents: Query<
-        (Entity, &mut Agent, &SessionOwner),
-        (With<Simulator>, With<RunningReasoning>),
-    >,
+    mut agents: Query<(Entity, &mut Agent, &ChildOf), With<Simulator>>,
     mut agent_tasks: ResMut<AgentTaskManager>,
 ) {
     for (session_entity, mut flow, mut world_snapshot) in sessions
@@ -78,7 +73,7 @@ pub fn fate_weaver_apply_system(
     {
         for (entity, mut agent, _) in agents
             .iter_mut()
-            .filter(|(_, _, owner)| owner.0 == session_entity)
+            .filter(|(_, _, owner)| owner.parent() == session_entity)
         {
             let Some(result) = agent_tasks.task_result(entity).cloned() else {
                 continue;
@@ -95,7 +90,6 @@ pub fn fate_weaver_apply_system(
                     if agent.output_type == AgentOutputType::Json {
                         let Ok(snapshot) = parse_json_response::<WorldSnapshot>(&output) else {
                             agent.revert();
-                            commands.entity(entity).remove::<RunningReasoning>();
                             flow.stage = TurnStage::Failed;
                             break;
                         };
@@ -104,7 +98,6 @@ pub fn fate_weaver_apply_system(
                     agent.append_assistant_message(&output);
                     commands
                         .entity(entity)
-                        .remove::<RunningReasoning>()
                         .insert(SimulationOutcome {
                             turn_id: flow.active_turn_id,
                             content: output,
@@ -114,7 +107,6 @@ pub fn fate_weaver_apply_system(
                         });
                 }
                 TaskStatus::Error => {
-                    commands.entity(entity).remove::<RunningReasoning>();
                     flow.stage = TurnStage::Failed;
                     break;
                 }

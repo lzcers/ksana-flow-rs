@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
 use agent::{agent::Context, models::ChatModel};
-use bevy_ecs::{prelude::*, schedule::Schedule};
+use bevy_ecs::{
+    message::{Messages, message_update_system},
+    prelude::*,
+    schedule::{Schedule, SystemSet},
+};
 use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
@@ -10,7 +14,7 @@ use tokio::{
 
 use crate::{
     components::{
-        agent::{Agent, AgentOutputType, Applicator, SessionOwner, Simulator},
+        agent::{Agent, AgentOutputType, Applicator, Simulator},
         session::{SessionProfiles, StorySession},
         turn_flow::{TurnFlow, TurnStage},
     },
@@ -19,7 +23,7 @@ use crate::{
         agent_task::AgentTaskManager,
         export::{ExportHandle, ExportState, SessionSnapshot, TaskEvent, TaskView},
         history::{RoundHistoryEntry, SessionHistoryLog},
-        player_input::{PlayerInbox, PlayerInputConfig},
+        player_input::PlayerInputConfig,
         protagonist_action::{
             PendingProtagonistChoice, PlayerActionInput, ProtagonistDecisionState,
         },
@@ -131,6 +135,7 @@ impl AkashicEngine {
     pub fn with_model(model: ChatModel) -> Self {
         let mut world = World::new();
         world.insert_resource(AgentTaskManager::new(model));
+        world.insert_resource(Messages::<PlayerCommand>::default());
         world.init_resource::<SessionRegistry>();
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         SessionRuntime::spawn(world, build_schedule(), command_tx.clone(), command_rx);
@@ -375,9 +380,13 @@ impl SessionRuntime {
                         .get::<TurnFlow>(entity)
                         .map(|flow| flow.active_turn_id)
                         .unwrap_or_default();
-                    if let Some(mut inbox) = self.world.get_mut::<PlayerInbox>(entity) {
-                        inbox.push(PlayerCommand::SubmitPlayerAction { turn_id, input });
-                    }
+                    self.world.resource_mut::<Messages<PlayerCommand>>().write(
+                        PlayerCommand::SubmitPlayerAction {
+                            session_entity: entity,
+                            turn_id,
+                            input,
+                        },
+                    );
                     self.run_one_frame();
                 }
             }
@@ -459,12 +468,15 @@ impl SessionRuntime {
         if !is_stable_phase(flow.stage) {
             return Err("只能在会话稳定阶段添加 Agent".to_string());
         }
+        if simulator.output_type != AgentOutputType::Json {
+            return Err("动态 Simulator 只支持 JSON 输出".to_string());
+        }
         if simulator.output_type == AgentOutputType::Json && self.has_json_simulator(session_entity)
         {
             return Err("每个会话只能存在一个 JSON Simulator".to_string());
         }
         self.world
-            .spawn((simulator, SessionOwner(session_entity), Simulator));
+            .spawn((simulator, ChildOf(session_entity), Simulator));
         Ok(())
     }
 
@@ -490,7 +502,6 @@ impl SessionRuntime {
                 TurnFlow::default(),
                 WorldSnapshot::default(),
                 SessionHistoryLog::default(),
-                PlayerInbox::default(),
                 PlayerInputConfig::wait_for_user(),
                 ProtagonistDecisionState::default(),
                 export_state,
@@ -533,7 +544,6 @@ impl SessionRuntime {
                 },
                 state.world_snapshot,
                 state.history_log,
-                PlayerInbox::default(),
                 PlayerInputConfig::wait_for_user(),
                 ProtagonistDecisionState::from_archive(state.committed_action, state.choices),
                 export_state,
@@ -588,12 +598,12 @@ impl SessionRuntime {
     ) {
         for agent in simulators {
             self.world
-                .spawn((agent, SessionOwner(session_entity), Simulator));
+                .spawn((agent, ChildOf(session_entity), Simulator));
         }
         self.world
-            .spawn((narrator, SessionOwner(session_entity), Applicator));
+            .spawn((narrator, ChildOf(session_entity), Applicator));
         self.world
-            .spawn((protagonist, SessionOwner(session_entity), Applicator));
+            .spawn((protagonist, ChildOf(session_entity), Applicator));
     }
 
     fn session_entity(&self, session_id: &str) -> Option<Entity> {
@@ -681,18 +691,18 @@ impl SessionRuntime {
     }
 
     fn owned_agent_entities(&mut self, session_entity: Entity) -> Vec<Entity> {
-        let mut agents = self.world.query::<(Entity, &SessionOwner)>();
+        let mut agents = self.world.query::<(Entity, &ChildOf)>();
         agents
             .iter(&self.world)
-            .filter_map(|(entity, owner)| (owner.0 == session_entity).then_some(entity))
+            .filter_map(|(entity, owner)| (owner.parent() == session_entity).then_some(entity))
             .collect()
     }
 
     fn owned_simulator_agents(&mut self, session_entity: Entity) -> Vec<Agent> {
-        let mut agents = self.world.query::<(&Agent, &SessionOwner, &Simulator)>();
+        let mut agents = self.world.query::<(&Agent, &ChildOf, &Simulator)>();
         agents
             .iter(&self.world)
-            .filter(move |(_, owner, _)| owner.0 == session_entity)
+            .filter(move |(_, owner, _)| owner.parent() == session_entity)
             .map(|(agent, _, _)| agent.clone())
             .collect()
     }
@@ -702,9 +712,9 @@ impl SessionRuntime {
         session_entity: Entity,
         output_type: AgentOutputType,
     ) -> Result<Context, String> {
-        let mut agents = self.world.query::<(&Agent, &SessionOwner, &Applicator)>();
+        let mut agents = self.world.query::<(&Agent, &ChildOf, &Applicator)>();
         let mut matches = agents.iter(&self.world).filter(|(agent, owner, _)| {
-            owner.0 == session_entity && agent.output_type == output_type
+            owner.parent() == session_entity && agent.output_type == output_type
         });
         let context = matches
             .next()
@@ -717,38 +727,63 @@ impl SessionRuntime {
     }
 
     fn has_json_simulator(&mut self, session_entity: Entity) -> bool {
-        let mut agents = self.world.query::<(&Agent, &SessionOwner, &Simulator)>();
+        let mut agents = self.world.query::<(&Agent, &ChildOf, &Simulator)>();
         agents.iter(&self.world).any(|(agent, owner, _)| {
-            owner.0 == session_entity && agent.output_type == AgentOutputType::Json
+            owner.parent() == session_entity && agent.output_type == AgentOutputType::Json
         })
     }
 }
 
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum StoryScheduleSet {
+    Cleanup,
+    Dispatch,
+    PollTasks,
+    ApplyResults,
+    Progress,
+    History,
+    Export,
+    MaintainMessages,
+}
+
 fn build_schedule() -> Schedule {
     let mut schedule = Schedule::default();
-    schedule.add_systems(
+    schedule.configure_sets(
         (
-            (
-                cleanup_previous_turn_outcomes_system,
-                fate_weaver_dispatch_system,
-                narration_dispatch_system,
-                protagonist_dispatch_system,
-            )
-                .chain(),
-            (
-                agent_task_system,
-                fate_weaver_apply_system,
-                narration_apply_system,
-                protagonist_apply_system,
-                player_input_consume_system,
-                flow_progress_system,
-                history_sys,
-                export_system,
-            )
-                .chain(),
+            StoryScheduleSet::Cleanup,
+            StoryScheduleSet::Dispatch,
+            StoryScheduleSet::PollTasks,
+            StoryScheduleSet::ApplyResults,
+            StoryScheduleSet::Progress,
+            StoryScheduleSet::History,
+            StoryScheduleSet::Export,
+            StoryScheduleSet::MaintainMessages,
         )
             .chain(),
     );
+    schedule.add_systems(cleanup_previous_turn_outcomes_system.in_set(StoryScheduleSet::Cleanup));
+    schedule.add_systems(
+        (
+            fate_weaver_dispatch_system,
+            narration_dispatch_system,
+            protagonist_dispatch_system,
+        )
+            .in_set(StoryScheduleSet::Dispatch),
+    );
+    schedule.add_systems(agent_task_system.in_set(StoryScheduleSet::PollTasks));
+    schedule.add_systems(
+        (
+            fate_weaver_apply_system,
+            narration_apply_system,
+            protagonist_apply_system,
+            player_input_consume_system,
+        )
+            .in_set(StoryScheduleSet::ApplyResults),
+    );
+    schedule.add_systems(flow_progress_system.in_set(StoryScheduleSet::Progress));
+    schedule.add_systems(history_sys.in_set(StoryScheduleSet::History));
+    schedule.add_systems(export_system.in_set(StoryScheduleSet::Export));
+    schedule.add_systems(message_update_system.in_set(StoryScheduleSet::MaintainMessages));
     schedule
 }
 
@@ -787,6 +822,13 @@ fn validate_archive_state(state: &SessionArchiveState) -> Result<(), String> {
     {
         return Err("归档必须包含且只能包含一个 JSON Simulator".to_string());
     }
+    if state
+        .simulators
+        .iter()
+        .any(|simulator| simulator.output_type != AgentOutputType::Json)
+    {
+        return Err("归档的 simulators 只能包含 JSON Simulator".to_string());
+    }
     Ok(())
 }
 
@@ -805,80 +847,53 @@ mod tests {
             .create_session("second", "world-b", "hero-b", "beats-b")
             .await
             .unwrap();
-        first
-            .add_simulator(Agent::new(
-                AgentOutputType::Text,
-                "FirstSessionOnly",
-                "simulate first session".to_string(),
-            ))
-            .await
-            .unwrap();
 
         let first_archive = first.export_archive_state().await.unwrap();
         let second_archive = second.export_archive_state().await.unwrap();
 
         assert_eq!(first_archive.world_profile, "world-a");
         assert_eq!(second_archive.world_profile, "world-b");
-        assert_eq!(first_archive.simulators.len(), 2);
+        assert_eq!(first_archive.simulators.len(), 1);
         assert_eq!(second_archive.simulators.len(), 1);
         assert_eq!(first.session_id(), "first");
         assert_eq!(second.session_id(), "second");
     }
 
     #[tokio::test]
-    async fn archives_dynamically_added_simulators() {
+    async fn rejects_dynamically_added_text_simulators() {
         let engine = AkashicEngine::with_model(ChatModel::new());
         let session = engine.create_default_session("session").await.unwrap();
-        session
+        let result = session
             .add_simulator(Agent::new(
                 AgentOutputType::Text,
                 "WeatherSimulator",
                 "simulate weather".to_string(),
             ))
-            .await
-            .unwrap();
+            .await;
 
-        let archive = session.export_archive_state().await.unwrap();
-
-        assert_eq!(archive.simulators.len(), 2);
-        assert!(archive.simulators.iter().any(|simulator| {
-            simulator.name == "WeatherSimulator" && simulator.kind == AgentArchiveKind::Simulator
-        }));
-
-        let restored = engine
-            .create_session_from_archive("restored", archive)
-            .await
-            .unwrap();
-        let restored_archive = restored.export_archive_state().await.unwrap();
-        assert_eq!(restored_archive.simulators.len(), 2);
-        assert!(
-            restored_archive
-                .simulators
-                .iter()
-                .any(|simulator| simulator.name == "WeatherSimulator")
-        );
+        assert_eq!(result.err().unwrap(), "动态 Simulator 只支持 JSON 输出");
     }
 
     #[tokio::test]
-    async fn add_simulator_marks_agent_as_simulator() {
+    async fn archive_rejects_text_simulators() {
         let engine = AkashicEngine::with_model(ChatModel::new());
         let session = engine.create_default_session("session").await.unwrap();
+        let mut archive = session.export_archive_state().await.unwrap();
+        archive.simulators.push(SimulatorArchiveState {
+            kind: AgentArchiveKind::Simulator,
+            output_type: AgentOutputType::Text,
+            name: "WeatherSimulator".to_string(),
+            sys_prompt: String::new(),
+            context: Context::default(),
+        });
 
-        session
-            .add_simulator(Agent::new(
-                AgentOutputType::Text,
-                "WeatherSimulator",
-                "simulate weather".to_string(),
-            ))
-            .await
-            .unwrap();
+        let result = engine
+            .create_session_from_archive("restored", archive)
+            .await;
 
-        let archive = session.export_archive_state().await.unwrap();
-        assert!(
-            archive
-                .simulators
-                .iter()
-                .any(|simulator| simulator.name == "WeatherSimulator")
+        assert_eq!(
+            result.err().unwrap(),
+            "归档的 simulators 只能包含 JSON Simulator"
         );
     }
 

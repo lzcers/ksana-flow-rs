@@ -1,11 +1,12 @@
 use bevy_ecs::{
     change_detection::{DetectChanges, Ref},
     entity::Entity,
+    hierarchy::ChildOf,
     system::{Query, Res},
 };
 
 use crate::{
-    components::{agent::SessionOwner, outcome::NarrationOutcome, turn_flow::TurnFlow},
+    components::{outcome::NarrationOutcome, turn_flow::TurnFlow},
     resources::{
         agent_task::{AgentTaskManager, TaskStatus},
         export::{ExportState, SessionSnapshot, TaskView},
@@ -25,7 +26,7 @@ pub fn export_system(
         Ref<ProtagonistDecisionState>,
         &ExportState,
     )>,
-    agents: Query<(Entity, &SessionOwner, Option<&NarrationOutcome>)>,
+    agents: Query<(Entity, &ChildOf, Option<&NarrationOutcome>)>,
     agent_tasks: Res<AgentTaskManager>,
 ) {
     for (session_entity, flow, world_snapshot, history_log, decision_state, export_state) in
@@ -49,7 +50,7 @@ pub fn export_system(
     {
         let latest_narration = agents
             .iter()
-            .filter(|(_, owner, _)| owner.0 == session_entity)
+            .filter(|(_, owner, _)| owner.parent() == session_entity)
             .filter_map(|(_, _, narration)| narration)
             .find(|outcome| outcome.turn_id == flow.active_turn_id)
             .map(|outcome| outcome.content.clone())
@@ -57,7 +58,7 @@ pub fn export_system(
 
         let mut tasks: Vec<TaskView> = agents
             .iter()
-            .filter(|(_, owner, _)| owner.0 == session_entity)
+            .filter(|(_, owner, _)| owner.parent() == session_entity)
             .filter_map(|(entity, _, _)| {
                 agent_tasks
                     .task_result(entity)

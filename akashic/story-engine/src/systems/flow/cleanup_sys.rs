@@ -1,10 +1,10 @@
 use bevy_ecs::{
     entity::Entity,
+    hierarchy::ChildOf,
     system::{Commands, Query},
 };
 
 use crate::components::{
-    agent::SessionOwner,
     flow::{ApplicationCompleted, SimulationCompleted},
     outcome::{NarrationOutcome, SimulationOutcome},
     turn_flow::{TurnFlow, TurnStage},
@@ -17,7 +17,7 @@ pub fn cleanup_previous_turn_outcomes_system(
     sessions: Query<(Entity, &TurnFlow)>,
     outcomes: Query<(
         Entity,
-        &SessionOwner,
+        &ChildOf,
         Option<&SimulationOutcome>,
         Option<&NarrationOutcome>,
         Option<&SimulationCompleted>,
@@ -31,7 +31,7 @@ pub fn cleanup_previous_turn_outcomes_system(
         for (agent_entity, _, simulation, narration, simulation_completed, application_completed) in
             outcomes
                 .iter()
-                .filter(|(_, owner, ..)| owner.0 == session_entity)
+                .filter(|(_, owner, ..)| owner.parent() == session_entity)
         {
             if simulation.is_some_and(|outcome| outcome.turn_id != turn_flow.active_turn_id) {
                 commands.entity(agent_entity).remove::<SimulationOutcome>();
