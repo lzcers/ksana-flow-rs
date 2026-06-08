@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ArrowUpRight, Compass, Download, Sparkles } from "lucide-react";
+import { Compass, Download, Share2, Sparkles } from "lucide-react";
 
 import { cn } from "../lib/utils";
 import { createQrCodeMatrix, qrCodeToSvgPath } from "../lib/qrCode";
@@ -119,7 +119,7 @@ const StoryShareCard: React.FC<StoryShareCardProps> = ({
                 Game Portal
               </p>
               <p className="mt-2 text-xs leading-5 text-[#a8b4c7] sm:mt-3 sm:text-sm sm:leading-6">
-                扫描二维码打开分享链接，沿着这段摘要回到故事现场。
+                扫描二维码复制一条独立分支，沿着这段摘要继续推进故事。
               </p>
             </div>
             <div className="rounded-[0.85rem] border border-white/10 bg-white p-1.5 shadow-[0_16px_36px_rgba(0,0,0,0.18)] sm:rounded-[1.1rem] sm:p-2.5 lg:mt-3">
@@ -172,8 +172,8 @@ const StoryShareCard: React.FC<StoryShareCardProps> = ({
             rel="noreferrer"
             className="inline-flex h-10 items-center justify-center gap-1.5 rounded-full bg-[#d8c18f] px-3 text-xs font-medium text-[#111624] shadow-[0_10px_30px_rgba(216,193,143,0.25)] transition-colors hover:bg-[#e4d1a9] sm:h-11 sm:gap-2 sm:px-5 sm:text-sm"
           >
+            <Share2 className="h-4 w-4" />
             <span>{ctaLabel}</span>
-            <ArrowUpRight className="h-4 w-4" />
           </a>
         </div>
       </div>

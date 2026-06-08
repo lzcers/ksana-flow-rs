@@ -28,6 +28,10 @@ pub fn build_router(state: AppState) -> Router {
             get(handlers::get_game_session_world),
         )
         .route(
+            "/api/game-sessions/{session_id}/clone",
+            post(handlers::clone_game_session),
+        )
+        .route(
             "/api/game-sessions/{session_id}/save",
             post(handlers::create_save_slot),
         )

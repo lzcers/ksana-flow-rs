@@ -13,7 +13,7 @@ import ChoicePanel from '../components/ChoicePanel';
 import GameplayToolbar from '../components/GameplayToolbar';
 import NarrationPanel from '../components/NarrationPanel';
 import type { NarrationRoundEntry } from '../components/gameplayTypes';
-import { appRoutes, routeWithSession } from '../lib/appRoutes';
+import { appRoutes, routeWithClonedSession } from '../lib/appRoutes';
 import type { Choice } from '../lib/api';
 
 const EMPTY_BROADCAST_ITEMS: string[] = [];
@@ -97,6 +97,15 @@ const GameplayPage: React.FC = () => {
   const isChoiceInteractionDisabled = isTyping || isLoading;
   const isObsessionToggleDisabled = isChoiceInteractionDisabled || !hasChoices || obsessionPoints <= 0;
   const isObsessionSubmitDisabled = isChoiceInteractionDisabled || obsessionInput.trim().length === 0;
+  const canArchiveCurrentRound = phase === 'awaiting_player'
+    && hasChoices
+    && !isNarrationStreaming
+    && !isTyping
+    && !isLoading;
+  const archiveActionUnavailableReason = canArchiveCurrentRound
+    ? null
+    : '选项出现后可分享或存档。';
+  const archiveActionKey = `${sessionId ?? 'no-session'}:${currentRound}:${currentRoundChoices.map((choice) => choice.id).join(',')}`;
   const statusMessage = feedback ?? error;
   const broadcastItems = latestBroadcastItems
     .map((item) => item.trim())
@@ -128,7 +137,7 @@ const GameplayPage: React.FC = () => {
   }, [currentScene, latestBroadcastSummary, narrationHistory]);
   const shareGameUrl = useMemo(() => (
     new URL(
-      sessionId ? routeWithSession(appRoutes.gameplay, sessionId) : appRoutes.lobby,
+      sessionId ? routeWithClonedSession(appRoutes.gameplay, sessionId) : appRoutes.lobby,
       window.location.origin,
     ).toString()
   ), [sessionId]);
@@ -236,6 +245,11 @@ const GameplayPage: React.FC = () => {
   };
 
   const handleSave = async () => {
+    if (!canArchiveCurrentRound) {
+      setFeedback(archiveActionUnavailableReason);
+      return;
+    }
+
     try {
       await createSave();
       setFeedback('存档保存成功');
@@ -297,6 +311,9 @@ const GameplayPage: React.FC = () => {
                 sessionId={sessionId}
                 shareSummaryFallback={shareSummaryFallback}
                 shareGameUrl={shareGameUrl}
+                archiveActionKey={archiveActionKey}
+                isArchiveActionDisabled={!canArchiveCurrentRound}
+                archiveActionUnavailableReason={archiveActionUnavailableReason}
                 onToggleObsession={() => {
                   setRoundControls((prev) => ({
                     round: currentRound,

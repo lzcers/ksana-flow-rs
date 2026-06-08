@@ -316,6 +316,15 @@ export function getGameSession(sessionId: string) {
   );
 }
 
+export function cloneGameSession(sessionId: string) {
+  return requestJson<GameSessionWorldStateData>(
+    withApiOrigin(`/api/game-sessions/${encodeURIComponent(sessionId)}/clone`),
+    {
+      method: 'POST',
+    },
+  );
+}
+
 export function exportGameSaveArchive(sessionId: string, input: CreateSaveSlotInput) {
   return requestJson<SaveExportData>(withApiOrigin(`/api/game-sessions/${sessionId}/save-export`), {
     method: 'POST',

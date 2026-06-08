@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { StoreApi } from 'zustand';
 import {
+  cloneGameSession,
   createGameSession,
   exportGameSaveArchive,
   generateProfiles,
@@ -111,6 +112,8 @@ export interface GameUIActions {
   loadSave: (saveId: string) => Promise<void>;
   // 操作：通过仍然存活的后端会话 id 恢复当前进度。
   restoreSession: (sessionId: string) => Promise<void>;
+  // 操作：基于分享链接复制一份独立会话并切换到该分支。
+  cloneSharedSession: (sourceSessionId: string) => Promise<{ sessionId: string; isEnding: boolean }>;
   // 操作：重置本地游戏状态并关闭流连接。
   resetGame: () => void;
 }
@@ -137,6 +140,10 @@ let activeStreamTaskRounds = new Map<string, number>();
 let startupStageTimer: number | null = null;
 let bootstrappingSessionId: string | null = null;
 let restoringSessionId: string | null = null;
+let activeCloneRequest: {
+  sourceSessionId: string;
+  promise: Promise<{ sessionId: string; isEnding: boolean }>;
+} | null = null;
 let startupFlowRunId = 0;
 
 const MIN_GENERATING_PAGE_MS = 1200;
@@ -999,6 +1006,76 @@ const createGameUIActions = (
       navigateTo(appRoutes.lobby, { replace: true });
       throw error;
     }
+  },
+  cloneSharedSession: async (sourceSessionId) => {
+    const targetSessionId = sourceSessionId.trim();
+    if (!targetSessionId) {
+      throw new Error('未找到要复制的旅程编号。');
+    }
+
+    if (activeCloneRequest?.sourceSessionId === targetSessionId) {
+      return activeCloneRequest.promise;
+    }
+
+    const clonePromise = (async () => {
+      closeActiveSessionStream();
+      clearStartupStageTimer();
+      startupFlowRunId += 1;
+      restoringSessionId = null;
+      useGameInternalStore.setState({
+        ...initialInternalState,
+      });
+      set({
+        stateView: null,
+        isLoading: true,
+        startupStage: 'idle',
+        preparedProfiles: null,
+        error: null,
+        skipRestoredNarrationAnimation: true,
+      });
+
+      try {
+        const cloned = await cloneGameSession(targetSessionId);
+
+        useGameInternalStore.setState(internalStateFromSession(cloned));
+        useGameValueStore.getState().resetValues(effectiveDisplayRound(cloned));
+        set({
+          stateView: stateViewFromSession(cloned),
+          isLoading: false,
+          startupStage: 'idle',
+          preparedProfiles: null,
+          error: null,
+          skipRestoredNarrationAnimation: true,
+        });
+        connectSessionStream(cloned.sessionId);
+        return {
+          sessionId: cloned.sessionId,
+          isEnding: cloned.worldState.isEnding,
+        };
+      } catch (error) {
+        closeActiveSessionStream();
+        useGameInternalStore.setState({
+          ...initialInternalState,
+        });
+        set({
+          ...resetUIState(),
+          error: error instanceof Error ? error.message : '这段旅程暂时无法复制。',
+        });
+        navigateTo(appRoutes.lobby, { replace: true });
+        throw error;
+      } finally {
+        if (activeCloneRequest?.sourceSessionId === targetSessionId) {
+          activeCloneRequest = null;
+        }
+      }
+    })();
+
+    activeCloneRequest = {
+      sourceSessionId: targetSessionId,
+      promise: clonePromise,
+    };
+
+    return clonePromise;
   },
   resetGame: () => {
     closeActiveSessionStream();

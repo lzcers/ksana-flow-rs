@@ -230,13 +230,13 @@ export async function downloadStoryShareCardImage(input: ShareCardImageInput): P
 
   context.fillStyle = 'rgba(207,244,248,0.74)';
   context.font = '600 22px Inter, "PingFang SC", "Microsoft YaHei", sans-serif';
-  context.fillText('扫码打开分享链接', CARD_PADDING, 1148);
+  context.fillText('扫码复制独立分支', CARD_PADDING, 1148);
 
   context.fillStyle = 'rgba(233,222,200,0.82)';
   context.font = '400 30px Inter, "PingFang SC", "Microsoft YaHei", sans-serif';
   drawWrappedText(
     context,
-    '带着这段摘要回到故事现场，把下一轮选择亲手推向结局。',
+    '带着这段摘要开启自己的分支，把下一轮选择亲手推向结局。',
     CARD_PADDING,
     1210,
     CARD_WIDTH - (CARD_PADDING * 3) - qrSize,
@@ -250,7 +250,7 @@ export async function downloadStoryShareCardImage(input: ShareCardImageInput): P
 
   context.fillStyle = 'rgba(216,193,143,0.94)';
   context.font = '500 24px Inter, "PingFang SC", "Microsoft YaHei", sans-serif';
-  context.fillText('分享链接已附在右侧二维码中', CARD_PADDING, CARD_HEIGHT - 66);
+  context.fillText('分支复制链接已附在右侧二维码中', CARD_PADDING, CARD_HEIGHT - 66);
 
   const blob = await canvasToBlob(canvas);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');

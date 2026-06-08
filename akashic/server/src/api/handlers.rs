@@ -242,6 +242,14 @@ pub async fn get_game_session_world(
     Ok(Json(ApiResponse::ok(state_view)))
 }
 
+pub async fn clone_game_session(
+    State(state): State<AppState>,
+    Path(path): Path<SessionPath>,
+) -> ApiResult<GameSessionWorldStateData> {
+    let state_view = state.clone_game_session(&path.session_id).await?;
+    Ok(Json(ApiResponse::ok(state_view)))
+}
+
 pub async fn generate_story_summary(
     State(state): State<AppState>,
     Path(path): Path<SessionPath>,

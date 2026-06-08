@@ -217,6 +217,46 @@ impl AppState {
         Ok(world_state_from_session(session, &snapshot))
     }
 
+    pub async fn clone_game_session(
+        &self,
+        source_session_id: &str,
+    ) -> Result<GameSessionWorldStateData, AppError> {
+        let source_session_id = source_session_id.trim();
+        if source_session_id.is_empty() {
+            return Err(AppError::bad_request("`sessionId` 不能为空。"));
+        }
+
+        let source_engine = {
+            let sessions = self.sessions.lock().await;
+            sessions
+                .get(source_session_id)
+                .ok_or_else(|| AppError::not_found(format!("未找到会话 `{source_session_id}`")))?
+                .engine
+                .clone()
+        };
+        let clone_session_id = format!("session-{}", Uuid::new_v4().simple());
+        let mut payload = archive::gen_archive_payload(source_session_id, None, &source_engine)
+            .await
+            .map_err(AppError::bad_request)?;
+        payload.session_id = clone_session_id.clone();
+        payload.title = format!("{}（分支）", payload.title.trim());
+
+        let engine = archive::load_archive_payload(&self.engine, payload)
+            .await
+            .map_err(AppError::bad_request)?;
+        engine
+            .wait_until_ready()
+            .await
+            .map_err(AppError::internal)?;
+        let session = build_session_record(clone_session_id.clone(), engine);
+        let snapshot = session.engine.get_game_session();
+        let state_view = world_state_from_session(&session, &snapshot);
+
+        self.sessions.lock().await.insert(clone_session_id, session);
+
+        Ok(state_view)
+    }
+
     pub async fn get_game_session_narrations(
         &self,
         session_id: &str,
@@ -545,6 +585,46 @@ mod tests {
             .await
             .expect("restored session should be queryable");
         assert_eq!(loaded_again.current_protagonist_action, "绕到钟楼背面");
+
+        let _ = fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn clone_game_session_creates_independent_runtime_session() {
+        let db_path = std::env::temp_dir().join(format!("state-clone-{}.sqlite3", Uuid::new_v4()));
+        let repo = ArchiveRepository::new(&db_path);
+        let state = AppState::new(repo).expect("app state should initialize");
+        let compressed =
+            archive::compress_archive_payload(&sample_payload()).expect("archive compresses");
+        state
+            .load_game_session_from_archive(compressed)
+            .await
+            .expect("source session should restore");
+
+        let cloned = state
+            .clone_game_session("session-from-slot")
+            .await
+            .expect("stable source session should clone");
+
+        assert_ne!(cloned.session_id, "session-from-slot");
+        assert!(cloned.session_id.starts_with("session-"));
+        assert_eq!(cloned.world_state.scene_title, "钟楼阴影");
+        assert_eq!(cloned.current_protagonist_action, "绕到钟楼背面");
+
+        let source = state
+            .get_game_session_world("session-from-slot")
+            .await
+            .expect("source session should remain queryable");
+        let cloned_again = state
+            .get_game_session_world(&cloned.session_id)
+            .await
+            .expect("cloned session should be queryable");
+
+        assert_eq!(
+            source.world_state.scene_title,
+            cloned_again.world_state.scene_title
+        );
+        assert_eq!(source.history.len(), cloned_again.history.len());
 
         let _ = fs::remove_file(db_path);
     }

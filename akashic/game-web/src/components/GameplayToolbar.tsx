@@ -12,6 +12,9 @@ interface GameplayToolbarProps {
   sessionId?: string | null;
   shareSummaryFallback: string;
   shareGameUrl: string;
+  archiveActionKey: string;
+  isArchiveActionDisabled: boolean;
+  archiveActionUnavailableReason: string | null;
   onToggleObsession: () => void;
   onBackToLobby: () => void;
   onSave: () => void | Promise<void>;
@@ -25,15 +28,19 @@ const GameplayToolbar: React.FC<GameplayToolbarProps> = ({
   sessionId,
   shareSummaryFallback,
   shareGameUrl,
+  archiveActionKey,
+  isArchiveActionDisabled,
+  archiveActionUnavailableReason,
   onToggleObsession,
   onBackToLobby,
   onSave,
 }) => {
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
-  const [isShareCardOpen, setIsShareCardOpen] = useState(false);
+  const [shareCardOpenKey, setShareCardOpenKey] = useState<string | null>(null);
   const [shareSummary, setShareSummary] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
   const [isShareLoading, setIsShareLoading] = useState(false);
+  const isShareCardOpen = shareCardOpenKey === archiveActionKey && !isArchiveActionDisabled;
 
   const resolvedShareSummary = useMemo(() => {
     const fetchedSummary = shareSummary?.trim();
@@ -50,7 +57,7 @@ const GameplayToolbar: React.FC<GameplayToolbarProps> = ({
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setIsShareCardOpen(false);
+        setShareCardOpenKey(null);
       }
     };
 
@@ -144,26 +151,41 @@ const GameplayToolbar: React.FC<GameplayToolbarProps> = ({
                 </button>
                 <button
                   type="button"
+                  disabled={isArchiveActionDisabled}
+                  title={archiveActionUnavailableReason ?? '存档'}
                   onClick={() => {
+                    if (isArchiveActionDisabled) {
+                      return;
+                    }
                     void onSave();
                     setIsUtilityMenuOpen(false);
                   }}
-                  className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] sm:text-xs"
+                  className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] disabled:cursor-not-allowed disabled:text-[#8f98ab] disabled:hover:bg-transparent sm:text-xs"
                 >
                   <Save className="h-3.5 w-3.5" />
                   存档
                 </button>
                 <button
                   type="button"
+                  disabled={isArchiveActionDisabled}
+                  title={archiveActionUnavailableReason ?? '分享'}
                   onClick={() => {
-                    setIsShareCardOpen(true);
+                    if (isArchiveActionDisabled) {
+                      return;
+                    }
+                    setShareCardOpenKey(archiveActionKey);
                     setIsUtilityMenuOpen(false);
                   }}
-                  className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] sm:text-xs"
+                  className="flex w-full items-center gap-1.5 rounded-[0.7rem] px-2 py-1.5 text-left text-[0.72rem] leading-4 text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)] disabled:cursor-not-allowed disabled:text-[#8f98ab] disabled:hover:bg-transparent sm:text-xs"
                 >
                   <Share2 className="h-3.5 w-3.5" />
                   分享
                 </button>
+                {isArchiveActionDisabled && archiveActionUnavailableReason ? (
+                  <p className="px-2 py-1 text-[0.68rem] leading-4 text-[#8f98ab]">
+                    {archiveActionUnavailableReason}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -173,14 +195,14 @@ const GameplayToolbar: React.FC<GameplayToolbarProps> = ({
         <div className="fixed inset-0 z-40 flex items-end justify-center bg-[rgba(5,8,15,0.72)] px-3 py-4 backdrop-blur-sm sm:items-center sm:px-6">
           <div
             className="absolute inset-0"
-            onClick={() => setIsShareCardOpen(false)}
+            onClick={() => setShareCardOpenKey(null)}
             aria-hidden="true"
           />
           <div className="relative z-10 w-full max-w-3xl">
             <div className="mb-3 flex justify-end">
               <button
                 type="button"
-                onClick={() => setIsShareCardOpen(false)}
+                onClick={() => setShareCardOpenKey(null)}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[rgba(116,103,80,0.5)] bg-[rgba(8,14,26,0.9)] text-[#f3ead8] transition-colors hover:bg-[rgba(188,169,124,0.14)]"
                 aria-label="关闭分享卡片"
               >
