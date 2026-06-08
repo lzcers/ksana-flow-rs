@@ -736,32 +736,25 @@ impl SessionRuntime {
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum StoryScheduleSet {
-    Cleanup,
     Dispatch,
     PollTasks,
     ApplyResults,
     Progress,
-    History,
-    Export,
-    MaintainMessages,
+    Finalize,
 }
 
 fn build_schedule() -> Schedule {
     let mut schedule = Schedule::default();
     schedule.configure_sets(
         (
-            StoryScheduleSet::Cleanup,
             StoryScheduleSet::Dispatch,
             StoryScheduleSet::PollTasks,
             StoryScheduleSet::ApplyResults,
             StoryScheduleSet::Progress,
-            StoryScheduleSet::History,
-            StoryScheduleSet::Export,
-            StoryScheduleSet::MaintainMessages,
+            StoryScheduleSet::Finalize,
         )
             .chain(),
     );
-    schedule.add_systems(cleanup_previous_turn_outcomes_system.in_set(StoryScheduleSet::Cleanup));
     schedule.add_systems(
         (
             fate_weaver_dispatch_system,
@@ -781,9 +774,16 @@ fn build_schedule() -> Schedule {
             .in_set(StoryScheduleSet::ApplyResults),
     );
     schedule.add_systems(flow_progress_system.in_set(StoryScheduleSet::Progress));
-    schedule.add_systems(history_sys.in_set(StoryScheduleSet::History));
-    schedule.add_systems(export_system.in_set(StoryScheduleSet::Export));
-    schedule.add_systems(message_update_system.in_set(StoryScheduleSet::MaintainMessages));
+    schedule.add_systems(
+        (
+            history_sys,
+            export_system,
+            cleanup_previous_turn_outcomes_system,
+            message_update_system,
+        )
+            .chain()
+            .in_set(StoryScheduleSet::Finalize),
+    );
     schedule
 }
 
