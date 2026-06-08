@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
-import { appRoutes } from './lib/appRoutes';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { appRoutes, readSessionIdFromSearch, routeWithSession } from './lib/appRoutes';
 import { installNavigator } from './lib/navigation';
 import LobbyPage from './pages/LobbyPage';
 import ArchiveListPage from './pages/ArchiveListPage';
@@ -29,7 +29,7 @@ function GeneratingRoute() {
   const preparedProfiles = useGameUIStore((state) => state.preparedProfiles);
 
   if (sessionId && stateView && startupStage === 'idle') {
-    return <Navigate to={appRoutes.gameplay} replace />;
+    return <Navigate to={routeWithSession(appRoutes.gameplay, sessionId)} replace />;
   }
 
   if (startupStage === 'idle' && !preparedProfiles) {
@@ -39,31 +39,75 @@ function GeneratingRoute() {
   return <GeneratingPage />;
 }
 
+function SessionRestoreGate({ sessionId }: { sessionId: string }) {
+  const restoreSession = useGameUIStore((state) => state.restoreSession);
+  const isLoading = useGameUIStore((state) => state.isLoading);
+  const error = useGameUIStore((state) => state.error);
+
+  useEffect(() => {
+    void restoreSession(sessionId).catch(() => {
+      // The store keeps the user-facing error and navigates back to the lobby.
+    });
+  }, [restoreSession, sessionId]);
+
+  return (
+    <div className="flex h-full w-full items-center justify-center px-6 text-center">
+      <div className="max-w-md space-y-3 rounded-[1.1rem] border border-[#6d86b7]/25 bg-[#101827]/78 px-5 py-5 text-[#efe4cd] shadow-[0_10px_30px_rgba(3,8,18,0.25)]">
+        <p className="text-sm font-semibold tracking-[0.18em] text-[#8fa4ca]">SESSION</p>
+        <p className="text-lg font-medium">
+          {isLoading ? '正在续上这段旅程...' : '正在打开旅程...'}
+        </p>
+        {error ? <p className="text-sm leading-6 text-[#ffd7d7]">{error}</p> : null}
+      </div>
+    </div>
+  );
+}
+
 function GameplayRoute() {
+  const location = useLocation();
+  const requestedSessionId = readSessionIdFromSearch(location.search);
   const sessionId = useGameInternalStore((state) => state.sessionId);
   const stateView = useGameUIStore((state) => state.stateView);
+
+  if (requestedSessionId && (sessionId !== requestedSessionId || !stateView)) {
+    return <SessionRestoreGate sessionId={requestedSessionId} />;
+  }
 
   if (!sessionId || !stateView) {
     return <Navigate to={appRoutes.lobby} replace />;
   }
 
+  if (!requestedSessionId) {
+    return <Navigate to={routeWithSession(appRoutes.gameplay, sessionId)} replace />;
+  }
+
   if (stateView.isEnding) {
-    return <Navigate to={appRoutes.ending} replace />;
+    return <Navigate to={routeWithSession(appRoutes.ending, sessionId)} replace />;
   }
 
   return <GameplayPage />;
 }
 
 function EndingRoute() {
+  const location = useLocation();
+  const requestedSessionId = readSessionIdFromSearch(location.search);
   const sessionId = useGameInternalStore((state) => state.sessionId);
   const stateView = useGameUIStore((state) => state.stateView);
+
+  if (requestedSessionId && (sessionId !== requestedSessionId || !stateView)) {
+    return <SessionRestoreGate sessionId={requestedSessionId} />;
+  }
 
   if (!sessionId || !stateView) {
     return <Navigate to={appRoutes.lobby} replace />;
   }
 
+  if (!requestedSessionId) {
+    return <Navigate to={routeWithSession(appRoutes.ending, sessionId)} replace />;
+  }
+
   if (!stateView.isEnding) {
-    return <Navigate to={appRoutes.gameplay} replace />;
+    return <Navigate to={routeWithSession(appRoutes.gameplay, sessionId)} replace />;
   }
 
   return <EndingPage />;

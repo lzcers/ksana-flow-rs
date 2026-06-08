@@ -4,6 +4,7 @@ import {
   createGameSession,
   exportGameSaveArchive,
   generateProfiles,
+  getGameSession,
   loadGameSessionFromArchive,
   openGameSessionStream,
   submitGameSessionControl,
@@ -24,7 +25,7 @@ import {
   upsertStoredSaveSlot,
   writeStoredSaveArchive,
 } from '../lib/saveSlots';
-import { appRoutes } from '../lib/appRoutes';
+import { appRoutes, routeWithSession } from '../lib/appRoutes';
 import { navigateTo } from '../lib/navigation';
 import { useGameValueStore } from './gameValueStore';
 import {
@@ -106,6 +107,8 @@ export interface GameUIActions {
   createSave: (title?: string) => Promise<string>;
   // 操作：加载指定存档。
   loadSave: (saveId: string) => Promise<void>;
+  // 操作：通过仍然存活的后端会话 id 恢复当前进度。
+  restoreSession: (sessionId: string) => Promise<void>;
   // 操作：重置本地游戏状态并关闭流连接。
   resetGame: () => void;
 }
@@ -131,6 +134,7 @@ let activeStreamTasks = new Map<string, TaskView>();
 let activeStreamTaskRounds = new Map<string, number>();
 let startupStageTimer: number | null = null;
 let bootstrappingSessionId: string | null = null;
+let restoringSessionId: string | null = null;
 let startupFlowRunId = 0;
 
 const MIN_GENERATING_PAGE_MS = 1200;
@@ -160,6 +164,7 @@ function closeActiveSessionStream() {
   activeStreamTasks = new Map();
   activeStreamTaskRounds = new Map();
   bootstrappingSessionId = null;
+  restoringSessionId = null;
 }
 
 function clearStartupStageTimer() {
@@ -742,7 +747,7 @@ const createGameUIActions = (
         startupStage: 'idle',
         preparedProfiles: null,
       });
-      navigateTo(appRoutes.gameplay, { replace: true });
+      navigateTo(routeWithSession(appRoutes.gameplay, sessionId), { replace: true });
       return;
     }
 
@@ -1050,7 +1055,7 @@ const createGameUIActions = (
         skipRestoredNarrationAnimation: true,
       });
       connectSessionStream(loaded.sessionId);
-      navigateTo(appRoutes.gameplay, { replace: true });
+      navigateTo(routeWithSession(appRoutes.gameplay, loaded.sessionId), { replace: true });
     } catch (error) {
       closeActiveSessionStream();
       useGameInternalStore.setState({
@@ -1059,6 +1064,76 @@ const createGameUIActions = (
       set({
         ...resetUIState(),
         error: error instanceof Error ? error.message : '读取存档失败。',
+      });
+      navigateTo(appRoutes.lobby, { replace: true });
+      throw error;
+    }
+  },
+  restoreSession: async (sessionId) => {
+    const targetSessionId = sessionId.trim();
+    if (!targetSessionId) {
+      throw new Error('未找到要恢复的旅程编号。');
+    }
+
+    const currentSessionId = useGameInternalStore.getState().sessionId;
+    if (currentSessionId === targetSessionId && get().stateView) {
+      if (activeStreamSessionId !== targetSessionId) {
+        closeActiveSessionStream();
+        connectSessionStream(targetSessionId);
+      }
+      return;
+    }
+
+    if (restoringSessionId === targetSessionId) {
+      return;
+    }
+
+    closeActiveSessionStream();
+    clearStartupStageTimer();
+    startupFlowRunId += 1;
+    restoringSessionId = targetSessionId;
+    useGameInternalStore.setState({
+      ...initialInternalState,
+    });
+    set({
+      stateView: null,
+      isLoading: true,
+      startupStage: 'idle',
+      preparedProfiles: null,
+      error: null,
+      skipRestoredNarrationAnimation: true,
+    });
+
+    try {
+      const loaded = await getGameSession(targetSessionId);
+      if (restoringSessionId !== targetSessionId) {
+        return;
+      }
+
+      useGameInternalStore.setState(internalStateFromSession(loaded));
+      useGameValueStore.getState().resetValues(effectiveDisplayRound(loaded));
+      set({
+        stateView: stateViewFromSession(loaded),
+        isLoading: false,
+        startupStage: 'idle',
+        preparedProfiles: null,
+        error: null,
+        skipRestoredNarrationAnimation: true,
+      });
+      connectSessionStream(loaded.sessionId);
+      restoringSessionId = null;
+    } catch (error) {
+      if (restoringSessionId !== targetSessionId) {
+        return;
+      }
+
+      closeActiveSessionStream();
+      useGameInternalStore.setState({
+        ...initialInternalState,
+      });
+      set({
+        ...resetUIState(),
+        error: error instanceof Error ? error.message : '这段旅程已经暂时无法续上。',
       });
       navigateTo(appRoutes.lobby, { replace: true });
       throw error;

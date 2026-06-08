@@ -310,6 +310,12 @@ export function createGameSession(input: CreateGameSessionInput) {
   });
 }
 
+export function getGameSession(sessionId: string) {
+  return requestJson<GameSessionWorldStateData>(
+    withApiOrigin(`/api/game-sessions/${encodeURIComponent(sessionId)}`),
+  );
+}
+
 export function exportGameSaveArchive(sessionId: string, input: CreateSaveSlotInput) {
   return requestJson<SaveExportData>(withApiOrigin(`/api/game-sessions/${sessionId}/save-export`), {
     method: 'POST',

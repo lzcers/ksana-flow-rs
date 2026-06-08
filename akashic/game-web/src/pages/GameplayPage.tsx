@@ -13,7 +13,7 @@ import ChoicePanel from '../components/ChoicePanel';
 import GameplayToolbar from '../components/GameplayToolbar';
 import NarrationPanel from '../components/NarrationPanel';
 import type { NarrationRoundEntry } from '../components/gameplayTypes';
-import { appRoutes } from '../lib/appRoutes';
+import { appRoutes, routeWithSession } from '../lib/appRoutes';
 import type { Choice } from '../lib/api';
 
 const EMPTY_BROADCAST_ITEMS: string[] = [];
@@ -115,8 +115,11 @@ const GameplayPage: React.FC = () => {
     return `${currentScene} 的命运仍在推进，下一轮选择正在逼近。`;
   }, [currentScene, latestBroadcastSummary, narrationHistory]);
   const shareGameUrl = useMemo(() => (
-    new URL(appRoutes.lobby, window.location.origin).toString()
-  ), []);
+    new URL(
+      sessionId ? routeWithSession(appRoutes.gameplay, sessionId) : appRoutes.lobby,
+      window.location.origin,
+    ).toString()
+  ), [sessionId]);
 
   useEffect(() => {
     if (!feedback) return undefined;

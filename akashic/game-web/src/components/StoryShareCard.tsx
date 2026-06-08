@@ -1,7 +1,7 @@
-import React from 'react';
-import { ArrowUpRight, Compass, Sparkles } from 'lucide-react';
+import React from "react";
+import { ArrowUpRight, Compass, Sparkles } from "lucide-react";
 
-import { cn } from '../lib/utils';
+import { cn } from "../lib/utils";
 
 interface StoryShareCardProps {
   summary: string;
@@ -17,17 +17,17 @@ const StoryShareCard: React.FC<StoryShareCardProps> = ({
   summary,
   gameUrl,
   className,
-  eyebrow = 'AKASHIC ECHO',
-  title = '这一段命运，值得被分享',
-  sessionLabel = '故事摘要',
-  ctaLabel = '进入游戏',
+  eyebrow = "AKASHIC ECHO",
+  title = "这一段命运，值得被分享",
+  sessionLabel = "故事摘要",
+  ctaLabel = "进入游戏",
 }) => {
   const content = summary.trim();
 
   return (
     <article
       className={cn(
-        'game-card relative overflow-hidden border-[rgba(116,103,80,0.58)] bg-[radial-gradient(circle_at_top,rgba(97,190,183,0.14),transparent_34%),linear-gradient(160deg,rgba(10,16,34,0.98),rgba(8,12,24,0.94))] py-0 shadow-[0_24px_80px_rgba(1,8,20,0.6)]',
+        "game-card relative overflow-hidden border-[rgba(116,103,80,0.58)] bg-[radial-gradient(circle_at_top,rgba(97,190,183,0.14),transparent_34%),linear-gradient(160deg,rgba(10,16,34,0.98),rgba(8,12,24,0.94))] py-0 shadow-[0_24px_80px_rgba(1,8,20,0.6)]",
         className,
       )}
     >
@@ -47,7 +47,9 @@ const StoryShareCard: React.FC<StoryShareCardProps> = ({
               <span>{eyebrow}</span>
             </div>
             <div className="space-y-2">
-              <p className="text-xs tracking-[0.28em] text-cyan-100/75 uppercase">{sessionLabel}</p>
+              <p className="text-xs tracking-[0.28em] text-cyan-100/75 uppercase">
+                {sessionLabel}
+              </p>
               <h2 className="max-w-xl text-2xl leading-tight text-[#f4ecd8] sm:text-[2rem]">
                 {title}
               </h2>
@@ -68,16 +70,20 @@ const StoryShareCard: React.FC<StoryShareCardProps> = ({
             <div className="relative rounded-[1.35rem] border border-[rgba(116,103,80,0.42)] bg-[rgba(8,14,26,0.38)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
               <div className="mb-4 flex items-center gap-3">
                 <div className="h-px flex-1 bg-gradient-to-r from-[#d8c18f]/70 to-transparent" />
-                <span className="text-[11px] tracking-[0.28em] text-[#e6d1a2]/85 uppercase">Summary</span>
+                <span className="text-[11px] tracking-[0.28em] text-[#e6d1a2]/85 uppercase">
+                  Summary
+                </span>
               </div>
               <p className="text-[1rem] leading-8 text-[#f3ead8]/92 sm:text-[1.05rem]">
-                {content || '命运尚未留下可供摘录的回响。'}
+                {content || "命运尚未留下可供摘录的回响。"}
               </p>
             </div>
           </div>
 
           <div className="rounded-[1.4rem] border border-cyan-100/15 bg-cyan-100/6 p-4 backdrop-blur-sm">
-            <p className="text-[11px] tracking-[0.28em] text-cyan-100/75 uppercase">Game Portal</p>
+            <p className="text-[11px] tracking-[0.28em] text-cyan-100/75 uppercase">
+              Game Portal
+            </p>
             <p className="mt-3 text-sm leading-6 text-[#a8b4c7]">
               沿着这段摘要继续下沉，回到故事现场，把下一轮选择亲手推向结局。
             </p>
@@ -90,8 +96,10 @@ const StoryShareCard: React.FC<StoryShareCardProps> = ({
 
       <div className="relative flex flex-col items-start gap-4 border-t border-[rgba(116,103,80,0.42)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="space-y-1">
-          <p className="text-xs tracking-[0.24em] text-[#8f98ab] uppercase">Share-ready Card</p>
-          <p className="text-sm text-[#e9dec8]/80">适合在群聊、社区或活动页中展示这一段剧情回响。</p>
+          <p className="text-xs tracking-[0.24em] text-[#8f98ab] uppercase">
+            Share-ready Card
+          </p>
+          <p className="text-sm text-[#e9dec8]/80">与这段回响共鸣...</p>
         </div>
 
         <a

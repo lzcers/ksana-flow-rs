@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "agent",
-    "akashic/ecs",
     "akashic/server",
     "akashic/story-engine",
     "ksana/flow",
