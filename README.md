@@ -18,7 +18,3 @@ flow 模块提供一个基于图的节点执行框架，用于描述任何可以
 ## nodes module
 
 nodes 模块提供一些预定义的节点，用于实现 LLM 应用的计算逻辑。
-
-## agent module
-
-agent 模块提供一个 LLM Agent 的实现，包括 Provider，Model, Tool 等组件。

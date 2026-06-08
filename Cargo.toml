@@ -1,16 +1,13 @@
 [workspace]
 members = [
-    "agent",
-    "akashic/server",
-    "akashic/story-engine",
-    "ksana/flow",
-    "ksana/nodes",
-    "ksana/server",
+    "flow",
+    "nodes",
+    "server",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-agent = { path = "agent" }
+agent = { package = "alaya-agent", path = "../alaya-agent-rs" }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 tokio = { version = "1.49.0", features = ["full"] }
