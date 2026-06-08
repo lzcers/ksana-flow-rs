@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: ${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_PREFIX:-akashic}-caddy:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${DOCKER_IMAGE_PREFIX:-akashic}-caddy:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       - server
@@ -13,7 +13,7 @@ services:
       - caddy_config:/config
 
   server:
-    image: ${REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_PREFIX:-akashic}-server:${IMAGE_TAG:-latest}
+    image: ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${DOCKER_IMAGE_PREFIX:-akashic}-server:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file:
       - .env
