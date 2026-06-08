@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Clock3, Hourglass, Sparkles } from 'lucide-react';
 import { StatusPill } from './AkashicUI';
 
@@ -15,34 +15,37 @@ const GameplayHeader: React.FC<GameplayHeaderProps> = ({
   isLoading,
   broadcastMessages,
 }) => {
-  const [broadcastIndex, setBroadcastIndex] = useState(0);
+  const [broadcastCursor, setBroadcastCursor] = useState({ key: '', index: 0 });
   const [isBroadcastDragging, setIsBroadcastDragging] = useState(false);
   const broadcastSwipeStartRef = useRef<{ pointerId: number; clientX: number } | null>(null);
   const suppressBroadcastClickRef = useRef(false);
 
   const isFatePlanningScene = isLoading && currentScene.includes('命运编织');
   const broadcastKey = broadcastMessages.join('||');
+  const broadcastIndex = broadcastCursor.key === broadcastKey
+    ? Math.min(broadcastCursor.index, Math.max(broadcastMessages.length - 1, 0))
+    : 0;
   const activeBroadcastMessage = broadcastMessages[broadcastIndex] ?? broadcastMessages[0] ?? '';
   const broadcastCountLabel = broadcastMessages.length > 0
     ? `${Math.min(broadcastIndex + 1, broadcastMessages.length)}/${broadcastMessages.length}`
     : '0/0';
-
-  useEffect(() => {
-    setBroadcastIndex((prev) => (prev === 0 ? prev : 0));
-  }, [broadcastKey]);
 
   const moveBroadcastIndex = useCallback((direction: 'prev' | 'next') => {
     if (broadcastMessages.length <= 1) {
       return;
     }
 
-    setBroadcastIndex((prev) => {
-      if (direction === 'next') {
-        return (prev + 1) % broadcastMessages.length;
-      }
-      return (prev - 1 + broadcastMessages.length) % broadcastMessages.length;
+    setBroadcastCursor((prev) => {
+      const currentIndex = prev.key === broadcastKey ? prev.index : 0;
+      const nextIndex = direction === 'next'
+        ? (currentIndex + 1) % broadcastMessages.length
+        : (currentIndex - 1 + broadcastMessages.length) % broadcastMessages.length;
+      return {
+        key: broadcastKey,
+        index: nextIndex,
+      };
     });
-  }, [broadcastMessages.length]);
+  }, [broadcastKey, broadcastMessages.length]);
 
   const releaseBroadcastPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     broadcastSwipeStartRef.current = null;

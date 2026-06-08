@@ -9,7 +9,7 @@ WORKDIR /workspace
 
 COPY Cargo.toml Cargo.lock ./
 COPY agent ./agent
-COPY akashic/ecs ./akashic/ecs
+COPY akashic/story-engine ./akashic/story-engine
 COPY akashic/server ./akashic/server
 COPY ksana/flow ./ksana/flow
 COPY ksana/nodes ./ksana/nodes

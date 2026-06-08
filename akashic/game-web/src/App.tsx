@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { appRoutes, readSessionIdFromSearch, routeWithSession } from './lib/appRoutes';
 import { installNavigator } from './lib/navigation';
@@ -63,7 +63,13 @@ function SessionRestoreGate({ sessionId }: { sessionId: string }) {
   );
 }
 
-function GameplayRoute() {
+function SessionRouteGuard({
+  route,
+  children,
+}: {
+  route: typeof appRoutes.gameplay | typeof appRoutes.ending;
+  children: ReactNode;
+}) {
   const location = useLocation();
   const requestedSessionId = readSessionIdFromSearch(location.search);
   const sessionId = useGameInternalStore((state) => state.sessionId);
@@ -78,39 +84,34 @@ function GameplayRoute() {
   }
 
   if (!requestedSessionId) {
-    return <Navigate to={routeWithSession(appRoutes.gameplay, sessionId)} replace />;
+    return <Navigate to={routeWithSession(route, sessionId)} replace />;
   }
 
-  if (stateView.isEnding) {
+  if (route === appRoutes.gameplay && stateView.isEnding) {
     return <Navigate to={routeWithSession(appRoutes.ending, sessionId)} replace />;
   }
 
-  return <GameplayPage />;
+  if (route === appRoutes.ending && !stateView.isEnding) {
+    return <Navigate to={routeWithSession(appRoutes.gameplay, sessionId)} replace />;
+  }
+
+  return children;
+}
+
+function GameplayRoute() {
+  return (
+    <SessionRouteGuard route={appRoutes.gameplay}>
+      <GameplayPage />
+    </SessionRouteGuard>
+  );
 }
 
 function EndingRoute() {
-  const location = useLocation();
-  const requestedSessionId = readSessionIdFromSearch(location.search);
-  const sessionId = useGameInternalStore((state) => state.sessionId);
-  const stateView = useGameUIStore((state) => state.stateView);
-
-  if (requestedSessionId && (sessionId !== requestedSessionId || !stateView)) {
-    return <SessionRestoreGate sessionId={requestedSessionId} />;
-  }
-
-  if (!sessionId || !stateView) {
-    return <Navigate to={appRoutes.lobby} replace />;
-  }
-
-  if (!requestedSessionId) {
-    return <Navigate to={routeWithSession(appRoutes.ending, sessionId)} replace />;
-  }
-
-  if (!stateView.isEnding) {
-    return <Navigate to={routeWithSession(appRoutes.gameplay, sessionId)} replace />;
-  }
-
-  return <EndingPage />;
+  return (
+    <SessionRouteGuard route={appRoutes.ending}>
+      <EndingPage />
+    </SessionRouteGuard>
+  );
 }
 
 function App() {

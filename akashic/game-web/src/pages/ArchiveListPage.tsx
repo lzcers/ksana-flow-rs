@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Download, FolderOpen, Trash2, TriangleAlert, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -81,17 +81,13 @@ const ArchiveListPage: React.FC = () => {
   const loadSave = useGameUIStore((state) => state.loadSave);
   const isLoading = useGameUIStore((state) => state.isLoading);
   const error = useGameUIStore((state) => state.error);
-  const [slots, setSlots] = useState<StoredSaveSlot[]>([]);
+  const [slots, setSlots] = useState<StoredSaveSlot[]>(() => readStoredSaveSlots());
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshSlots = () => {
     setSlots(readStoredSaveSlots());
   };
-
-  useEffect(() => {
-    refreshSlots();
-  }, []);
 
   const hasSlots = useMemo(() => slots.length > 0, [slots]);
 

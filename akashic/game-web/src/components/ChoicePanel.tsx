@@ -21,8 +21,6 @@ interface ChoicePanelProps {
   onObsessionSubmit: (actionText: string) => void | Promise<void>;
 }
 
-const AUTO_CHOOSE_FOR_TEST = false;
-
 const ChoicePanel: React.FC<ChoicePanelProps> = ({
   hasChoices,
   choices,
@@ -38,8 +36,6 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
   onObsessionSubmit,
 }) => {
   const obsessionInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const autoChoiceKeyRef = useRef<string | null>(null);
-  const autoChoiceTimerRef = useRef<number | null>(null);
   const submitObsessionAction = () => onObsessionSubmit(obsessionInput.trim());
 
   useEffect(() => {
@@ -49,54 +45,6 @@ const ChoicePanel: React.FC<ChoicePanelProps> = ({
 
     obsessionInputRef.current?.focus();
   }, [activeObsession]);
-
-  useEffect(() => {
-    if (autoChoiceTimerRef.current !== null) {
-      window.clearTimeout(autoChoiceTimerRef.current);
-      autoChoiceTimerRef.current = null;
-    }
-
-    const firstEnabledChoice = !activeObsession
-      ? choices.find((choice) => !choice.disabled)
-      : undefined;
-
-    if (
-      !AUTO_CHOOSE_FOR_TEST ||
-      !hasChoices ||
-      activeObsession ||
-      isChoiceInteractionDisabled ||
-      !firstEnabledChoice
-    ) {
-      autoChoiceKeyRef.current = null;
-      return undefined;
-    }
-
-    const nextAutoChoiceKey = choices
-      .map((choice) => `${choice.id}:${choice.disabled ? "1" : "0"}`)
-      .join("|");
-
-    if (autoChoiceKeyRef.current === nextAutoChoiceKey) {
-      return undefined;
-    }
-
-    autoChoiceKeyRef.current = nextAutoChoiceKey;
-    autoChoiceTimerRef.current = window.setTimeout(() => {
-      void onChoiceClick(firstEnabledChoice);
-    }, 600);
-
-    return () => {
-      if (autoChoiceTimerRef.current !== null) {
-        window.clearTimeout(autoChoiceTimerRef.current);
-        autoChoiceTimerRef.current = null;
-      }
-    };
-  }, [
-    activeObsession,
-    choices,
-    hasChoices,
-    isChoiceInteractionDisabled,
-    onChoiceClick,
-  ]);
 
   if (!hasChoices) {
     return null;

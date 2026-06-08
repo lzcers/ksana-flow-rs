@@ -63,9 +63,17 @@ const GameplayPage: React.FC = () => {
   const displayRound = useGameInternalStore((state) => state.displayRound);
   const roundStates = useGameInternalStore((state) => state.roundStates);
   const [completedTypingKey, setCompletedTypingKey] = useState<string | null>(null);
-  const [activeObsession, setActiveObsession] = useState(false);
-  const [obsessionInput, setObsessionInput] = useState('');
-  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [roundControls, setRoundControls] = useState<{
+    round: number;
+    activeObsession: boolean;
+    obsessionInput: string;
+    previews: Record<string, string>;
+  }>({
+    round: 1,
+    activeObsession: false,
+    obsessionInput: '',
+    previews: {},
+  });
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const currentRound = Math.max(displayRound || turnIndex || 1, 1);
@@ -75,6 +83,10 @@ const GameplayPage: React.FC = () => {
       .sort((left, right) => left.round - right.round)
   ), [roundStates]);
   const activeRoundState = roundStates[currentRound];
+  const hasCurrentRoundControls = roundControls.round === currentRound;
+  const activeObsession = hasCurrentRoundControls ? roundControls.activeObsession : false;
+  const obsessionInput = hasCurrentRoundControls ? roundControls.obsessionInput : '';
+  const previews = hasCurrentRoundControls ? roundControls.previews : {};
   const currentRoundChoices = activeRoundState?.choices ?? [];
   const hasChoices = currentRoundChoices.length > 0;
   const isNarrationStreaming = activeRoundState?.narrationStatus === 'pending'
@@ -128,12 +140,6 @@ const GameplayPage: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [feedback]);
 
-  useEffect(() => {
-    setPreviews({});
-    setObsessionInput('');
-    setActiveObsession(false);
-  }, [currentRound]);
-
   const handleTypewriterComplete = useCallback(() => {
     setCompletedTypingKey(typingKey);
   }, [typingKey]);
@@ -167,9 +173,14 @@ const GameplayPage: React.FC = () => {
       }
       consumeIntuition();
 
-      setPreviews((prev) => ({
-        ...prev,
-        [choice.id]: motivationAndRisk,
+      setRoundControls((prev) => ({
+        round: currentRound,
+        activeObsession: prev.round === currentRound ? prev.activeObsession : false,
+        obsessionInput: prev.round === currentRound ? prev.obsessionInput : '',
+        previews: {
+          ...(prev.round === currentRound ? prev.previews : {}),
+          [choice.id]: motivationAndRisk,
+        },
       }));
       setFeedback(motivationAndRisk);
     } catch (previewError) {
@@ -186,9 +197,12 @@ const GameplayPage: React.FC = () => {
         },
         displayText: choice.text,
       }, activeObsession);
-      setActiveObsession(false);
-      setObsessionInput('');
-      setPreviews({});
+      setRoundControls({
+        round: currentRound,
+        activeObsession: false,
+        obsessionInput: '',
+        previews: {},
+      });
       setFeedback(null);
     } catch (submitError) {
       setFeedback(readErrorMessage(submitError, '推进剧情失败。'));
@@ -209,9 +223,12 @@ const GameplayPage: React.FC = () => {
         },
         displayText: actionText,
       }, true);
-      setActiveObsession(false);
-      setObsessionInput('');
-      setPreviews({});
+      setRoundControls({
+        round: currentRound,
+        activeObsession: false,
+        obsessionInput: '',
+        previews: {},
+      });
       setFeedback(null);
     } catch (submitError) {
       setFeedback(readErrorMessage(submitError, '执念行动提交失败。'));
@@ -262,7 +279,14 @@ const GameplayPage: React.FC = () => {
                 isObsessionSubmitDisabled={isObsessionSubmitDisabled}
                 onChoiceClick={handleChoiceClick}
                 onPreview={handlePreview}
-                onObsessionInputChange={setObsessionInput}
+                onObsessionInputChange={(nextValue) => {
+                  setRoundControls((prev) => ({
+                    round: currentRound,
+                    activeObsession: prev.round === currentRound ? prev.activeObsession : false,
+                    obsessionInput: nextValue,
+                    previews: prev.round === currentRound ? prev.previews : {},
+                  }));
+                }}
                 onObsessionSubmit={handleObsessionSubmit}
               />
               <GameplayToolbar
@@ -274,7 +298,12 @@ const GameplayPage: React.FC = () => {
                 shareSummaryFallback={shareSummaryFallback}
                 shareGameUrl={shareGameUrl}
                 onToggleObsession={() => {
-                  setActiveObsession((prev) => !prev);
+                  setRoundControls((prev) => ({
+                    round: currentRound,
+                    activeObsession: prev.round === currentRound ? !prev.activeObsession : true,
+                    obsessionInput: prev.round === currentRound ? prev.obsessionInput : '',
+                    previews: prev.round === currentRound ? prev.previews : {},
+                  }));
                   setFeedback(null);
                 }}
                 onBackToLobby={() => {

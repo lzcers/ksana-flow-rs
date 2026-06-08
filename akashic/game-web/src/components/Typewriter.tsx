@@ -18,8 +18,8 @@ const Typewriter: React.FC<TypewriterProps> = ({
 }) => {
   const hasCompletedRef = useRef(false);
   const onCompleteRef = useRef(onComplete);
-  const previousTextRef = useRef('');
-  const [visibleLength, setVisibleLength] = useState(0);
+  const [visibleLength, setVisibleLength] = useState(() => (animate && text ? 0 : text.length));
+  const renderedLength = animate ? Math.min(visibleLength, text.length) : text.length;
 
   const completeDisplay = () => {
     if (!hasCompletedRef.current) {
@@ -33,26 +33,15 @@ const Typewriter: React.FC<TypewriterProps> = ({
   }, [onComplete]);
 
   useEffect(() => {
-    if (!text) {
-      previousTextRef.current = '';
-      setVisibleLength(0);
+    if (text && animate && !isFinished) {
+      hasCompletedRef.current = false;
+    }
+  }, [animate, isFinished, text]);
+
+  useEffect(() => {
+    if (!text || !animate) {
       completeDisplay();
-      return;
     }
-
-    if (!animate) {
-      previousTextRef.current = text;
-      setVisibleLength(text.length);
-      completeDisplay();
-      return;
-    }
-
-    if (!text.startsWith(previousTextRef.current)) {
-      setVisibleLength(0);
-    }
-
-    hasCompletedRef.current = false;
-    previousTextRef.current = text;
   }, [animate, text]);
 
   useEffect(() => {
@@ -68,16 +57,16 @@ const Typewriter: React.FC<TypewriterProps> = ({
   }, [animate, text, visibleLength]);
 
   useEffect(() => {
-    if (!text || !animate || !isFinished || visibleLength < text.length) {
+    if (!text || !animate || !isFinished || renderedLength < text.length) {
       return;
     }
 
     completeDisplay();
-  }, [animate, isFinished, text, visibleLength]);
+  }, [animate, isFinished, renderedLength, text]);
 
   return (
     <p className="whitespace-pre-wrap break-words text-inherit">
-      {text.slice(0, visibleLength)}
+      {text.slice(0, renderedLength)}
     </p>
   );
 };

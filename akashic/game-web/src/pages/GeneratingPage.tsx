@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BookOpenText, LoaderCircle, Orbit, Sparkles } from "lucide-react";
+import { LoaderCircle, Orbit, Sparkles } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useGameUIStore } from "../store/gameUIStore";
 import type { StartupStage } from "../store/gameUIStore";
@@ -149,6 +149,12 @@ function stageHeadline(
   }
 }
 
+function profileStepFromStage(stage: Exclude<StartupStage, "idle">): ProfileStepKey {
+  return stage === "generating_world" || stage === "generating_protagonist"
+    ? stage
+    : "creating_session";
+}
+
 const GeneratingPage: React.FC = () => {
   const {
     startupStage,
@@ -201,9 +207,18 @@ const GeneratingPage: React.FC = () => {
           "再推开一次门，回响会继续向前",
         ];
   }, [canEnterWorld, stageKey]);
-  const [messageIndex, setMessageIndex] = useState(0);
-  const [selectedProfileStep, setSelectedProfileStep] =
-    useState<ProfileStepKey>("generating_world");
+  const messageKey = currentMessages.join("||");
+  const [messageCursor, setMessageCursor] = useState({ key: "", index: 0 });
+  const messageIndex = messageCursor.key === messageKey
+    ? Math.min(messageCursor.index, Math.max(currentMessages.length - 1, 0))
+    : 0;
+  const [selectedProfileOverride, setSelectedProfileOverride] = useState<{
+    stageKey: Exclude<StartupStage, "idle">;
+    key: ProfileStepKey;
+  } | null>(null);
+  const selectedProfileStep = selectedProfileOverride?.stageKey === stageKey
+    ? selectedProfileOverride.key
+    : profileStepFromStage(stageKey);
   const profilePanels = useMemo(() => {
     if (!preparedProfiles) {
       return null;
@@ -240,32 +255,22 @@ const GeneratingPage: React.FC = () => {
   }, [preparedProfiles]);
 
   useEffect(() => {
-    setMessageIndex(0);
-  }, [stageKey]);
-
-  useEffect(() => {
-    if (!preparedProfiles) {
-      return;
-    }
-
-    setSelectedProfileStep(
-      stageKey === "generating_world" || stageKey === "generating_protagonist"
-        ? stageKey
-        : "creating_session",
-    );
-  }, [preparedProfiles, stageKey]);
-
-  useEffect(() => {
     if (currentMessages.length <= 1) {
       return undefined;
     }
 
     const timer = window.setInterval(() => {
-      setMessageIndex((current) => (current + 1) % currentMessages.length);
+      setMessageCursor((current) => {
+        const currentIndex = current.key === messageKey ? current.index : 0;
+        return {
+          key: messageKey,
+          index: (currentIndex + 1) % currentMessages.length,
+        };
+      });
     }, 2200);
 
     return () => window.clearInterval(timer);
-  }, [currentMessages]);
+  }, [currentMessages.length, messageKey]);
 
   const activeProfilePanel = profilePanels?.[selectedProfileStep];
 
@@ -318,11 +323,11 @@ const GeneratingPage: React.FC = () => {
                   <button
                     type="button"
                     key={step.key}
-                    onClick={
-                      profilePanels
-                        ? () => setSelectedProfileStep(step.key)
-                        : undefined
-                    }
+                      onClick={
+                        profilePanels
+                          ? () => setSelectedProfileOverride({ stageKey, key: step.key })
+                          : undefined
+                      }
                     className={`rounded-[1.1rem] border px-4 py-4 transition-colors md:px-5 ${
                       status === "active"
                         ? "border-[#60a5fa]/40 bg-[#101a2c]/92"
@@ -363,7 +368,7 @@ const GeneratingPage: React.FC = () => {
                       key={key}
                       type="button"
                       aria-label={`切换到${profilePanels[key].eyebrow}`}
-                      onClick={() => setSelectedProfileStep(key)}
+                      onClick={() => setSelectedProfileOverride({ stageKey, key })}
                       className={`h-2.5 w-2.5 rounded-full transition-colors ${selectedProfileStep === key ? "bg-[#d8c58a]" : "bg-white/18 hover:bg-white/35"}`}
                     />
                   ))}

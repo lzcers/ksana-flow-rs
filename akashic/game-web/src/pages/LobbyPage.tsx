@@ -1,6 +1,6 @@
-import React from 'react';
-import { Library, Play, TriangleAlert } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React from "react";
+import { Library, Play, TriangleAlert } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import {
   PageTitle,
   PrimaryButton,
@@ -9,9 +9,9 @@ import {
   SectionCard,
   StoryFrame,
   StatusPill,
-} from '../components/AkashicUI';
-import { appRoutes } from '../lib/appRoutes';
-import { useGameUIStore } from '../store/gameUIStore';
+} from "../components/AkashicUI";
+import { appRoutes } from "../lib/appRoutes";
+import { useGameUIStore } from "../store/gameUIStore";
 
 const LobbyPage: React.FC = () => {
   const navigate = useNavigate();
@@ -36,10 +36,7 @@ const LobbyPage: React.FC = () => {
         />
         <div className="relative z-10">
           <div className="space-y-6">
-            <PageTitle
-              title="阿卡夏·回响"
-              subtitle="命运将从此刻展开"
-            />
+            <PageTitle title="阿卡夏·回响" subtitle="命运将从此刻展开" />
             {error ? (
               <StatusPill
                 icon={TriangleAlert}
@@ -51,11 +48,15 @@ const LobbyPage: React.FC = () => {
             ) : null}
             <SectionCard>
               <p className="text-base leading-8 text-[#d3d9e5]">
-                从一个名字、一段烙印与一道核心矛盾开始，写下属于你的命运。
+                从一个名字、一段烙印开始，写下属于你的命运。
               </p>
             </SectionCard>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <PrimaryButton onClick={handleStart} disabled={isLoading} className="flex-1">
+              <PrimaryButton
+                onClick={handleStart}
+                disabled={isLoading}
+                className="flex-1"
+              >
                 <Play className="h-4 w-4" />
                 进入回响
               </PrimaryButton>
@@ -69,7 +70,6 @@ const LobbyPage: React.FC = () => {
               </SecondaryButton>
             </div>
           </div>
-
         </div>
       </StoryFrame>
     </ScreenShell>

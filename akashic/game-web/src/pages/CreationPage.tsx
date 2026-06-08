@@ -230,11 +230,13 @@ const CreationPage: React.FC = () => {
     isLoading,
     error,
   } = useGameUIStore();
-  const [ageInput, setAgeInput] = React.useState(() => String(character.age));
-
-  React.useEffect(() => {
-    setAgeInput(String(character.age));
-  }, [character.age]);
+  const [ageInput, setAgeInput] = React.useState(() => ({
+    sourceAge: character.age,
+    value: String(character.age),
+  }));
+  const displayedAgeInput = ageInput.sourceAge === character.age
+    ? ageInput.value
+    : String(character.age);
 
   const traitRows = traitConfigs.map((trait) => ({
     ...trait,
@@ -335,24 +337,39 @@ const CreationPage: React.FC = () => {
                   <input
                     type="number"
                     min="0"
-                    value={ageInput}
+                    value={displayedAgeInput}
                     onChange={(e) => {
                       const nextValue = e.target.value;
-                      setAgeInput(nextValue);
 
                       if (nextValue === '') {
+                        setAgeInput({
+                          sourceAge: character.age,
+                          value: nextValue,
+                        });
                         return;
                       }
 
                       const parsedAge = Number.parseInt(nextValue, 10);
                       if (Number.isNaN(parsedAge)) {
+                        setAgeInput({
+                          sourceAge: character.age,
+                          value: nextValue,
+                        });
                         return;
                       }
 
-                      updateCharacter({ age: Math.max(0, parsedAge) });
+                      const nextAge = Math.max(0, parsedAge);
+                      setAgeInput({
+                        sourceAge: nextAge,
+                        value: nextValue,
+                      });
+                      updateCharacter({ age: nextAge });
                     }}
                     onBlur={() => {
-                      setAgeInput(String(character.age));
+                      setAgeInput({
+                        sourceAge: character.age,
+                        value: String(character.age),
+                      });
                     }}
                     className="akashic-field"
                   />
@@ -508,61 +525,6 @@ const CreationPage: React.FC = () => {
               </div>
             </SectionCard>
           </section>
-
-          {/*
-            <section className="space-y-3">
-              <div className="space-y-1.5">
-                <h2 className="text-lg font-semibold text-[#f6eddc] md:text-xl">写下你的叙事期待</h2>
-              </div>
-
-              <SectionCard className="space-y-3.5 p-3.5 md:p-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <FieldLabel hint="决定故事更像悬疑、成长、悲剧、救赎或权谋等">主题</FieldLabel>
-                    <input
-                      type="text"
-                      value={story.theme}
-                      onChange={(e) => updateStory({ theme: e.target.value })}
-                      className="akashic-field"
-                      placeholder="例子：阴谋悬疑中的自我救赎"
-                    />
-                  </div>
-
-                  <div>
-                    <FieldLabel hint="描述你希望故事整体带来的情绪温度">故事氛围</FieldLabel>
-                    <input
-                      type="text"
-                      value={story.atmosphere}
-                      onChange={(e) => updateStory({ atmosphere: e.target.value })}
-                      className="akashic-field"
-                      placeholder="例子：压抑、潮湿、危险中偶有微光"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <FieldLabel hint="告诉系统要用怎样的叙事笔触来展开剧情">叙事风格</FieldLabel>
-                  <input
-                    type="text"
-                    value={story.narrativeStyle}
-                    onChange={(e) => updateStory({ narrativeStyle: e.target.value })}
-                    className="akashic-field"
-                    placeholder="例子：冷峻克制，偏文学叙事，少解释多暗示"
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel hint="写下不想出现的题材、桥段、关系或叙事手法">禁区</FieldLabel>
-                  <textarea
-                    value={story.taboos}
-                    onChange={(e) => updateStory({ taboos: e.target.value })}
-                    className="akashic-field min-h-20 resize-y"
-                    placeholder="例子：不要校园恋爱、不要无代价复活、避免轻浮搞笑消解压迫感"
-                  />
-                </div>
-              </SectionCard>
-            </section>
-          */}
 
           <div className="sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 mt-2 flex touch-pan-y flex-col gap-2 rounded-xl border border-[#6f6655]/50 bg-[#0a1222]/94 p-1.5 shadow-[0_12px_28px_rgba(2,8,18,0.44)] backdrop-blur-xl sm:static sm:inset-auto sm:mt-1 sm:flex-row sm:justify-end sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
             <SecondaryButton onClick={() => navigate(appRoutes.lobby)} className="min-h-10 w-full px-3.5 py-2 text-sm sm:w-auto md:min-h-11 md:px-4 md:py-2.5">
