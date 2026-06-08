@@ -1,0 +1,86 @@
+name: Build and publish Docker images
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ${{ vars.DOCKER_REGISTRY }}
+  IMAGE_NAMESPACE: ${{ vars.DOCKER_NAMESPACE }}
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate registry settings
+        run: |
+          test -n "$REGISTRY" || (echo "Set repository variable DOCKER_REGISTRY, for example registry.example.com" && exit 1)
+          test -n "$IMAGE_NAMESPACE" || (echo "Set repository variable DOCKER_NAMESPACE, for example akashic" && exit 1)
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+
+      - name: Server image metadata
+        id: meta-server
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/akashic-server
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Caddy image metadata
+        id: meta-caddy
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/akashic-caddy
+          tags: |
+            type=sha,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./akashic/server/Dockerfile
+          push: true
+          tags: ${{ steps.meta-server.outputs.tags }}
+          labels: ${{ steps.meta-server.outputs.labels }}
+          cache-from: type=gha,scope=akashic-server
+          cache-to: type=gha,mode=max,scope=akashic-server
+          secrets: |
+            cargo_config=${{ secrets.CARGO_CONFIG_TOML }}
+
+      - name: Build and push Caddy image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./akashic
+          file: ./akashic/Dockerfile.caddy
+          push: true
+          tags: ${{ steps.meta-caddy.outputs.tags }}
+          labels: ${{ steps.meta-caddy.outputs.labels }}
+          cache-from: type=gha,scope=akashic-caddy
+          cache-to: type=gha,mode=max,scope=akashic-caddy
