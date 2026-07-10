@@ -121,6 +121,48 @@ impl ClassifiedEdges {
     }
 }
 
+/// 计算静态 bool 条件下可从子图入口到达的成员节点。
+fn compute_reachable_member_ids(
+    member_nodes: &[BlueprintNode],
+    classified: &ClassifiedEdges,
+) -> HashSet<String> {
+    let has_structural_incoming: HashSet<&str> = classified
+        .internal
+        .iter()
+        .chain(classified.inbound.iter())
+        .map(|edge| edge.target.as_str())
+        .collect();
+
+    let mut reachable: HashSet<String> = member_nodes
+        .iter()
+        .filter(|node| !has_structural_incoming.contains(node.id.as_str()))
+        .map(|node| node.id.clone())
+        .collect();
+    reachable.extend(
+        classified
+            .inbound
+            .iter()
+            .filter(|edge| !edge_is_statically_disabled(edge))
+            .map(|edge| edge.target.clone()),
+    );
+
+    loop {
+        let mut changed = false;
+        for edge in classified
+            .internal
+            .iter()
+            .filter(|edge| !edge_is_statically_disabled(edge))
+        {
+            if reachable.contains(&edge.source) && reachable.insert(edge.target.clone()) {
+                changed = true;
+            }
+        }
+        if !changed {
+            return reachable;
+        }
+    }
+}
+
 /// 将"无状态创建函数"包装为 Graph 需要的 NodeFactory。
 ///
 /// 每次执行都生成全新的节点实例，保证节点状态隔离。
@@ -141,6 +183,44 @@ fn parse_edge_condition(condition: Option<Value>) -> Result<Option<EdgeCondition
         Some(Value::Bool(b)) => Ok(Some(Box::new(move |_ctx: &Context, _out: &Output| b))),
         Some(other) => Err(format!("Unsupported edge condition: {}", other)),
     }
+}
+
+fn edge_is_statically_disabled(edge: &BlueprintEdge) -> bool {
+    matches!(edge.condition, Some(Value::Bool(false)))
+}
+
+/// Reject edge semantics that the current runtime `Graph` cannot represent.
+///
+/// Control handles are intentionally accepted: they identify UI connection points but do not
+/// change runtime routing. Data edges and port/type routing are different; compiling those into a
+/// plain node-to-node `FlowEdge` would silently turn a port value into a control-flow value.
+fn validate_runtime_edge_semantics(edges: &[BlueprintEdge]) -> Result<(), String> {
+    let mut endpoint_pairs = HashSet::new();
+
+    for edge in edges {
+        if edge.kind == EdgeKind::Data {
+            return Err(format!(
+                "Edge '{}' is a data edge, but runtime Graph edges do not support port-aware data routing",
+                edge.id
+            ));
+        }
+        if edge.source_port.is_some() || edge.target_port.is_some() || edge.data_type.is_some() {
+            return Err(format!(
+                "Edge '{}' declares data port/type metadata, but runtime Graph edges cannot preserve it",
+                edge.id
+            ));
+        }
+
+        let pair = (edge.source.as_str(), edge.target.as_str());
+        if !endpoint_pairs.insert(pair) {
+            return Err(format!(
+                "Parallel edges from '{}' to '{}' cannot be represented without losing per-edge semantics",
+                edge.source, edge.target
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 /// 从蓝图节点配置中解析子图执行配置。
@@ -181,7 +261,6 @@ struct SubgraphBuilder<'a> {
     end_id: String,
     seen_edges: HashSet<(String, String)>,
     has_incoming: HashSet<String>,
-    has_outgoing: HashSet<String>,
 }
 
 impl<'a> SubgraphBuilder<'a> {
@@ -204,7 +283,6 @@ impl<'a> SubgraphBuilder<'a> {
             end_id,
             seen_edges: HashSet::new(),
             has_incoming: HashSet::new(),
-            has_outgoing: HashSet::new(),
         }
     }
 
@@ -273,7 +351,6 @@ impl<'a> SubgraphBuilder<'a> {
     ) {
         for e in internal_edges {
             self.has_incoming.insert(e.target.clone());
-            self.has_outgoing.insert(e.source.clone());
         }
         for e in inbound_edges {
             self.has_incoming.insert(e.target.clone());
@@ -296,6 +373,9 @@ impl<'a> SubgraphBuilder<'a> {
     /// 构建子图内部边。
     fn build_internal_edges(&mut self, internal_edges: &[BlueprintEdge]) -> Result<(), String> {
         for e in internal_edges {
+            if edge_is_statically_disabled(e) {
+                continue;
+            }
             let condition = parse_edge_condition(e.condition.clone())?;
             self.add_edge(e.source.clone(), e.target.clone(), condition);
         }
@@ -309,10 +389,43 @@ impl<'a> SubgraphBuilder<'a> {
         &mut self,
         inbound_edges: &[BlueprintEdge],
         source_to_proxy: &HashMap<String, String>,
-    ) {
+    ) -> Result<(), String> {
         for e in inbound_edges {
+            if edge_is_statically_disabled(e) {
+                continue;
+            }
             if let Some(proxy_id) = source_to_proxy.get(&e.source) {
-                self.add_edge(proxy_id.clone(), e.target.clone(), None);
+                // The outer source -> group edge is only a transport edge. The original condition
+                // belongs here so each inbound target keeps its own branch decision.
+                let condition = parse_edge_condition(e.condition.clone())?;
+                self.add_edge(proxy_id.clone(), e.target.clone(), condition);
+            }
+        }
+        Ok(())
+    }
+
+    /// 移除从统一入口不可达的成员节点。
+    ///
+    /// 蓝图条件当前只有静态 bool。false 边不会进入运行时图；剪掉因此不可达的成员，
+    /// 可以避免它们继续作为 AllUpstreamReady 的结构父节点阻塞有效分支和统一出口。
+    fn prune_unreachable_members(&mut self, member_nodes: &[BlueprintNode]) {
+        let mut reachable = HashSet::from([self.start_id.clone()]);
+        let mut pending = vec![self.start_id.clone()];
+
+        while let Some(node_id) = pending.pop() {
+            if let Some(edges) = self.graph.edges.get(&node_id) {
+                for edge in edges {
+                    let target = edge.to().to_owned();
+                    if reachable.insert(target.clone()) {
+                        pending.push(target);
+                    }
+                }
+            }
+        }
+
+        for node in member_nodes {
+            if !reachable.contains(&node.id) {
+                self.graph.remove_node(&node.id);
             }
         }
     }
@@ -339,12 +452,25 @@ impl<'a> SubgraphBuilder<'a> {
         member_nodes: &[BlueprintNode],
         outbound_edges: &[BlueprintEdge],
     ) {
-        let exit_sources: HashSet<String> = if !outbound_edges.is_empty() {
-            outbound_edges.iter().map(|e| e.source.clone()).collect()
+        let enabled_outbound_sources: HashSet<String> = outbound_edges
+            .iter()
+            .filter(|edge| !edge_is_statically_disabled(edge))
+            .filter(|edge| self.graph.nodes.contains_key(&edge.source))
+            .map(|edge| edge.source.clone())
+            .collect();
+
+        let exit_sources: HashSet<String> = if !enabled_outbound_sources.is_empty() {
+            enabled_outbound_sources
         } else {
             member_nodes
                 .iter()
-                .filter(|n| !self.has_outgoing.contains(&n.id))
+                .filter(|node| self.graph.nodes.contains_key(&node.id))
+                .filter(|node| {
+                    self.graph
+                        .edges
+                        .get(&node.id)
+                        .is_none_or(|edges| edges.is_empty())
+                })
                 .map(|n| n.id.clone())
                 .collect()
         };
@@ -380,8 +506,9 @@ impl<'a> SubgraphBuilder<'a> {
 
         self.analyze_edge_connectivity(&classified.internal, &classified.inbound);
         self.build_internal_edges(&classified.internal)?;
-        self.build_proxy_edges(&classified.inbound, &source_to_proxy);
+        self.build_proxy_edges(&classified.inbound, &source_to_proxy)?;
         self.connect_entry_nodes(member_nodes);
+        self.prune_unreachable_members(member_nodes);
         self.connect_exit_nodes(member_nodes, &classified.outbound);
 
         let config = parse_subgraph_config(group_node, self.start_id, self.end_id);
@@ -481,6 +608,24 @@ where
             .collect();
 
         let classified = ClassifiedEdges::classify(&edges, &member_set);
+        let reachable_members = compute_reachable_member_ids(&member_nodes, &classified);
+
+        let outbound_sources: HashSet<&str> = classified
+            .outbound
+            .iter()
+            .filter(|edge| !edge_is_statically_disabled(edge))
+            .filter(|edge| reachable_members.contains(&edge.source))
+            .map(|edge| edge.source.as_str())
+            .collect();
+        if outbound_sources.len() > 1 {
+            let mut sources: Vec<_> = outbound_sources.into_iter().collect();
+            sources.sort_unstable();
+            return Err(format!(
+                "Subgraph '{}' has outbound edges from multiple internal sources ({}); its single output cannot preserve source-specific values and conditions",
+                group_id,
+                sources.join(", ")
+            ));
+        }
 
         let executor = SubgraphBuilder::new(&group_id).build(
             &group_node,
@@ -501,39 +646,71 @@ where
             .iter()
             .map(|e| (e.source.clone(), e.target.clone()))
             .collect();
+        let preexisting_pairs = seen.clone();
+        let enabled_inbound_sources: HashSet<String> = classified
+            .inbound
+            .iter()
+            .filter(|edge| !edge_is_statically_disabled(edge))
+            .map(|edge| edge.source.clone())
+            .collect();
 
         for e in classified.inbound {
             let key = (e.source.clone(), group_node.id.clone());
-            if seen.insert(key.clone()) {
+            if preexisting_pairs.contains(&key) {
+                return Err(format!(
+                    "Subgraph '{}' has both a direct edge and an inbound child edge from '{}'; folding cannot preserve both routes",
+                    group_node.id, e.source
+                ));
+            }
+            if seen.insert(key) {
+                let transport_condition = if enabled_inbound_sources.contains(&e.source) {
+                    None
+                } else {
+                    Some(Value::Bool(false))
+                };
                 edges.push(BlueprintEdge {
                     id: format!("fold:{}:in:{}", group_node.id, e.id),
                     source: e.source,
                     target: group_node.id.clone(),
                     source_handle: e.source_handle,
                     target_handle: None,
-                    condition: e.condition,
-                    kind: e.kind.clone(),
-                    source_port: e.source_port.clone(),
+                    // Conditions are evaluated by the proxy -> target edge inside the subgraph.
+                    // This transport edge must stay unconditional so one false branch does not
+                    // suppress every other inbound branch from the same source.
+                    condition: transport_condition,
+                    kind: EdgeKind::Control,
+                    source_port: None,
                     target_port: None,
-                    data_type: e.data_type.clone(),
+                    data_type: None,
                 });
             }
         }
 
         for e in classified.outbound {
             let key = (group_node.id.clone(), e.target.clone());
-            if seen.insert(key.clone()) {
+            if preexisting_pairs.contains(&key) {
+                return Err(format!(
+                    "Subgraph '{}' has both a direct edge and an outbound child edge to '{}'; folding cannot preserve both routes",
+                    group_node.id, e.target
+                ));
+            }
+            if seen.insert(key) {
+                let transport_condition = if reachable_members.contains(&e.source) {
+                    e.condition
+                } else {
+                    Some(Value::Bool(false))
+                };
                 edges.push(BlueprintEdge {
                     id: format!("fold:{}:out:{}", group_node.id, e.id),
                     source: group_node.id.clone(),
                     target: e.target,
                     source_handle: None,
                     target_handle: e.target_handle,
-                    condition: e.condition,
-                    kind: e.kind.clone(),
+                    condition: transport_condition,
+                    kind: EdgeKind::Control,
                     source_port: None,
-                    target_port: e.target_port.clone(),
-                    data_type: e.data_type.clone(),
+                    target_port: None,
+                    data_type: None,
                 });
             }
         }
@@ -565,6 +742,8 @@ where
     IsGroup: Fn(&BlueprintNode) -> bool,
     CreateGroupFactory: Fn(&BlueprintNode, SubgraphExecutor) -> Result<Arc<NodeFactory>, String>,
 {
+    validate_runtime_edge_semantics(edges)?;
+
     let (nodes, edges, runtime_groups) = fold_groups(
         nodes,
         edges,
@@ -651,4 +830,256 @@ where
         create_group_factory,
         create_leaf_factory,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn unused_factory() -> Arc<NodeFactory> {
+        Arc::new(|| Err("test factory should not be instantiated".to_string()))
+    }
+
+    fn node(id: &str, parent_id: Option<&str>) -> BlueprintNode {
+        BlueprintNode {
+            id: id.to_string(),
+            type_name: if id == "G" { "Group" } else { "Leaf" }.to_string(),
+            parent_id: parent_id.map(str::to_string),
+            config: Value::Null,
+        }
+    }
+
+    fn control_edge(
+        id: &str,
+        source: &str,
+        target: &str,
+        condition: Option<bool>,
+    ) -> BlueprintEdge {
+        BlueprintEdge {
+            id: id.to_string(),
+            source: source.to_string(),
+            target: target.to_string(),
+            source_handle: None,
+            target_handle: None,
+            condition: condition.map(Value::Bool),
+            kind: EdgeKind::Control,
+            source_port: None,
+            target_port: None,
+            data_type: None,
+        }
+    }
+
+    #[test]
+    fn disabled_inbound_branches_are_removed_after_the_source_proxy() {
+        let inbound = vec![
+            control_edge("e-sx", "S", "X", Some(false)),
+            control_edge("e-sy", "S", "Y", Some(true)),
+        ];
+        let mut builder = SubgraphBuilder::new("G");
+        let proxies = builder.setup_inbound_proxies(&inbound);
+
+        builder
+            .build_proxy_edges(&inbound, &proxies)
+            .expect("valid boolean conditions should compile");
+
+        let proxy_id = proxies.get("S").expect("source proxy should exist");
+        let outgoing = builder
+            .graph
+            .edges
+            .get(proxy_id)
+            .expect("proxy should have outgoing edges");
+        let output = Output::new(Some(json!({"value": 1})));
+        let context = Context::new();
+
+        assert!(outgoing.iter().all(|edge| edge.to() != "X"));
+        assert!(
+            outgoing
+                .iter()
+                .find(|edge| edge.to() == "Y")
+                .expect("Y edge should exist")
+                .check_condition(&context, &output)
+        );
+    }
+
+    #[test]
+    fn folded_inbound_transport_edge_is_single_and_unconditional() {
+        let nodes = vec![
+            node("S", None),
+            node("G", None),
+            node("X", Some("G")),
+            node("Y", Some("G")),
+        ];
+        let edges = vec![
+            control_edge("e-sx", "S", "X", Some(false)),
+            control_edge("e-sy", "S", "Y", Some(true)),
+        ];
+
+        let (_, folded_edges, _) = fold_groups(
+            &nodes,
+            &edges,
+            &|node| node.type_name == "Group",
+            &|_, _| Ok(unused_factory()),
+            &|_| Ok(unused_factory()),
+        )
+        .expect("control edges should fold");
+
+        let transport_edges: Vec<_> = folded_edges
+            .iter()
+            .filter(|edge| edge.source == "S" && edge.target == "G")
+            .collect();
+        assert_eq!(transport_edges.len(), 1);
+        assert_eq!(transport_edges[0].condition, None);
+    }
+
+    #[test]
+    fn folded_inbound_transport_is_disabled_when_every_branch_is_false() {
+        let nodes = vec![node("S", None), node("G", None), node("X", Some("G"))];
+        let edges = vec![control_edge("e-sx", "S", "X", Some(false))];
+
+        let (_, folded_edges, _) = fold_groups(
+            &nodes,
+            &edges,
+            &|node| node.type_name == "Group",
+            &|_, _| Ok(unused_factory()),
+            &|_| Ok(unused_factory()),
+        )
+        .expect("static false control edge should fold");
+
+        let transport = folded_edges
+            .iter()
+            .find(|edge| edge.source == "S" && edge.target == "G")
+            .expect("folding should retain a disabled structural edge");
+        assert_eq!(transport.condition, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn data_edges_fail_instead_of_silently_becoming_control_edges() {
+        let nodes = vec![node("A", None), node("B", None)];
+        let mut edge = control_edge("data-edge", "A", "B", None);
+        edge.kind = EdgeKind::Data;
+        edge.source_port = Some("result".to_string());
+        edge.target_port = Some("input".to_string());
+        edge.data_type = Some(DataType::Json);
+
+        let error = match compile_graph(&nodes, &[edge], "Group", |_| Ok(unused_factory())) {
+            Ok(_) => panic!("the runtime graph has no port-aware data edge representation"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("data-edge"));
+        assert!(error.contains("data edge"));
+    }
+
+    #[test]
+    fn port_metadata_on_control_edges_is_not_silently_ignored() {
+        let nodes = vec![node("A", None), node("B", None)];
+        let mut edge = control_edge("ported-control-edge", "A", "B", None);
+        edge.source_port = Some("result".to_string());
+
+        let error = match compile_graph(&nodes, &[edge], "Group", |_| Ok(unused_factory())) {
+            Ok(_) => panic!("port metadata requires a port-aware runtime edge"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("ported-control-edge"));
+        assert!(error.contains("port/type metadata"));
+    }
+
+    #[test]
+    fn control_handles_remain_accepted_as_ui_metadata() {
+        let nodes = vec![node("A", None), node("B", None)];
+        let mut edge = control_edge("control-edge", "A", "B", None);
+        edge.source_handle = Some("ctrl".to_string());
+        edge.target_handle = Some("ctrl".to_string());
+
+        compile_graph(&nodes, &[edge], "Group", |_| Ok(unused_factory()))
+            .expect("control handles do not affect runtime routing");
+    }
+
+    #[test]
+    fn parallel_control_edges_fail_instead_of_losing_one_condition() {
+        let nodes = vec![node("A", None), node("B", None)];
+        let edges = vec![
+            control_edge("e-true", "A", "B", Some(true)),
+            control_edge("e-false", "A", "B", Some(false)),
+        ];
+
+        let error = match compile_graph(&nodes, &edges, "Group", |_| Ok(unused_factory())) {
+            Ok(_) => panic!("parallel endpoint semantics require edge identity at runtime"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("Parallel edges"));
+        assert!(error.contains("A"));
+        assert!(error.contains("B"));
+    }
+
+    #[test]
+    fn direct_group_and_inbound_child_edges_cannot_compete_for_one_route() {
+        let nodes = vec![node("S", None), node("G", None), node("X", Some("G"))];
+        let edges = vec![
+            control_edge("e-direct", "S", "G", None),
+            control_edge("e-child", "S", "X", None),
+        ];
+
+        let error = match compile_graph(&nodes, &edges, "Group", |_| Ok(unused_factory())) {
+            Ok(_) => panic!("folding would collapse direct and child routes"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("direct edge"));
+        assert!(error.contains("inbound child edge"));
+    }
+
+    #[test]
+    fn multiple_outbound_sources_are_rejected_when_their_values_cannot_be_routed() {
+        let nodes = vec![
+            node("G", None),
+            node("X", Some("G")),
+            node("Y", Some("G")),
+            node("T", None),
+        ];
+        let edges = vec![
+            control_edge("e-xt", "X", "T", None),
+            control_edge("e-yt", "Y", "T", None),
+        ];
+
+        let error = match compile_graph(&nodes, &edges, "Group", |_| Ok(unused_factory())) {
+            Ok(_) => panic!("a single group output cannot preserve both source values"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("G"));
+        assert!(error.contains("outbound"));
+    }
+
+    #[test]
+    fn outbound_from_unreachable_member_stays_structurally_disabled() {
+        let nodes = vec![
+            node("G", None),
+            node("A", Some("G")),
+            node("X", Some("G")),
+            node("T", None),
+        ];
+        let edges = vec![
+            control_edge("e-ax", "A", "X", Some(false)),
+            control_edge("e-xt", "X", "T", None),
+        ];
+
+        let (_, folded_edges, _) = fold_groups(
+            &nodes,
+            &edges,
+            &|node| node.type_name == "Group",
+            &|_, _| Ok(unused_factory()),
+            &|_| Ok(unused_factory()),
+        )
+        .expect("statically unreachable outbound source should fold safely");
+
+        let outbound = folded_edges
+            .iter()
+            .find(|edge| edge.source == "G" && edge.target == "T")
+            .expect("disabled edge keeps T from becoming an unrelated start node");
+        assert_eq!(outbound.condition, Some(Value::Bool(false)));
+    }
 }

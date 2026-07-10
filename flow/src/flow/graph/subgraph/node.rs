@@ -9,6 +9,12 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 
+const ROUTED_INPUT_ENVELOPE: &str = "__ksana_flow_subgraph_input";
+const ROUTED_INPUT_VERSION: &str = "version";
+const ROUTED_INPUT_KIND: &str = "kind";
+const ROUTED_INPUT_VALUES: &str = "values";
+const ROUTED_INPUT_KIND_VALUE: &str = "routed";
+
 /// 父图中的子图容器节点；负责打包输入并等待子 Runner 返回出口值。
 pub struct SubgraphNode {
     pub executor: SubgraphExecutor,
@@ -17,7 +23,7 @@ pub struct SubgraphNode {
 #[async_trait]
 impl Node for SubgraphNode {
     async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String> {
-        // 子图的起始节点接收外部输入（多路是对象，单路就直接传递）
+        // 父图上游输入使用带标签的信封，避免业务 Object 与路由表产生歧义。
         let v = pack_inputs_to_object(input);
         let out = self
             .executor
@@ -43,7 +49,7 @@ impl Node for SubgraphStartNode {
 
 /// 一条外部来源在子图内部的输入代理。
 ///
-/// 多路输入使用 `{source_id: value}` 路由；非对象值按单路输入直接透传。
+/// 带标签的父图输入按来源 ID 路由；未标记值按直接调用的单值输入透传。
 pub struct SubgraphInNode {
     pub key: String,
 }
@@ -52,8 +58,7 @@ pub struct SubgraphInNode {
 impl Node for SubgraphInNode {
     async fn run(&mut self, _ctx: &Context, input: &Input) -> Result<Output, String> {
         let v = input.get_any().cloned().unwrap_or(Value::Null);
-        // 多路你就从对象中取，单路就直接返回
-        if let Value::Object(map) = v {
+        if let Some(map) = routed_input_values(&v) {
             Ok(map.get(&self.key).cloned().unwrap_or(Value::Null).into())
         } else {
             Ok(v.into())
@@ -84,8 +89,9 @@ impl Node for SubgraphEndNode {
 
 /// 把父图输入归一化为子 Runner 的单个入口值。
 ///
-/// 外部显式输入和单路上游保持原值；多路上游编码为 `{source_id: value}`。
-/// 该编码没有额外类型标签，因此单路 Object 与多路路由对象需要由调用方避免歧义。
+/// 外部显式输入保持原值，供直接调用 `SubgraphExecutor` 时作为单值透传。
+/// 来自父图上游的输入（包括单路）编码为带版本标签的路由信封，由内部代理按来源 ID
+/// 提取。业务 JSON Object 因此不会被误认为路由表。
 pub fn pack_inputs_to_object(input: &Input) -> Value {
     // 直接运行节点指定输入的情况，此时相当于子图的 INPUT_EXTERNAL_START 被指定了，
     // 它不是由上游节点出发的
@@ -96,16 +102,42 @@ pub fn pack_inputs_to_object(input: &Input) -> Value {
     if m.is_empty() {
         return Value::Null;
     }
-    // 子图只有一路输入时，直接返回该输入
-    if m.len() == 1 {
-        return m.values().next().cloned().unwrap_or(Value::Null);
-    }
-    // 多路输入时，打包成对象
-    let mut obj = serde_json::Map::new();
+    // 即使只有一路也保留来源 ID；代理节点不再需要从 Value 的 JSON 类型猜测协议。
+    let mut values = serde_json::Map::new();
     for (k, v) in m {
-        obj.insert(k.clone(), v.clone());
+        values.insert(k.clone(), v.clone());
     }
-    Value::Object(obj)
+    routed_input_envelope(values)
+}
+
+fn routed_input_envelope(values: serde_json::Map<String, Value>) -> Value {
+    let envelope = serde_json::Map::from_iter([
+        (ROUTED_INPUT_VERSION.to_owned(), Value::from(1)),
+        (
+            ROUTED_INPUT_KIND.to_owned(),
+            Value::String(ROUTED_INPUT_KIND_VALUE.to_owned()),
+        ),
+        (ROUTED_INPUT_VALUES.to_owned(), Value::Object(values)),
+    ]);
+    Value::Object(serde_json::Map::from_iter([(
+        ROUTED_INPUT_ENVELOPE.to_owned(),
+        Value::Object(envelope),
+    )]))
+}
+
+fn routed_input_values(value: &Value) -> Option<&serde_json::Map<String, Value>> {
+    let outer = value.as_object()?;
+    if outer.len() != 1 {
+        return None;
+    }
+    let envelope = outer.get(ROUTED_INPUT_ENVELOPE)?.as_object()?;
+    if envelope.len() != 3
+        || envelope.get(ROUTED_INPUT_VERSION)?.as_u64() != Some(1)
+        || envelope.get(ROUTED_INPUT_KIND)?.as_str() != Some(ROUTED_INPUT_KIND_VALUE)
+    {
+        return None;
+    }
+    envelope.get(ROUTED_INPUT_VALUES)?.as_object()
 }
 
 /// 把一个入口值包装成可直接传给子图 start 节点的 `Input`。
@@ -113,4 +145,68 @@ pub fn input_from_object(value: Value) -> Input {
     let mut map: HashMap<String, Value> = HashMap::new();
     map.insert(INPUT_EXTERNAL_START.to_owned(), value);
     Input::new(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    async fn run_inbound_proxy(key: &str, value: Value) -> Value {
+        let mut node = SubgraphInNode {
+            key: key.to_owned(),
+        };
+        node.run(&Context::new(), &input_from_object(value))
+            .await
+            .expect("inbound proxy should run")
+            .into_value()
+            .expect("inbound proxy should produce a value")
+    }
+
+    #[tokio::test]
+    async fn single_object_from_parent_is_not_mistaken_for_routing_map() {
+        let business_value = json!({"name": "akashic", "enabled": true});
+        let parent_input = Input::new(HashMap::from([(
+            "source-a".to_owned(),
+            business_value.clone(),
+        )]));
+
+        let packed = pack_inputs_to_object(&parent_input);
+
+        assert_eq!(run_inbound_proxy("source-a", packed).await, business_value);
+    }
+
+    #[tokio::test]
+    async fn single_scalar_from_parent_keeps_its_value() {
+        let parent_input = Input::new(HashMap::from([("source-a".to_owned(), json!(42))]));
+
+        let packed = pack_inputs_to_object(&parent_input);
+
+        assert_eq!(run_inbound_proxy("source-a", packed).await, json!(42));
+    }
+
+    #[tokio::test]
+    async fn untagged_object_from_direct_executor_input_is_a_single_value() {
+        let business_value = json!({"name": "akashic", "enabled": true});
+
+        assert_eq!(
+            run_inbound_proxy("any-proxy", business_value.clone()).await,
+            business_value
+        );
+    }
+
+    #[tokio::test]
+    async fn multiple_parent_sources_are_routed_by_source_id() {
+        let parent_input = Input::new(HashMap::from([
+            ("source-a".to_owned(), json!({"value": "a"})),
+            ("source-b".to_owned(), json!({"value": "b"})),
+        ]));
+
+        let packed = pack_inputs_to_object(&parent_input);
+
+        assert_eq!(
+            run_inbound_proxy("source-b", packed).await,
+            json!({"value": "b"})
+        );
+    }
 }

@@ -370,13 +370,14 @@ async fn test_subgraph_inbound_proxy_routes_by_source_id() {
 }
 
 #[tokio::test]
-async fn test_subgraph_inbound_proxy_single_source_passthrough() {
+async fn test_subgraph_inbound_conditions_and_object_passthrough() {
     let nodes = vec![
         BlueprintNode {
             id: "A".to_string(),
             type_name: "ConstNode".to_string(),
             parent_id: None,
-            config: json!("va"),
+            // 单路业务对象必须整体穿过子图代理，不能被误判为多路路由表。
+            config: json!({"payload": {"foo": 1}}),
         },
         BlueprintNode {
             id: "G".to_string(),
@@ -405,7 +406,7 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
             target: "X".to_string(),
             source_handle: None,
             target_handle: None,
-            condition: None,
+            condition: Some(Value::Bool(false)),
             kind: EdgeKind::Control,
             source_port: None,
             target_port: None,
@@ -417,7 +418,7 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
             target: "Y".to_string(),
             source_handle: None,
             target_handle: None,
-            condition: None,
+            condition: Some(Value::Bool(true)),
             kind: EdgeKind::Control,
             source_port: None,
             target_port: None,
@@ -454,7 +455,7 @@ async fn test_subgraph_inbound_proxy_single_source_passthrough() {
     runner.run().await.unwrap();
 
     let out = runner.get_execution_context().get_output("G").unwrap();
-    assert_eq!(out, json!({"X": "va", "Y": "va"}));
+    assert_eq!(out, json!({"payload": {"foo": 1}}));
 }
 
 #[tokio::test]

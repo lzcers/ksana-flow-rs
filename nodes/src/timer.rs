@@ -1,9 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 use cron::Schedule;
-use flow::observable::{Observable, Observer, Subscription};
 use flow::{Context, Input, Node, Output, ReactiveStream};
-use serde_json::Value;
+use futures::stream;
 use std::str::FromStr;
 use tokio::time::sleep;
 
@@ -19,49 +18,28 @@ impl TimerNode {
     }
 }
 
-pub struct TimerObservable {
-    schedule: Schedule,
-}
-
-pub struct TimerSubscription;
-
-impl Subscription for TimerSubscription {
-    fn unsubscribe(self: Box<Self>) {}
-}
-
-#[async_trait]
-impl Observable<(), ()> for TimerObservable {
-    type Sub = TimerSubscription;
-
-    async fn subscribe(self, mut observer: impl Observer<(), ()> + 'static) -> TimerSubscription {
-        loop {
-            // Find the next scheduled time
-            if let Some(next) = self.schedule.upcoming(Utc).next() {
-                let now = Utc::now();
-                if next > now {
-                    let duration = next - now;
-                    if let Ok(std_duration) = duration.to_std() {
-                        sleep(std_duration).await;
-                    }
+fn timer_stream(schedule: Schedule) -> impl futures::Stream<Item = Result<(), ()>> + Send {
+    stream::unfold(schedule, |schedule| async move {
+        if let Some(next) = schedule.upcoming(Utc).next() {
+            let now = Utc::now();
+            if next > now {
+                let duration = next - now;
+                if let Ok(std_duration) = duration.to_std() {
+                    sleep(std_duration).await;
                 }
-                // Emit event
-                observer.on_next(()).await;
-            } else {
-                // Should not happen for cron, but if it does, complete
-                observer.on_completed().await;
-                break;
             }
+            Some((Ok(()), schedule))
+        } else {
+            None
         }
-        TimerSubscription
-    }
+    })
 }
 
 #[async_trait]
 impl Node for TimerNode {
     async fn run(&mut self, _ctx: &Context, _input: &Input) -> Result<Output, String> {
         let schedule = Schedule::from_str(&self.cron_expr).expect("Invalid cron expression");
-        let observable = TimerObservable { schedule };
-        let stream = ReactiveStream::from_observable(observable);
+        let stream = ReactiveStream::from_stream(timer_stream(schedule));
         let mut out = Output::new(None);
         out.set_stream(stream);
         Ok(out)
@@ -73,9 +51,9 @@ mod tests {
     use super::*;
     use flow::TaskEvent;
     use flow::TaskGuard;
+    use serde_json::Value;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use std::time::Instant;
     use tokio::sync::mpsc;
     use tokio::time::{Duration, timeout};
 
@@ -85,18 +63,17 @@ mod tests {
         // Execute every second (7 fields: sec min hour day month dow year)
         let mut node = TimerNode::new("* * * * * * *").unwrap();
 
-        let start = Instant::now();
         let out = node
             .run(&ctx, &Input::new(HashMap::<String, Value>::new()))
             .await
             .unwrap();
         let stream = out.into_stream().expect("Expected stream output");
-        let subscribe = stream.subscribe;
+        let start_stream = stream.start;
 
         let (tx, mut rx) = mpsc::channel(10);
 
-        // Manually subscribe to the stream
-        let sub = subscribe(
+        // Manually start the stream
+        let task = start_stream(
             TaskGuard::default(),
             tx,
             "test_node".to_string(),
@@ -114,28 +91,13 @@ mod tests {
             }
         }
 
-        sub.unsubscribe();
+        task.abort();
         while rx.try_recv().is_ok() {}
-        let deadline = tokio::time::Instant::now() + Duration::from_millis(2500);
-        let mut received_after_unsub = 0usize;
-        loop {
-            let now = tokio::time::Instant::now();
-            if now >= deadline {
-                break;
-            }
-            let remaining = deadline - now;
-            match timeout(remaining, rx.recv()).await {
-                Ok(Some(_)) => {
-                    received_after_unsub += 1;
-                    if received_after_unsub > 1 {
-                        panic!("Received too many events after unsubscribe");
-                    }
-                }
-                _ => break,
-            }
-        }
-
-        let elapsed = start.elapsed();
-        println!("Elapsed: {:?}", elapsed);
+        assert!(
+            timeout(Duration::from_millis(100), rx.recv())
+                .await
+                .expect("aborted timer should close its event channel")
+                .is_none()
+        );
     }
 }

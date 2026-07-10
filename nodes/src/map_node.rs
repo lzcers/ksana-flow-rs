@@ -2,7 +2,6 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 use async_trait::async_trait;
-use flow::observable::Subscription;
 use flow::{
     Context, ControllerHandle, Graph, Input, Node, Output, RunnerId, SubgraphConfig,
     SubgraphExecutor,
@@ -10,8 +9,7 @@ use flow::{
 use flow::{ReactiveStream, TaskEvent};
 use serde_json::Value;
 use serde_json::json;
-use tokio::sync::mpsc;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 
 /// MapNode - 并发映射节点
 ///
@@ -216,132 +214,116 @@ impl MapNode {
     ) -> ReactiveStream {
         let executor = self.executor.clone();
         let max_concurrency = self.max_concurrency;
-        ReactiveStream {
-            subscribe: Box::new(move |guard, tx: mpsc::Sender<TaskEvent>, node_id, ctx| {
-                struct TaskSubscription {
-                    handle: JoinHandle<()>,
-                }
+        ReactiveStream::new(move |guard, tx, node_id, ctx| async move {
+            let total = items.len();
+            let controller = controller.clone();
+            let _guard = guard;
 
-                impl Subscription for TaskSubscription {
-                    fn unsubscribe(self: Box<Self>) {
-                        self.handle.abort();
-                    }
-                }
+            if items.is_empty() {
+                let _ = tx
+                    .send(TaskEvent::Next(
+                        node_id.clone(),
+                        json!({"kind":"done","count":0}),
+                    ))
+                    .await;
+                let _ = tx
+                    .send(TaskEvent::Completed(node_id, Some(Value::Array(vec![]))))
+                    .await;
+                return;
+            }
 
-                let total = items.len();
+            let concurrency = if max_concurrency == 0 {
+                total
+            } else {
+                max_concurrency.min(total)
+            };
+            let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
+
+            let mut join_set = JoinSet::new();
+            for (idx, item) in items.into_iter().enumerate() {
+                let semaphore = semaphore.clone();
+                let executor = executor.clone();
+                let ctx = ctx.clone();
+                let tx = tx.clone();
+                let node_id_for_events = node_id.clone();
+                let node_id_for_scope = node_id.clone();
                 let controller = controller.clone();
-                let handle = tokio::spawn(async move {
-                    let _guard = guard;
-
-                    if items.is_empty() {
-                        let _ = tx
-                            .send(TaskEvent::Next(
-                                node_id.clone(),
-                                json!({"kind":"done","count":0}),
-                            ))
-                            .await;
-                        let _ = tx
-                            .send(TaskEvent::Completed(node_id, Some(Value::Array(vec![]))))
-                            .await;
-                        return;
-                    }
-
-                    let concurrency = if max_concurrency == 0 {
-                        total
-                    } else {
-                        max_concurrency.min(total)
-                    };
-                    let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
-
-                    let mut join_set = JoinSet::new();
-                    for (idx, item) in items.into_iter().enumerate() {
-                        let semaphore = semaphore.clone();
-                        let executor = executor.clone();
-                        let ctx = ctx.clone();
-                        let tx = tx.clone();
-                        let node_id_for_events = node_id.clone();
-                        let node_id_for_scope = node_id.clone();
-                        let controller = controller.clone();
-                        join_set.spawn(async move {
-                            let permit = semaphore
-                                .acquire_owned()
+                join_set.spawn(async move {
+                    let permit = semaphore
+                        .acquire_owned()
+                        .await
+                        .map_err(|e| format!("Failed to acquire permit: {}", e))?;
+                    let result: Result<Value, String> =
+                        flow::scope_current_node(node_id_for_scope, async move {
+                            executor
+                                .execute_with_controller_and_parent(
+                                    item,
+                                    ctx.as_ref(),
+                                    controller,
+                                    parent_runner_id,
+                                )
                                 .await
-                                .map_err(|e| format!("Failed to acquire permit: {}", e))?;
-                            let result: Result<Value, String> =
-                                flow::scope_current_node(node_id_for_scope, async move {
-                                    executor
-                                        .execute_with_controller_and_parent(
-                                            item,
-                                            ctx.as_ref(),
-                                            controller,
-                                            parent_runner_id,
-                                        )
-                                        .await
-                                        .map_err(|e| e.to_string())
-                                })
+                                .map_err(|e| e.to_string())
+                        })
+                        .await;
+                    drop(permit);
+                    match result {
+                        Ok(output) => {
+                            let _ = tx
+                                .send(TaskEvent::Next(
+                                    node_id_for_events,
+                                    json!({"kind":"item","index":idx,"output":output}),
+                                ))
                                 .await;
-                            drop(permit);
-                            match result {
-                                Ok(output) => {
-                                    let _ = tx
-                                        .send(TaskEvent::Next(
-                                            node_id_for_events,
-                                            json!({"kind":"item","index":idx,"output":output}),
-                                        ))
-                                        .await;
-                                    Ok::<(usize, Value), String>((idx, output))
-                                }
-                                Err(e) => Err(e),
-                            }
-                        });
+                            Ok::<(usize, Value), String>((idx, output))
+                        }
+                        Err(e) => Err(e),
                     }
+                });
+            }
 
-                    let mut results: Vec<Option<Value>> = vec![None; total];
-                    let mut error: Option<String> = None;
+            let mut results: Vec<Option<Value>> = vec![None; total];
+            let mut error: Option<String> = None;
 
-                    while let Some(joined) = join_set.join_next().await {
-                        match joined {
-                            Ok(Ok((idx, output))) => {
-                                if idx < results.len() {
-                                    results[idx] = Some(output);
-                                }
-                            }
-                            Ok(Err(e)) => {
-                                error = Some(e);
-                                join_set.abort_all();
-                                break;
-                            }
-                            Err(e) => {
-                                error = Some(format!("Task panicked: {}", e));
-                                join_set.abort_all();
-                                break;
-                            }
+            while let Some(joined) = join_set.join_next().await {
+                match joined {
+                    Ok(Ok((idx, output))) => {
+                        if idx < results.len() {
+                            results[idx] = Some(output);
                         }
                     }
-
-                    if let Some(e) = error {
-                        let _ = tx.send(TaskEvent::Error(node_id, e)).await;
-                        return;
+                    Ok(Err(e)) => {
+                        error = Some(e);
+                        join_set.abort_all();
+                        break;
                     }
+                    Err(e) => {
+                        error = Some(format!("Task panicked: {}", e));
+                        join_set.abort_all();
+                        break;
+                    }
+                }
+            }
 
-                    let ordered: Vec<Value> = results
-                        .into_iter()
-                        .map(|v| v.unwrap_or(Value::Null))
-                        .collect();
-                    let _ = tx
-                        .send(TaskEvent::Next(
-                            node_id.clone(),
-                            json!({"kind":"done","count":ordered.len()}),
-                        ))
-                        .await;
-                    let _ = tx
-                        .send(TaskEvent::Completed(node_id, Some(Value::Array(ordered))))
-                        .await;
-                });
+            if let Some(e) = error {
+                let _ = tx.send(TaskEvent::Error(node_id, e)).await;
+                return;
+            }
 
-                Box::new(TaskSubscription { handle })
-            }),
-        }
+            let ordered: Vec<Value> = results
+                .into_iter()
+                .map(|v| v.unwrap_or(Value::Null))
+                .collect();
+            let _ = tx
+                .send(TaskEvent::Next(
+                    node_id.clone(),
+                    json!({"kind":"done","count":ordered.len()}),
+                ))
+                .await;
+            let _ = tx
+                .send(TaskEvent::Completed(node_id, Some(Value::Array(ordered))))
+                .await;
+        })
     }
 }
 

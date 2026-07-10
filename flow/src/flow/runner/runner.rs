@@ -8,7 +8,6 @@ use super::{
 use crate::{
     Context, ControllerHandle, RunnerId,
     flow::graph::{Graph, Input, NodeId},
-    scope_current_node, scope_runner,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -208,6 +207,7 @@ impl Runner {
                                 RunnerCommand::Stop => {
                                     logger::log_runner_terminated(self.runner_id, "Stop command received");
                                     self.executor.cancel();
+                                    self.exec_ctx.cancel_stream_tasks();
                                     self.update_runner_state(RunnerState::Terminated)?;
                                     self.send_flow_event(FlowEvent::FlowStopped).await;
                                     terminated_by_stop = true;
@@ -250,7 +250,7 @@ impl Runner {
                     }
                 }
                 self.executor.reap_finished();
-                // TaskGuard 覆盖普通节点任务和流订阅任务；只有两类任务均释放守卫，
+                // TaskGuard 覆盖普通节点任务和流生产任务；只有两类任务均释放守卫，
                 // 且它们发出的 TaskEvent 已处理完，Runner 才能自然结束。
                 if self.exec_ctx.get_task_count() == 0
                     && self.executor.event_is_empty()
@@ -334,27 +334,17 @@ impl Runner {
         first_error: &mut Option<String>,
     ) -> Result<(), String> {
         match event {
-            // 任务返回流式结果则订阅并通知事件流开始
-            TaskEvent::Stream(node_id, subscribe_fn) => {
+            // 任务返回流式结果则启动生产任务并通知事件流开始
+            TaskEvent::Stream(node_id, start_stream) => {
                 logger::log_stream_started(&node_id, self.runner_id);
                 let guard = self.exec_ctx.get_task_tracker_guard();
                 let task_sender = self.executor.get_task_sender();
                 let runtime_ctx = self.executor.get_runtime_context();
-                let controller = self.controller.clone();
-                let node_id_for_sub = node_id.clone();
-                let node_id_for_scope = node_id.clone();
-                let runner_id = self.runner_id;
-                // 订阅闭包只消费一次，并返回取消句柄；ExecutionContext 持有该句柄，
+                let node_id_for_task = node_id.clone();
+                // 启动闭包只消费一次，并返回流任务句柄；ExecutionContext 持有该句柄，
                 // 直到流结束或出错时由相应 TaskEvent 分支移除。
-                let sub = scope_runner(
-                    controller,
-                    runner_id,
-                    scope_current_node(node_id_for_scope, async move {
-                        subscribe_fn(guard, task_sender, node_id_for_sub, runtime_ctx)
-                    }),
-                )
-                .await;
-                self.exec_ctx.set_stream_subscription(node_id.clone(), sub);
+                let task = start_stream(guard, task_sender, node_id_for_task, runtime_ctx);
+                self.exec_ctx.set_stream_task(node_id.clone(), task);
                 self.send_flow_event(FlowEvent::NodeStreamStarted(node_id))
                     .await;
             }
@@ -396,7 +386,7 @@ impl Runner {
                     );
                 }
 
-                let _ = self.exec_ctx.remove_stream_subscription(&node_id);
+                let _ = self.exec_ctx.remove_stream_task(&node_id);
                 let mut out_value = None;
                 if let Some(out) = output {
                     self.exec_ctx.set_output(node_id.clone(), out.clone());
@@ -421,7 +411,7 @@ impl Runner {
             }
             TaskEvent::Error(node_id, e) => {
                 logger::log_node_execution_error(&node_id, self.runner_id, &e);
-                let _ = self.exec_ctx.remove_stream_subscription(&node_id);
+                let _ = self.exec_ctx.remove_stream_task(&node_id);
                 if first_error.is_none() {
                     *first_error = Some(e.clone());
                 }

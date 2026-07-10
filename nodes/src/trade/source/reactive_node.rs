@@ -3,11 +3,11 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Local};
-use flow::observable::ObservableExt;
 use flow::{Context, Input, Node, Output, ReactiveStream};
+use futures::{StreamExt, stream};
+use tokio::time::sleep;
 
 use crate::trade::{
-    k::K,
     source::{source::Source, tushare::Product},
     utils::date_to_str,
 };
@@ -52,14 +52,20 @@ impl Node for ReactiveSourceNode {
             .await
             .unwrap_or_default();
 
-        result.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        result.sort_by_key(|item| item.timestamp);
 
-        let filtered_data = result
-            .filter(|k| k.volume > 0.0)
-            .delay(Duration::from_secs(5));
+        let filtered_data = stream::iter(
+            result
+                .into_iter()
+                .filter(|k| k.volume > 0.0)
+                .map(Ok::<_, ()>),
+        )
+        .then(|item| async move {
+            sleep(Duration::from_secs(5)).await;
+            item
+        });
 
-        // Convert Observable to ReactiveStream
-        let stream = ReactiveStream::from_observable(filtered_data);
+        let stream = ReactiveStream::from_stream(filtered_data);
         let mut out = Output::new(None);
         out.set_stream(stream);
         Ok(out)

@@ -29,8 +29,8 @@ use tracing::{debug, info};
 
 /// Runner 私有的异步节点执行器。
 ///
-/// `JoinSet` 只跟踪 `exec` 创建的节点任务；ReactiveStream 产生的订阅任务由
-/// `ExecutionContext` 中的 `Subscription` 单独管理。
+/// `JoinSet` 只跟踪 `exec` 创建的节点任务；`ReactiveStream` 产生的流任务由
+/// `ExecutionContext` 单独管理。
 pub struct Executor {
     semaphore: Option<Arc<Semaphore>>,
     runtime_ctx: Arc<Context>,
@@ -181,7 +181,7 @@ impl Executor {
                                         Some(stream) => {
                                             Self::send_task_event(
                                                 &task_sender,
-                                                TaskEvent::Stream(node_id, stream.subscribe),
+                                                TaskEvent::Stream(node_id, stream.start),
                                             )
                                             .await;
                                         }

@@ -23,8 +23,8 @@
 
 对应实现：
 
-- `SubgraphNode::run`：[node.rs](file:///d:/codes/ksana-flow-rs/flow/src/flow/graph/subgraph/node.rs)
-- `SubgraphExecutor::execute`：[executor.rs](file:///d:/codes/ksana-flow-rs/flow/src/flow/graph/subgraph/executor.rs)
+- `SubgraphNode::run`：`node.rs`
+- `SubgraphExecutor::execute`：`executor.rs`
 
 ### 2) 内层代理：`SubgraphInNode`
 
@@ -34,27 +34,37 @@
 
 `SubgraphInNode` 的行为是：
 
-- 若入口值是对象，则按 `key` 取出对应字段作为输出；
-- 若入口值不是对象，则直接透传该值。
+- 若入口值是内部 tagged envelope，则从 `values` 中按 `source_id` 取出对应值；
+- 若入口值没有内部标签，则视为直接调用的单值输入并原样透传，包括 JSON Object。
 
 这样子图仍然只需要“一个统一入口值”，但内部能按外部 `source` 把输入拆分成多路，保持跨边语义不丢失。
 
 对应实现：
 
-- `SubgraphInNode`：[node.rs](file:///d:/codes/ksana-flow-rs/flow/src/flow/graph/subgraph/node.rs)
-- 代理节点生成与边改写：[compiler.rs](file:///d:/codes/ksana-flow-rs/flow/src/flow/graph/compiler.rs)
+- `SubgraphInNode`：`node.rs`
+- 代理节点生成与边改写：`compiler.rs`
 
 ## 输入打包/拆包约定
 
 父图传入子图时会做一次“归一化”：
 
-- 若存在 `INPUT_EXTERNAL_START`，直接使用其值作为入口；
-- 否则：
-    - 0 个输入：`null`
-    - 1 个输入：该唯一值
-    - 多个输入：打包成 `{handle: value, ...}` 对象
+- 若存在 `INPUT_EXTERNAL_START`，直接使用其值作为未标记的单值入口；
+- 否则，单路和多路父图输入都编码为内部信封：
 
-子图内部的 `SubgraphInNode` 会把对象按 `source_id` 拆成对应的那一路输入；若不是对象则透传。
+```json
+{
+  "__ksana_flow_subgraph_input": {
+    "version": 1,
+    "kind": "routed",
+    "values": {
+      "source-node-id": "value"
+    }
+  }
+}
+```
+
+单路也保留来源 ID，因此业务 Object 不会再与路由表混淆。保留的特殊键只用于
+flow 内部协议，业务数据不应主动构造同形信封。
 
 ## 编译期边重写概览
 
@@ -62,5 +72,19 @@
 
 - 子图内部会生成一对统一的 `start_id/end_id` 节点。
 - 内部普通边保持不变。
-- “外部 -> 内部”跨边会被改写为：`start -> proxy_in(source) -> target`。
+- “外部 -> 内部”跨边会被改写为：`source -> group`（运输）以及
+  `start -> proxy_in(source) -> target`（逐边条件判断）。
 - “内部 -> 外部”跨边用于推导出口候选节点，并统一连到 `end_id`，保证子图输出收敛。
+- 静态 `false` 分支不会进入运行时图，由此不可达的成员节点会在编译期剪枝，避免
+  它们阻塞 `AllUpstreamReady` 出口。
+
+当前运行时边只支持节点级控制流。`EdgeKind::Data`、port/data type 元数据、无法
+保真的多来源 outbound 和并行同端点边会在编译期明确报错，而不是静默降级。
+
+## 生命周期与出口约定
+
+- 子 Runner 注册由 RAII guard 持有；成功、错误、超时或 future 被取消都会注销。
+- entry/exit 节点在创建 Runner 前校验。
+- exit 必须达到 `Completed` 且产生输出；未执行与“合法输出为 null”是不同状态。
+- 每次调用仍创建独立 Runner 和节点实例。这是有状态节点隔离的语义保证；高 fan-out
+  应由上层限制并发，不能通过复用节点实例换取速度。

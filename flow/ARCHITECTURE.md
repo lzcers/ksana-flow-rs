@@ -37,7 +37,7 @@ flowchart TB
     Flow -->|并发状态存储| DashMap
     Flow -->|节点 IO 序列化| Serde
     Flow -->|span / 事件日志| Tracing
-    Flow -->|Observable / catch_unwind| Futures
+    Flow -->|Stream / catch_unwind| Futures
 ```
 
 ### 角色说明
@@ -51,13 +51,13 @@ flowchart TB
 | dashmap | 依赖 | 提供 ExecutionContext 等并发状态存储 |
 | serde / serde_json | 依赖 | 节点 IO 的序列化 |
 | tracing | 依赖 | span 与事件日志 |
-| futures / async-trait | 依赖 | Observable 抽象与 catch_unwind |
+| futures / async-trait | 依赖 | 异步流、异步 trait 与 catch_unwind |
 
 ---
 
 ## Level 2 - Container(容器视图)
 
-`flow` 内部由两大子系统组成:`flow`(工作流引擎)与 `reactive`(响应式原语)。
+`flow` 内部按控制、图编译、执行和流式桥接职责组织。
 
 ```mermaid
 flowchart TB
@@ -69,12 +69,7 @@ flowchart TB
             Runner["runner<br/>================<br/>执行运行时<br/>• Runner 主循环<br/>• Scheduler 调度<br/>• Executor 执行<br/>• ExecutionContext 状态"]
             Graph["graph<br/>================<br/>图定义与编译<br/>• Graph / Builder<br/>• Blueprint 编译器<br/>• Subgraph 折叠<br/>• IO 类型"]
             RTCtx["runtime_context<br/>================<br/>节点运行时上下文<br/>• Context (层级继承)"]
-            ReactStream["reactive_stream<br/>================<br/>流式输出桥接<br/>• Observable → TaskEvent"]
-        end
-
-        subgraph "reactive 模块 (响应式原语)"
-            Observable["observable<br/>================<br/>Observable / Observer<br/>Subscription trait"]
-            Operators["算子<br/>================<br/>map / filter / scan<br/>pairwise / delay"]
+            ReactStream["reactive_stream<br/>================<br/>流式输出桥接<br/>• futures::Stream → TaskEvent"]
         end
     end
 
@@ -82,8 +77,6 @@ flowchart TB
     Runner -->|"持有"| Graph
     Runner -->|"读写"| RTCtx
     Runner -->|"流式输出"| ReactStream
-    ReactStream -->|"基于"| Observable
-    ReactStream -->|"使用算子"| Operators
 
     Graph -.->|"SubgraphNode<br/>复用 Runner"| Controller
 ```
@@ -96,8 +89,7 @@ flowchart TB
 | runner | `src/flow/runner/` | 执行运行时:Runner 主循环、Scheduler、Executor、ExecutionContext |
 | graph | `src/flow/graph/` | 图定义与编译:Graph/Builder、Blueprint 编译器、Subgraph 折叠、IO 类型 |
 | runtime_context | `src/flow/runtime_context.rs` | 节点运行时上下文(支持层级继承) |
-| reactive_stream | `src/flow/reactive_stream.rs` | 流式输出桥接:Observable → TaskEvent |
-| reactive | `src/reactive/` | 响应式原语:Observable/Observer、map/filter/scan/pairwise/delay |
+| reactive_stream | `src/flow/reactive_stream/mod.rs` | 流式输出桥接:`futures::Stream` → `TaskEvent`，以及流任务启动 |
 
 ---
 
@@ -233,7 +225,7 @@ flowchart TB
     Runner -->|产出| Handle
     Handle -->|发送| RunnerCmd
     RunnerCmd -->|broadcast| Controller
-    Runner -->|订阅| TaskEvt
+    Runner -->|启动流任务| TaskEvt
     Executor -->|产出| TaskEvt
     TaskEvt -->|触发| FlowEvt
     FlowEvt -->|包装为| Envelope
@@ -257,7 +249,7 @@ flowchart TB
 | `RunnerHandle` | `runner/runner.rs` | 对外句柄,可 pause/resume/stop/get_state |
 | `Scheduler` | `runner/scheduler.rs` | 节点调度,基于 TriggerStrategy 与父节点状态判断就绪 |
 | `Executor` | `runner/executor.rs` | 异步执行节点,管理 JoinSet/Semaphore/CancellationToken |
-| `ExecutionContext` | `runner/exec_context.rs` | 并发存储节点状态/输出/流订阅/任务计数 |
+| `ExecutionContext` | `runner/exec_context.rs` | 并发存储节点状态/输出/流任务/任务计数 |
 | `TaskGuard` / `TaskTracker` | `runner/task_guard.rs` | RAII 任务计数,用于判断工作流是否全部完成 |
 | `TaskEvent` | `runner/event.rs` | Executor → Runner 的内部事件 |
 | `FlowEvent` / `FlowEventEnvelope` | `runner/event.rs` | Runner → 外部的事件,带 runner_id 与 subgraph_path |
@@ -289,7 +281,7 @@ Runner::run():
         SetMaxConcurrency(n) → executor.set_max_concurrency(n)
 
       event = executor.get_task_event() if state==Running:
-        Stream(node, sub) → 订阅流,send NodeStreamStarted
+        Stream(node, start) → 启动流任务,send NodeStreamStarted
         Next(node, out) → set_output, send NodeStreamNext, schedule_from_output
         Completed(node, out) → set_output, set_state(Completed), schedule_from_output
         Error(node, e) → set_state(Failed), send NodeError
@@ -325,53 +317,53 @@ flowchart TB
 
 1. **复用 Runner**:`SubgraphExecutor` 通过 `Controller::create_runner()` 创建子 Runner,与父 Runner 共享同一 `Controller`。
 2. **上下文隔离/继承**:`SubgraphConfig.inherit_context` 控制是否继承父 Context;隔离时使用全新 Context。
-3. **超时控制**:可选 `timeout`,通过 `tokio::time::timeout` 包装 `runner.run()`。
-4. **结果获取**:从 `exit_node` 的输出中取出子图结果。
+3. **超时控制**:可选 `timeout`,通过 `tokio::time::timeout` 包装 `runner.run()`；Runner 注册由 RAII guard 在所有退出路径自动回收。
+4. **结果获取**:`exit_node` 必须为 `Completed` 且存在输出；未执行或缺失输出会返回结构化错误，不再静默转换为 `null`。
 5. **事件溯源**:子 Runner 的 `FlowEvent` 经 `Controller` 包装为 `FlowEventEnvelope`,带 `parent_runner_id` 与 `subgraph_path: Vec<SubgraphFrame>`,外部可还原嵌套调用链。
 6. **task_local 传播**:`scope_runner()` 在子 Runner 内重新注入 `CONTROLLER` 与 `RUNNER_ID`,使节点代码在任何嵌套深度都能通过 `try_controller()` / `try_runner_id()` 拿回当前上下文。
+7. **实例隔离**:每次子图调用创建独立 Runner 和节点实例，避免有状态节点在并发 fan-out 中互相污染；上层通过并发限制控制成本。
 
-### 3.4 响应式流式输出子系统
+### 3.4 流式输出子系统
 
 ```mermaid
 flowchart LR
-    subgraph "reactive 模块"
-        ObsTrait["Observable trait<br/>===========<br/>subscribe(observer) -> Sub"]
-        ObsImpl["Vec / 自定义实现<br/>===========<br/>数据源"]
-        Ops["算子链<br/>===========<br/>map → filter → scan<br/>→ pairwise → delay"]
+    subgraph "流生产者"
+        FuturesStream["futures::Stream<br/>Item = Result&lt;T, E&gt;"]
+        CustomProducer["自定义异步生产任务<br/>MapNode 等"]
     end
 
-    subgraph "reactive_stream.rs (桥接层)"
-        ReactStream["ReactiveStream<br/>===========<br/>subscribe: FnOnce(guard, tx, node_id, ctx)<br/>-> Box<dyn Subscription>"]
-        RunnerObs["RunnerObserver<br/>===========<br/>on_next → TaskEvent::Next<br/>on_error → TaskEvent::Error<br/>on_completed → TaskEvent::Completed<br/>(可选 accumulator 聚合)"]
-        TaskSub["TaskSubscription<br/>===========<br/>unsubscribe() → abort()"]
+    subgraph "reactive_stream/mod.rs (桥接层)"
+        ReactStream["ReactiveStream<br/>start: FnOnce(...) → JoinHandle"]
+        StreamLoop["流消费循环<br/>Ok → Next<br/>Err → Error<br/>结束 → Completed<br/>(可选 accumulator)"]
     end
 
     subgraph "runner 集成"
         Node["Node.run()<br/>返回 Output { stream }"]
         Executor["Executor<br/>捕获 stream"]
-        ExecCtx[("ExecutionContext<br/>stream_subscriptions")]
+        Runner["Runner<br/>处理 TaskEvent"]
+        ExecCtx[("ExecutionContext<br/>stream_tasks")]
         Scheduler["Scheduler<br/>schedule_from_output()"]
     end
 
-    ObsImpl -->|ObservableExt| Ops
-    Ops -->|订阅| ObsTrait
-    ObsTrait -->|from_observable| ReactStream
-    ReactStream -->|subscribe 时| RunnerObs
-    RunnerObs -->|mpsc::send| Executor
-    Executor -->|TaskEvent::Stream| Executor
+    FuturesStream -->|from_stream| ReactStream
+    CustomProducer -->|new| ReactStream
     Node -->|产出| ReactStream
-    ReactStream -->|存入| ExecCtx
-    RunnerObs -->|TaskEvent::Next<br/>逐条触发| Scheduler
-    TaskSub -->|unsubscribe| ExecCtx
+    Executor -->|TaskEvent::Stream| Runner
+    Runner -->|启动| ReactStream
+    ReactStream -->|JoinHandle| ExecCtx
+    ReactStream --> StreamLoop
+    StreamLoop -->|Next / Error / Completed| Runner
+    Runner -->|Next 逐条触发| Scheduler
 ```
 
 #### 流式输出要点
 
-1. **Observable 桥接**:`ReactiveStream::from_observable()` 把任意 `Observable` 包装为 `subscribe` 闭包,在 Runner 启动流时被调用。
-2. **背压**:RunnerObserver 通过异步 `mpsc::send` 发送 `TaskEvent::Next`,通道满时自动挂起,实现天然背压。
-3. **逐条调度**:每个 `TaskEvent::Next` 都会触发 `Scheduler::schedule_from_output()`,使下游节点能基于流式数据即时触发。
-4. **聚合**:`from_observable_with_accumulator()` 支持在 `on_completed` 时把累积的 buffer 聚合为最终输出。
-5. **订阅管理**:`TaskSubscription` 持有 `JoinHandle`,`unsubscribe()` 调用 `abort()`;订阅存储在 `ExecutionContext.stream_subscriptions` 中,节点完成/出错时移除。
+1. **标准流桥接**:`ReactiveStream::from_stream()` 接受 `futures::Stream<Item = Result<T, E>>`,在 Runner 启动流时开始消费。
+2. **自定义生产任务**:`ReactiveStream::new()` 用于需要直接产生 `TaskEvent` 的复杂节点，不再引入额外的回调协议。
+3. **背压**:流消费循环通过异步 `mpsc::send` 发送事件，通道满时自动挂起。
+4. **逐条调度**:每个 `TaskEvent::Next` 都会触发 `Scheduler::schedule_from_output()`,使下游节点能基于流式数据即时触发。
+5. **聚合**:`from_stream_with_accumulator()` 在流完成时把累积的 buffer 聚合为最终输出。
+6. **任务管理**:流任务的 `JoinHandle` 存储在 `ExecutionContext.stream_tasks`；节点完成/出错时移除，Runner 停止时统一取消。
 
 ---
 
@@ -426,10 +418,10 @@ sequenceDiagram
 | 层级 | 关注点 | 核心组件 |
 |------|--------|----------|
 | **L1 Context** | flow 作为库与外部交互 | 业务 crate → flow → tokio/dashmap/serde |
-| **L2 Container** | 两大子系统职责划分 | `flow`(引擎核心) + `reactive`(响应式原语) |
+| **L2 Container** | 引擎内部职责划分 | Controller + Graph + Runner + ReactiveStream |
 | **L3 Component** | 组件协作与数据流 | Controller(控制面) ↔ Runner(协调器) ↔ Scheduler(调度) + Executor(执行) + ExecutionContext(状态) |
 | **子图嵌套** | 复用 Runner 实现层级执行 | SubgraphNode → SubgraphExecutor → Controller.create_runner → 子 Runner |
-| **流式输出** | Observable 桥接到 TaskEvent | Node 产出 ReactiveStream → RunnerObserver → mpsc → Runner 调度下游 |
+| **流式输出** | futures::Stream 桥接到 TaskEvent | Node 产出 ReactiveStream → 流消费循环 → mpsc → Runner 调度下游 |
 
 ### 设计亮点
 

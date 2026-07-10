@@ -2,51 +2,14 @@ use super::input::extract_input_string;
 use crate::prompt::build_user_prompt;
 use agent::{
     core::Message,
-    models::{ChatCapability, ChatChunk, ChatModel},
+    models::{ChatCapability, ChatModel},
     providers::{deepseek_provider_from_env, openrouter_provider_from_env},
 };
 use async_trait::async_trait;
-use flow::{
-    Context, Input, Node, Output, ReactiveStream,
-    observable::{Observable, Observer, VecSubscription},
-};
-use futures::stream::StreamExt;
+use flow::{Context, Input, Node, Output, ReactiveStream};
+use futures::{StreamExt, stream};
 use serde_json::Value;
 use std::sync::Arc;
-
-pub struct ChatChunkObservable<S> {
-    pub stream: S,
-}
-
-#[async_trait]
-impl<S> Observable<String, String> for ChatChunkObservable<S>
-where
-    S: futures::Stream<Item = Result<ChatChunk, String>> + Send + Unpin + 'static,
-{
-    type Sub = VecSubscription;
-
-    async fn subscribe(mut self, mut observer: impl Observer<String, String>) -> Self::Sub {
-        let mut stream = self.stream;
-
-        while let Some(result) = stream.next().await {
-            match result {
-                Ok(chunk) => {
-                    observer.on_next(chunk.content).await;
-                    if chunk.is_finished {
-                        observer.on_completed().await;
-                        return VecSubscription;
-                    }
-                }
-                Err(e) => {
-                    observer.on_error(e).await;
-                    return VecSubscription;
-                }
-            }
-        }
-        observer.on_completed().await;
-        VecSubscription
-    }
-}
 
 pub struct LLMNode {
     chat_model: ChatModel,
@@ -108,12 +71,20 @@ impl Node for LLMNode {
                 .await
                 .map_err(|e| e.to_string())?;
 
-            let mapped_stream = stream_result.map(|chunk| Ok(chunk));
-            let react_stream = ChatChunkObservable {
-                stream: mapped_stream,
-            };
-            let stream = ReactiveStream::from_observable_with_accumulator(
-                react_stream,
+            let content_stream = stream::unfold(
+                (Box::pin(stream_result), false),
+                |(mut source, finished)| async move {
+                    if finished {
+                        return None;
+                    }
+                    source.next().await.map(|chunk| {
+                        let finished = chunk.is_finished;
+                        (Ok::<_, String>(chunk.content), (source, finished))
+                    })
+                },
+            );
+            let stream = ReactiveStream::from_stream_with_accumulator(
+                content_stream,
                 |chunks: Vec<String>| {
                     let full_text = chunks.join("");
                     Some(Value::String(full_text))
@@ -143,17 +114,17 @@ impl Node for LLMNode {
 mod tests {
     use super::*;
     use flow::{Context, TaskEvent};
-    use flow::{Input, StreamSubscriptionFn, TaskGuard};
+    use flow::{Input, StreamStartFn, TaskGuard};
     use serde_json::Value;
     use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::runtime::Runtime;
 
-    async fn collect_output(subscribe: StreamSubscriptionFn) -> String {
+    async fn collect_output(start_stream: StreamStartFn) -> String {
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let ctx = Arc::new(Context::new());
         let guard = TaskGuard::default();
-        let _sub = subscribe(guard, tx, "test".to_string(), ctx);
+        let _task = start_stream(guard, tx, "test".to_string(), ctx);
 
         let mut output = String::new();
         while let Some(event) = rx.recv().await {
@@ -206,8 +177,8 @@ mod tests {
 
             let out = node.run(&ctx, &Input::new(inputs)).await.unwrap();
             let stream = out.into_stream().expect("Expected stream output");
-            let subscribe = stream.subscribe;
-            let output = collect_output(subscribe).await;
+            let start_stream = stream.start;
+            let output = collect_output(start_stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -258,8 +229,8 @@ mod tests {
 
             let out = node.run(&ctx, &Input::new(inputs)).await.unwrap();
             let stream = out.into_stream().expect("Expected stream output");
-            let subscribe = stream.subscribe;
-            let output = collect_output(subscribe).await;
+            let start_stream = stream.start;
+            let output = collect_output(start_stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });
@@ -300,8 +271,8 @@ mod tests {
 
             let out = node.run(&ctx, &Input::new(inputs)).await.unwrap();
             let stream = out.into_stream().expect("Expected stream output");
-            let subscribe = stream.subscribe;
-            let output = collect_output(subscribe).await;
+            let start_stream = stream.start;
+            let output = collect_output(start_stream).await;
             eprintln!("output: {}", output);
             assert!(!output.is_empty());
         });

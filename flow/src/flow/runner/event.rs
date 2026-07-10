@@ -1,4 +1,4 @@
-use crate::{Input, NodeId, RunnerId, RunnerKind, StreamSubscriptionFn};
+use crate::{Input, NodeId, RunnerId, RunnerKind, StreamStartFn};
 use serde_json::Value;
 
 /// Runner 对外发布的生命周期和数据事件。
@@ -47,5 +47,5 @@ pub enum TaskEvent {
     Next(NodeId, Value),
     Completed(NodeId, Option<Value>),
     Error(NodeId, String),
-    Stream(NodeId, StreamSubscriptionFn),
+    Stream(NodeId, StreamStartFn),
 }
