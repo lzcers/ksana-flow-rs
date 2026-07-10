@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// 父图中的子图容器节点；负责打包输入并等待子 Runner 返回出口值。
 pub struct SubgraphNode {
     pub executor: SubgraphExecutor,
 }
@@ -27,6 +28,7 @@ impl Node for SubgraphNode {
     }
 }
 
+/// 子图统一入口，把 `INPUT_EXTERNAL_START` 中的值交给内部代理节点。
 pub struct SubgraphStartNode;
 
 #[async_trait]
@@ -39,6 +41,9 @@ impl Node for SubgraphStartNode {
     }
 }
 
+/// 一条外部来源在子图内部的输入代理。
+///
+/// 多路输入使用 `{source_id: value}` 路由；非对象值按单路输入直接透传。
 pub struct SubgraphInNode {
     pub key: String,
 }
@@ -56,6 +61,7 @@ impl Node for SubgraphInNode {
     }
 }
 
+/// 子图统一出口：单路结果直接返回，多路结果按来源节点 ID 组成对象。
 pub struct SubgraphEndNode;
 
 #[async_trait]
@@ -76,10 +82,10 @@ impl Node for SubgraphEndNode {
     }
 }
 
-// 把子图输入打包成对象
-// 对于子图来说，其暴露在父图中只是一个 SubgraphNode 节点，
-// 而父图在调用子图时，会把输入作为一个整体传递给子图，
-// 子图内部会根据 INPUT_EXTERNAL_START 来判断是否是外部输入。
+/// 把父图输入归一化为子 Runner 的单个入口值。
+///
+/// 外部显式输入和单路上游保持原值；多路上游编码为 `{source_id: value}`。
+/// 该编码没有额外类型标签，因此单路 Object 与多路路由对象需要由调用方避免歧义。
 pub fn pack_inputs_to_object(input: &Input) -> Value {
     // 直接运行节点指定输入的情况，此时相当于子图的 INPUT_EXTERNAL_START 被指定了，
     // 它不是由上游节点出发的
@@ -102,6 +108,7 @@ pub fn pack_inputs_to_object(input: &Input) -> Value {
     Value::Object(obj)
 }
 
+/// 把一个入口值包装成可直接传给子图 start 节点的 `Input`。
 pub fn input_from_object(value: Value) -> Input {
     let mut map: HashMap<String, Value> = HashMap::new();
     map.insert(INPUT_EXTERNAL_START.to_owned(), value);

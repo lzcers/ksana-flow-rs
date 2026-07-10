@@ -5,9 +5,13 @@ use crate::Context;
 use std::{any::Any, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
+/// 一张图内节点的唯一标识，同时也是下游 `Input` 中默认的来源键。
 pub type NodeId = String;
 
-// 核心节点定义
+/// 用户实现的核心节点接口。
+///
+/// Runner 会为每次执行物化一组节点实例。`run` 接收共享的运行时 `Context`
+/// 和由上游节点 ID 索引的 `Input`；节点内部的可变状态只属于当前 Runner。
 #[async_trait]
 pub trait Node {
     // 节点的调度策略，这决定了节点何时被触发执行
@@ -16,12 +20,16 @@ pub trait Node {
     // 同一个节点在不同的场景下可能有不同的调度策略，例如在条件分支中
     const TRIGGER_STRATEGY: TriggerStrategy = TriggerStrategy::AllUpstreamReady;
 
+    /// 执行一次节点逻辑。
+    ///
+    /// 返回 `Output` 后，Runner 才会更新节点状态并尝试调度下游。
     async fn run(&mut self, ctx: &Context, input: &Input) -> Result<Output, String>;
 }
 
+/// 运行时边条件。条件只读取当前来源节点的输出和共享上下文。
 pub type EdgeCondition = Box<dyn Fn(&Context, &Output) -> bool + Send + Sync>;
 
-// 条件边接收一个节点传出的输出引用，根据条件判断是否继续执行下一个节点
+/// 有向运行时边；可选条件决定当前输出是否沿该边传播。
 pub struct Edge {
     pub from: String,
     pub to: String,
@@ -30,9 +38,9 @@ pub struct Edge {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TriggerStrategy {
-    /// 全量上游就绪才触发
+    /// 所有结构父节点均为 `Completed` 或 `Skipped` 后触发，并聚合其输出。
     AllUpstreamReady,
-    /// 任意上游有输入即触发
+    /// 任意一条通过条件的上游边产生输出时触发，只携带该来源的输出。
     AnyUpstreamAvailable,
 }
 impl Default for TriggerStrategy {
@@ -41,7 +49,9 @@ impl Default for TriggerStrategy {
     }
 }
 
-// AnyNode 会被Arc 容器包裹发送到不同的线程中执行，因此需要实现 Send + Sync
+/// `Node` 的对象安全适配层，供 Graph 保存异构节点。
+///
+/// 实例会被 `Arc<RwLock<_>>` 包装；写锁保证同一节点实例的 `run` 不会并发执行。
 #[async_trait]
 pub trait AnyNode: Any + Send + Sync {
     fn get_trigger_strategy(&self) -> TriggerStrategy {
@@ -84,12 +94,19 @@ impl AnyEdge for Edge {
     }
 }
 
-// 子图情况下，节点和边都需要被 Arc 包裹，因为会被发送到不同的线程中执行
+/// 节点实例工厂。每个 Runner 物化图时都会调用一次，以隔离节点内部状态。
 pub type NodeFactory = dyn Fn() -> Result<Arc<RwLock<dyn AnyNode>>, String> + Send + Sync;
 
+/// 可执行图及其两张邻接索引。
+///
+/// `edges` 与 `incoming_nodes` 必须描述同一组边。修改图时应优先使用
+/// `add_edge`、`remove_edge` 和 `remove_node`，避免破坏该不变量。
 pub struct Graph {
+    /// 节点 ID 到运行时工厂的映射。
     pub nodes: HashMap<NodeId, Arc<NodeFactory>>,
+    /// 按来源节点索引的出边。
     pub edges: HashMap<NodeId, Vec<Arc<dyn AnyEdge>>>,
+    /// 按目标节点索引的父节点 ID，用于就绪判断和输入聚合。
     pub incoming_nodes: HashMap<NodeId, Vec<NodeId>>,
 }
 

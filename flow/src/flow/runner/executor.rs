@@ -1,3 +1,8 @@
+//! 节点任务执行层。
+//!
+//! Executor 负责并发限制、panic 隔离、取消普通节点任务以及把结果转换成
+//! `TaskEvent`。工作流状态和下游调度仍由 Runner 串行处理。
+
 use super::{event::TaskEvent, task_guard::TaskGuard};
 use crate::{
     Context, ControllerHandle, RunnerId,
@@ -22,6 +27,10 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
+/// Runner 私有的异步节点执行器。
+///
+/// `JoinSet` 只跟踪 `exec` 创建的节点任务；ReactiveStream 产生的订阅任务由
+/// `ExecutionContext` 中的 `Subscription` 单独管理。
 pub struct Executor {
     semaphore: Option<Arc<Semaphore>>,
     runtime_ctx: Arc<Context>,
@@ -44,6 +53,9 @@ impl Executor {
         }
     }
 
+    /// 替换后续任务使用的并发信号量。
+    ///
+    /// 已经捕获旧信号量的运行中或等待中任务不会迁移到新上限。
     pub fn set_max_concurrency(&mut self, max: usize) {
         let max = max.max(1);
         self.semaphore = Some(Arc::new(Semaphore::new(max)));
@@ -77,6 +89,7 @@ impl Executor {
         self.task_receiver.is_empty()
     }
 
+    /// 取消 CancellationToken 并终止当前 JoinSet 中的所有节点任务。
     pub fn cancel(&self) {
         self.cancel.cancel();
         if let Ok(mut tasks) = self.tasks.lock() {
@@ -91,6 +104,10 @@ impl Executor {
         }
     }
 
+    /// 提交一次节点执行并立即返回。
+    ///
+    /// `TaskGuard` 被移动到异步任务中，确保结果事件发送完成前任务计数不会归零。
+    /// 节点写锁会串行化同一节点实例上的多次执行。
     pub fn exec(
         &self,
         runner_id: RunnerId,

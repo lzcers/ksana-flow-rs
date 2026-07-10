@@ -1,3 +1,8 @@
+//! `Observable` 到工作流 `TaskEvent` 的适配层。
+//!
+//! ReactiveStream 本身是一次性订阅描述；真正的生产任务在 Runner 收到
+//! `TaskEvent::Stream` 后创建，并用额外的 `TaskGuard` 纳入完成条件。
+
 use super::{TaskGuard, graph::NodeId, runner::TaskEvent};
 use crate::{
     Context,
@@ -9,14 +14,21 @@ use serde_json::Value;
 use std::sync::Arc;
 use tokio::{sync::mpsc, task::JoinHandle};
 
+/// 一次性订阅闭包。调用后返回的 `Subscription` 负责取消底层生产任务。
 pub type StreamSubscriptionFn = Box<
     dyn FnOnce(TaskGuard, mpsc::Sender<TaskEvent>, NodeId, Arc<Context>) -> Box<dyn Subscription>
         + Send,
 >;
+/// 节点输出携带的延迟订阅描述。
+///
+/// `subscribe` 是 `FnOnce`，一个 ReactiveStream 只能交给一个 Runner 消费一次。
 pub struct ReactiveStream {
     pub subscribe: StreamSubscriptionFn,
 }
 
+/// 流结束时的聚合函数。
+///
+/// 使用该模式会在内存中保留全部 item；无限流或大流应使用增量聚合节点。
 pub type AccumulatorFn<T> = Box<dyn Fn(Vec<T>) -> Option<Value> + Send>;
 
 struct RunnerObserver<T> {
@@ -81,12 +93,14 @@ struct TaskSubscription {
 }
 
 impl Subscription for TaskSubscription {
+    /// 显式取消生产任务。仅丢弃 `TaskSubscription` 不会 abort Tokio JoinHandle。
     fn unsubscribe(self: Box<Self>) {
         self.handle.abort();
     }
 }
 
 impl ReactiveStream {
+    /// 把 Observable 包装为逐项发送 `Next`、结束时发送空 `Completed` 的流。
     pub fn from_observable<T, E, O>(observable: O) -> Self
     where
         T: Serialize + Send + Clone + 'static,
@@ -110,6 +124,7 @@ impl ReactiveStream {
         }
     }
 
+    /// 包装 Observable，并在结束时把全部 item 交给 accumulator 生成最终输出。
     pub fn from_observable_with_accumulator<T, E, O, F>(observable: O, accumulator: F) -> Self
     where
         T: Serialize + Send + Clone + 'static,

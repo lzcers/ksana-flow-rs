@@ -15,6 +15,7 @@ use std::time::Instant;
 use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{Instrument, debug, trace, warn};
 
+/// Runner 主循环的生命周期状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerState {
     Initial,
@@ -23,6 +24,9 @@ pub enum RunnerState {
     Terminated,
 }
 
+/// 发往 Controller 执行树的控制命令。
+///
+/// Controller 使用 broadcast 分发，因此命令不是单个 Runner 私有的。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerCommand {
     Pause,
@@ -32,6 +36,7 @@ pub enum RunnerCommand {
     ClearMaxConcurrency,
 }
 
+/// 对 Controller 执行树发送命令，并观察创建该句柄时对应 Runner 的状态。
 #[derive(Clone)]
 pub struct RunnerHandle {
     cmd_tx: broadcast::Sender<RunnerCommand>,
@@ -39,6 +44,10 @@ pub struct RunnerHandle {
 }
 
 impl RunnerHandle {
+    /// 暂停 Runner 对新 `TaskEvent` 的处理。
+    ///
+    /// 已经提交给 Executor 的节点和流生产者仍会继续运行，结果会留在内部通道中
+    /// 等待恢复处理；这不是对底层异步任务的抢占式暂停。
     pub async fn pause(&self) {
         let _ = self.cmd_tx.send(RunnerCommand::Pause);
     }
@@ -47,6 +56,7 @@ impl RunnerHandle {
         let _ = self.cmd_tx.send(RunnerCommand::Resume);
     }
 
+    /// 停止同一 Controller 下的 Runner。Runner 会取消 Executor 管理的节点任务。
     pub async fn stop(&self) {
         let _ = self.cmd_tx.send(RunnerCommand::Stop);
     }
@@ -56,6 +66,10 @@ impl RunnerHandle {
     }
 }
 
+/// 一次 Graph 执行的主协调器。
+///
+/// Runner 自身不执行节点逻辑：Scheduler 判断就绪，Executor 运行节点，
+/// ExecutionContext 保存状态；Runner 负责串行处理命令和任务事件以推进状态机。
 pub struct Runner {
     // 1. 工作流的scheduler，负责任务的调度和执行
     // 驱动整个工作流执行
@@ -127,6 +141,10 @@ impl Runner {
         self.executor.set_max_concurrency(max);
     }
 
+    /// 执行当前 start queue 中的工作流。
+    ///
+    /// 完成条件是任务计数归零且内部事件队列为空。该方法会等待外部 FlowEvent
+    /// 进入 Controller 的有界通道，因此事件消费者也参与整体背压。
     pub async fn run(&mut self) -> Result<(), String> {
         // 记录 Runner 启动
         self.start_time = Some(Instant::now());
@@ -168,6 +186,7 @@ impl Runner {
             // 2. 根据内部状态判断是否需要处理任务事件
             // 3. 检查终止条件，没有任务为止
             loop {
+                // 本轮 select 使用状态快照；命令造成的状态变化从下一轮开始控制分支。
                 let current_state = *self.state_tx.borrow();
                 tokio::select! {
                     // 1. 处理外部命令
@@ -231,7 +250,8 @@ impl Runner {
                     }
                 }
                 self.executor.reap_finished();
-                // 没有活跃任务，且事件队列为空，就意味着工作流执行完毕
+                // TaskGuard 覆盖普通节点任务和流订阅任务；只有两类任务均释放守卫，
+                // 且它们发出的 TaskEvent 已处理完，Runner 才能自然结束。
                 if self.exec_ctx.get_task_count() == 0
                     && self.executor.event_is_empty()
                     && current_state == RunnerState::Running
@@ -324,6 +344,8 @@ impl Runner {
                 let node_id_for_sub = node_id.clone();
                 let node_id_for_scope = node_id.clone();
                 let runner_id = self.runner_id;
+                // 订阅闭包只消费一次，并返回取消句柄；ExecutionContext 持有该句柄，
+                // 直到流结束或出错时由相应 TaskEvent 分支移除。
                 let sub = scope_runner(
                     controller,
                     runner_id,
@@ -429,7 +451,7 @@ impl Runner {
             .get_node(&node_id)
             .ok_or_else(|| format!("Runner start_node: Node '{}' not found", &node_id))?;
 
-        // 节点任务计数守卫
+        // 守卫必须在 exec 前创建并移动进任务，防止任务尚未登记时 Runner 误判完成。
         let guard = self.exec_ctx.get_task_tracker_guard();
 
         self.exec_ctx.set_state(node_id.clone(), NodeState::Running);
@@ -452,6 +474,8 @@ impl Runner {
     }
 
     async fn send_flow_event(&self, event: FlowEvent) {
+        // 每次发送都根据注册表计算完整子图路径。发送是有背压的；慢事件消费者会
+        // 延缓状态机推进，但不会改变同一 Runner 内事件的先后顺序。
         let (runner_kind, parent_runner_id, parent_node_id, subgraph_path) =
             self.controller.describe_runner(self.runner_id);
         let envelope = FlowEventEnvelope {

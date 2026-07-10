@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// 节点在一次 Runner 执行中的状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeState {
     Idle,
@@ -18,8 +19,10 @@ pub enum NodeState {
     Skipped,
 }
 
-// 执行上下文
-// 存储所有节点的执行状态，为调度器提供调度必要信息
+/// 一次 Runner 执行的状态快照。
+///
+/// 节点状态、输出、开始时间和订阅由 Runner 主循环维护；`TaskTracker` 则通过
+/// `TaskGuard` 与 Executor/流订阅任务共享，用于安全判断异步工作是否全部结束。
 pub struct ExecutionContext {
     node_states: DashMap<NodeId, NodeState>,
     node_outputs: DashMap<NodeId, Value>,
@@ -57,6 +60,8 @@ impl ExecutionContext {
     pub fn get_task_tracker_guard(&self) -> TaskGuard {
         TaskGuard::new(self.tracker.clone())
     }
+
+    /// 更新节点状态，并同步维护用于 tracing 的开始时间。
     pub fn set_state(&self, node_id: NodeId, state: NodeState) {
         let old_state = self.node_states.get(&node_id).map(|s| *s);
 
@@ -97,10 +102,12 @@ impl ExecutionContext {
         self.node_outputs.get(node_id).map(|v| v.value().clone())
     }
 
+    /// 保存流订阅的取消句柄，使其生命周期至少覆盖整个流任务。
     pub fn set_stream_subscription(&self, node_id: NodeId, sub: Box<dyn Subscription>) {
         let _ = self.stream_subscriptions.insert(node_id, sub);
     }
 
+    /// 移出订阅句柄。是否调用 `unsubscribe` 由调用方根据终止原因决定。
     pub fn remove_stream_subscription(&self, node_id: &str) -> Option<Box<dyn Subscription>> {
         self.stream_subscriptions.remove(node_id).map(|(_, v)| v)
     }

@@ -11,7 +11,7 @@ use std::{
     future::Future,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
 };
 use tokio::{
@@ -19,16 +19,23 @@ use tokio::{
     task::{AbortHandle, JoinHandle},
 };
 
+/// Controller 的共享句柄；一个 Controller 同时管理一棵 root/subgraph Runner 树。
 pub type ControllerHandle = Arc<Controller>;
 
+/// Controller 作用域内的 Runner 标识。
 pub type RunnerId = u16;
 
+/// Runner 在执行树中的角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunnerKind {
     Root,
     Subgraph,
 }
 
+/// Controller 保存的 Runner 元数据和强制终止句柄。
+///
+/// `abort` 仅在 Runner 通过 `spawn_runner` 启动后存在；直接调用 `Runner::run`
+/// 的子图 Runner 没有对应的 Tokio `AbortHandle`。
 pub struct RunnerRecord {
     pub id: RunnerId,
     pub parent: Option<RunnerId>,
@@ -38,7 +45,10 @@ pub struct RunnerRecord {
     abort: Mutex<Option<AbortHandle>>,
 }
 
-// Runner 的控制面，用于发送命令和接收事件
+/// 一次工作流执行树的控制面。
+///
+/// 命令通道是广播通道，因此通过任意 `RunnerHandle` 发送的命令都会被该
+/// Controller 下所有活跃 Runner（包括子图）接收。事件则汇聚到同一个有界通道。
 pub struct Controller {
     cmd_tx: broadcast::Sender<RunnerCommand>,
     event_tx: mpsc::Sender<FlowEventEnvelope>,
@@ -48,6 +58,10 @@ pub struct Controller {
 }
 
 impl Controller {
+    /// 创建控制器及其唯一的事件接收端。
+    ///
+    /// 事件发送使用有界 mpsc 和异步背压。调用方若需要保留 receiver，就应持续
+    /// 消费；若完全不关心事件，应直接丢弃 receiver，避免慢消费者阻塞 Runner。
     pub fn new() -> (ControllerHandle, mpsc::Receiver<FlowEventEnvelope>) {
         let (event_tx, event_rx) = mpsc::channel(100);
         let (cmd_tx, _) = broadcast::channel(32);
@@ -69,6 +83,7 @@ impl Controller {
     pub fn get_flow_event_sender(&self) -> mpsc::Sender<FlowEventEnvelope> {
         self.event_tx.clone()
     }
+    /// 设置执行树的并发上限，并广播给当前 Runner；后续创建的 Runner 读取快照。
     pub fn set_max_concurrency(&self, max: usize) {
         if max == 0 {
             self.clear_max_concurrency();
@@ -133,6 +148,8 @@ impl Controller {
 }
 
 tokio::task_local! {
+    // 子图节点无需层层传参即可找到所属 Controller、Runner 和父节点。
+    // 这些值只在 scope_* 包装的 Future 中可见；新建 Tokio 任务时需重新安装作用域。
     static CONTROLLER: ControllerHandle;
     static RUNNER_ID: RunnerId;
     static CURRENT_NODE_ID: NodeId;
@@ -175,6 +192,10 @@ pub fn try_current_node_id() -> Option<NodeId> {
     CURRENT_NODE_ID.try_with(|id| id.clone()).ok()
 }
 
+/// Runner 注册、启动和回收接口。
+///
+/// `create_runner` 只分配并注册 Runner；`spawn_runner` 才负责创建 Tokio 任务、
+/// 安装 task-local 作用域并在结束后自动注销。
 pub trait ControllerRunners {
     fn create_runner(
         &self,
