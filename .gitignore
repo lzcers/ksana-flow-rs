@@ -12,3 +12,4 @@ node_modules
 *.txt
 /db-data
 .DS_Store
+.workbuddy/memory/
